@@ -1,0 +1,24 @@
+name: Nudge PRs without a linked issue
+
+# Dispatcher — calls the reusable workflow in `shieldedtech/.github`.
+# On PR open / ready-for-review, if the PR closes no issue, comments once asking
+# for a `Closes #N` link. Never blocks; skips drafts, bot authors, and a
+# `no-issue` opt-out label. Implementation:
+# https://github.com/shieldedtech/.github/blob/main/.github/workflows/nudge-pr-without-issue-link.yml
+
+on:
+  pull_request:
+    types: [opened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: nudge-pr-link-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  nudge:
+    name: Nudge PR to link a closing issue
+    uses: shieldedtech/.github/.github/workflows/nudge-pr-without-issue-link.yml@067aae0045afc8fb34740c842b81025ad7d53f42

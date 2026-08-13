@@ -1,0 +1,51 @@
+name: Documentation improvement
+description: Something in the docs is wrong, missing, or unclear.
+title: "docs: "
+labels: ["documentation", "triage"]
+body:
+  - type: input
+    id: location
+    attributes:
+      label: Location
+      description: Where in the docs? Link or file path with line numbers if possible.
+      placeholder: "README.md:42 or docs/getting-started.md"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      description: |
+        Engineering urgency. Triage can adjust later. Set on the native
+        Priority issue field (source of truth), not as a label.
+        - P0 - Blocking — drop everything to work on this
+        - P1 - Critical — schedule immediately
+        - P2 - High — schedule this sprint
+        - P3 - Medium — schedule next sprint (default)
+        - P4 - Low — schedule when capacity allows
+      options:
+        - P3 - Medium
+        - P2 - High
+        - P1 - Critical
+        - P0 - Blocking
+        - P4 - Low
+      default: 0
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What's wrong or missing
+      description: Describe the issue — incorrect, outdated, unclear, missing entirely.
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested fix
+      description: How would you correct it? Draft language or a short outline is fine.
+    validations:
+      required: false

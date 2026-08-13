@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and discussion
+    url: https://github.com/shieldedtech/REPO_NAME/discussions
+    about: Ask questions and discuss usage in Discussions instead of opening an issue.
+  - name: Security vulnerability
+    url: https://github.com/shieldedtech/REPO_NAME/security/advisories/new
+    about: Report security issues privately via GitHub Security Advisories — never as a public issue.
+  - name: Code of conduct concerns
+    url: mailto:conduct@shielded.io
+    about: Report code of conduct violations privately.

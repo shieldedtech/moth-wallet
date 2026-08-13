@@ -1,0 +1,176 @@
+# =============================================================================
+# macOS
+# =============================================================================
+.DS_Store
+.DS_Store?
+._*
+.AppleDouble
+.LSOverride
+.Spotlight-V100
+.Trashes
+.fseventsd
+.TemporaryItems
+.apdisk
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+Icon?
+
+# =============================================================================
+# Linux (covers contributors who aren't on macOS)
+# =============================================================================
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# =============================================================================
+# Windows (same — covers cross-platform contributors)
+# =============================================================================
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# =============================================================================
+# Editors / IDEs
+# =============================================================================
+# VS Code — keep shared settings, ignore user-local
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/*.code-snippets
+.history/
+*.code-workspace
+
+# JetBrains (IntelliJ, RustRover, WebStorm, ...)
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# Vim / Emacs / Sublime
+*.swp
+*.swo
+*~
+\#*\#
+.\#*
+*.sublime-workspace
+*.sublime-project
+
+# Zed
+.zed/
+
+# Direnv local override (the committed .envrc stays)
+.envrc.local
+.direnv/
+
+# =============================================================================
+# Rust
+# =============================================================================
+# Default build output for every Cargo workspace member
+target/
+**/target/
+
+# Crash dumps
+*.pdb
+
+# Backup files left by `cargo fmt --check` etc.
+**/*.rs.bk
+
+# Note on Cargo.lock:
+#   - For BINARIES (apps): commit Cargo.lock — guarantees reproducible builds.
+#   - For LIBRARIES (crates published to crates.io): ignore Cargo.lock so downstream
+#     users resolve versions themselves.
+# Default for this template: NOT ignored. If your repo is a pure library crate,
+# add `Cargo.lock` to a project-local .gitignore.
+
+# =============================================================================
+# TypeScript / JavaScript / Node
+# =============================================================================
+node_modules/
+**/node_modules/
+.pnp.*
+.yarn/cache
+.yarn/install-state.gz
+.yarn/build-state.yml
+.yarn/unplugged
+.yarn/.cache
+
+# Build artifacts
+dist/
+build/
+out/
+.next/
+.nuxt/
+.svelte-kit/
+.turbo/
+.vercel/
+.netlify/
+.parcel-cache/
+.cache/
+
+# TypeScript incremental compilation
+*.tsbuildinfo
+.tsbuildinfo
+
+# Coverage and test artifacts
+coverage/
+.nyc_output/
+.vitest-cache/
+junit.xml
+test-results/
+playwright-report/
+.playwright/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Lockfile guidance: commit ONE — yarn.lock, package-lock.json, or pnpm-lock.yaml.
+# Do NOT commit more than one; pick the package manager the repo uses.
+
+# Environment files — never commit secrets
+.env
+.env.*
+!.env.example
+!.env.template
+
+# =============================================================================
+# Midnight / Compact (this is a Shielded Technologies org template)
+# =============================================================================
+# Compact compiler output — verifier keys and ZK artifacts are large + generated
+managed/
+**/managed/
+
+# Per-developer wallet caches and devnet state
+.midnight/
+midnight-localnet-data/
+proof-server-data/
+
+# =============================================================================
+# Misc tooling
+# =============================================================================
+# OS-level Python venvs that sneak into mixed repos
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# Misc temp
+tmp/
+.tmp/
+*.bak
+*.tmp
+*.orig

@@ -1,0 +1,32 @@
+# Force LF line endings across platforms.
+* text=auto eol=lf
+
+# Shell scripts must be LF regardless of OS.
+*.sh           text eol=lf
+*.bash         text eol=lf
+
+# Common source types — explicit for clarity.
+*.md           text
+*.yaml         text
+*.yml          text
+*.json         text
+*.toml         text
+*.ts           text
+*.tsx          text
+*.js           text
+*.rs           text
+*.py           text
+*.compact      text
+
+# Binary types — never normalize.
+*.png          binary
+*.jpg          binary
+*.jpeg         binary
+*.gif          binary
+*.ico          binary
+*.pdf          binary
+*.zip          binary
+*.gz           binary
+*.tar          binary
+*.wasm         binary
+*.zkir         binary

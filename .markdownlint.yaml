@@ -1,0 +1,28 @@
+# Canonical markdownlint config — aligned with Giles's set (2026-07) so Shielded /
+# midnightntwrk repos lint consistently. Matches shieldedtech/agent-rules.
+# Deviate only with a documented reason.
+default: true
+
+# MD004/ul-style: dash bullets for consistency.
+MD004:
+  style: dash
+
+# MD013/line-length: off — wrapping prose/tables to a fixed column is noise.
+MD013: false
+# MD018: off — allow `#tag` with no space (changeset/changelog convention).
+MD018: false
+# MD022: off — allow adjacent tag/heading (changefile convention for node).
+MD022: false
+# MD024: off — duplicate headings are normal in changelogs (repeated `### Fixed`).
+MD024: false
+# MD033: off — allow inline HTML (badges, <details>, etc.).
+MD033: false
+# MD034: off — allow bare URLs.
+MD034: false
+# MD037: off — allow package-name spacing patterns (crate-*, etc.).
+MD037: false
+# MD041: off — allow files without a top-level heading.
+MD041: false
+
+# Intentionally ON (enforced): MD040 (fenced blocks declare a language; use ```text)
+# and MD060 (consistent table-column style — we keep tables clean/aligned).

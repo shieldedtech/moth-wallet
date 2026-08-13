@@ -1,0 +1,18 @@
+name: Label AI-assisted PRs
+
+# Consumer dispatcher: calls the org reusable ai-assisted-label workflow in
+# shieldedtech/.github, pinned to a commit SHA (bump to opt into changes).
+# Auto-applies bot:ai-assisted to PRs whose commits or body carry an AI-tooling
+# signature. Ships in the template so new repos inherit disclosure enforcement.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  label:
+    uses: shieldedtech/.github/.github/workflows/ai-assisted-label.yml@48a3918afd7f1123e1de1d637ce06faa635830b5

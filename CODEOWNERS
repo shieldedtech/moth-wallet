@@ -1,0 +1,19 @@
+# Default: any change requires a review from the security team.
+# Replace team slugs with real Shielded Technologies teams before publishing —
+# GitHub silently ignores unknown teams.
+
+*                                          @shieldedtech/shielded-security
+
+# Meta-files: tighter ownership (security + platform).
+/.github/                                  @shieldedtech/shielded-security @shieldedtech/shielded-sre
+/.github/workflows/                        @shieldedtech/shielded-security @shieldedtech/shielded-sre
+/.github/ISSUE_TEMPLATE/                   @shieldedtech/shielded-security @shieldedtech/shielded-sre
+/.github/PULL_REQUEST_TEMPLATE/            @shieldedtech/shielded-security @shieldedtech/shielded-sre
+/.github/dependabot.yml                    @shieldedtech/shielded-security @shieldedtech/shielded-sre
+
+CODEOWNERS                                 @shieldedtech/shielded-security @shieldedtech/shielded-sre
+LICENSE                                    @shieldedtech/shielded-security @shieldedtech/shielded-sre
+NOTICE                                     @shieldedtech/shielded-security @shieldedtech/shielded-sre
+SECURITY.md                                @shieldedtech/shielded-security @shieldedtech/shielded-sre
+CONTRIBUTING.md                            @shieldedtech/shielded-security @shieldedtech/shielded-sre
+CODE_OF_CONDUCT.md                         @shieldedtech/shielded-security @shieldedtech/shielded-sre

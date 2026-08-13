@@ -1,0 +1,49 @@
+name: Scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+  schedule:
+    - cron: '0 6 * * *'
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  # CodeQL is intentionally NOT defined here. Use GitHub's "Default code scanning
+  # setup" (Settings → Code security → Code scanning → Set up → Default), which
+  # auto-detects languages and runs CodeQL on a managed schedule. The ruleset's
+  # `code_scanning` rule requires CodeQL results — both are wired up via default
+  # setup, not via this workflow file.
+
+  # Shared, containerised scan action: runs opengrep (SAST) + checkov (IaC) +
+  # OSSF scorecard + zizmor (Actions) + Trivy (vuln) + gitleaks (secrets) inside
+  # pinned-digest containers (via EarthBuild), and uploads SARIF to code scanning.
+  # One org-maintained action → dependabot (github-actions, see dependabot.yml)
+  # raises the bump PRs; no per-repo scanner maintenance.
+  # Trivy here is the sha-pinned CLI binary, NOT the aquasecurity GitHub action
+  # (dropped after the 2026 Aqua supply-chain compromise). gitleaks is the MIT CLI
+  # (no license required), so it covers private repos too.
+  # NOTE: SARIF upload to code scanning needs GitHub Advanced Security on private
+  # repos (org repos have it).
+  scan:
+    name: scan
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read           # attach SARIF to the run
+      contents: read
+      security-events: write  # upload SARIF to code scanning
+      statuses: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Scan and upload SARIF
+        uses: midnightntwrk/upload-sarif-github-action@f3d27fb4eb89c36506ca4c1ec5ff476a567b3542  # SHA-pinned; dependabot bumps
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          fail_severity: critical
