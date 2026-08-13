@@ -1,0 +1,126 @@
+# ADR 0005 — Pre-seeding the CLI, TUI and daemon
+
+- **Status:** Proposed
+- **Date:** 2026-08-12
+- **Related:** ADR 0003 (the mechanism and the `height <= birthday` guard), ADR 0004 (CI, storage and retrieval of published references), `packages/core/src/sync/preseed.ts`, `packages/extension/lib/offscreen/bundled-preseed.ts`
+
+## Context
+
+Pre-seeding lives in core. `startWalletSync` reads a reference and seeds a new
+wallet's sub-wallet caches from it, which is a path every run mode goes through —
+extension, `moth` CLI, TUI and `moth daemon serve` all call the same function.
+
+It looks shared. It is not. **No CLI or TUI wallet has ever been pre-seeded, and
+none can be**, because three independent conditions each fail on their own:
+
+1. **No birthday.** `startWalletSync` seeds only when `isNewWallet || birthday`
+   holds (`sync/wallet-sync.ts`), and the safety guard then requires
+   `reference.height <= birthday`. The CLI's `wallet generate` calls
+   `manager.generate(name, passphrase, network)` with no birthday
+   (`cli/src/commands/wallet/generate.ts`); the TUI does the same
+   (`tui/src/app.tsx`, `tui/src/hooks/useWallet.ts`). Only the extension passes
+   one, because only the extension asks the chain for its tip at creation time.
+   No CLI or TUI call site passes `isNewWallet` either — every one of them stops
+   at the `walletName` argument. The TUI even keeps a `newWallets` ref commented
+   *"eligible for pre-seed optimization"* that is never threaded through to the
+   sync call.
+
+2. **No reference to seed from.** `installBundledReference` is in the extension's
+   offscreen document. Nothing puts a reference into a CLI or daemon sync store.
+
+3. **No way to build one.** `warmEmptyRefCache` and `refreshEmptyRefCache` are
+   exported from core, but no CLI command calls either. The measurements in
+   `docs/BENCHMARKING.md` were taken with loose `scripts/*.mjs`, not through any
+   shipped command.
+
+So the run modes a developer reaches for first — CLI in CI, TUI at a desk — still
+pay the full walk: **78.6 min on preprod**, where the extension now takes 29.3s.
+The gap is invisible from the code, because the capability is present in the
+shared layer and only the wiring is missing.
+
+Worth stating plainly: this was not a decision anyone made. Pre-seeding was built
+for the extension's fresh-install problem, and the CLI was never wired up. The
+`newWallets` comment is evidence someone intended to and stopped.
+
+## Decision
+
+Three changes, in dependency order. Each is useful alone.
+
+### 1. Give CLI and TUI wallets a birthday
+
+`manager.generate` already takes `birthday?: number`. The CLI and TUI must
+resolve the chain tip at creation and pass it, as `walletSetActive` does in the
+extension.
+
+The safety rule from ADR 0003 is unchanged and non-negotiable: **only wallets
+generated locally get a birthday. A wallet restored from a mnemonic never does**,
+because it may hold funds at any height, and seeding it past its own history
+loses them silently. `manager.import` must keep passing nothing.
+
+This one change is worth making even before the rest: without a birthday, a
+reference cannot be used no matter how it arrives.
+
+### 2. A `dust preseed` command group
+
+```
+moth dust preseed status    # height, staleness, whether one exists
+moth dust preseed build     # first build for this network (tens of minutes)
+moth dust preseed refresh   # catch an existing one up (9.1s measured)
+moth dust preseed import <file>   # load a published reference
+moth dust preseed export <dir>    # write one out, as scripts/export-preseed.mjs does
+```
+
+`build` and `refresh` are thin wrappers over the core functions that already
+exist. `import`/`export` make the reference a portable artifact, which is what
+lets one machine's hour become every other machine's seconds — including CI,
+where a persistent per-network cache plus `refresh` costs seconds per run.
+
+This also promotes `scripts/export-preseed.mjs` from a loose script into a
+supported command, which is where the benchmark tooling should have been.
+
+### 3. Retrieval, deferred to ADR 0004
+
+A CLI cannot bundle a reference inside a signed package the way the extension
+does — that property is what makes the extension's bundling trustworthy without a
+new trust surface (`bundled-preseed.ts` argues this at length). A CLI fetching a
+reference over the network is exactly the case ADR 0004 is about, and it should
+be decided there rather than twice.
+
+Until then, `preseed import` plus a reference the operator produced or trusts is
+the honest answer: no new trust surface, no network dependency, and it works
+today.
+
+## Consequences
+
+**Good.** CI runs that create a wallet stop paying an hour. The TUI becomes usable
+on a fresh machine. `refresh` and `export` give the release process a supported
+path to produce the artifact the extension bundles, instead of a script someone
+remembers.
+
+**Cost.** Birthday resolution adds a tip query to wallet creation, so
+`wallet generate` now needs a reachable node. It must degrade to "no birthday,
+slow sync" rather than failing to create a wallet — a wallet the user can hold is
+worth more than a fast first sync.
+
+**Not addressed.** A first `build` still costs tens of minutes on the machine that
+does it. That is inherent until the wallet SDK consumes the collapsed-update
+endpoints (`docs/patterns/midnight-wallet-characteristics.md`), at which point
+this ADR and ADR 0003 both retire rather than migrating.
+
+**Deliberately excluded.** Auto-building on CLI startup. The extension's own
+comment on `ensureEmptyRefCache` explains why: an hour-long chain walk on the
+startup path is worse than a slow sync in the background, and a CLI command that
+silently blocks for an hour is worse still.
+
+## Alternatives considered
+
+**Leave it.** The CLI is a developer tool and developers can wait. Rejected on the
+evidence: CI is where waiting is most expensive and least visible, and the
+capability is already paid for.
+
+**Have the CLI build a reference automatically on first use.** Rejected — see
+above. The cost has to be something the operator chooses.
+
+**Skip birthdays and seed any wallet lacking a cache.** Rejected outright. This is
+the fund-loss bug ADR 0003 exists to prevent: a wallet with no cache may still
+have history, and seeding it past that history hides its coins with no error.

@@ -1,0 +1,24 @@
+<!-- 16px and 32px variant. A simplified mark is standard practice at toolbar
+     sizes: the antennae in icon.svg land under one pixel wide there and read as
+     grey fringe rather than detail, and the hindwing's deeper green muddies into
+     the forewing. So this drops the antennae, flattens to a single Moonlime, and
+     scales the moth up to fill the frame — a legible silhouette beats an accurate
+     one nobody can resolve.
+
+     The wings start off-centre so the ground shows through as a V between them:
+     that notch is what makes the shape read as a moth rather than a filled blob,
+     and it is the first thing lost when the mark is scaled down. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <g id="wing">
+      <path d="M35 22 C 47 22, 57 30, 62 41 C 50 44, 39 43, 35 38 Z" fill="#aeeb6b"/>
+      <path d="M35 37 C 42 39, 48 44, 46 51 C 39 54, 34 48, 33 41 Z" fill="#aeeb6b"/>
+    </g>
+  </defs>
+  <rect width="64" height="64" rx="13" fill="#1c1f36"/>
+  <g transform="translate(32 33) scale(1.06) translate(-32 -36)">
+    <use href="#wing"/>
+    <use href="#wing" transform="translate(64 0) scale(-1 1)"/>
+    <ellipse cx="32" cy="37" rx="3.2" ry="11" fill="#aeeb6b"/>
+  </g>
+</svg>

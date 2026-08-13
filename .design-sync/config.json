@@ -1,0 +1,59 @@
+{
+  "projectId": "4d762a17-fc17-4de6-a3bb-df526bf97000",
+  "shape": "package",
+  "pkg": "@shieldedtech/moth-extension",
+  "globalName": "Moth",
+  "srcDir": "components",
+  "buildCmd": "sh .design-sync/build-css.sh",
+  "cssEntry": ".ds-css/styles.css",
+  "readmeHeader": ".design-sync/conventions.md",
+  "overrides": {
+    "DialogShell": {
+      "cardMode": "single",
+      "primaryStory": "RemoveAccount"
+    }
+  },
+  "libOverrides": {
+    "source-kit.mjs": "exclude components/screens/ from the synth entry (app screens import the wallet SDK/WASM); prefer JSDoc @category over path-derived groups (ui/ and moth/ dirs aren't the taxonomy)"
+  },
+  "componentSrcMap": {
+    "Button": "components/ui/button.tsx",
+    "Input": "components/ui/input.tsx",
+    "Card": "components/ui/card.tsx",
+    "Separator": "components/ui/card.tsx",
+    "Badge": "components/ui/card.tsx",
+    "Tabs": "components/ui/tabs.tsx",
+    "TabsList": "components/ui/tabs.tsx",
+    "TabsTrigger": "components/ui/tabs.tsx",
+    "TabsContent": "components/ui/tabs.tsx",
+    "DialogShell": "components/ui/dialog.tsx",
+    "PanelScreen": "components/moth/panel.tsx",
+    "PanelHeader": "components/moth/panel.tsx",
+    "Crescent": "components/moth/panel.tsx",
+    "TokenIcon": "components/moth/token.tsx",
+    "NoteCard": "components/moth/note-card.tsx",
+    "StatusHero": "components/moth/status.tsx",
+    "SyncStatus": "components/moth/sync-status.tsx",
+    "StepChecklist": "components/moth/status.tsx",
+    "DetailCard": "components/moth/status.tsx",
+    "DustMeterCard": "components/moth/dust.tsx",
+    "DustRingGauge": "components/moth/dust.tsx",
+    "WordChipGrid": "components/moth/words.tsx",
+    "WordInputGrid": "components/moth/words.tsx",
+    "SitePair": "components/moth/dapp.tsx",
+    "SiteChip": "components/moth/dapp.tsx",
+    "PermissionList": "components/moth/dapp.tsx",
+    "Home": null,
+    "SendFlow": null,
+    "Receive": null,
+    "Settings": null,
+    "Accounts": null,
+    "Unlock": null,
+    "GetStarted": null,
+    "DustDetail": null,
+    "Approval": null,
+    "ConnectedSites": null,
+    "MothMark": "components/moth/panel.tsx",
+    "OrbitingMoth": "components/moth/panel.tsx"
+  }
+}

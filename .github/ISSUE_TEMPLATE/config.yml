@@ -1,10 +1,10 @@
 blank_issues_enabled: false
 contact_links:
   - name: Questions and discussion
-    url: https://github.com/shieldedtech/REPO_NAME/discussions
-    about: Ask questions and discuss usage in Discussions instead of opening an issue.
+    url: https://github.com/shieldedtech/moth-wallet/blob/main/SUPPORT.md
+    about: See SUPPORT.md for how to ask questions — please do not open an issue for questions.
   - name: Security vulnerability
-    url: https://github.com/shieldedtech/REPO_NAME/security/advisories/new
+    url: https://github.com/shieldedtech/moth-wallet/security/advisories/new
     about: Report security issues privately via GitHub Security Advisories — never as a public issue.
   - name: Code of conduct concerns
     url: mailto:conduct@shielded.io

@@ -1,0 +1,42 @@
+{
+  "name": "moth-wallet",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "packageManager": "yarn@4.14.1+sha512.64df448055b2d37ba269d7db535a469b8da93f8ef1140c25fd7a83c00a8fbaacb214ca0e02553b92a2c54cef78bb67d0b4817fab02001df0e24fac0faccc3b42",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev:mock-dapp": "yarn workspace @shieldedtech/moth-mock-dapp dev",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "turbo run lint",
+    "clean": "turbo run clean",
+    "changeset": "changeset",
+    "version": "changeset version",
+    "release": "changeset publish"
+  },
+  "resolutions": {
+    "@midnight-ntwrk/compact-js": "2.5.1",
+    "@midnight-ntwrk/ledger-v8": "8.1.0",
+    "@vitejs/plugin-react": "^5",
+    "adm-zip": ">=0.6.0",
+    "brace-expansion": ">=5.0.9",
+    "esbuild": ">=0.28.1",
+    "js-yaml": "^4.3.1",
+    "shell-quote": ">=1.9.0",
+    "tmp": ">=0.2.6",
+    "uuid": "^11.1.1",
+    "vite": "^7.3.5",
+    "ws": ">=8.20.1"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.31.0",
+    "turbo": "^2.9.14",
+    "typescript": "^5.5.0",
+    "vitest": "^3.1.0"
+  }
+}

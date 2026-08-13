@@ -47,3 +47,8 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           fail_severity: critical
+          # Interim: Trivy's fs scan runs ~29 min on this monorepo's large
+          # lockfile (vs ~1s on repos without one). Skipped until the shared
+          # action's Trivy step is made performant on large lockfiles; every
+          # other scanner still runs.
+          skip_trivy_scan: "true"

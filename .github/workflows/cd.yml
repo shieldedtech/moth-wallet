@@ -1,0 +1,97 @@
+name: Extension CD
+
+on:
+  push:
+    tags:
+      - 'moth-extension-v*'
+
+concurrency:
+  group: extension-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-extension:
+    name: Build and release extension
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: yarn
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Build extension dependencies
+        run: |
+          yarn workspace @shieldedtech/moth-wallet build
+          yarn workspace @shieldedtech/moth-browser build
+
+      - name: Validate release version
+        id: release
+        shell: bash
+        run: |
+          version="$(node -p "require('./packages/extension/package.json').version")"
+          expected_tag="moth-extension-v${version}"
+
+          if [[ "$GITHUB_REF_NAME" != "$expected_tag" ]]; then
+            echo "Tag $GITHUB_REF_NAME does not match extension version $version." >&2
+            echo "Expected tag: $expected_tag" >&2
+            exit 1
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "artifact=packages/extension/.output/moth-extension-${version}-chrome.zip" >> "$GITHUB_OUTPUT"
+
+      - name: Typecheck extension
+        run: yarn workspace @shieldedtech/moth-extension compile
+
+      - name: Build extension ZIP
+        run: yarn workspace @shieldedtech/moth-extension zip
+
+      - name: Verify extension ZIP
+        env:
+          ARTIFACT: ${{ steps.release.outputs.artifact }}
+        run: |
+          test -s "$ARTIFACT"
+          unzip -tq "$ARTIFACT"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT: ${{ steps.release.outputs.artifact }}
+          VERSION: ${{ steps.release.outputs.version }}
+        shell: bash
+        run: |
+          release_args=(
+            "$GITHUB_REF_NAME"
+            "$ARTIFACT#Moth Wallet Extension for Chrome (Manifest V3)"
+            --repo "$GITHUB_REPOSITORY"
+            --verify-tag
+            --title "Moth Wallet Extension v${VERSION}"
+            --generate-notes
+          )
+
+          if [[ "$VERSION" == *-* ]]; then
+            release_args+=(--prerelease)
+          fi
+
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" \
+              "$ARTIFACT#Moth Wallet Extension for Chrome (Manifest V3)" \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber
+          else
+            gh release create "${release_args[@]}"
+          fi
