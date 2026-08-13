@@ -5,8 +5,8 @@ This repository uses [Changesets](https://github.com/changesets/changesets) for 
 ## Setup (One-time)
 
 Publishing uses **npm Trusted Publishing (OIDC)** under the `@shieldedtech` scope — there is no
-long-lived npm token in CI. The one-time setup (npm org, a token-bootstrap first publish, and
-configuring trusted publishers) is an SRE task documented in
+long-lived npm token in CI. Configuring and verifying each package's trusted publisher is an SRE
+task documented in
 **[SRE_PUBLISHING_SETUP.md](./SRE_PUBLISHING_SETUP.md)**. Developers do not need an npm token.
 
 ## Creating a Release
@@ -79,7 +79,9 @@ When you push to `main`, the GitHub Action will:
 
 ## Package Access
 
-The `@shieldedtech/moth-wallet` package is published as **public** and available on npm.
+The three published packages are **restricted** while the repository completes the open-source
+governance process. Do not change npm access or repository visibility until the governance case
+records a final GO decision.
 
 ## Semver Guidelines
 
@@ -87,22 +89,11 @@ The `@shieldedtech/moth-wallet` package is published as **public** and available
 - **Minor** (1.0.0 → 1.1.0): New features, backwards compatible
 - **Patch** (1.0.0 → 1.0.1): Bug fixes, backwards compatible
 
-## Manual Publishing (Emergency)
+## Manual Publishing
 
-Prefer fixing the workflow over publishing by hand — manual publishes cannot use OIDC trusted
-publishing and will not have provenance. If you must publish manually, you need an npm token with
-publish rights to `@shieldedtech` configured locally (`npm login`), then:
-
-```bash
-# Bump versions
-yarn changeset version
-
-# Build packages
-yarn build
-
-# Publish (uses your local npm credentials)
-yarn release
-```
+Manual publishing is unsupported because it bypasses the reviewed GitHub Actions identity and
+release evidence. Fix or rerun the workflow. Any emergency exception requires explicit SRE approval
+and must preserve the open-source governance gate.
 
 ## Consuming @shieldedtech/moth-wallet in Other Projects
 
@@ -131,10 +122,8 @@ In steady state publishing is OIDC-based. Make sure:
 
 ### "You do not have permission to publish"
 
-Ensure the publishing identity has access to the `@shieldedtech` org. For a manual publish:
-```bash
-npm owner add <username> @shieldedtech/moth-wallet
-```
+Confirm the package has a trusted publisher that exactly matches this repository and workflow, and
+that the publishing job is running from the permitted branch and GitHub-hosted environment.
 
 ### "Package already exists"
 

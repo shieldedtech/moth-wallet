@@ -59,25 +59,23 @@ jobs:
             echo "hasReleases=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # A single changesets/action drives the whole release lifecycle:
-      #   - changesets present → runs `yarn version`, opens/updates the "version packages" PR
-      #   - no changesets left → runs `yarn release` (publish), pushes the git tags, and
-      #                          creates a GitHub Release for each newly published package
-      # Publishing uses npm Trusted Publishing (OIDC): with `id-token: write` and no NPM_TOKEN,
-      # the action publishes via the OIDC token — no stored credential. Already-published
-      # versions are skipped, so a push that releases nothing is a clean no-op.
-      #
-      # Steady state only: packages must already exist on npm and have a trusted publisher
-      # configured. The first publish is a one-time token bootstrap — see
-      # .github/workflows/publish-bootstrap.yml and SRE_PUBLISHING_SETUP.md.
-      - name: Version PR / Publish (Trusted Publishing + provenance)
+          CHANGESET_COUNT=$(find .changeset -maxdepth 1 -type f -name '*.md' ! -name README.md | wc -l | tr -d ' ')
+          if [ "${CHANGESET_COUNT:-0}" -gt 0 ]; then
+            echo "hasChangesets=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "hasChangesets=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Use the machine-user PAT only while opening or updating the version PR.
+      # It is deliberately absent from the stable publish process below.
+      - name: Create or update version PR
+        if: ${{ steps.releases.outputs.hasChangesets == 'true' }}
         uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d  # v1.9.0
         with:
           # `yarn run` so Yarn Berry runs the package scripts, not its built-in
           # `yarn version` command (which needs a <strategy> arg and ignores the
           # "version" script — the cause of the release failure).
           version: yarn run version
-          publish: yarn run release
           title: "chore: version packages"
           commit: "chore: version packages"
         env:
@@ -87,15 +85,16 @@ jobs:
           # the "version packages" PR. A machine-user token is exempt and creates
           # the PR as MidnightCI.
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
-          # Publish auth: token (shielded-bot), NOT OIDC. OIDC trusted publishing
-          # fails these PRIVATE packages with E409 "Failed to save packument"
-          # (same action + token published 0.1.0 fine via publish-bootstrap.yml).
-          # changesets/action writes an .npmrc from NPM_TOKEN. Switch back to OIDC
-          # when @shieldedtech/moth-* go public.
-          NPM_TOKEN: ${{ secrets.SHIELDED_NPMJS_TOKEN }}
-          # Provenance requires PUBLIC packages; these are private for now.
-          # Flip back to true when @shieldedtech/moth-* go public.
-          NPM_CONFIG_PROVENANCE: false
+
+      # With no Changesets left, publish through npm Trusted Publishing (OIDC),
+      # then use the ephemeral Actions token for tags and GitHub Releases.
+      - name: Publish stable release
+        if: ${{ steps.releases.outputs.hasChangesets == 'false' }}
+        uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d  # v1.9.0
+        with:
+          publish: yarn run release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
 
   # Publishes a snapshot under the `canary` dist-tag on every merge to main that
   # has pending changesets (i.e. before the "version packages" PR is merged).
@@ -125,23 +124,11 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: 'yarn'
-          # Token auth (below) needs a registry-scoped .npmrc that reads
-          # NODE_AUTH_TOKEN — see the publish step for why token, not OIDC.
-          registry-url: 'https://registry.npmjs.org'
 
       - name: Install Dependencies
         run: yarn install --immutable
 
       - name: Publish canary snapshot
-        env:
-          # Publish auth: token (shielded-bot), NOT OIDC. OIDC trusted publishing
-          # fails these PRIVATE packages with E409 "Failed to save packument"; the
-          # token published 0.1.0 fine (publish-bootstrap.yml). setup-node's
-          # registry-url wires this into .npmrc. Switch to OIDC when public.
-          NODE_AUTH_TOKEN: ${{ secrets.SHIELDED_NPMJS_TOKEN }}
-          # Provenance requires PUBLIC packages; these are private for now.
-          # Flip back to true when @shieldedtech/moth-* go public.
-          NPM_CONFIG_PROVENANCE: false
         run: |
           set -euo pipefail
           SHORT_SHA=$(git rev-parse --short=7 HEAD)
