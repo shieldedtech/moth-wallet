@@ -1,0 +1,7 @@
+#!/usr/bin/env node
+// Local-dev launcher for a source checkout. The published `moth` binary is
+// dist/index.js (see package.json "bin"); this wrapper lets
+// `./packages/cli/bin/moth` resolve after `yarn build` — matching docs/TESTING.md
+// and the daemon integration harness (tests/integration/daemon/helpers.ts,
+// which spawns MOTH_BIN = ../../../bin/moth). Requires a prior `yarn build`.
+import(new URL('../dist/index.js', import.meta.url));

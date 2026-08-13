@@ -1,0 +1,22 @@
+<!-- Extension icon: the mark on a Midnight Ink ground.
+     Generated to packages/extension/public/icon/{16,32,48,128,512}.png by
+     brand/build-icons.sh. Padded so the silhouette is not clipped by the rounded
+     corners a launcher may apply on top. Antennae are drawn heavier here than in
+     moth.svg: at 16px a hairline stroke disappears into the ground. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <g id="wing">
+      <path d="M32 21 C 45 21, 56 29, 61 40 C 49 43, 38 42, 33 37 Z" fill="#aeeb6b"/>
+      <path d="M33 36 C 41 38, 47 43, 45 50 C 38 53, 33 47, 32 40 Z" fill="#7fb544"/>
+    </g>
+  </defs>
+  <rect width="64" height="64" rx="13" fill="#1c1f36"/>
+  <g transform="translate(32 33) scale(0.88) translate(-32 -31)">
+    <use href="#wing"/>
+    <use href="#wing" transform="translate(64 0) scale(-1 1)"/>
+    <path d="M30 19 C 25 13, 20 10, 15 9" stroke="#aeeb6b" stroke-width="2.8" stroke-linecap="round" fill="none"/>
+    <path d="M34 19 C 39 13, 44 10, 49 9" stroke="#aeeb6b" stroke-width="2.8" stroke-linecap="round" fill="none"/>
+    <ellipse cx="32" cy="35" rx="3.5" ry="13" fill="#aeeb6b"/>
+    <circle cx="32" cy="21" r="3.8" fill="#aeeb6b"/>
+  </g>
+</svg>

@@ -49,8 +49,8 @@ A `Rejected` ADR is still valuable — it documents *why* we said no.
 
 ## Index
 
-| #    | Title                        | Status | Date |
-| ---- | ---------------------------- | ------ | ---- |
-| 0000 | [Template](0000-template.md) | n/a    | —    |
+| #    | Title                                                      | Status   | Date       |
+| ---- | ---------------------------------------------------------- | -------- | ---------- |
+| 0000 | [Template](0000-template.md)                               | n/a      | —          |
 
 Add a row to this table when you accept an ADR. Keep entries chronological.

@@ -1,39 +1,26 @@
 # Overview
 
-<!-- What does this PR do, and why? -->
+<!-- Describe your changes briefly here, with some context as to why this is needed. -->
 
-## Type of change
+## Submission Checklist
 
-<!-- Mark all that apply. -->
+<!-- Please check all the boxes that apply to your pull request. -->
 
-- [ ] Bug fix
-- [ ] New feature
-- [ ] Breaking change
-- [ ] Documentation
-- [ ] Refactor / internal cleanup
-- [ ] CI / tooling
-- [ ] Security fix
-
-## Submission checklist
-
-- [ ] PR description explains the change
-- [ ] Commits are signed (`git commit -S`) and signed off (`--signoff`) for DCO
-- [ ] Tests added or updated
-- [ ] Documentation updated (if user-facing behavior changed)
-- [ ] CI is green
+- [ ] Useful pull request description
+- [ ] Tests are provided (if possible)
+- [ ] Key commits have useful messages
+- [ ] All check jobs of the CI have succeeded
 - [ ] Self-reviewed the diff
-- [ ] CODEOWNERS review requested
-- [ ] No TODOs / debug prints / commented-out code left behind
+- [ ] Reviewer requested
+- [ ] Update README.md file (if relevant)
+- [ ] Update documentation (if relevant)
+- [ ] No new todos introduced
 
-## Related issues
-
-<!--
-Link issues this PR closes. Use "Closes #123" syntax so they auto-close on merge.
--->
-
-## Security considerations
+## Links
 
 <!--
-For changes that touch authentication, cryptography, privacy boundaries, or external input handling:
-describe the threat model and what you verified. For everything else: write "n/a".
+- Link any relevant Confluence or additional Jira tickets if need be
+- If your PR closes some of the existing issues, please add links to them here.
+  Mentioned issues will be automatically closed.
+  Usage: "Closes #<issue number>", or "Closes (paste link of issue)"
 -->

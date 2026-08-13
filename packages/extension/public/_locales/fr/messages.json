@@ -1,0 +1,1544 @@
+{
+  "accounts_title": {
+    "message": "Comptes"
+  },
+  "accounts_newAccount": {
+    "message": "+ Nouveau compte"
+  },
+  "accounts_intro": {
+    "message": "Chaque compte a ses propres adresses shielded et unshielded, plus son état de génération de frais."
+  },
+  "accounts_networkAria": {
+    "message": "Réseau : $1"
+  },
+  "accounts_menuAria": {
+    "message": "Menu du compte"
+  },
+  "accounts_renameMenu": {
+    "message": "Renommer le compte"
+  },
+  "accounts_removeMenu": {
+    "message": "Supprimer le compte"
+  },
+  "accounts_removeNote": {
+    "message": "Supprimer un compte ne fait que le masquer ici. Vous pourrez le retrouver avec votre phrase secrète."
+  },
+  "accounts_removeTitle": {
+    "message": "Supprimer $1 ?"
+  },
+  "accounts_removeBody": {
+    "message": "Le compte sera masqué dans Moth. Ses adresses et jetons restent sur Midnight. Vous pourrez le retrouver à tout moment avec vos 24 mots."
+  },
+  "accounts_renameTitle": {
+    "message": "Renommer $1"
+  },
+  "accounts_namePlaceholder": {
+    "message": "Nom du compte"
+  },
+  "accounts_renameHint": {
+    "message": "Visible uniquement dans ce portefeuille. Laissez vide pour revenir au nom par défaut."
+  },
+  "accounts_revealMenu": {
+    "message": "Révéler la phrase secrète"
+  },
+  "accounts_revealTitle": {
+    "message": "Phrase secrète de $1"
+  },
+  "accounts_revealHint": {
+    "message": "Saisissez le mot de passe de ce compte pour révéler sa phrase secrète."
+  },
+  "accounts_revealPasswordPlaceholder": {
+    "message": "Mot de passe du compte"
+  },
+  "accounts_revealButton": {
+    "message": "Révéler"
+  },
+  "accounts_revealWrongPassword": {
+    "message": "Mot de passe incorrect pour ce compte."
+  },
+  "accounts_revealWarning": {
+    "message": "Quiconque possède ces mots peut dépenser vos tokens. Ne faites pas de capture d'écran et ne les partagez jamais, pas même avec nous."
+  },
+  "accounts_revealSeedNote": {
+    "message": "Ce compte a été importé depuis une seed hexadécimale brute, il n'a donc pas de phrase de mots. Sauvegardez plutôt cette seed."
+  },
+  "accounts_revealCopy": {
+    "message": "Copier dans le presse-papiers"
+  },
+  "accounts_revealCopied": {
+    "message": "Phrase secrète copiée — collez-la en lieu sûr. Elle sera effacée du presse-papiers dans 1 minute."
+  },
+  "activity_title": {
+    "message": "Activité"
+  },
+  "activity_filterAll": {
+    "message": "Tout"
+  },
+  "activity_filterSent": {
+    "message": "Envoyés"
+  },
+  "activity_filterReceived": {
+    "message": "Reçus"
+  },
+  "activity_emptyTitle": {
+    "message": "Rien pour l'instant"
+  },
+  "activity_emptyBody": {
+    "message": "Vos transferts apparaîtront ici."
+  },
+  "activity_groupEarlier": {
+    "message": "Plus ancien"
+  },
+  "activity_groupToday": {
+    "message": "Aujourd'hui"
+  },
+  "activity_groupYesterday": {
+    "message": "Hier"
+  },
+  "activity_groupThisWeek": {
+    "message": "Cette semaine"
+  },
+  "activity_groupThisMonth": {
+    "message": "Ce mois-ci"
+  },
+  "activity_sendingTo": {
+    "message": "Envoi à $1"
+  },
+  "activity_sendingToken": {
+    "message": "Envoi de $1"
+  },
+  "activity_sending": {
+    "message": "Envoi en cours"
+  },
+  "activity_sendingTransfers": {
+    "message": "Envoi de $1 transferts"
+  },
+  "activity_sentTo": {
+    "message": "Envoyé à $1"
+  },
+  "activity_sentToken": {
+    "message": "$1 envoyé"
+  },
+  "activity_sent": {
+    "message": "Envoyé"
+  },
+  "activity_sentTransfers": {
+    "message": "$1 transferts envoyés"
+  },
+  "activity_receivedFrom": {
+    "message": "Reçu de $1"
+  },
+  "activity_receivedToken": {
+    "message": "$1 reçu"
+  },
+  "activity_received": {
+    "message": "Reçu"
+  },
+  "activity_swappedFor": {
+    "message": "Échange de $1 contre $2"
+  },
+  "activity_swappedTokens": {
+    "message": "Jetons échangés"
+  },
+  "activity_networkFeePaid": {
+    "message": "Frais de réseau payés"
+  },
+  "activity_dustRegistration": {
+    "message": "Enregistrement $1"
+  },
+  "activity_pending": {
+    "message": "En attente"
+  },
+  "activity_failed": {
+    "message": "Échec"
+  },
+  "activity_subPending": {
+    "message": "$1 · En attente"
+  },
+  "activity_subFailed": {
+    "message": "$1 · Échec"
+  },
+  "addressBook_title": {
+    "message": "Carnet d'adresses"
+  },
+  "addressBook_addAddress": {
+    "message": "+ Ajouter une adresse"
+  },
+  "addressBook_intro": {
+    "message": "Enregistrez les adresses auxquelles vous envoyez. Elles apparaissent comme choix lors de l'envoi de jetons ou de l'orientation du DUST."
+  },
+  "addressBook_empty": {
+    "message": "Aucune adresse enregistrée pour l'instant. Ajoutez les personnes et services auxquels vous envoyez."
+  },
+  "addressBook_actionsFor": {
+    "message": "Actions pour $1"
+  },
+  "addressBook_editTitle": {
+    "message": "Modifier l'adresse"
+  },
+  "addressBook_addTitle": {
+    "message": "Ajouter une adresse"
+  },
+  "addressBook_name": {
+    "message": "Nom"
+  },
+  "addressBook_namePlaceholder": {
+    "message": "p. ex. Alice"
+  },
+  "addressBook_address": {
+    "message": "Adresse"
+  },
+  "addressBook_addressPlaceholder": {
+    "message": "mn_addr… / mn_shield-addr… / mn_dust…"
+  },
+  "addressBook_addressAria": {
+    "message": "Adresse"
+  },
+  "addressBook_paste": {
+    "message": "Coller"
+  },
+  "addressBook_openPicker": {
+    "message": "Carnet d'adresses"
+  },
+  "addressBook_pickerTitle": {
+    "message": "Adresses $1"
+  },
+  "addressBook_edit": {
+    "message": "Modifier"
+  },
+  "addressBook_delete": {
+    "message": "Supprimer"
+  },
+  "addressBook_detected": {
+    "message": "Detected a $1 address."
+  },
+  "addressBook_notMidnight": {
+    "message": "That doesn't look like a Midnight address."
+  },
+  "addressBook_autoRecognized": {
+    "message": "Shielded, unshielded and DUST addresses are all recognized automatically."
+  },
+  "approval_requestExpired": {
+    "message": "Cette demande a expiré."
+  },
+  "approval_reject": {
+    "message": "Refuser"
+  },
+  "approval_connect": {
+    "message": "Connecter"
+  },
+  "approval_sign": {
+    "message": "Signer"
+  },
+  "approval_approve": {
+    "message": "Approuver"
+  },
+  "approval_connectTo": {
+    "message": "Se connecter à"
+  },
+  "approval_connectToHost": {
+    "message": "$1 ?"
+  },
+  "approval_firstTimeConnecting": {
+    "message": "Première connexion"
+  },
+  "approval_canSeeAddresses": {
+    "message": "Voir vos adresses"
+  },
+  "approval_canAskApprove": {
+    "message": "Vous demander d'approuver des transactions"
+  },
+  "approval_cantMoveMoney": {
+    "message": "Déplacer des fonds sans votre accord"
+  },
+  "approval_cantSeeBalances": {
+    "message": "Voir vos soldes shielded ou votre historique"
+  },
+  "approval_connectingAs": {
+    "message": "Connexion en tant que"
+  },
+  "approval_signTitle": {
+    "message": "Signer ce message ?"
+  },
+  "approval_signSubtitle": {
+    "message": "$1 demande une signature prouvant que vous contrôlez ce portefeuille."
+  },
+  "approval_messageLabel": {
+    "message": "Message"
+  },
+  "approval_emptyMessage": {
+    "message": "(vide)"
+  },
+  "approval_signNote": {
+    "message": "Signer ne déplace aucun fonds, mais ne signez que des messages de sites de confiance."
+  },
+  "approval_allow": {
+    "message": "Autoriser"
+  },
+  "approval_deriveTitle": {
+    "message": "Autoriser un secret d’app ?"
+  },
+  "approval_deriveSubtitle": {
+    "message": "$1 demande un secret d’identité privé et persistant pour ce site."
+  },
+  "approval_deriveLabelLabel": {
+    "message": "Étiquette"
+  },
+  "approval_deriveNote": {
+    "message": "Cela accorde un secret persistant propre à ce site. Il ne déplace aucun fonds et ne peut ni dépenser ni révéler vos clés — ne l’autorisez que pour les sites de confiance."
+  },
+  "approval_approveTitle": {
+    "message": "Approuver cette transaction ?"
+  },
+  "approval_balanceSubtitle": {
+    "message": "$1 a construit une transaction et a besoin de votre portefeuille pour couvrir les frais et la finaliser."
+  },
+  "approval_fromLabel": {
+    "message": "De"
+  },
+  "approval_networkFeeLabel": {
+    "message": "Frais de réseau"
+  },
+  "approval_paidIn": {
+    "message": "Payés en $1"
+  },
+  "approval_balanceNote": {
+    "message": "Votre portefeuille peut ajouter ses propres fonds pour équilibrer cette transaction. N'approuvez que les transactions de sites de confiance."
+  },
+  "approval_transferSubtitle": {
+    "message": "Rien ne bouge avant votre approbation."
+  },
+  "approval_youSend": {
+    "message": "Vous envoyez"
+  },
+  "approval_usingLabel": {
+    "message": "Via"
+  },
+  "approval_transferNote": {
+    "message": "Prouvé par une preuve à divulgation nulle, le site ne voit jamais vos soldes."
+  },
+  "approval_unlockToContinue": {
+    "message": "Déverrouillez pour continuer"
+  },
+  "approval_passwordPlaceholder": {
+    "message": "Mot de passe"
+  },
+  "approval_wrongPassword": {
+    "message": "Ce mot de passe ne correspond pas. Réessayez."
+  },
+  "approval_unlocking": {
+    "message": "Déverrouillage…"
+  },
+  "approval_unlock": {
+    "message": "Déverrouiller"
+  },
+  "common_cancel": {
+    "message": "Annuler"
+  },
+  "common_save": {
+    "message": "Enregistrer"
+  },
+  "common_back": {
+    "message": "Retour"
+  },
+  "common_close": {
+    "message": "Fermer"
+  },
+  "common_done": {
+    "message": "Terminé"
+  },
+  "common_remove": {
+    "message": "Supprimer"
+  },
+  "common_extName": {
+    "message": "Moth Wallet (Dev)"
+  },
+  "common_extDescription": {
+    "message": "Portefeuille de référence pour le Midnight Network. Développement et tests uniquement — pas pour des fonds sur le mainnet."
+  },
+  "dapp_siteCan": {
+    "message": "Ce site peut"
+  },
+  "dapp_siteCant": {
+    "message": "Il ne peut pas"
+  },
+  "dust_waitingForSync": {
+    "message": "En attente de la synchro…"
+  },
+  "dust_startGenerating": {
+    "message": "Commencer à générer du $1"
+  },
+  "dust_registerAmount": {
+    "message": "Enregistrer $1 $2"
+  },
+  "dust_stopGenerating": {
+    "message": "Arrêter de générer $1"
+  },
+  "dust_percentGenerated": {
+    "message": "$1 % généré"
+  },
+  "dust_generatedNow": {
+    "message": "Généré actuellement"
+  },
+  "dust_amountLabel": {
+    "message": "$1 $2"
+  },
+  "dust_totalPossible": {
+    "message": "Total possible"
+  },
+  "dust_fromYourNight": {
+    "message": "De vos $1 $2"
+  },
+  "dust_fromYourNightGenerating": {
+    "message": "From your $1 $2 generating now"
+  },
+  "dust_generationRate": {
+    "message": "Taux de génération"
+  },
+  "dust_setByNetwork": {
+    "message": "Défini par le réseau"
+  },
+  "dust_variable": {
+    "message": "Variable"
+  },
+  "dust_generationRow": {
+    "message": "Génération de Dust"
+  },
+  "dust_registeredGenerating": {
+    "message": "Enregistré — génération en cours"
+  },
+  "dust_notRegistered": {
+    "message": "Non enregistré"
+  },
+  "dust_noteRegistered": {
+    "message": "Vos $1 sont enregistrés — le $2 s'accumule tout seul tant que vous les détenez. Les $1 reçus plus tard s'enregistrent automatiquement."
+  },
+  "dust_noteRegisteredHold": {
+    "message": "Your $1 is registered — $2 builds up on its own while you hold it, and $1 you receive later joins in by itself."
+  },
+  "dust_noteUnregistered": {
+    "message": "Enregistrez vos $1 pour commencer à générer du $2. Les $1 reçus plus tard s'enregistrent automatiquement."
+  },
+  "dust_noteRegisterPrompt": {
+    "message": "Register your $1 to start generating $2. $1 you receive afterwards joins in by itself."
+  },
+  "dust_noteNoNight": {
+    "message": "Le $1 s'accumule tout seul tant que vous détenez des $2. Payer des frais en consomme un peu, puis il se recharge."
+  },
+  "dust_noteUnregisteredSome": {
+    "message": "$1 $2 isn't registered for $3 generation. Register it to raise your total."
+  },
+  "dust_noteNotGenerating": {
+    "message": "$1 $2 isn't generating $3 yet — new or recently moved $2 starts on its own after a short delay. If this amount doesn't shrink, resync from Settings → Network."
+  },
+  "dust_syncingWallet": {
+    "message": "Synchronisation de $1…"
+  },
+  "dust_finalAmounts": {
+    "message": "Les montants définitifs s'afficheront une fois la synchro terminée."
+  },
+  "dust_generateTitle": {
+    "message": "Générer du $1 ?"
+  },
+  "dust_register": {
+    "message": "Enregistrer"
+  },
+  "dust_stop": {
+    "message": "Arrêter"
+  },
+  "dust_stopTitle": {
+    "message": "Arrêter de générer $1 ?"
+  },
+  "dust_generateBody": {
+    "message": "Ceci enregistre vos $1 pour qu'ils commencent à générer du $2. Les $1 reçus plus tard s'enregistrent automatiquement."
+  },
+  "dust_generateBodyReceiver": {
+    "message": "This registers your unregistered $1 so it starts generating $2. You can do this again whenever you receive more $1."
+  },
+  "dust_deregisterBody": {
+    "message": "This deregisters your $1 from $2 generation. The $2 you have stays and still pays fees, but it won't refill. You can register again anytime."
+  },
+  "dust_addressLabel": {
+    "message": "$1 address"
+  },
+  "dust_receiverHint": {
+    "message": "Where the generated $1 goes. Prefilled with this wallet's own address."
+  },
+  "dust_receiverInvalid": {
+    "message": "That doesn't look like a $1 address (mn_dust…)."
+  },
+  "dust_registeringFor": {
+    "message": "Enregistrement $1 en cours…"
+  },
+  "dust_stoppingGeneration": {
+    "message": "Arrêt de la génération de $1…"
+  },
+  "dust_pendingSub1": {
+    "message": "Cela prend généralement moins d'une minute."
+  },
+  "dust_pendingSub2": {
+    "message": "Vous pouvez fermer le panneau, nous continuons."
+  },
+  "dust_stepBuilt": {
+    "message": "Enregistrement construit"
+  },
+  "dust_stepBuiltTx": {
+    "message": "Transaction créée"
+  },
+  "dust_stepProving": {
+    "message": "Génération de la preuve"
+  },
+  "dust_stepProvingSub": {
+    "message": "S'exécute sur votre serveur de preuve, les détails n'en sortent jamais"
+  },
+  "dust_stepSubmitting": {
+    "message": "Envoi au réseau"
+  },
+  "dust_alreadyGeneratingTitle": {
+    "message": "Vous générez déjà du $1"
+  },
+  "dust_coinsTitle": {
+    "message": "Vos pièces $1"
+  },
+  "dust_coinsShow": {
+    "message": "Afficher le détail"
+  },
+  "dust_coinsHide": {
+    "message": "Masquer le détail"
+  },
+  "dust_coinsRegistered": {
+    "message": "Génère"
+  },
+  "dust_coinsUnregistered": {
+    "message": "Non enregistrée"
+  },
+  "dust_coinsBooked": {
+    "message": "Réservée par une transaction en attente"
+  },
+  "dust_coinsBookedNote": {
+    "message": "$1 de vos $2 sont réservés par une transaction non encore réglée. Les pièces réservées comptent dans votre solde mais ne peuvent pas être enregistrées avant."
+  },
+  "dust_coinsEmpty": {
+    "message": "Aucune pièce $1."
+  },
+  "dust_generatingTitle": {
+    "message": "Vous générez du $1"
+  },
+  "dust_alreadyGeneratingSub": {
+    "message": "Vos $1 étaient déjà enregistrés. Le $2 continue de s'accumuler tant que vous les détenez."
+  },
+  "dust_generatingSub": {
+    "message": "Vos $1 sont enregistrés. Le $2 commencera à s'accumuler au fil de la synchro."
+  },
+  "dust_generationStopped": {
+    "message": "$1 generation stopped"
+  },
+  "dust_deregisteredSub": {
+    "message": "Your $1 is deregistered. The $2 you have keeps paying fees; register again anytime."
+  },
+  "dust_failureTitle": {
+    "message": "Ça n'a pas abouti"
+  },
+  "dust_failureSub": {
+    "message": "Vos $1 n'ont pas été enregistrés. Rien n'a été dépensé."
+  },
+  "dust_deregisterFailureSub": {
+    "message": "Nothing changed — your $1 is still registered."
+  },
+  "dust_tryAgain": {
+    "message": "Réessayer"
+  },
+  "dust_backToHome": {
+    "message": "Retour à l'accueil"
+  },
+  "dust_reason": {
+    "message": "Raison"
+  },
+  "dust_unknownError": {
+    "message": "Erreur inconnue"
+  },
+  "dust_failureFootnote": {
+    "message": "Si le serveur de preuve n'a pas répondu, vérifiez Paramètres, puis Réseau."
+  },
+  "dust_provingFootnote": {
+    "message": "If proving failed, check the selected method under Settings → Network. Complex transactions require a proof server."
+  },
+  "dust_paysYourFees": {
+    "message": "Paie vos frais"
+  },
+  "dust_ofMax": {
+    "message": "sur $1"
+  },
+  "dust_ofMaxWithLabel": {
+    "message": "sur $1 $2"
+  },
+  "dust_etaWaitingFor": {
+    "message": "En attente de $1"
+  },
+  "dust_etaSyncing": {
+    "message": "Synchronisation…"
+  },
+  "dust_etaFullyGenerated": {
+    "message": "Entièrement généré"
+  },
+  "dust_etaFullInMin": {
+    "message": "Plein dans environ $1 min"
+  },
+  "dust_etaFullInHour": {
+    "message": "Plein dans environ 1 heure"
+  },
+  "dust_etaFullInHours": {
+    "message": "Plein dans environ $1 heures"
+  },
+  "dust_etaFullInDays": {
+    "message": "Plein dans environ $1 jours"
+  },
+  "dust_rebuildRecords": {
+    "message": "Reconstruire les enregistrements $1"
+  },
+  "dust_rebuildNote": {
+    "message": "Une partie de votre $1 enregistré ne génère pas encore de $2. La reconstruction relit vos enregistrements depuis la chaîne — cela ne coûte rien, mais prend plusieurs minutes."
+  },
+  "formatErrors_wholeNumber": {
+    "message": "Le montant doit être un nombre entier"
+  },
+  "formatErrors_positiveNumber": {
+    "message": "Le montant doit être un nombre positif, comme 1.5"
+  },
+  "formatErrors_maxDecimals": {
+    "message": "Ce jeton accepte au plus $1 décimales"
+  },
+  "home_viewAccountsAria": {
+    "message": "Voir les comptes"
+  },
+  "home_settingsAria": {
+    "message": "Paramètres"
+  },
+  "home_networkAria": {
+    "message": "Réseau : $1"
+  },
+  "home_totalBalance": {
+    "message": "Solde total"
+  },
+  "home_connecting": {
+    "message": "Connexion…"
+  },
+  "home_send": {
+    "message": "Envoyer"
+  },
+  "home_receive": {
+    "message": "Recevoir"
+  },
+  "home_addFirstTitle": {
+    "message": "Ajoutez vos premiers $1"
+  },
+  "home_addFirstBody": {
+    "message": "Copiez votre adresse et envoyez des $1 depuis une plateforme d'échange ou un autre portefeuille."
+  },
+  "home_showMyAddress": {
+    "message": "Afficher mon adresse"
+  },
+  "home_unshielded": {
+    "message": "Unshielded"
+  },
+  "home_shielded": {
+    "message": "Shielded"
+  },
+  "home_unshieldedToken": {
+    "message": "Jeton unshielded"
+  },
+  "home_unshieldedTokenWithId": {
+    "message": "$1 · Jeton unshielded"
+  },
+  "home_shieldedToken": {
+    "message": "Jeton shielded"
+  },
+  "home_shieldedTokenWithId": {
+    "message": "$1 · Jeton shielded"
+  },
+  "home_noShieldedTokens": {
+    "message": "Pas encore de jetons shielded. Vos soldes privés apparaîtront ici."
+  },
+  "home_recentActivity": {
+    "message": "Activité récente"
+  },
+  "home_seeAll": {
+    "message": "Tout voir"
+  },
+  "home_nameTokenAria": {
+    "message": "Nommer le jeton $1"
+  },
+  "home_nameTokenTitle": {
+    "message": "Nommer ce jeton"
+  },
+  "home_nameTokenPlaceholder": {
+    "message": "ex. Points de fidélité"
+  },
+  "home_tokenNameAria": {
+    "message": "Nom du jeton"
+  },
+  "home_nameTokenHint": {
+    "message": "Visible uniquement dans ce portefeuille. Laissez vide pour réafficher l'identifiant du jeton."
+  },
+  "network_title": {
+    "message": "Réseau"
+  },
+  "network_intro": {
+    "message": "Choisissez un réseau nommé et ajustez ses endpoints si besoin."
+  },
+  "network_groupAria": {
+    "message": "Réseau Midnight"
+  },
+  "network_descMainnet": {
+    "message": "Réseau de production"
+  },
+  "network_descDevnet": {
+    "message": "Développement et tests"
+  },
+  "network_descPreview": {
+    "message": "Aperçu des prochaines évolutions"
+  },
+  "network_descPreprod": {
+    "message": "Tests de pré-production"
+  },
+  "network_descQanet": {
+    "message": "Réseau d'assurance qualité"
+  },
+  "network_endpointUrls": {
+    "message": "URL des endpoints"
+  },
+  "network_useDefaults": {
+    "message": "Valeurs par défaut"
+  },
+  "network_nodeUrl": {
+    "message": "URL du nœud"
+  },
+  "network_indexerUrl": {
+    "message": "URL de l'indexeur"
+  },
+  "network_proofServerUrl": {
+    "message": "URL du serveur de preuve"
+  },
+  "network_proving": {
+    "message": "Génération de preuves"
+  },
+  "network_provingMethodAria": {
+    "message": "Méthode de preuve"
+  },
+  "network_wasm": {
+    "message": "WASM"
+  },
+  "network_wasmDesc": {
+    "message": "Local · Recommended for transfers"
+  },
+  "network_proofServer": {
+    "message": "Serveur de preuves"
+  },
+  "network_proofServerDesc": {
+    "message": "Serveur de preuve dédié, local ou hébergé à distance"
+  },
+  "network_provingHelp": {
+    "message": "Le portefeuille utilise la méthode de preuve sélectionnée ici pour les transactions du portefeuille et des dApps. WASM est recommandé pour les transactions simples, comme les transferts de jetons. Les transactions complexes, comme les appels de contrat, nécessitent un serveur de preuve. Exécutez-en un localement — un conteneur Docker est disponible — ou utilisez-en un exploité par une partie de confiance, fonctionnant dans un TEE avec une attestation appropriée. La génération de preuves révèle les détails de la transaction à celui qui exploite le serveur : un serveur distant sans attestation voit tout ce que vous prouvez."
+  },
+  "network_resyncNote": {
+    "message": "Changer de réseau ou d'indexeur efface les données de synchro locales et resynchronise ce compte. Les autres modifications d'endpoint conservent l'état de synchro actuel."
+  },
+  "network_saveError": {
+    "message": "La configuration réseau n'a pas pu être enregistrée."
+  },
+  "network_saving": {
+    "message": "Enregistrement…"
+  },
+  "network_switchTitle": {
+    "message": "Passer à $1 ?"
+  },
+  "network_changeIndexerTitle": {
+    "message": "Changer d'indexeur et resynchroniser ?"
+  },
+  "network_switchResync": {
+    "message": "Changer et resynchroniser"
+  },
+  "network_saveResync": {
+    "message": "Enregistrer et resynchroniser"
+  },
+  "network_switchBody": {
+    "message": "Quitter $1 efface l'état de synchro local de ce compte et ses soldes en cache."
+  },
+  "network_changeIndexerBody": {
+    "message": "Changer d'indexeur efface l'état de synchro local de ce compte et ses soldes en cache."
+  },
+  "network_freshSync": {
+    "message": "Moth démarrera une nouvelle synchro sur $1."
+  },
+  "network_fundsSafe": {
+    "message": "Vos fonds, votre compte et votre phrase secrète ne sont pas affectés."
+  },
+  "receive_title": {
+    "message": "Recevoir"
+  },
+  "receive_unshieldedTab": {
+    "message": "Unshielded"
+  },
+  "receive_shieldedTab": {
+    "message": "Shielded"
+  },
+  "receive_addressCopied": {
+    "message": "Adresse copiée"
+  },
+  "receive_shieldedAddressOf": {
+    "message": "$1 · Adresse shielded"
+  },
+  "receive_unshieldedAddressOf": {
+    "message": "$1 · Adresse unshielded"
+  },
+  "receive_addressUnavailable": {
+    "message": "Adresse indisponible"
+  },
+  "receive_copyAddress": {
+    "message": "Copier l'adresse"
+  },
+  "receive_shieldedNote": {
+    "message": "N'envoyez ici que des jetons natifs Midnight. Tout autre envoi pourrait être perdu."
+  },
+  "receive_unshieldedNote": {
+    "message": "Les transferts ici sont visibles sur le réseau. Toute personne ayant l'adresse peut voir les montants."
+  },
+  "send_title": {
+    "message": "Envoyer"
+  },
+  "send_reviewTransfer": {
+    "message": "Vérifier le transfert"
+  },
+  "send_reviewCount": {
+    "message": "Vérifier $1 transferts"
+  },
+  "send_addAnother": {
+    "message": "Ajouter un autre transfert"
+  },
+  "send_removeTransfer": {
+    "message": "Supprimer le transfert $1"
+  },
+  "send_oneTransactionNote": {
+    "message": "Everything here sends as one transaction — one $1 fee covers all of it."
+  },
+  "send_amountPlaceholder": {
+    "message": "0"
+  },
+  "send_amountLabel": {
+    "message": "Montant"
+  },
+  "send_moreThanBalance": {
+    "message": "Supérieur à votre solde"
+  },
+  "send_overspent": {
+    "message": "More than your $1 balance across these transfers."
+  },
+  "send_enterWholeNumber": {
+    "message": "Entrez un nombre entier"
+  },
+  "send_enterDecimalNumber": {
+    "message": "Entrez un nombre comme 1.5"
+  },
+  "send_balanceOf": {
+    "message": "Solde $1 $2"
+  },
+  "send_percent25": {
+    "message": "25%"
+  },
+  "send_percent50": {
+    "message": "50%"
+  },
+  "send_max": {
+    "message": "Max"
+  },
+  "send_to": {
+    "message": "À"
+  },
+  "send_recipientAddress": {
+    "message": "Adresse du destinataire"
+  },
+  "send_paste": {
+    "message": "Coller"
+  },
+  "send_validShieldedAddress": {
+    "message": "✓ Adresse shielded valide"
+  },
+  "send_validUnshieldedAddress": {
+    "message": "✓ Adresse unshielded valide"
+  },
+  "send_addressInvalid": {
+    "message": "Ceci ne ressemble pas à une adresse Midnight. Vérifiez-la et réessayez."
+  },
+  "send_addressKindInvalid": {
+    "message": "That doesn't look like a $1 address."
+  },
+  "send_nameResolving": {
+    "message": "Résolution du nom…"
+  },
+  "send_nameResolved": {
+    "message": "Résolu via .shielded → $1"
+  },
+  "send_nameVerified": {
+    "message": "vérifié"
+  },
+  "send_nameUnsendable": {
+    "message": "Ce nom n’a pas d’adresse Midnight utilisable pour l’envoi."
+  },
+  "send_nameConfusable": {
+    "message": "Ce nom contient des caractères inhabituels qui peuvent imiter un autre nom — vérifiez-le attentivement."
+  },
+  "send_noteShielded": {
+    "message": "Transfert shielded, le montant reste privé sur le réseau."
+  },
+  "send_noteUnshielded": {
+    "message": "$1 est unshielded, ce transfert sera visible sur le réseau."
+  },
+  "send_pickerTitle": {
+    "message": "Envoyer un jeton"
+  },
+  "send_chooseToken": {
+    "message": "Choisir un jeton"
+  },
+  "send_searchPlaceholder": {
+    "message": "Rechercher un nom ou un id de jeton"
+  },
+  "send_searchTokens": {
+    "message": "Rechercher des jetons"
+  },
+  "send_noTokensMatch": {
+    "message": "Aucun jeton ne correspond à « $1 »."
+  },
+  "send_groupUnshielded": {
+    "message": "Unshielded"
+  },
+  "send_groupShielded": {
+    "message": "Shielded"
+  },
+  "send_reviewTitle": {
+    "message": "Vérification"
+  },
+  "send_youreSending": {
+    "message": "Vous envoyez"
+  },
+  "send_youreSendingCount": {
+    "message": "Vous envoyez $1 transferts"
+  },
+  "send_amountSymbol": {
+    "message": "$1 $2"
+  },
+  "send_from": {
+    "message": "De"
+  },
+  "send_total": {
+    "message": "Total"
+  },
+  "send_dustFeeLabel": {
+    "message": "Frais de $1"
+  },
+  "send_totalReady": {
+    "message": "$1 $2 + ≈ $3 $4"
+  },
+  "send_totalPending": {
+    "message": "$1 $2 + frais en $3"
+  },
+  "send_estimatingFee": {
+    "message": "Estimation des frais…"
+  },
+  "send_sendNow": {
+    "message": "Envoyer maintenant"
+  },
+  "send_irreversibleNote": {
+    "message": "Les transferts sont irréversibles. Vérifiez l'adresse avant d'envoyer."
+  },
+  "send_checkAddresses": {
+    "message": "Transfers can't be reversed. Check the addresses before you send."
+  },
+  "send_networkFee": {
+    "message": "Frais de réseau"
+  },
+  "send_estimateBadge": {
+    "message": "Estimation"
+  },
+  "send_feeReady": {
+    "message": "≈ $1 $2"
+  },
+  "send_feeCalculating": {
+    "message": "Calcul…"
+  },
+  "send_feeUnavailable": {
+    "message": "Indisponible pour le moment"
+  },
+  "send_feeIdle": {
+    "message": "Saisissez les détails du transfert"
+  },
+  "send_feeNoteReady": {
+    "message": "Calculé selon les conditions actuelles du réseau. Les frais finaux peuvent varier."
+  },
+  "send_feeNoteLoading": {
+    "message": "Vérification des frais complets, y compris le paiement en $1."
+  },
+  "send_feeNoteUnavailable": {
+    "message": "Vous pouvez quand même envoyer. Les frais de réseau finaux seront payés en $1."
+  },
+  "send_feeNoteIdle": {
+    "message": "Ajoutez un montant et une adresse valides pour calculer les frais."
+  },
+  "send_sendingAmount": {
+    "message": "Envoi de $1 $2…"
+  },
+  "send_sending": {
+    "message": "Envoi de $1…"
+  },
+  "send_transfers": {
+    "message": "Transferts"
+  },
+  "send_transfersCount": {
+    "message": "$1 transferts"
+  },
+  "send_pendingSubTime": {
+    "message": "Cela prend généralement moins d'une minute."
+  },
+  "send_pendingSubClose": {
+    "message": "Vous pouvez fermer le panneau, nous continuons."
+  },
+  "send_stepBuilt": {
+    "message": "Transaction construite"
+  },
+  "send_stepProving": {
+    "message": "Génération de la preuve"
+  },
+  "send_stepProvingSub": {
+    "message": "S'exécute sur votre serveur de preuve, les détails n'en sortent jamais"
+  },
+  "send_stepSubmitting": {
+    "message": "Envoi au réseau"
+  },
+  "send_onItsWay": {
+    "message": "$1 $2 est en route"
+  },
+  "send_onItsWaySingle": {
+    "message": "$1 est en route"
+  },
+  "send_onTheirWayMulti": {
+    "message": "$1 sont en route"
+  },
+  "send_successSubShielded": {
+    "message": "Transfert shielded, il arrive généralement en moins d'une minute."
+  },
+  "send_successSubUnshielded": {
+    "message": "Transfert unshielded, il arrive généralement en moins d'une minute."
+  },
+  "send_transaction": {
+    "message": "Transaction"
+  },
+  "send_status": {
+    "message": "Statut"
+  },
+  "send_submittedAt": {
+    "message": "Soumis · $1"
+  },
+  "send_viewInActivity": {
+    "message": "Voir dans l'activité"
+  },
+  "send_tryAgain": {
+    "message": "Réessayer"
+  },
+  "send_backToHome": {
+    "message": "Retour à l'accueil"
+  },
+  "send_failureTitle": {
+    "message": "Ça n'a pas abouti"
+  },
+  "send_failureSub": {
+    "message": "Vos $1 $2 n'ont pas bougé. Rien n'a été dépensé."
+  },
+  "send_failureSubSingle": {
+    "message": "Your $1 hasn't moved. Nothing was spent."
+  },
+  "send_failureSubMulti": {
+    "message": "Your $1 haven't moved. Nothing was spent."
+  },
+  "send_reason": {
+    "message": "Raison"
+  },
+  "send_unknownError": {
+    "message": "Erreur inconnue"
+  },
+  "send_failureFootnote": {
+    "message": "Si le serveur de preuve n'a pas répondu, vérifiez Paramètres, puis Réseau."
+  },
+  "send_provingFootnote": {
+    "message": "If proving failed, check the selected method under Settings → Network. Complex transactions require a proof server."
+  },
+  "settings_title": {
+    "message": "Paramètres"
+  },
+  "settings_sectionPrivacy": {
+    "message": "Confidentialité"
+  },
+  "settings_connectedSites": {
+    "message": "Sites connectés"
+  },
+  "settings_sectionAddresses": {
+    "message": "Adresses"
+  },
+  "settings_addressBook": {
+    "message": "Carnet d'adresses"
+  },
+  "settings_nameResolver": {
+    "message": "Résolveur de noms"
+  },
+  "settings_nameResolverDesc": {
+    "message": "Résout les noms .shielded en adresses pour l’envoi-à-un-nom. Laisser vide pour désactiver."
+  },
+  "settings_nameResolverPlaceholder": {
+    "message": "https://resolver.example"
+  },
+  "settings_sectionNetwork": {
+    "message": "Réseau"
+  },
+  "settings_preseedWarming": {
+    "message": "Accélérer les nouveaux comptes"
+  },
+  "settings_preseedWarmingAria": {
+    "message": "Accélérer les nouveaux comptes"
+  },
+  "settings_preseedWarmingOff": {
+    "message": "Désactivé"
+  },
+  "settings_preseedWarmingOn": {
+    "message": "Préparation"
+  },
+  "settings_preseedWarmingReady": {
+    "message": "Prêt"
+  },
+  "settings_preseedWarmingProgress": {
+    "message": "Préparation $1%"
+  },
+  "settings_preseedWarmingDescriptionReady": {
+    "message": "$1 est prêt. Les nouveaux comptes se synchronisent en quelques secondes au lieu de parcourir toute la chaîne."
+  },
+  "settings_preseedWarmingDescriptionOff": {
+    "message": "Les nouveaux comptes parcourent toute la chaîne, ce qui peut prendre une heure. Activez ceci pour préparer $1 une seule fois en arrière-plan afin que les comptes suivants démarrent en quelques secondes."
+  },
+  "settings_preseedWarmingDescriptionOn": {
+    "message": "Préparation de $1 en arrière-plan. Cela prend environ une heure et se poursuit tant que le portefeuille est ouvert. Les comptes créés ensuite démarrent en quelques secondes."
+  },
+  "settings_networkConfig": {
+    "message": "Configuration réseau"
+  },
+  "settings_sectionSecurity": {
+    "message": "Sécurité"
+  },
+  "settings_autoLock": {
+    "message": "Verrouillage automatique"
+  },
+  "settings_autoLockDemo": {
+    "message": "Le portefeuille ne se verrouille jamais tout seul."
+  },
+  "settings_autoLockDescription": {
+    "message": "Lock and require your password after inactivity."
+  },
+  "settings_autoLockAria": {
+    "message": "Délai de verrouillage automatique"
+  },
+  "settings_autoLock1Minute": {
+    "message": "1 minute"
+  },
+  "settings_autoLock5Minutes": {
+    "message": "5 minutes"
+  },
+  "settings_autoLock15Minutes": {
+    "message": "15 minutes"
+  },
+  "settings_autoLock30Minutes": {
+    "message": "30 minutes"
+  },
+  "settings_autoLock1Hour": {
+    "message": "1 heure"
+  },
+  "settings_autoLockNever": {
+    "message": "Ne jamais verrouiller"
+  },
+  "settings_sectionAppearance": {
+    "message": "Apparence"
+  },
+  "settings_theme": {
+    "message": "Thème"
+  },
+  "settings_themeSystem": {
+    "message": "Système"
+  },
+  "settings_themeLight": {
+    "message": "Clair"
+  },
+  "settings_themeDark": {
+    "message": "Sombre"
+  },
+  "settings_colorblind": {
+    "message": "Adapté au daltonisme"
+  },
+  "settings_colorblindDescription": {
+    "message": "Statuts en bleu et orange plutôt qu'en vert et rouge."
+  },
+  "settings_version": {
+    "message": "Version $1"
+  },
+  "setup_taglineLine1": {
+    "message": "Portefeuille"
+  },
+  "setup_taglineLine2": {
+    "message": "pour Midnight."
+  },
+  "setup_intro": {
+    "message": "Un portefeuille pour les développeurs sur le réseau Midnight. Envoyez, recevez et détenez des $1, vos détails restent shielded."
+  },
+  "setup_devNote": {
+    "message": "Non audité et conçu pour le développement. Les nouveaux portefeuilles démarrent sur un réseau de test."
+  },
+  "setup_createWallet": {
+    "message": "Créer un nouveau portefeuille"
+  },
+  "setup_alreadyHaveOne": {
+    "message": "J'en ai déjà un"
+  },
+  "setup_freeToCreate": {
+    "message": "Création gratuite. Vos clés restent sur cet appareil."
+  },
+  "setup_stepProgress": {
+    "message": "$1 sur $2"
+  },
+  "setup_importTitle": {
+    "message": "Retrouvez votre portefeuille"
+  },
+  "setup_importSubtitle": {
+    "message": "Saisissez vos 24 mots secrets dans l'ordre, ou collez la phrase entière d'un coup."
+  },
+  "setup_pastePhrase": {
+    "message": "Coller la phrase"
+  },
+  "setup_continue": {
+    "message": "Continuer"
+  },
+  "setup_settingUp": {
+    "message": "Configuration…"
+  },
+  "setup_passwordTitle": {
+    "message": "Créez un mot de passe"
+  },
+  "setup_passwordSubtitle": {
+    "message": "Il déverrouille Moth sur cet appareil. Il ne peut pas récupérer votre portefeuille, seuls vos 24 mots le peuvent."
+  },
+  "setup_accountNameLabel": {
+    "message": "Nom du compte"
+  },
+  "setup_accountNameHint": {
+    "message": "Facultatif, affiché uniquement dans ce portefeuille. Vous pourrez le modifier plus tard."
+  },
+  "setup_passwordLabel": {
+    "message": "Mot de passe"
+  },
+  "setup_show": {
+    "message": "Afficher"
+  },
+  "setup_hide": {
+    "message": "Masquer"
+  },
+  "setup_passwordHint": {
+    "message": "Au moins 8 caractères"
+  },
+  "setup_confirmPasswordLabel": {
+    "message": "Confirmez le mot de passe"
+  },
+  "setup_passwordMismatch": {
+    "message": "Les mots de passe ne correspondent pas"
+  },
+  "setup_networkTitle": {
+    "message": "Choisissez un réseau"
+  },
+  "setup_networkFirstRun": {
+    "message": "Choisissez le réseau Midnight que ce portefeuille utilisera."
+  },
+  "setup_networkNewAccount": {
+    "message": "Le nouveau compte reçoit ses propres adresses sur ce réseau. Vos autres comptes ne changent pas."
+  },
+  "setup_networkNote": {
+    "message": "Modifiable à tout moment dans Paramètres, sous Réseau."
+  },
+  "setup_phraseTitle": {
+    "message": "Notez votre phrase secrète"
+  },
+  "setup_phraseSubtitle": {
+    "message": "Ces 24 mots sont le seul moyen de retrouver votre portefeuille. Écrivez-les sur papier, dans l'ordre."
+  },
+  "setup_phraseWarning": {
+    "message": "Quiconque possède ces mots peut dépenser vos jetons. Pas de capture d'écran, et ne les partagez jamais, même pas avec nous."
+  },
+  "setup_phraseSavedCheckbox": {
+    "message": "J'ai noté ma phrase"
+  },
+  "setup_doneTitle": {
+    "message": "Tout est prêt"
+  },
+  "setup_doneLine1": {
+    "message": "Votre portefeuille vit dans le panneau latéral."
+  },
+  "setup_doneLine2": {
+    "message": "Épinglez Moth à votre barre d'outils pour y accéder vite."
+  },
+  "setup_closeTab": {
+    "message": "Fermer cet onglet"
+  },
+  "sites_title": {
+    "message": "Sites connectés"
+  },
+  "sites_emptyTitle": {
+    "message": "Aucune connexion pour l'instant"
+  },
+  "sites_emptyBody": {
+    "message": "Les sites auxquels vous vous connectez apparaîtront ici."
+  },
+  "sites_revoke": {
+    "message": "Révoquer"
+  },
+  "syncStatus_synced": {
+    "message": "Synchronisé"
+  },
+  "syncStatus_syncing": {
+    "message": "Synchronisation"
+  },
+  "syncStatus_syncingAria": {
+    "message": "Synchronisation, $1%"
+  },
+  "syncStatus_percent": {
+    "message": "$1%"
+  },
+  "syncStatus_shielded": {
+    "message": "Shielded"
+  },
+  "syncStatus_unshielded": {
+    "message": "Unshielded"
+  },
+  "tokens_shieldedToken": {
+    "message": "Jeton shielded"
+  },
+  "tokens_unshieldedToken": {
+    "message": "Jeton unshielded"
+  },
+  "tokens_shieldedTokenWithId": {
+    "message": "$1 · Jeton shielded"
+  },
+  "tokens_unshieldedTokenWithId": {
+    "message": "$1 · Jeton unshielded"
+  },
+  "unlock_welcomeBack": {
+    "message": "Bon retour"
+  },
+  "unlock_unlockAccount": {
+    "message": "Déverrouiller $1"
+  },
+  "unlock_enterPassword": {
+    "message": "Entrez votre mot de passe pour déverrouiller Moth."
+  },
+  "unlock_switchHint": {
+    "message": "Saisissez le mot de passe de ce compte pour y basculer."
+  },
+  "unlock_passwordPlaceholder": {
+    "message": "Mot de passe"
+  },
+  "unlock_show": {
+    "message": "Afficher"
+  },
+  "unlock_hide": {
+    "message": "Masquer"
+  },
+  "unlock_wrongPassword": {
+    "message": "Ce mot de passe ne correspond pas. Réessayez."
+  },
+  "unlock_unlocking": {
+    "message": "Déverrouillage…"
+  },
+  "unlock_unlock": {
+    "message": "Déverrouiller"
+  },
+  "welcome_taglineLine1": {
+    "message": "Portefeuille"
+  },
+  "welcome_taglineLine2": {
+    "message": "pour Midnight."
+  },
+  "welcome_intro": {
+    "message": "Un portefeuille pour les développeurs sur le réseau Midnight. Envoyez, recevez et détenez des $1, vos détails restent shielded."
+  },
+  "welcome_devNote": {
+    "message": "Non audité et conçu pour le développement. Les nouveaux portefeuilles démarrent sur un réseau de test."
+  },
+  "welcome_createWallet": {
+    "message": "Créer un nouveau portefeuille"
+  },
+  "welcome_alreadyHaveOne": {
+    "message": "J'en ai déjà un"
+  },
+  "welcome_settingUpAccount": {
+    "message": "Configuration de votre compte"
+  },
+  "welcome_finishInSetupTab": {
+    "message": "Terminez la création de votre compte dans l'onglet de configuration ouvert. Ce panneau se mettra à jour tout seul."
+  },
+  "welcome_goToSetupTab": {
+    "message": "Aller à l'onglet de configuration"
+  },
+  "welcome_cancelSetup": {
+    "message": "Annuler la configuration"
+  },
+  "welcome_gettingThingsReady": {
+    "message": "Préparation en cours"
+  },
+  "welcome_loadingPreparingWallet": {
+    "message": "Préparation de votre portefeuille"
+  },
+  "welcome_loadingCatchingUp": {
+    "message": "Synchronisation avec Midnight"
+  },
+  "welcome_loadingPreparingNewWallet": {
+    "message": "Préparation de votre nouveau portefeuille"
+  },
+  "welcome_loadingStartingServices": {
+    "message": "Démarrage des services sécurisés du portefeuille"
+  },
+  "welcome_loadingOpeningWallet": {
+    "message": "Ouverture de votre portefeuille sécurisé"
+  },
+  "settings_developerMode": {
+    "message": "Mode développeur"
+  },
+  "settings_developerModeDescription": {
+    "message": "Afficher les URL des points de terminaison, les codes de statut et les délais de nouvelle tentative dans les avertissements de connexion."
+  },
+  "settings_developerModeAria": {
+    "message": "Mode développeur"
+  },
+  "settings_developerModeOn": {
+    "message": "Activé"
+  },
+  "settings_developerModeOff": {
+    "message": "Désactivé"
+  },
+  "relay_unreachableTitle": {
+    "message": "Nœud injoignable"
+  },
+  "relay_unreachableBody": {
+    "message": "Les soldes sont à jour, mais l’envoi est indisponible jusqu’au retour de la connexion."
+  },
+  "relay_forbiddenTitle": {
+    "message": "Le nœud a refusé la connexion"
+  },
+  "relay_forbiddenBody": {
+    "message": "Ce point de terminaison rejette ce portefeuille. L’envoi est indisponible ; les soldes ne sont pas affectés."
+  },
+  "relay_retry": {
+    "message": "Réessayer"
+  },
+  "relay_retrying": {
+    "message": "Nouvelle tentative…"
+  },
+  "relay_detailStatus": {
+    "message": "HTTP $1"
+  },
+  "relay_detailNoStatus": {
+    "message": "Aucune réponse"
+  },
+  "relay_detailAttempts": {
+    "message": "$1 tentatives"
+  },
+  "relay_detailAttemptsOne": {
+    "message": "1 tentative"
+  },
+  "relay_detailNextRetry": {
+    "message": "prochaine tentative dans $1 s"
+  },
+  "relay_detailNextRetryNow": {
+    "message": "nouvelle tentative en cours"
+  },
+  "network_authHeaderHelp": {
+    "message": "Facultatif. Certains points de terminaison de nœud limitent le débit et refusent les connexions sans un en-tête fourni par l’opérateur. Envoyé uniquement au nœud, jamais à l’indexeur. Stocké non chiffré sur cet appareil et non protégé par votre mot de passe : traitez-le comme un secret partagé."
+  },
+  "network_authHeaderName": {
+    "message": "En-tête d’authentification du nœud"
+  },
+  "network_authHeaderValue": {
+    "message": "Valeur de l’en-tête"
+  },
+  "network_descLocal": {
+    "message": "Nœud sur cette machine"
+  },
+  "settings_preseedWarmingIncluded": {
+    "message": "Inclus"
+  },
+  "settings_preseedWarmingDescriptionBundled": {
+    "message": "$1 est déjà préparé dans cette version et s’installera au prochain déverrouillage. Rien à faire ici."
+  },
+  "dust_registerNoNight": {
+    "message": "Vous n’avez pas encore de $1 à enregistrer."
+  },
+  "dust_registerUnavailable": {
+    "message": "Votre $1 n’est pas disponible pour l’enregistrement pour le moment. Une transaction antérieure est peut-être encore en cours — attendez qu’elle aboutisse, puis réessayez."
+  },
+  "dust_waitSeconds": {
+    "message": "environ $1 secondes"
+  },
+  "dust_waitMinutes": {
+    "message": "environ $1 minutes"
+  },
+  "dust_waitHour": {
+    "message": "environ une heure"
+  },
+  "dust_waitHours": {
+    "message": "environ $1 heures"
+  },
+  "dust_waitDays": {
+    "message": "environ $1 jours"
+  },
+  "dust_notYetTitle": {
+    "message": "Pas encore tout à fait"
+  },
+  "dust_notYetSub": {
+    "message": "Rien n’a été dépensé. Votre $1 a besoin d’un peu plus de temps."
+  },
+  "dust_notYetReason": {
+    "message": "L’enregistrement paie ses propres frais avec le $1 que votre $2 a généré depuis son arrivée : un nouveau portefeuille doit donc patienter un peu. Prêt dans $3."
+  },
+  "dust_notYetNeedMore": {
+    "message": "L’enregistrement paie ses propres frais avec le $1 que génère votre $2, et ce solde est trop faible pour les couvrir. Ajoutez davantage de $2, puis réessayez."
+  },
+  "network_mainnetHidden": {
+    "message": "Les réseaux à valeur réelle sont masqués. Ce portefeuille n’est ni audité ni pris en charge — activez le mode développeur dans les Réglages pour les afficher."
+  },
+  "network_valueWarningTitle": {
+    "message": "Passer à $1 — fonds réels ?"
+  },
+  "network_valueWarningBody": {
+    "message": "$1 a une valeur réelle. Ce portefeuille est expérimental, non audité et fourni sans assistance ni garantie : il est destiné au développement et aux tests. Ce qui est perdu ici est irrécupérable. Ne l’utilisez pas pour des fonds auxquels vous tenez."
+  },
+  "setup_copyPhrase": {
+    "message": "Copier la phrase"
+  },
+  "setup_copyPhraseDone": {
+    "message": "Copié"
+  },
+  "settings_copyDiagnostics": {
+    "message": "Copier le diagnostic"
+  },
+  "settings_copyDiagnosticsDesc": {
+    "message": "Environnement et configuration pour un rapport de bogue. Aucune adresse, aucun nom de compte, aucun solde — peut être collé sans risque dans un ticket public."
+  },
+  "settings_copyDiagnosticsDone": {
+    "message": "Copié"
+  },
+  "settings_sectionSupport": {
+    "message": "Assistance"
+  },
+  "dust_etaNotRegistered": {
+    "message": "$1 pas encore enregistré"
+  }
+}

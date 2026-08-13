@@ -1,9 +1,44 @@
-Shielded Technologies
-Copyright (C) Shielded Technologies and contributors.
+Moth Wallet
+Copyright 2026 Shielded Technologies
 
-This product is licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License. A copy of the
-License is included in the LICENSE file at the root of this repository, or
-available at: https://www.apache.org/licenses/LICENSE-2.0
+This product includes software developed with reference to the following
+open source projects:
 
-Third-party component attributions, if any, are listed in THIRD_PARTY_NOTICES.md.
+---
+
+mn-tui (arc-mn-tui)
+Copyright 2026 Input Output Global, Inc.
+Licensed under the Apache License, Version 2.0
+
+The TUI component of Moth draws on architectural patterns, screen layouts,
+and wallet integration approaches from mn-tui, a terminal wallet manager
+for the Midnight Network developed by Input Output Global with AI assistance.
+Specifically, the following design elements were informed by mn-tui:
+
+- Screen-based navigation (Dashboard, Send, Deploy, Mint, Contract State,
+  Keys, DUST/Designate, Network Config, Logs)
+- React/Ink component architecture for terminal rendering
+- Wallet sync engine pattern (useWalletSync hook architecture)
+- Chain polling pattern (useMidnightNode hook architecture)
+- DUST monitoring component design
+- Balance table formatting
+- Transaction status display patterns
+- SDK workaround patterns (WebSocket polyfill, transaction intent signing,
+  three-wallet sync heuristic, cache eviction on genesis reset)
+
+Source: https://github.com/input-output-hk/arc-mn-tui
+License: Apache-2.0
+
+---
+
+Midnight Network SDK packages (@midnight-ntwrk/*)
+Copyright Midnight Foundation
+Licensed under the Apache License, Version 2.0
+
+---
+
+Noble/Scure cryptographic libraries (@noble/ciphers, @noble/hashes,
+@scure/bip32, @scure/bip39, @scure/base)
+Copyright Paul Miller
+Licensed under the MIT License
+Audited by Trail of Bits
