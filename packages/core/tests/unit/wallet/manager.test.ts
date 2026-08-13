@@ -1,0 +1,259 @@
+import { describe, expect, it } from 'vitest';
+import { chacha20poly1305 } from '@noble/ciphers/chacha.js';
+import { randomBytes } from '@noble/ciphers/utils.js';
+import { scrypt } from '@noble/hashes/scrypt.js';
+import type { StorageAdapter } from '../../../src/storage/adapter.js';
+import { WalletManager } from '../../../src/wallet/manager.js';
+import { deriveAllAddressesFromSeed } from '../../../src/wallet/address.js';
+
+class MemoryStorage implements StorageAdapter {
+  private readonly values = new Map<string, Uint8Array>();
+
+  async read(key: string): Promise<Uint8Array | null> {
+    return this.values.get(key) ?? null;
+  }
+
+  async write(key: string, data: Uint8Array): Promise<void> {
+    this.values.set(key, data);
+  }
+
+  async delete(key: string): Promise<void> {
+    this.values.delete(key);
+  }
+
+  async list(prefix: string): Promise<string[]> {
+    return [...this.values.keys()].filter((key) => key.startsWith(prefix));
+  }
+
+  async exists(key: string): Promise<boolean> {
+    return this.values.has(key);
+  }
+}
+
+describe('WalletManager.setLabel', () => {
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+
+  async function storageWithWallet(): Promise<MemoryStorage> {
+    const storage = new MemoryStorage();
+    await storage.write(
+      'config.json',
+      encoder.encode(JSON.stringify({ activeWallet: 'alice', wallets: ['alice'], defaultNetwork: 'devnet', configVersion: 1 })),
+    );
+    await storage.write(
+      'wallets/alice.meta',
+      encoder.encode(
+        JSON.stringify({
+          name: 'alice',
+          network: 'devnet',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          address: 'mn_unshielded_devnet',
+        }),
+      ),
+    );
+    return storage;
+  }
+
+  it('stores a trimmed label and returns it from list()', async () => {
+    const storage = await storageWithWallet();
+    const manager = new WalletManager(storage);
+
+    await manager.setLabel('alice', '  Savings  ');
+
+    const stored = JSON.parse(decoder.decode((await storage.read('wallets/alice.meta'))!));
+    expect(stored.label).toBe('Savings');
+    expect(stored.name).toBe('alice');
+
+    const [wallet] = await manager.list();
+    expect(wallet).toMatchObject({ name: 'alice', label: 'Savings' });
+  });
+
+  it('clears the label when set to whitespace', async () => {
+    const storage = await storageWithWallet();
+    const manager = new WalletManager(storage);
+
+    await manager.setLabel('alice', 'Savings');
+    await manager.setLabel('alice', '   ');
+
+    const stored = JSON.parse(decoder.decode((await storage.read('wallets/alice.meta'))!));
+    expect('label' in stored).toBe(false);
+  });
+
+  it('rejects unknown wallets', async () => {
+    const storage = await storageWithWallet();
+    await expect(new WalletManager(storage).setLabel('bob', 'Savings')).rejects.toThrow('Wallet "bob" not found');
+  });
+
+  it('survives a network move', async () => {
+    const storage = await storageWithWallet();
+    const manager = new WalletManager(storage);
+
+    await manager.setLabel('alice', 'Savings');
+    await manager.setNetwork('alice', 'preview', 'mn_unshielded_preview');
+
+    const [wallet] = await manager.list();
+    expect(wallet).toMatchObject({ network: 'preview', label: 'Savings' });
+  });
+});
+
+describe('WalletManager.setNetwork', () => {
+  // This used to assert that the old chain's birthday was DROPPED. That was the
+  // defect: a wallet left with no birthday anywhere can never satisfy the
+  // pre-seed guard (`reference.height <= birthday`), so every sync after a
+  // network switch walked from genesis — 78.6 min on preprod. The height is now
+  // kept, filed under the network it belongs to, since heights are per-chain
+  // rather than meaningless. See network-birthdays.test.ts for the full rules.
+  it('moves the network-scoped metadata and files the old birthday under its own network', async () => {
+    const storage = new MemoryStorage();
+    const encoder = new TextEncoder();
+    const decoder = new TextDecoder();
+    await storage.write(
+      'wallets/alice.meta',
+      encoder.encode(
+        JSON.stringify({
+          name: 'alice',
+          network: 'devnet',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          address: 'mn_unshielded_devnet',
+          birthday: 123_456,
+        }),
+      ),
+    );
+
+    await new WalletManager(storage).setNetwork('alice', 'preview', 'mn_unshielded_preview');
+
+    const stored = await storage.read('wallets/alice.meta');
+    expect(JSON.parse(decoder.decode(stored!))).toEqual({
+      name: 'alice',
+      network: 'preview',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      address: 'mn_unshielded_preview',
+      // devnet's height survives the move; preview gains none, because this
+      // wallet predates `createdHere` and so reads as imported.
+      birthdays: { devnet: 123_456 },
+    });
+  });
+});
+
+// Regression guard for the extension key-holder path. Option A makes unlock()
+// seed-free (walletKeys derived, seed dropped), so the offscreen recovers a
+// serializable seed via exportSeedHex to rebuild the key bundle after Chrome
+// tears the offscreen down. A regression here surfaced as "correct password
+// not recognized" because the offscreen was reading a now-undefined
+// unlocked.seedHex during unlock.
+describe('WalletManager.exportSeedHex', () => {
+  const PASS = 'correct horse battery staple';
+
+  it(
+    'round-trips: the exported seed reconstructs the wallet it was created with',
+    async () => {
+      const manager = new WalletManager(new MemoryStorage());
+      const created = await manager.generate('alice', PASS, 'devnet');
+
+      const seedHex = await manager.exportSeedHex('alice', PASS);
+
+      expect(seedHex).toMatch(/^[0-9a-f]+$/);
+      // The seed must derive exactly the addresses generate() produced — this is
+      // what lets the offscreen rebuild walletKeys from the re-supplied seed.
+      expect(deriveAllAddressesFromSeed(seedHex)).toEqual(created.addresses);
+    },
+    15_000,
+  );
+
+  it(
+    'keeps unlock() seed-free while exportSeedHex supplies the seed (Option A invariant)',
+    async () => {
+      const manager = new WalletManager(new MemoryStorage());
+      await manager.generate('alice', PASS, 'devnet');
+
+      const unlocked = await manager.unlock('alice', PASS);
+      // If seedHex ever reappears on the unlocked object, the offscreen's
+      // exportSeedHex detour is no longer needed — revisit walletUnlock.
+      expect((unlocked as unknown as { seedHex?: string }).seedHex).toBeUndefined();
+      expect(unlocked.walletKeys).toBeDefined();
+      expect(unlocked.walletKeys.shieldedSecretKeys).toBeDefined();
+      unlocked.lock();
+
+      const seedHex = await manager.exportSeedHex('alice', PASS);
+      expect(deriveAllAddressesFromSeed(seedHex)).toEqual(unlocked.addresses);
+    },
+    15_000,
+  );
+
+  it(
+    'rejects the wrong passphrase rather than returning a bogus seed',
+    async () => {
+      const manager = new WalletManager(new MemoryStorage());
+      await manager.generate('alice', PASS, 'devnet');
+
+      await expect(manager.exportSeedHex('alice', 'not the passphrase')).rejects.toThrow();
+    },
+    15_000,
+  );
+
+  it('rejects an unknown wallet', async () => {
+    const manager = new WalletManager(new MemoryStorage());
+    await expect(manager.exportSeedHex('nobody', PASS)).rejects.toThrow('Wallet "nobody" not found');
+  });
+});
+
+describe('WalletManager keystore KDF upgrade', () => {
+  const PASS = 'correct horse battery staple';
+  const KEYSTORE_KEY = 'wallets/carol.keystore';
+
+  it(
+    'upgrades a v1 keystore in place on first unlock, at the key unlock() reads, exactly once',
+    async () => {
+      const storage = new MemoryStorage();
+      const manager = new WalletManager(storage);
+      const created = await manager.generate('carol', PASS, 'devnet');
+
+      // Forge the pre-upgrade on-disk state: the same mnemonic sealed with the
+      // v1 scrypt parameters (N=2^15) — exactly what a wallet created before
+      // the KDF bump has at `wallets/<name>.keystore`. Built from primitives
+      // on purpose, so this test pins the v1 format independently of
+      // keystore.ts (which can only produce the current version).
+      const encoder = new TextEncoder();
+      const salt = randomBytes(32);
+      const nonce = randomBytes(12);
+      const key = scrypt(encoder.encode(PASS), salt, { N: 2 ** 15, r: 8, p: 1, dkLen: 32 });
+      const sealed = chacha20poly1305(key, nonce).encrypt(encoder.encode(created.mnemonic));
+      const v1 = {
+        version: 1,
+        algorithm: 'chacha20-poly1305',
+        salt,
+        nonce,
+        ciphertext: sealed.subarray(0, sealed.length - 16),
+        tag: sealed.subarray(sealed.length - 16),
+      };
+      await storage.write(KEYSTORE_KEY, encoder.encode(JSON.stringify(v1)));
+
+      const keystoreWrites: string[] = [];
+      const originalWrite = storage.write.bind(storage);
+      storage.write = async (writeKey: string, data: Uint8Array) => {
+        keystoreWrites.push(writeKey);
+        return originalWrite(writeKey, data);
+      };
+
+      // First unlock decrypts with the v1 parameters, then transparently
+      // re-encrypts at the current version — and at `wallets/<name>.keystore`,
+      // the key unlock() reads. (The bug this guards against saved the upgrade
+      // to a phantom key, so it never persisted and re-ran on every unlock.)
+      const first = await manager.unlock('carol', PASS);
+      expect(first.addresses).toEqual(created.addresses);
+      expect(keystoreWrites).toContain(KEYSTORE_KEY);
+
+      const upgraded = JSON.parse(
+        new TextDecoder().decode((await storage.read(KEYSTORE_KEY))!),
+      ) as { version: number };
+      expect(upgraded.version).toBe(2);
+
+      // Second unlock opens the upgraded keystore and must not rewrite it.
+      keystoreWrites.length = 0;
+      const second = await manager.unlock('carol', PASS);
+      expect(second.addresses).toEqual(created.addresses);
+      expect(keystoreWrites).not.toContain(KEYSTORE_KEY);
+    },
+    30_000,
+  );
+});

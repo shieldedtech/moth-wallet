@@ -1,0 +1,27 @@
+<!-- The Moth mark, in the brand palette from packages/extension/assets/globals.css:
+     Moonlime #aeeb6b on Midnight Ink #1c1f36.
+
+     Vector, not a trace of the raster master: this has to survive a 16px favicon,
+     and it is the source the extension icons are generated from. One wing pair is
+     authored and mirrored so the halves cannot drift apart.
+
+     Wings sweep BACK into a delta rather than up, which is how a moth holds them
+     at rest and what separates the silhouette from a butterfly. It also fills a
+     square better: wider than tall. Hindwings sit a shade deeper to give form at
+     large sizes; at 16px the two merge into one silhouette, which is the point. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <g id="wing">
+      <path d="M32 21 C 45 21, 56 29, 61 40 C 49 43, 38 42, 33 37 Z" fill="#aeeb6b"/>
+      <path d="M33 36 C 41 38, 47 43, 45 50 C 38 53, 33 47, 32 40 Z" fill="#7fb544"/>
+    </g>
+  </defs>
+  <g>
+    <use href="#wing"/>
+    <use href="#wing" transform="translate(64 0) scale(-1 1)"/>
+    <path d="M30 19 C 25 13, 20 10, 15 9" stroke="#aeeb6b" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+    <path d="M34 19 C 39 13, 44 10, 49 9" stroke="#aeeb6b" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+    <ellipse cx="32" cy="35" rx="3.5" ry="13" fill="#aeeb6b"/>
+    <circle cx="32" cy="21" r="3.8" fill="#aeeb6b"/>
+  </g>
+</svg>

@@ -1,0 +1,21 @@
+{
+  "name": "{{API_PACKAGE_NAME}}",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "@midnight-ntwrk/midnight-js-contracts": "{{SDK_CONTRACTS_VERSION}}",
+    "@midnight-ntwrk/midnight-js-types": "{{SDK_TYPES_VERSION}}",
+    "@midnight-ntwrk/midnight-js-network-id": "{{SDK_NETWORK_ID_VERSION}}",
+    "@midnight-ntwrk/compact-runtime": "{{SDK_COMPACT_RUNTIME_VERSION}}"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.0"
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "name": "@shieldedtech/moth-browser",
+  "version": "0.1.1",
+  "private": true,
+  "description": "Browser-compatible wallet library for Midnight Network. USE AT YOUR OWN RISK. Experimental software provided AS-IS with no warranty. Not audited. For development and testing purposes only.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/shieldedtech/moth-wallet.git",
+    "directory": "packages/browser"
+  },
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@shieldedtech/moth-wallet": "^0.2.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "vitest": "^3.1.0"
+  }
+}

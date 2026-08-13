@@ -7,39 +7,32 @@ updates:
       interval: "weekly"
     cooldown:
       default-days: 7
-    groups:
-      gha-minor-and-patch:
-        update-types: ["minor", "patch"]
 
-  # Uncomment the ecosystems your project uses.
-
-  # - package-ecosystem: "npm"
-  #   directory: "/"
-  #   schedule:
-  #     interval: "weekly"
-  #   cooldown:
-  #     default-days: 7
-  #   groups:
-  #     npm-minor-and-patch:
-  #       update-types: ["minor", "patch"]
-
-  # - package-ecosystem: "cargo"
-  #   directory: "/"
-  #   schedule:
-  #     interval: "weekly"
-  #   cooldown:
-  #     default-days: 7
-
-  # - package-ecosystem: "docker"
-  #   directory: "/"
-  #   schedule:
-  #     interval: "weekly"
-  #   cooldown:
-  #     default-days: 7
-
-  # - package-ecosystem: "pip"
-  #   directory: "/"
-  #   schedule:
-  #     interval: "weekly"
-  #   cooldown:
-  #     default-days: 7
+#  - package-ecosystem: "cargo"
+#    directory: "/"
+#    registries: "*"
+#    schedule:
+#      interval: "daily"
+#    cooldown:
+#      default-days: 7
+#
+#  - package-ecosystem: "npm"
+#    directory: "/"
+#    schedule:
+#      interval: "daily"
+#    cooldown:
+#      default-days: 7
+#
+#  - package-ecosystem: "docker"
+#    directory: "/"
+#    schedule:
+#      interval: "weekly"
+#    cooldown:
+#      default-days: 7
+#
+#registries:
+#   github:
+#     type: git
+#     url: https://github.com
+#     username: MidnightCI
+#     password: ${{ secrets.MIDNIGHTCI_REPO }}

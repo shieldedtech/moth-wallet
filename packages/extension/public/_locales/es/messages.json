@@ -1,0 +1,1544 @@
+{
+  "accounts_title": {
+    "message": "Cuentas"
+  },
+  "accounts_newAccount": {
+    "message": "+ Nueva cuenta"
+  },
+  "accounts_intro": {
+    "message": "Cada cuenta tiene sus propias direcciones shielded y unshielded, más su estado de generación de comisiones."
+  },
+  "accounts_networkAria": {
+    "message": "Red: $1"
+  },
+  "accounts_menuAria": {
+    "message": "Menú de cuenta"
+  },
+  "accounts_renameMenu": {
+    "message": "Renombrar cuenta"
+  },
+  "accounts_removeMenu": {
+    "message": "Eliminar cuenta"
+  },
+  "accounts_removeNote": {
+    "message": "Eliminar una cuenta solo la oculta aquí. Puedes recuperarla con tu frase secreta."
+  },
+  "accounts_removeTitle": {
+    "message": "¿Eliminar $1?"
+  },
+  "accounts_removeBody": {
+    "message": "Esto oculta la cuenta de Moth. Sus direcciones y tokens siguen en Midnight. Puedes recuperarla cuando quieras con tus 24 palabras."
+  },
+  "accounts_renameTitle": {
+    "message": "Renombrar $1"
+  },
+  "accounts_namePlaceholder": {
+    "message": "Nombre de la cuenta"
+  },
+  "accounts_renameHint": {
+    "message": "Solo se muestra en esta billetera. Déjalo vacío para volver al nombre predeterminado."
+  },
+  "accounts_revealMenu": {
+    "message": "Mostrar frase secreta"
+  },
+  "accounts_revealTitle": {
+    "message": "Frase secreta de $1"
+  },
+  "accounts_revealHint": {
+    "message": "Introduce la contraseña de esta cuenta para mostrar su frase secreta."
+  },
+  "accounts_revealPasswordPlaceholder": {
+    "message": "Contraseña de la cuenta"
+  },
+  "accounts_revealButton": {
+    "message": "Mostrar"
+  },
+  "accounts_revealWrongPassword": {
+    "message": "Contraseña incorrecta para esta cuenta."
+  },
+  "accounts_revealWarning": {
+    "message": "Cualquiera que tenga estas palabras puede gastar tus tokens. No hagas capturas de pantalla y nunca las compartas, ni siquiera con nosotros."
+  },
+  "accounts_revealSeedNote": {
+    "message": "Esta cuenta se importó desde una semilla hex sin procesar, así que no tiene frase de palabras. Guarda esta semilla en su lugar."
+  },
+  "accounts_revealCopy": {
+    "message": "Copiar al portapapeles"
+  },
+  "accounts_revealCopied": {
+    "message": "Frase secreta copiada: pégala en un lugar seguro. Se borrará del portapapeles en 1 minuto."
+  },
+  "activity_title": {
+    "message": "Actividad"
+  },
+  "activity_filterAll": {
+    "message": "Todo"
+  },
+  "activity_filterSent": {
+    "message": "Enviado"
+  },
+  "activity_filterReceived": {
+    "message": "Recibido"
+  },
+  "activity_emptyTitle": {
+    "message": "Aún no hay nada"
+  },
+  "activity_emptyBody": {
+    "message": "Tus transferencias aparecerán aquí."
+  },
+  "activity_groupEarlier": {
+    "message": "Anteriores"
+  },
+  "activity_groupToday": {
+    "message": "Hoy"
+  },
+  "activity_groupYesterday": {
+    "message": "Ayer"
+  },
+  "activity_groupThisWeek": {
+    "message": "Esta semana"
+  },
+  "activity_groupThisMonth": {
+    "message": "Este mes"
+  },
+  "activity_sendingTo": {
+    "message": "Enviando a $1"
+  },
+  "activity_sendingToken": {
+    "message": "Enviando $1"
+  },
+  "activity_sending": {
+    "message": "Enviando"
+  },
+  "activity_sendingTransfers": {
+    "message": "Enviando $1 transferencias"
+  },
+  "activity_sentTo": {
+    "message": "Enviado a $1"
+  },
+  "activity_sentToken": {
+    "message": "Enviaste $1"
+  },
+  "activity_sent": {
+    "message": "Enviado"
+  },
+  "activity_sentTransfers": {
+    "message": "$1 transferencias enviadas"
+  },
+  "activity_receivedFrom": {
+    "message": "Recibido de $1"
+  },
+  "activity_receivedToken": {
+    "message": "Recibiste $1"
+  },
+  "activity_received": {
+    "message": "Recibido"
+  },
+  "activity_swappedFor": {
+    "message": "Cambiaste $1 por $2"
+  },
+  "activity_swappedTokens": {
+    "message": "Intercambio de tokens"
+  },
+  "activity_networkFeePaid": {
+    "message": "Comisión de red pagada"
+  },
+  "activity_dustRegistration": {
+    "message": "Registro de $1"
+  },
+  "activity_pending": {
+    "message": "Pendiente"
+  },
+  "activity_failed": {
+    "message": "Fallida"
+  },
+  "activity_subPending": {
+    "message": "$1 · Pendiente"
+  },
+  "activity_subFailed": {
+    "message": "$1 · Fallida"
+  },
+  "addressBook_title": {
+    "message": "Libreta de direcciones"
+  },
+  "addressBook_addAddress": {
+    "message": "+ Añadir dirección"
+  },
+  "addressBook_intro": {
+    "message": "Guarda las direcciones a las que envías. Aparecen como opciones al enviar tokens o dirigir DUST."
+  },
+  "addressBook_empty": {
+    "message": "Aún no hay direcciones guardadas. Añade las personas y servicios a los que envías."
+  },
+  "addressBook_actionsFor": {
+    "message": "Acciones para $1"
+  },
+  "addressBook_editTitle": {
+    "message": "Editar dirección"
+  },
+  "addressBook_addTitle": {
+    "message": "Añadir dirección"
+  },
+  "addressBook_name": {
+    "message": "Nombre"
+  },
+  "addressBook_namePlaceholder": {
+    "message": "p. ej. Alice"
+  },
+  "addressBook_address": {
+    "message": "Dirección"
+  },
+  "addressBook_addressPlaceholder": {
+    "message": "mn_addr… / mn_shield-addr… / mn_dust…"
+  },
+  "addressBook_addressAria": {
+    "message": "Dirección"
+  },
+  "addressBook_paste": {
+    "message": "Pegar"
+  },
+  "addressBook_openPicker": {
+    "message": "Libreta de direcciones"
+  },
+  "addressBook_pickerTitle": {
+    "message": "Direcciones de $1"
+  },
+  "addressBook_edit": {
+    "message": "Editar"
+  },
+  "addressBook_delete": {
+    "message": "Eliminar"
+  },
+  "addressBook_detected": {
+    "message": "Detected a $1 address."
+  },
+  "addressBook_notMidnight": {
+    "message": "That doesn't look like a Midnight address."
+  },
+  "addressBook_autoRecognized": {
+    "message": "Shielded, unshielded and DUST addresses are all recognized automatically."
+  },
+  "approval_requestExpired": {
+    "message": "Esta solicitud expiró."
+  },
+  "approval_reject": {
+    "message": "Rechazar"
+  },
+  "approval_connect": {
+    "message": "Conectar"
+  },
+  "approval_sign": {
+    "message": "Firmar"
+  },
+  "approval_approve": {
+    "message": "Aprobar"
+  },
+  "approval_connectTo": {
+    "message": "¿Conectar con"
+  },
+  "approval_connectToHost": {
+    "message": "$1?"
+  },
+  "approval_firstTimeConnecting": {
+    "message": "Primera conexión"
+  },
+  "approval_canSeeAddresses": {
+    "message": "Ver tus direcciones"
+  },
+  "approval_canAskApprove": {
+    "message": "Pedirte que apruebes transacciones"
+  },
+  "approval_cantMoveMoney": {
+    "message": "Mover dinero sin tu permiso"
+  },
+  "approval_cantSeeBalances": {
+    "message": "Ver tus saldos shielded ni tu historial"
+  },
+  "approval_connectingAs": {
+    "message": "Conectando como"
+  },
+  "approval_signTitle": {
+    "message": "¿Firmar este mensaje?"
+  },
+  "approval_signSubtitle": {
+    "message": "$1 quiere una firma que demuestre que controlas esta billetera."
+  },
+  "approval_messageLabel": {
+    "message": "Mensaje"
+  },
+  "approval_emptyMessage": {
+    "message": "(vacío)"
+  },
+  "approval_signNote": {
+    "message": "Firmar no mueve fondos, pero firma solo mensajes de sitios en los que confíes."
+  },
+  "approval_allow": {
+    "message": "Permitir"
+  },
+  "approval_deriveTitle": {
+    "message": "¿Permitir un secreto de app?"
+  },
+  "approval_deriveSubtitle": {
+    "message": "$1 quiere un secreto de identidad privado y persistente para este sitio."
+  },
+  "approval_deriveLabelLabel": {
+    "message": "Etiqueta"
+  },
+  "approval_deriveNote": {
+    "message": "Esto concede un secreto persistente y único para este sitio. No mueve fondos ni puede gastar o revelar tus claves; permítelo solo en sitios de confianza."
+  },
+  "approval_approveTitle": {
+    "message": "¿Aprobar esta transacción?"
+  },
+  "approval_balanceSubtitle": {
+    "message": "$1 creó una transacción y necesita que tu billetera cubra las comisiones y la finalice."
+  },
+  "approval_fromLabel": {
+    "message": "De"
+  },
+  "approval_networkFeeLabel": {
+    "message": "Comisión de red"
+  },
+  "approval_paidIn": {
+    "message": "Pagada en $1"
+  },
+  "approval_balanceNote": {
+    "message": "Tu billetera puede aportar fondos propios para balancear esta transacción. Aprueba solo transacciones de sitios en los que confíes."
+  },
+  "approval_transferSubtitle": {
+    "message": "Nada se mueve hasta que apruebes."
+  },
+  "approval_youSend": {
+    "message": "Envías"
+  },
+  "approval_usingLabel": {
+    "message": "Usando"
+  },
+  "approval_transferNote": {
+    "message": "Se demuestra con una prueba de conocimiento cero; el sitio nunca ve tus saldos."
+  },
+  "approval_unlockToContinue": {
+    "message": "Desbloquea para continuar"
+  },
+  "approval_passwordPlaceholder": {
+    "message": "Contraseña"
+  },
+  "approval_wrongPassword": {
+    "message": "Esa contraseña no coincide. Inténtalo de nuevo."
+  },
+  "approval_unlocking": {
+    "message": "Desbloqueando…"
+  },
+  "approval_unlock": {
+    "message": "Desbloquear"
+  },
+  "common_cancel": {
+    "message": "Cancelar"
+  },
+  "common_save": {
+    "message": "Guardar"
+  },
+  "common_back": {
+    "message": "Atrás"
+  },
+  "common_close": {
+    "message": "Cerrar"
+  },
+  "common_done": {
+    "message": "Listo"
+  },
+  "common_remove": {
+    "message": "Eliminar"
+  },
+  "common_extName": {
+    "message": "Moth Wallet (Dev)"
+  },
+  "common_extDescription": {
+    "message": "Billetera de referencia para la Midnight Network. Solo para desarrollo y pruebas — no para fondos de mainnet."
+  },
+  "dapp_siteCan": {
+    "message": "Este sitio puede"
+  },
+  "dapp_siteCant": {
+    "message": "No puede"
+  },
+  "dust_waitingForSync": {
+    "message": "Esperando la sincronización…"
+  },
+  "dust_startGenerating": {
+    "message": "Empezar a generar $1"
+  },
+  "dust_registerAmount": {
+    "message": "Registrar $1 $2"
+  },
+  "dust_stopGenerating": {
+    "message": "Dejar de generar $1"
+  },
+  "dust_percentGenerated": {
+    "message": "$1% generado"
+  },
+  "dust_generatedNow": {
+    "message": "Generado ahora"
+  },
+  "dust_amountLabel": {
+    "message": "$1 $2"
+  },
+  "dust_totalPossible": {
+    "message": "Total posible"
+  },
+  "dust_fromYourNight": {
+    "message": "De tus $1 $2"
+  },
+  "dust_fromYourNightGenerating": {
+    "message": "From your $1 $2 generating now"
+  },
+  "dust_generationRate": {
+    "message": "Tasa de generación"
+  },
+  "dust_setByNetwork": {
+    "message": "Definida por la red"
+  },
+  "dust_variable": {
+    "message": "Variable"
+  },
+  "dust_generationRow": {
+    "message": "Generación de Dust"
+  },
+  "dust_registeredGenerating": {
+    "message": "Registrado — generando"
+  },
+  "dust_notRegistered": {
+    "message": "Sin registrar"
+  },
+  "dust_noteRegistered": {
+    "message": "Tu $1 está registrado — $2 se acumula solo mientras lo tienes. El $1 que recibas después se registra automáticamente."
+  },
+  "dust_noteRegisteredHold": {
+    "message": "Your $1 is registered — $2 builds up on its own while you hold it, and $1 you receive later joins in by itself."
+  },
+  "dust_noteUnregistered": {
+    "message": "Registra tu $1 para empezar a generar $2. El $1 que recibas después se registra automáticamente."
+  },
+  "dust_noteRegisterPrompt": {
+    "message": "Register your $1 to start generating $2. $1 you receive afterwards joins in by itself."
+  },
+  "dust_noteNoNight": {
+    "message": "$1 se acumula solo mientras tienes $2. Pagar comisiones usa un poco y luego se recarga."
+  },
+  "dust_noteUnregisteredSome": {
+    "message": "$1 $2 isn't registered for $3 generation. Register it to raise your total."
+  },
+  "dust_noteNotGenerating": {
+    "message": "$1 $2 isn't generating $3 yet — new or recently moved $2 starts on its own after a short delay. If this amount doesn't shrink, resync from Settings → Network."
+  },
+  "dust_syncingWallet": {
+    "message": "Sincronizando $1…"
+  },
+  "dust_finalAmounts": {
+    "message": "Los montos finales aparecerán cuando termine la sincronización."
+  },
+  "dust_generateTitle": {
+    "message": "¿Generar $1?"
+  },
+  "dust_register": {
+    "message": "Registrar"
+  },
+  "dust_stop": {
+    "message": "Detener"
+  },
+  "dust_stopTitle": {
+    "message": "¿Dejar de generar $1?"
+  },
+  "dust_generateBody": {
+    "message": "Esto registra tu $1 para que empiece a generar $2. El $1 que recibas después se registra automáticamente."
+  },
+  "dust_generateBodyReceiver": {
+    "message": "This registers your unregistered $1 so it starts generating $2. You can do this again whenever you receive more $1."
+  },
+  "dust_deregisterBody": {
+    "message": "This deregisters your $1 from $2 generation. The $2 you have stays and still pays fees, but it won't refill. You can register again anytime."
+  },
+  "dust_addressLabel": {
+    "message": "$1 address"
+  },
+  "dust_receiverHint": {
+    "message": "Where the generated $1 goes. Prefilled with this wallet's own address."
+  },
+  "dust_receiverInvalid": {
+    "message": "That doesn't look like a $1 address (mn_dust…)."
+  },
+  "dust_registeringFor": {
+    "message": "Registrando para $1…"
+  },
+  "dust_stoppingGeneration": {
+    "message": "Deteniendo la generación de $1…"
+  },
+  "dust_pendingSub1": {
+    "message": "Esto suele tardar menos de un minuto."
+  },
+  "dust_pendingSub2": {
+    "message": "Puedes cerrar el panel, nosotros seguimos."
+  },
+  "dust_stepBuilt": {
+    "message": "Registro creado"
+  },
+  "dust_stepBuiltTx": {
+    "message": "Transacción creada"
+  },
+  "dust_stepProving": {
+    "message": "Generando prueba"
+  },
+  "dust_stepProvingSub": {
+    "message": "Se ejecuta en tu servidor de pruebas, los detalles nunca salen de ahí"
+  },
+  "dust_stepSubmitting": {
+    "message": "Enviando a la red"
+  },
+  "dust_alreadyGeneratingTitle": {
+    "message": "Ya estás generando $1"
+  },
+  "dust_coinsTitle": {
+    "message": "Tus monedas de $1"
+  },
+  "dust_coinsShow": {
+    "message": "Ver desglose"
+  },
+  "dust_coinsHide": {
+    "message": "Ocultar desglose"
+  },
+  "dust_coinsRegistered": {
+    "message": "Generando"
+  },
+  "dust_coinsUnregistered": {
+    "message": "Sin registrar"
+  },
+  "dust_coinsBooked": {
+    "message": "Reservada por una transacción pendiente"
+  },
+  "dust_coinsBookedNote": {
+    "message": "$1 de tu $2 está reservado por una transacción que aún no se ha liquidado. Las monedas reservadas cuentan para tu saldo, pero no se pueden registrar hasta entonces."
+  },
+  "dust_coinsEmpty": {
+    "message": "No hay monedas de $1."
+  },
+  "dust_generatingTitle": {
+    "message": "Estás generando $1"
+  },
+  "dust_alreadyGeneratingSub": {
+    "message": "Tu $1 ya estaba registrado. $2 sigue acumulándose mientras lo tienes."
+  },
+  "dust_generatingSub": {
+    "message": "Tu $1 está registrado. $2 empezará a acumularse a medida que sincroniza."
+  },
+  "dust_generationStopped": {
+    "message": "$1 generation stopped"
+  },
+  "dust_deregisteredSub": {
+    "message": "Your $1 is deregistered. The $2 you have keeps paying fees; register again anytime."
+  },
+  "dust_failureTitle": {
+    "message": "No se pudo completar"
+  },
+  "dust_failureSub": {
+    "message": "Tu $1 no se registró. No se gastó nada."
+  },
+  "dust_deregisterFailureSub": {
+    "message": "Nothing changed — your $1 is still registered."
+  },
+  "dust_tryAgain": {
+    "message": "Intentar de nuevo"
+  },
+  "dust_backToHome": {
+    "message": "Volver al inicio"
+  },
+  "dust_reason": {
+    "message": "Motivo"
+  },
+  "dust_unknownError": {
+    "message": "Error desconocido"
+  },
+  "dust_failureFootnote": {
+    "message": "Si el servidor de pruebas no respondió, revisa Configuración y luego Red."
+  },
+  "dust_provingFootnote": {
+    "message": "If proving failed, check the selected method under Settings → Network. Complex transactions require a proof server."
+  },
+  "dust_paysYourFees": {
+    "message": "Paga tus comisiones"
+  },
+  "dust_ofMax": {
+    "message": "de $1"
+  },
+  "dust_ofMaxWithLabel": {
+    "message": "de $1 $2"
+  },
+  "dust_etaWaitingFor": {
+    "message": "Esperando $1"
+  },
+  "dust_etaSyncing": {
+    "message": "Sincronizando…"
+  },
+  "dust_etaFullyGenerated": {
+    "message": "Generación completa"
+  },
+  "dust_etaFullInMin": {
+    "message": "Lleno en aprox. $1 min"
+  },
+  "dust_etaFullInHour": {
+    "message": "Lleno en aprox. 1 hora"
+  },
+  "dust_etaFullInHours": {
+    "message": "Lleno en aprox. $1 horas"
+  },
+  "dust_etaFullInDays": {
+    "message": "Lleno en aprox. $1 días"
+  },
+  "dust_rebuildRecords": {
+    "message": "Reconstruir registros de $1"
+  },
+  "dust_rebuildNote": {
+    "message": "Parte de tu $1 registrado todavía no genera $2. La reconstrucción vuelve a leer tus registros de la cadena: no gasta nada, pero tarda varios minutos."
+  },
+  "formatErrors_wholeNumber": {
+    "message": "El monto debe ser un número entero"
+  },
+  "formatErrors_positiveNumber": {
+    "message": "El monto debe ser un número positivo como 1.5"
+  },
+  "formatErrors_maxDecimals": {
+    "message": "Este token tiene como máximo $1 decimales"
+  },
+  "home_viewAccountsAria": {
+    "message": "Ver cuentas"
+  },
+  "home_settingsAria": {
+    "message": "Configuración"
+  },
+  "home_networkAria": {
+    "message": "Red: $1"
+  },
+  "home_totalBalance": {
+    "message": "Saldo total"
+  },
+  "home_connecting": {
+    "message": "Conectando…"
+  },
+  "home_send": {
+    "message": "Enviar"
+  },
+  "home_receive": {
+    "message": "Recibir"
+  },
+  "home_addFirstTitle": {
+    "message": "Agrega tu primer $1"
+  },
+  "home_addFirstBody": {
+    "message": "Copia tu dirección y envía $1 desde un exchange u otra billetera."
+  },
+  "home_showMyAddress": {
+    "message": "Mostrar mi dirección"
+  },
+  "home_unshielded": {
+    "message": "Unshielded"
+  },
+  "home_shielded": {
+    "message": "Shielded"
+  },
+  "home_unshieldedToken": {
+    "message": "Token unshielded"
+  },
+  "home_unshieldedTokenWithId": {
+    "message": "$1 · Token unshielded"
+  },
+  "home_shieldedToken": {
+    "message": "Token shielded"
+  },
+  "home_shieldedTokenWithId": {
+    "message": "$1 · Token shielded"
+  },
+  "home_noShieldedTokens": {
+    "message": "Aún no hay tokens shielded. Los saldos privados aparecerán aquí."
+  },
+  "home_recentActivity": {
+    "message": "Actividad reciente"
+  },
+  "home_seeAll": {
+    "message": "Ver todo"
+  },
+  "home_nameTokenAria": {
+    "message": "Nombrar token $1"
+  },
+  "home_nameTokenTitle": {
+    "message": "Nombra este token"
+  },
+  "home_nameTokenPlaceholder": {
+    "message": "p. ej. Puntos de lealtad"
+  },
+  "home_tokenNameAria": {
+    "message": "Nombre del token"
+  },
+  "home_nameTokenHint": {
+    "message": "Solo se muestra en esta billetera. Déjalo vacío para volver a mostrar el id del token."
+  },
+  "network_title": {
+    "message": "Red"
+  },
+  "network_intro": {
+    "message": "Elige una de las redes y ajusta sus endpoints cuando lo necesites."
+  },
+  "network_groupAria": {
+    "message": "Red Midnight"
+  },
+  "network_descMainnet": {
+    "message": "Red de producción en vivo"
+  },
+  "network_descDevnet": {
+    "message": "Desarrollo y pruebas"
+  },
+  "network_descPreview": {
+    "message": "Vista previa de próximos cambios"
+  },
+  "network_descPreprod": {
+    "message": "Pruebas de preproducción"
+  },
+  "network_descQanet": {
+    "message": "Red de control de calidad"
+  },
+  "network_endpointUrls": {
+    "message": "URLs de endpoints"
+  },
+  "network_useDefaults": {
+    "message": "Usar predeterminados"
+  },
+  "network_nodeUrl": {
+    "message": "URL del nodo"
+  },
+  "network_indexerUrl": {
+    "message": "URL del indexador"
+  },
+  "network_proofServerUrl": {
+    "message": "URL del servidor de pruebas"
+  },
+  "network_proving": {
+    "message": "Generación de pruebas"
+  },
+  "network_provingMethodAria": {
+    "message": "Método de prueba"
+  },
+  "network_wasm": {
+    "message": "WASM"
+  },
+  "network_wasmDesc": {
+    "message": "Local · Recommended for transfers"
+  },
+  "network_proofServer": {
+    "message": "Servidor de pruebas"
+  },
+  "network_proofServerDesc": {
+    "message": "Servidor de pruebas dedicado, local o alojado de forma remota"
+  },
+  "network_provingHelp": {
+    "message": "La cartera usa el método de prueba seleccionado aquí para las transacciones de la cartera y de las dApps. Se recomienda WASM para transacciones sencillas, como las transferencias de tokens. Las transacciones complejas, como las llamadas a contratos, requieren un servidor de pruebas. Ejecute uno localmente —hay un contenedor Docker disponible— o use uno operado por alguien de su confianza, ejecutándose en un TEE con la atestación adecuada. La generación de pruebas revela los detalles de la transacción a quien opere el servidor: uno remoto sin atestación ve todo lo que usted prueba."
+  },
+  "network_resyncNote": {
+    "message": "Cambiar la red o el indexador borra los datos de sincronización locales y resincroniza esta cuenta. Otros cambios de endpoints conservan la sincronización actual."
+  },
+  "network_saveError": {
+    "message": "No se pudo guardar la configuración de red."
+  },
+  "network_saving": {
+    "message": "Guardando…"
+  },
+  "network_switchTitle": {
+    "message": "¿Cambiar a $1?"
+  },
+  "network_changeIndexerTitle": {
+    "message": "¿Cambiar el indexador y resincronizar?"
+  },
+  "network_switchResync": {
+    "message": "Cambiar y resincronizar"
+  },
+  "network_saveResync": {
+    "message": "Guardar y resincronizar"
+  },
+  "network_switchBody": {
+    "message": "Al salir de $1 se borran el estado de sincronización local y los saldos en caché de esta cuenta."
+  },
+  "network_changeIndexerBody": {
+    "message": "Cambiar el indexador borra el estado de sincronización local y los saldos en caché de esta cuenta."
+  },
+  "network_freshSync": {
+    "message": "Moth iniciará una sincronización desde cero en $1."
+  },
+  "network_fundsSafe": {
+    "message": "Tus fondos, tu cuenta y tu frase secreta no se ven afectados."
+  },
+  "receive_title": {
+    "message": "Recibir"
+  },
+  "receive_unshieldedTab": {
+    "message": "Unshielded"
+  },
+  "receive_shieldedTab": {
+    "message": "Shielded"
+  },
+  "receive_addressCopied": {
+    "message": "Dirección copiada"
+  },
+  "receive_shieldedAddressOf": {
+    "message": "$1 · Dirección shielded"
+  },
+  "receive_unshieldedAddressOf": {
+    "message": "$1 · Dirección unshielded"
+  },
+  "receive_addressUnavailable": {
+    "message": "Dirección no disponible"
+  },
+  "receive_copyAddress": {
+    "message": "Copiar dirección"
+  },
+  "receive_shieldedNote": {
+    "message": "Envía aquí solo tokens nativos de Midnight. Cualquier otra cosa podría perderse."
+  },
+  "receive_unshieldedNote": {
+    "message": "Las transferencias aquí son visibles en la red. Cualquiera con la dirección puede ver los montos."
+  },
+  "send_title": {
+    "message": "Enviar"
+  },
+  "send_reviewTransfer": {
+    "message": "Revisar transferencia"
+  },
+  "send_reviewCount": {
+    "message": "Revisar $1 transferencias"
+  },
+  "send_addAnother": {
+    "message": "Añadir otra transferencia"
+  },
+  "send_removeTransfer": {
+    "message": "Eliminar transferencia $1"
+  },
+  "send_oneTransactionNote": {
+    "message": "Everything here sends as one transaction — one $1 fee covers all of it."
+  },
+  "send_amountPlaceholder": {
+    "message": "0"
+  },
+  "send_amountLabel": {
+    "message": "Cantidad"
+  },
+  "send_moreThanBalance": {
+    "message": "Más que tu saldo"
+  },
+  "send_overspent": {
+    "message": "More than your $1 balance across these transfers."
+  },
+  "send_enterWholeNumber": {
+    "message": "Ingresa un número entero"
+  },
+  "send_enterDecimalNumber": {
+    "message": "Ingresa un número como 1.5"
+  },
+  "send_balanceOf": {
+    "message": "Saldo $1 $2"
+  },
+  "send_percent25": {
+    "message": "25%"
+  },
+  "send_percent50": {
+    "message": "50%"
+  },
+  "send_max": {
+    "message": "Máx"
+  },
+  "send_to": {
+    "message": "Para"
+  },
+  "send_recipientAddress": {
+    "message": "Dirección del destinatario"
+  },
+  "send_paste": {
+    "message": "Pegar"
+  },
+  "send_validShieldedAddress": {
+    "message": "✓ Dirección shielded válida"
+  },
+  "send_validUnshieldedAddress": {
+    "message": "✓ Dirección unshielded válida"
+  },
+  "send_addressInvalid": {
+    "message": "Eso no parece una dirección de Midnight. Revísala e intenta de nuevo."
+  },
+  "send_addressKindInvalid": {
+    "message": "That doesn't look like a $1 address."
+  },
+  "send_nameResolving": {
+    "message": "Resolviendo el nombre…"
+  },
+  "send_nameResolved": {
+    "message": "Resuelto vía .shielded → $1"
+  },
+  "send_nameVerified": {
+    "message": "verificado"
+  },
+  "send_nameUnsendable": {
+    "message": "Este nombre no tiene una dirección de Midnight utilizable para enviar."
+  },
+  "send_nameConfusable": {
+    "message": "Este nombre tiene caracteres inusuales que pueden imitar otro nombre; compruébalo con atención."
+  },
+  "send_noteShielded": {
+    "message": "Transferencia shielded, el monto se mantiene privado en la red."
+  },
+  "send_noteUnshielded": {
+    "message": "$1 es unshielded, esta transferencia será visible en la red."
+  },
+  "send_pickerTitle": {
+    "message": "Enviar un token"
+  },
+  "send_chooseToken": {
+    "message": "Elegir un token"
+  },
+  "send_searchPlaceholder": {
+    "message": "Buscar por nombre o id del token"
+  },
+  "send_searchTokens": {
+    "message": "Buscar tokens"
+  },
+  "send_noTokensMatch": {
+    "message": "Ningún token coincide con “$1”."
+  },
+  "send_groupUnshielded": {
+    "message": "Unshielded"
+  },
+  "send_groupShielded": {
+    "message": "Shielded"
+  },
+  "send_reviewTitle": {
+    "message": "Revisar"
+  },
+  "send_youreSending": {
+    "message": "Estás enviando"
+  },
+  "send_youreSendingCount": {
+    "message": "Estás enviando $1 transferencias"
+  },
+  "send_amountSymbol": {
+    "message": "$1 $2"
+  },
+  "send_from": {
+    "message": "De"
+  },
+  "send_total": {
+    "message": "Total"
+  },
+  "send_dustFeeLabel": {
+    "message": "Comisión de $1"
+  },
+  "send_totalReady": {
+    "message": "$1 $2 + ≈ $3 $4"
+  },
+  "send_totalPending": {
+    "message": "$1 $2 + comisión en $3"
+  },
+  "send_estimatingFee": {
+    "message": "Estimando comisión…"
+  },
+  "send_sendNow": {
+    "message": "Enviar ahora"
+  },
+  "send_irreversibleNote": {
+    "message": "Las transferencias no se pueden revertir. Revisa la dirección antes de enviar."
+  },
+  "send_checkAddresses": {
+    "message": "Transfers can't be reversed. Check the addresses before you send."
+  },
+  "send_networkFee": {
+    "message": "Comisión de red"
+  },
+  "send_estimateBadge": {
+    "message": "Estimación"
+  },
+  "send_feeReady": {
+    "message": "≈ $1 $2"
+  },
+  "send_feeCalculating": {
+    "message": "Calculando…"
+  },
+  "send_feeUnavailable": {
+    "message": "No disponible por ahora"
+  },
+  "send_feeIdle": {
+    "message": "Ingresa los datos de la transferencia"
+  },
+  "send_feeNoteReady": {
+    "message": "Calculada según las condiciones actuales de la red. La comisión final puede variar."
+  },
+  "send_feeNoteLoading": {
+    "message": "Verificando la comisión completa, incluido el pago de $1."
+  },
+  "send_feeNoteUnavailable": {
+    "message": "Aún puedes enviar. La comisión de red final se pagará en $1."
+  },
+  "send_feeNoteIdle": {
+    "message": "Agrega un monto y una dirección válidos para calcular la comisión."
+  },
+  "send_sendingAmount": {
+    "message": "Enviando $1 $2…"
+  },
+  "send_sending": {
+    "message": "Enviando $1…"
+  },
+  "send_transfers": {
+    "message": "Transferencias"
+  },
+  "send_transfersCount": {
+    "message": "$1 transferencias"
+  },
+  "send_pendingSubTime": {
+    "message": "Esto suele tardar menos de un minuto."
+  },
+  "send_pendingSubClose": {
+    "message": "Puedes cerrar el panel, nosotros seguimos."
+  },
+  "send_stepBuilt": {
+    "message": "Transacción creada"
+  },
+  "send_stepProving": {
+    "message": "Generando prueba"
+  },
+  "send_stepProvingSub": {
+    "message": "Se ejecuta en tu servidor de pruebas, los detalles nunca salen de ahí"
+  },
+  "send_stepSubmitting": {
+    "message": "Enviando a la red"
+  },
+  "send_onItsWay": {
+    "message": "$1 $2 va en camino"
+  },
+  "send_onItsWaySingle": {
+    "message": "$1 está en camino"
+  },
+  "send_onTheirWayMulti": {
+    "message": "$1 están en camino"
+  },
+  "send_successSubShielded": {
+    "message": "Transferencia shielded, suele llegar en menos de un minuto."
+  },
+  "send_successSubUnshielded": {
+    "message": "Transferencia unshielded, suele llegar en menos de un minuto."
+  },
+  "send_transaction": {
+    "message": "Transacción"
+  },
+  "send_status": {
+    "message": "Estado"
+  },
+  "send_submittedAt": {
+    "message": "Enviada · $1"
+  },
+  "send_viewInActivity": {
+    "message": "Ver en actividad"
+  },
+  "send_tryAgain": {
+    "message": "Intentar de nuevo"
+  },
+  "send_backToHome": {
+    "message": "Volver al inicio"
+  },
+  "send_failureTitle": {
+    "message": "No se pudo completar"
+  },
+  "send_failureSub": {
+    "message": "Tus $1 $2 no se movieron. No se gastó nada."
+  },
+  "send_failureSubSingle": {
+    "message": "Your $1 hasn't moved. Nothing was spent."
+  },
+  "send_failureSubMulti": {
+    "message": "Your $1 haven't moved. Nothing was spent."
+  },
+  "send_reason": {
+    "message": "Motivo"
+  },
+  "send_unknownError": {
+    "message": "Error desconocido"
+  },
+  "send_failureFootnote": {
+    "message": "Si el servidor de pruebas no respondió, revisa Configuración y luego Red."
+  },
+  "send_provingFootnote": {
+    "message": "If proving failed, check the selected method under Settings → Network. Complex transactions require a proof server."
+  },
+  "settings_title": {
+    "message": "Configuración"
+  },
+  "settings_sectionPrivacy": {
+    "message": "Privacidad"
+  },
+  "settings_connectedSites": {
+    "message": "Sitios conectados"
+  },
+  "settings_sectionAddresses": {
+    "message": "Direcciones"
+  },
+  "settings_addressBook": {
+    "message": "Libreta de direcciones"
+  },
+  "settings_nameResolver": {
+    "message": "Resolutor de nombres"
+  },
+  "settings_nameResolverDesc": {
+    "message": "Resuelve nombres .shielded a direcciones para enviar-a-nombre. Déjalo vacío para desactivarlo."
+  },
+  "settings_nameResolverPlaceholder": {
+    "message": "https://resolver.example"
+  },
+  "settings_sectionNetwork": {
+    "message": "Red"
+  },
+  "settings_preseedWarming": {
+    "message": "Acelerar cuentas nuevas"
+  },
+  "settings_preseedWarmingAria": {
+    "message": "Acelerar cuentas nuevas"
+  },
+  "settings_preseedWarmingOff": {
+    "message": "Desactivado"
+  },
+  "settings_preseedWarmingOn": {
+    "message": "Preparando"
+  },
+  "settings_preseedWarmingReady": {
+    "message": "Listo"
+  },
+  "settings_preseedWarmingProgress": {
+    "message": "Preparando $1%"
+  },
+  "settings_preseedWarmingDescriptionReady": {
+    "message": "$1 está preparado. Las cuentas nuevas se sincronizan en segundos en lugar de recorrer toda la cadena."
+  },
+  "settings_preseedWarmingDescriptionOff": {
+    "message": "Las cuentas nuevas recorren toda la cadena, lo que puede tardar una hora. Actívalo para preparar $1 una vez en segundo plano y que las cuentas posteriores empiecen en segundos."
+  },
+  "settings_preseedWarmingDescriptionOn": {
+    "message": "Preparando $1 en segundo plano. Tarda alrededor de una hora y continúa mientras la cartera esté abierta. Las cuentas creadas después empiezan en segundos."
+  },
+  "settings_networkConfig": {
+    "message": "Configuración de red"
+  },
+  "settings_sectionSecurity": {
+    "message": "Seguridad"
+  },
+  "settings_autoLock": {
+    "message": "Bloqueo automático"
+  },
+  "settings_autoLockDemo": {
+    "message": "La cartera nunca se bloquea sola."
+  },
+  "settings_autoLockDescription": {
+    "message": "Lock and require your password after inactivity."
+  },
+  "settings_autoLockAria": {
+    "message": "Tiempo de bloqueo automático"
+  },
+  "settings_autoLock1Minute": {
+    "message": "1 minuto"
+  },
+  "settings_autoLock5Minutes": {
+    "message": "5 minutos"
+  },
+  "settings_autoLock15Minutes": {
+    "message": "15 minutos"
+  },
+  "settings_autoLock30Minutes": {
+    "message": "30 minutos"
+  },
+  "settings_autoLock1Hour": {
+    "message": "1 hora"
+  },
+  "settings_autoLockNever": {
+    "message": "Nunca bloquear"
+  },
+  "settings_sectionAppearance": {
+    "message": "Apariencia"
+  },
+  "settings_theme": {
+    "message": "Tema"
+  },
+  "settings_themeSystem": {
+    "message": "Sistema"
+  },
+  "settings_themeLight": {
+    "message": "Claro"
+  },
+  "settings_themeDark": {
+    "message": "Oscuro"
+  },
+  "settings_colorblind": {
+    "message": "Apto para daltonismo"
+  },
+  "settings_colorblindDescription": {
+    "message": "Colores de estado azul y naranja en lugar de verde y rojo."
+  },
+  "settings_version": {
+    "message": "Versión $1"
+  },
+  "setup_taglineLine1": {
+    "message": "Tu billetera"
+  },
+  "setup_taglineLine2": {
+    "message": "para Midnight."
+  },
+  "setup_intro": {
+    "message": "Una billetera para desarrolladores en la red Midnight. Envía, recibe y guarda $1, con tus datos shielded."
+  },
+  "setup_devNote": {
+    "message": "Sin auditar y creada para desarrollo. Las billeteras nuevas empiezan en una red de prueba."
+  },
+  "setup_createWallet": {
+    "message": "Crear una billetera nueva"
+  },
+  "setup_alreadyHaveOne": {
+    "message": "Ya tengo una"
+  },
+  "setup_freeToCreate": {
+    "message": "Crearla es gratis. Tus claves se quedan en este dispositivo."
+  },
+  "setup_stepProgress": {
+    "message": "$1 de $2"
+  },
+  "setup_importTitle": {
+    "message": "Recupera tu billetera"
+  },
+  "setup_importSubtitle": {
+    "message": "Escribe tus 24 palabras secretas en orden, o pega la frase completa de una vez."
+  },
+  "setup_pastePhrase": {
+    "message": "Pegar frase"
+  },
+  "setup_continue": {
+    "message": "Continuar"
+  },
+  "setup_settingUp": {
+    "message": "Configurando…"
+  },
+  "setup_passwordTitle": {
+    "message": "Crea una contraseña"
+  },
+  "setup_passwordSubtitle": {
+    "message": "Desbloquea Moth en este dispositivo. No puede recuperar tu billetera; solo tus 24 palabras pueden."
+  },
+  "setup_accountNameLabel": {
+    "message": "Nombre de la cuenta"
+  },
+  "setup_accountNameHint": {
+    "message": "Opcional, se muestra solo en esta cartera. Puedes cambiarlo más tarde."
+  },
+  "setup_passwordLabel": {
+    "message": "Contraseña"
+  },
+  "setup_show": {
+    "message": "Mostrar"
+  },
+  "setup_hide": {
+    "message": "Ocultar"
+  },
+  "setup_passwordHint": {
+    "message": "Al menos 8 caracteres"
+  },
+  "setup_confirmPasswordLabel": {
+    "message": "Confirmar contraseña"
+  },
+  "setup_passwordMismatch": {
+    "message": "Las contraseñas no coinciden"
+  },
+  "setup_networkTitle": {
+    "message": "Elige una red"
+  },
+  "setup_networkFirstRun": {
+    "message": "Elige qué red de Midnight usará esta billetera."
+  },
+  "setup_networkNewAccount": {
+    "message": "La cuenta nueva tendrá sus propias direcciones en esta red. Tus otras cuentas se quedan donde están."
+  },
+  "setup_networkNote": {
+    "message": "Puedes cambiar esto cuando quieras en Configuración, en Red."
+  },
+  "setup_phraseTitle": {
+    "message": "Anota tu frase secreta"
+  },
+  "setup_phraseSubtitle": {
+    "message": "Estas 24 palabras son la única forma de recuperar tu billetera. Escríbelas en papel, en orden."
+  },
+  "setup_phraseWarning": {
+    "message": "Cualquiera con estas palabras puede gastar tus tokens. No les tomes captura de pantalla y nunca las compartas, ni siquiera con nosotros."
+  },
+  "setup_phraseSavedCheckbox": {
+    "message": "Ya anoté mi frase"
+  },
+  "setup_doneTitle": {
+    "message": "Todo listo"
+  },
+  "setup_doneLine1": {
+    "message": "Tu billetera vive en el panel lateral."
+  },
+  "setup_doneLine2": {
+    "message": "Fija Moth a tu barra de herramientas para acceder rápido."
+  },
+  "setup_closeTab": {
+    "message": "Cerrar esta pestaña"
+  },
+  "sites_title": {
+    "message": "Sitios conectados"
+  },
+  "sites_emptyTitle": {
+    "message": "Aún no hay conexiones"
+  },
+  "sites_emptyBody": {
+    "message": "Los sitios a los que te conectes aparecerán aquí."
+  },
+  "sites_revoke": {
+    "message": "Revocar"
+  },
+  "syncStatus_synced": {
+    "message": "Sincronizado"
+  },
+  "syncStatus_syncing": {
+    "message": "Sincronizando"
+  },
+  "syncStatus_syncingAria": {
+    "message": "Sincronizando, $1%"
+  },
+  "syncStatus_percent": {
+    "message": "$1%"
+  },
+  "syncStatus_shielded": {
+    "message": "Shielded"
+  },
+  "syncStatus_unshielded": {
+    "message": "Unshielded"
+  },
+  "tokens_shieldedToken": {
+    "message": "Token shielded"
+  },
+  "tokens_unshieldedToken": {
+    "message": "Token unshielded"
+  },
+  "tokens_shieldedTokenWithId": {
+    "message": "$1 · Token shielded"
+  },
+  "tokens_unshieldedTokenWithId": {
+    "message": "$1 · Token unshielded"
+  },
+  "unlock_welcomeBack": {
+    "message": "Hola de nuevo"
+  },
+  "unlock_unlockAccount": {
+    "message": "Desbloquear $1"
+  },
+  "unlock_enterPassword": {
+    "message": "Ingresa tu contraseña para desbloquear Moth."
+  },
+  "unlock_switchHint": {
+    "message": "Introduce la contraseña de esta cuenta para cambiar a ella."
+  },
+  "unlock_passwordPlaceholder": {
+    "message": "Contraseña"
+  },
+  "unlock_show": {
+    "message": "Mostrar"
+  },
+  "unlock_hide": {
+    "message": "Ocultar"
+  },
+  "unlock_wrongPassword": {
+    "message": "Esa contraseña no coincide. Inténtalo de nuevo."
+  },
+  "unlock_unlocking": {
+    "message": "Desbloqueando…"
+  },
+  "unlock_unlock": {
+    "message": "Desbloquear"
+  },
+  "welcome_taglineLine1": {
+    "message": "Tu billetera"
+  },
+  "welcome_taglineLine2": {
+    "message": "para Midnight."
+  },
+  "welcome_intro": {
+    "message": "Una billetera para desarrolladores en la red Midnight. Envía, recibe y guarda $1, con tus datos shielded."
+  },
+  "welcome_devNote": {
+    "message": "Sin auditar y creada para desarrollo. Las billeteras nuevas empiezan en una red de prueba."
+  },
+  "welcome_createWallet": {
+    "message": "Crear una billetera nueva"
+  },
+  "welcome_alreadyHaveOne": {
+    "message": "Ya tengo una"
+  },
+  "welcome_settingUpAccount": {
+    "message": "Configurando tu cuenta"
+  },
+  "welcome_finishInSetupTab": {
+    "message": "Termina de crear tu cuenta en la pestaña de configuración abierta. Este panel se actualizará solo."
+  },
+  "welcome_goToSetupTab": {
+    "message": "Ir a la pestaña de configuración"
+  },
+  "welcome_cancelSetup": {
+    "message": "Cancelar configuración"
+  },
+  "welcome_gettingThingsReady": {
+    "message": "Preparando todo"
+  },
+  "welcome_loadingPreparingWallet": {
+    "message": "Preparando tu billetera"
+  },
+  "welcome_loadingCatchingUp": {
+    "message": "Poniéndonos al día con Midnight"
+  },
+  "welcome_loadingPreparingNewWallet": {
+    "message": "Preparando tu nueva billetera"
+  },
+  "welcome_loadingStartingServices": {
+    "message": "Iniciando los servicios seguros de la billetera"
+  },
+  "welcome_loadingOpeningWallet": {
+    "message": "Abriendo tu billetera segura"
+  },
+  "settings_developerMode": {
+    "message": "Modo de desarrollador"
+  },
+  "settings_developerModeDescription": {
+    "message": "Mostrar URLs de extremos, códigos de estado y tiempos de reintento en los avisos de conexión."
+  },
+  "settings_developerModeAria": {
+    "message": "Modo de desarrollador"
+  },
+  "settings_developerModeOn": {
+    "message": "Activado"
+  },
+  "settings_developerModeOff": {
+    "message": "Desactivado"
+  },
+  "relay_unreachableTitle": {
+    "message": "No se puede conectar con el nodo"
+  },
+  "relay_unreachableBody": {
+    "message": "Los saldos están actualizados, pero no se puede enviar hasta que vuelva la conexión."
+  },
+  "relay_forbiddenTitle": {
+    "message": "El nodo rechazó la conexión"
+  },
+  "relay_forbiddenBody": {
+    "message": "Este extremo está rechazando esta cartera. No se puede enviar; los saldos no se ven afectados."
+  },
+  "relay_retry": {
+    "message": "Reintentar ahora"
+  },
+  "relay_retrying": {
+    "message": "Reintentando…"
+  },
+  "relay_detailStatus": {
+    "message": "HTTP $1"
+  },
+  "relay_detailNoStatus": {
+    "message": "Sin respuesta"
+  },
+  "relay_detailAttempts": {
+    "message": "$1 intentos"
+  },
+  "relay_detailAttemptsOne": {
+    "message": "1 intento"
+  },
+  "relay_detailNextRetry": {
+    "message": "próximo intento en $1 s"
+  },
+  "relay_detailNextRetryNow": {
+    "message": "reintentando ahora"
+  },
+  "network_authHeaderHelp": {
+    "message": "Opcional. Algunos extremos de nodo limitan la tasa de peticiones y rechazan las conexiones sin una cabecera emitida por el operador. Se envía solo al nodo, nunca al indexador. Se guarda sin cifrar en este dispositivo y no está protegida por su contraseña: trátela como un secreto compartido."
+  },
+  "network_authHeaderName": {
+    "message": "Cabecera de autenticación del nodo"
+  },
+  "network_authHeaderValue": {
+    "message": "Valor de la cabecera"
+  },
+  "network_descLocal": {
+    "message": "Nodo en este equipo"
+  },
+  "settings_preseedWarmingIncluded": {
+    "message": "Incluido"
+  },
+  "settings_preseedWarmingDescriptionBundled": {
+    "message": "$1 viene preparado en esta versión y se instalará la próxima vez que desbloquee. Aquí no hay nada que hacer."
+  },
+  "dust_registerNoNight": {
+    "message": "Todavía no tiene $1 para registrar."
+  },
+  "dust_registerUnavailable": {
+    "message": "Su $1 no está disponible para registrarse en este momento. Puede que una transacción anterior siga en curso: espere a que se complete e inténtelo de nuevo."
+  },
+  "dust_waitSeconds": {
+    "message": "unos $1 segundos"
+  },
+  "dust_waitMinutes": {
+    "message": "unos $1 minutos"
+  },
+  "dust_waitHour": {
+    "message": "alrededor de una hora"
+  },
+  "dust_waitHours": {
+    "message": "unas $1 horas"
+  },
+  "dust_waitDays": {
+    "message": "unos $1 días"
+  },
+  "dust_notYetTitle": {
+    "message": "Todavía no"
+  },
+  "dust_notYetSub": {
+    "message": "No se gastó nada. Su $1 necesita un poco más de tiempo."
+  },
+  "dust_notYetReason": {
+    "message": "El registro paga su propia comisión con el $1 que su $2 ha generado desde que llegó, así que una cartera nueva debe esperar un poco. Listo en $3."
+  },
+  "dust_notYetNeedMore": {
+    "message": "El registro paga su propia comisión con el $1 que genera su $2, y este saldo es demasiado pequeño para cubrirla. Añada más $2 e inténtelo de nuevo."
+  },
+  "network_mainnetHidden": {
+    "message": "Las redes con valor real están ocultas. Esta cartera no está auditada ni cuenta con soporte: active el modo de desarrollador en Ajustes para mostrarlas."
+  },
+  "network_valueWarningTitle": {
+    "message": "¿Cambiar a $1 — fondos reales?"
+  },
+  "network_valueWarningBody": {
+    "message": "$1 tiene valor real. Esta cartera es experimental, no auditada y se ofrece sin soporte ni garantía: está pensada para desarrollo y pruebas. Lo que se pierda aquí es irrecuperable. No la use para fondos que le importen."
+  },
+  "setup_copyPhrase": {
+    "message": "Copiar frase"
+  },
+  "setup_copyPhraseDone": {
+    "message": "Copiado"
+  },
+  "settings_copyDiagnostics": {
+    "message": "Copiar diagnóstico"
+  },
+  "settings_copyDiagnosticsDesc": {
+    "message": "Entorno y configuración para un informe de error. Sin direcciones, nombres de cuenta ni saldos: se puede pegar en una incidencia pública sin riesgo."
+  },
+  "settings_copyDiagnosticsDone": {
+    "message": "Copiado"
+  },
+  "settings_sectionSupport": {
+    "message": "Soporte"
+  },
+  "dust_etaNotRegistered": {
+    "message": "$1 aún no registrado"
+  }
+}

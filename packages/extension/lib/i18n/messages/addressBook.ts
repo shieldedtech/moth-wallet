@@ -1,0 +1,23 @@
+export const addressBook = {
+  addressBook_title: 'Address book',
+  addressBook_addAddress: '+ Add address',
+  addressBook_intro:
+    'Save the addresses you send to. They show up as choices when sending tokens or directing DUST.',
+  addressBook_empty: 'No saved addresses yet. Add the people and services you send to.',
+  addressBook_actionsFor: 'Actions for $1',
+  addressBook_editTitle: 'Edit address',
+  addressBook_addTitle: 'Add address',
+  addressBook_name: 'Name',
+  addressBook_namePlaceholder: 'e.g. Alice',
+  addressBook_address: 'Address',
+  addressBook_addressPlaceholder: 'mn_addr… / mn_shield-addr… / mn_dust…',
+  addressBook_addressAria: 'Address',
+  addressBook_paste: 'Paste',
+  addressBook_openPicker: 'Address book',
+  addressBook_pickerTitle: '$1 addresses',
+  addressBook_edit: 'Edit',
+  addressBook_delete: 'Delete',
+  addressBook_detected: 'Detected a $1 address.',
+  addressBook_notMidnight: "That doesn't look like a Midnight address.",
+  addressBook_autoRecognized: 'Shielded, unshielded and DUST addresses are all recognized automatically.',
+} as const;

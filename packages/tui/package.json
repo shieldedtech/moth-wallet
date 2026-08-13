@@ -1,0 +1,42 @@
+{
+  "name": "@shieldedtech/moth-tui",
+  "version": "0.2.0",
+  "description": "Terminal UI for Midnight Network wallet operations. USE AT YOUR OWN RISK. Experimental software provided AS-IS with no warranty. Not audited. For development and testing purposes only.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "publishConfig": {
+    "access": "restricted"
+  },
+  "files": [
+    "dist"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/shieldedtech/moth-wallet.git",
+    "directory": "packages/tui"
+  },
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@midnight-ntwrk/ledger-v8": "8.1.0",
+    "@midnightntwrk/wallet-sdk": "^1.2.0",
+    "@shieldedtech/moth-wallet": "workspace:*",
+    "ink": "^7.0.1",
+    "ink-spinner": "^5.0.0",
+    "ink-text-input": "^6.0.0",
+    "react": "^19.2.5"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "typescript": "^5.5.0",
+    "vitest": "^3.1.0"
+  }
+}

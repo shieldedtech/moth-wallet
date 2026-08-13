@@ -1,0 +1,469 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="A standalone test dapp for exercising the Midnight wallet connector API."
+    />
+    <title>Connector Lab</title>
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div class="hero-copy">
+          <p class="hero-eyebrow">Standalone mock dapp</p>
+          <h1>Connector Lab</h1>
+          <p class="lede">
+            Exercise the injected Midnight wallet API without importing wallet or extension code.
+          </p>
+          <div class="provider-pill" data-state="waiting" id="provider-pill">
+            <span class="provider-dot" aria-hidden="true"></span>
+            <span id="provider-state">Scanning for providers</span>
+          </div>
+        </div>
+        <div class="hero-orbit" aria-hidden="true">
+          <div class="orbit-ring orbit-ring-outer"></div>
+          <div class="orbit-ring orbit-ring-spin"><span class="orbit-dot"></span></div>
+          <div class="orbit-ring orbit-ring-dashed"><span class="orbit-dot orbit-dot-soft"></span></div>
+          <svg class="crescent" width="102" height="102" viewBox="0 0 128 128">
+            <mask id="hero-crescent-mask">
+              <circle cx="64" cy="64" r="50" fill="#fff" />
+              <circle cx="34" cy="44" r="50" fill="#000" />
+            </mask>
+            <circle cx="64" cy="64" r="50" fill="#AEEB6B" mask="url(#hero-crescent-mask)" />
+            <circle cx="25.3" cy="22" r="4.7" fill="#AEEB6B" opacity="0.85" />
+            <circle cx="44" cy="9.3" r="2.7" fill="#AEEB6B" opacity="0.5" />
+          </svg>
+        </div>
+      </header>
+
+      <div class="network-warning" role="note">
+        <strong>Live API:</strong> transaction actions use the network configured in the connected wallet.
+        Review every approval before accepting it.
+      </div>
+
+      <main>
+        <section class="panel connection-panel" aria-labelledby="connection-title">
+          <div class="section-heading">
+            <div>
+              <p class="section-label">01 · Connection</p>
+              <h2 id="connection-title">Injected provider</h2>
+            </div>
+            <button class="button button-ghost button-sm" id="refresh-providers" type="button">Refresh</button>
+          </div>
+
+          <div class="connection-grid">
+            <div class="field-group">
+              <label for="wallet-select">Wallet provider</label>
+              <select id="wallet-select">
+                <option value="">No provider detected</option>
+              </select>
+            </div>
+            <div class="field-group">
+              <label for="network-id">Requested network</label>
+              <input id="network-id" list="network-options" value="preprod" autocomplete="off" />
+              <datalist id="network-options">
+                <option value="mainnet"></option>
+                <option value="devnet"></option>
+                <option value="preview"></option>
+                <option value="preprod"></option>
+                <option value="qanet"></option>
+                <option value="undeployed"></option>
+              </datalist>
+            </div>
+            <div class="connection-actions">
+              <button class="button button-primary" id="connect" type="button">Connect</button>
+              <button class="button button-chip" id="reset-connection" type="button" disabled>
+                Reset local session
+              </button>
+            </div>
+          </div>
+
+          <div class="provider-metadata" id="provider-metadata" hidden>
+            <img id="wallet-icon" alt="" />
+            <dl>
+              <div>
+                <dt>Name</dt>
+                <dd id="wallet-name">—</dd>
+              </div>
+              <div>
+                <dt>RDNS</dt>
+                <dd id="wallet-rdns">—</dd>
+              </div>
+              <div>
+                <dt>API version</dt>
+                <dd id="wallet-version">—</dd>
+              </div>
+            </dl>
+          </div>
+
+          <p class="operation-status" id="operation-status" aria-live="polite">
+            Waiting for an injected provider.
+          </p>
+        </section>
+
+        <div class="workbench">
+          <div class="control-stack">
+            <section class="panel" aria-labelledby="reads-title">
+              <div class="section-heading compact-heading">
+                <div>
+                  <p class="section-label">02 · Read methods</p>
+                  <h2 id="reads-title">Wallet state</h2>
+                </div>
+              </div>
+              <div class="button-grid">
+                <button class="button button-chip" id="get-status" data-requires-connection disabled>
+                  Connection status
+                </button>
+                <button class="button button-chip" id="get-configuration" data-requires-connection disabled>
+                  Configuration
+                </button>
+                <button class="button button-chip" id="get-balances" data-requires-connection disabled>
+                  All balances
+                </button>
+                <button class="button button-chip" id="get-addresses" data-requires-connection disabled>
+                  All addresses
+                </button>
+              </div>
+
+              <form class="inline-form" id="history-form">
+                <div class="field-group field-small">
+                  <label for="history-page">Page</label>
+                  <input id="history-page" type="number" min="0" step="1" value="0" />
+                </div>
+                <div class="field-group field-small">
+                  <label for="history-size">Page size</label>
+                  <input id="history-size" type="number" min="1" step="1" value="10" />
+                </div>
+                <button class="button button-chip" type="submit" data-requires-connection disabled>
+                  Transaction history
+                </button>
+              </form>
+            </section>
+
+            <section class="panel" aria-labelledby="permissions-title">
+              <div class="section-heading compact-heading">
+                <div>
+                  <p class="section-label">03 · Permissions</p>
+                  <h2 id="permissions-title">Usage hint</h2>
+                </div>
+              </div>
+              <form id="hint-form">
+                <div class="field-group">
+                  <label for="hint-methods">Methods the dapp intends to call</label>
+                  <select id="hint-methods" multiple size="6">
+                    <option value="getConnectionStatus" selected>getConnectionStatus</option>
+                    <option value="getConfiguration" selected>getConfiguration</option>
+                    <option value="getShieldedBalances" selected>getShieldedBalances</option>
+                    <option value="getUnshieldedBalances" selected>getUnshieldedBalances</option>
+                    <option value="getDustBalance">getDustBalance</option>
+                    <option value="getShieldedAddresses">getShieldedAddresses</option>
+                    <option value="getUnshieldedAddress">getUnshieldedAddress</option>
+                    <option value="getDustAddress">getDustAddress</option>
+                    <option value="getTxHistory">getTxHistory</option>
+                    <option value="makeTransfer">makeTransfer</option>
+                    <option value="makeIntent">makeIntent</option>
+                    <option value="signData">signData</option>
+                    <option value="balanceSealedTransaction">balanceSealedTransaction</option>
+                    <option value="balanceUnsealedTransaction">balanceUnsealedTransaction</option>
+                    <option value="submitTransaction">submitTransaction</option>
+                    <option value="getProvingProvider">getProvingProvider</option>
+                  </select>
+                  <span class="field-help">Hold Command or Control to select more than one.</span>
+                </div>
+                <button class="button button-chip" type="submit" data-requires-connection disabled>
+                  Send hintUsage
+                </button>
+              </form>
+            </section>
+
+            <details class="panel method-panel">
+              <summary>
+                <span class="summary-copy">
+                  <span class="section-label">04 · Signing</span>
+                  <span class="summary-title">Sign arbitrary data</span>
+                </span>
+                <span class="summary-mark" aria-hidden="true">+</span>
+              </summary>
+              <form class="panel-form" id="sign-form">
+                <div class="field-group">
+                  <label for="sign-data">Data</label>
+                  <textarea id="sign-data" rows="3">Hello from Connector Lab</textarea>
+                </div>
+                <div class="field-group">
+                  <label for="sign-encoding">Encoding</label>
+                  <select id="sign-encoding">
+                    <option value="text">text</option>
+                    <option value="hex">hex</option>
+                    <option value="base64">base64</option>
+                  </select>
+                </div>
+                <button class="button button-primary" type="submit" data-requires-connection disabled>
+                  Request signature
+                </button>
+              </form>
+            </details>
+
+            <details class="panel method-panel">
+              <summary>
+                <span class="summary-copy">
+                  <span class="section-label">04b · App secret</span>
+                  <span class="summary-title">Derive a per-(origin, domain) app secret</span>
+                </span>
+                <span class="summary-mark" aria-hidden="true">+</span>
+              </summary>
+              <form class="panel-form" id="derive-form">
+                <div class="field-group">
+                  <label for="derive-domain">Domain label</label>
+                  <input id="derive-domain" type="text" value="demo:names-deed:v1" maxlength="128" />
+                </div>
+                <p class="field-help">
+                  Deterministic 32-byte secret bound to this site's origin + the label. Same seed +
+                  origin + domain always returns the same value; the wallet shows an approval and
+                  returns the secret here (it's never displayed in the wallet).
+                </p>
+                <button class="button button-primary" type="submit" data-requires-connection disabled>
+                  Derive app secret
+                </button>
+              </form>
+            </details>
+
+            <details class="panel method-panel">
+              <summary>
+                <span class="summary-copy">
+                  <span class="section-label">05 · Transfer</span>
+                  <span class="summary-title">Build a transfer</span>
+                </span>
+                <span class="summary-mark" aria-hidden="true">+</span>
+              </summary>
+              <form class="panel-form" id="transfer-form">
+                <div class="split-fields">
+                  <div class="field-group">
+                    <label for="transfer-kind">Output kind</label>
+                    <select id="transfer-kind">
+                      <option value="unshielded">unshielded</option>
+                      <option value="shielded">shielded</option>
+                    </select>
+                  </div>
+                  <div class="field-group">
+                    <label for="transfer-value">Raw amount</label>
+                    <input id="transfer-value" inputmode="numeric" value="1000000" />
+                  </div>
+                </div>
+                <div class="field-group">
+                  <label for="transfer-token">Token type</label>
+                  <input
+                    id="transfer-token"
+                    class="mono-input"
+                    value="0000000000000000000000000000000000000000000000000000000000000000"
+                    spellcheck="false"
+                  />
+                  <span class="field-help">The all-zero token type is native NIGHT; values are raw units.</span>
+                </div>
+                <div class="field-group">
+                  <label for="transfer-recipient">Recipient</label>
+                  <textarea
+                    id="transfer-recipient"
+                    class="mono-input"
+                    rows="2"
+                    placeholder="A network-matching shielded or unshielded Bech32m address"
+                    spellcheck="false"
+                  ></textarea>
+                </div>
+                <label class="check-row">
+                  <input id="transfer-fees" type="checkbox" checked />
+                  <span>Ask the wallet to pay fees</span>
+                </label>
+                <button class="button button-primary" type="submit" data-requires-connection disabled>
+                  Call makeTransfer
+                </button>
+              </form>
+            </details>
+
+            <details class="panel method-panel">
+              <summary>
+                <span class="summary-copy">
+                  <span class="section-label">06 · Intent</span>
+                  <span class="summary-title">Build a swap intent</span>
+                </span>
+                <span class="summary-mark" aria-hidden="true">+</span>
+              </summary>
+              <form class="panel-form" id="intent-form">
+                <fieldset>
+                  <legend>Desired input</legend>
+                  <div class="split-fields">
+                    <div class="field-group">
+                      <label for="intent-input-kind">Kind</label>
+                      <select id="intent-input-kind">
+                        <option value="unshielded">unshielded</option>
+                        <option value="shielded">shielded</option>
+                      </select>
+                    </div>
+                    <div class="field-group">
+                      <label for="intent-input-value">Raw amount</label>
+                      <input id="intent-input-value" inputmode="numeric" value="1000000" />
+                    </div>
+                  </div>
+                  <div class="field-group">
+                    <label for="intent-input-token">Token type</label>
+                    <input
+                      id="intent-input-token"
+                      class="mono-input"
+                      value="0000000000000000000000000000000000000000000000000000000000000000"
+                      spellcheck="false"
+                    />
+                  </div>
+                </fieldset>
+                <fieldset>
+                  <legend>Desired output</legend>
+                  <div class="split-fields">
+                    <div class="field-group">
+                      <label for="intent-output-kind">Kind</label>
+                      <select id="intent-output-kind">
+                        <option value="shielded">shielded</option>
+                        <option value="unshielded">unshielded</option>
+                      </select>
+                    </div>
+                    <div class="field-group">
+                      <label for="intent-output-value">Raw amount</label>
+                      <input id="intent-output-value" inputmode="numeric" value="1" />
+                    </div>
+                  </div>
+                  <div class="field-group">
+                    <label for="intent-output-token">Token type</label>
+                    <input
+                      id="intent-output-token"
+                      class="mono-input"
+                      value="0000000000000000000000000000000000000000000000000000000000000000"
+                      spellcheck="false"
+                    />
+                  </div>
+                  <div class="field-group">
+                    <label for="intent-recipient">Recipient</label>
+                    <textarea id="intent-recipient" class="mono-input" rows="2" spellcheck="false"></textarea>
+                  </div>
+                </fieldset>
+                <div class="split-fields">
+                  <div class="field-group">
+                    <label for="intent-id">Intent ID</label>
+                    <input id="intent-id" value="random" />
+                  </div>
+                  <label class="check-row check-row-bottom">
+                    <input id="intent-fees" type="checkbox" checked />
+                    <span>Pay fees</span>
+                  </label>
+                </div>
+                <button class="button button-primary" type="submit" data-requires-connection disabled>
+                  Call makeIntent
+                </button>
+              </form>
+            </details>
+
+            <section class="panel" aria-labelledby="transaction-title">
+              <div class="section-heading compact-heading">
+                <div>
+                  <p class="section-label">07 · Transaction pipeline</p>
+                  <h2 id="transaction-title">Balance or submit</h2>
+                </div>
+              </div>
+              <form class="panel-form" id="transaction-form">
+                <div class="transaction-fixture">
+                  <div class="fixture-copy">
+                    <p class="fixture-label">Local ledger fixture · preprod</p>
+                    <strong>Unbalanced 1 NIGHT transfer</strong>
+                    <code>mn_addr_preprod1he0ty4u5vnmqdmvg85vgx9shxqh5snnvudszkr38ykqpkefu6xwsq30mjf</code>
+                    <span>
+                      Built without wallet inputs so the connector must supply the 1 NIGHT deficit and fees.
+                    </span>
+                  </div>
+                  <button class="button button-secondary button-sm" id="generate-night-transfer" type="button">
+                    Generate unbalanced tx
+                  </button>
+                </div>
+                <div class="field-group">
+                  <label for="transaction-hex">Serialized transaction hex</label>
+                  <textarea
+                    id="transaction-hex"
+                    class="mono-input transaction-input"
+                    rows="6"
+                    placeholder="Generated fixtures and connector transaction results are copied here automatically"
+                    spellcheck="false"
+                  ></textarea>
+                </div>
+                <div class="transaction-actions">
+                  <select id="balance-type" aria-label="Transaction binding stage">
+                    <option value="unsealed">unsealed</option>
+                    <option value="sealed">sealed</option>
+                  </select>
+                  <label class="check-row">
+                    <input id="balance-fees" type="checkbox" checked />
+                    <span>Pay fees</span>
+                  </label>
+                  <button
+                    class="button button-secondary"
+                    id="balance-transaction"
+                    type="button"
+                    data-requires-connection
+                    disabled
+                  >
+                    Balance
+                  </button>
+                  <button
+                    class="button button-danger"
+                    id="submit-transaction"
+                    type="submit"
+                    data-requires-connection
+                    disabled
+                  >
+                    Submit to network
+                  </button>
+                </div>
+                <p class="transaction-connection-help" id="transaction-connection-help">
+                  Connect to the preprod wallet first to enable Balance and Submit.
+                </p>
+              </form>
+            </section>
+
+            <section class="panel compatibility-panel" aria-labelledby="compatibility-title">
+              <div>
+                <p class="section-label">08 · Compatibility</p>
+                <h2 id="compatibility-title">Proving provider probe</h2>
+                <p>Calls the remaining API method with an in-memory key provider stub.</p>
+              </div>
+              <button
+                class="button button-chip"
+                id="get-proving-provider"
+                type="button"
+                data-requires-connection
+                disabled
+              >
+                Call getProvingProvider
+              </button>
+            </section>
+          </div>
+
+          <aside class="panel activity-panel" aria-labelledby="activity-title">
+            <div class="section-heading compact-heading activity-heading">
+              <div>
+                <p class="section-label">Request log</p>
+                <h2 id="activity-title">API results</h2>
+              </div>
+              <div class="log-actions">
+                <button class="text-button" id="copy-log" type="button">Copy</button>
+                <button class="text-button" id="clear-log" type="button">Clear</button>
+              </div>
+            </div>
+            <div class="empty-log" id="empty-log">
+              Calls, durations, bigint values, and connector error codes will appear here.
+            </div>
+            <div class="request-log" id="request-log" aria-live="polite"></div>
+          </aside>
+        </div>
+      </main>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

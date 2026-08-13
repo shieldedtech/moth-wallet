@@ -1,0 +1,272 @@
+/* Moth theme — generated from the Claude Design handoff (design_handoff_moth_wallet).
+   Light colors, radii and type scale are final; match the screenshots.
+
+   Every color in the app resolves through the custom properties below — no
+   component hardcodes a value. Two dark-surface palettes coexist:
+   - `.dark` — the user-facing dark scheme (iOS-style neutral surfaces),
+     toggled on <html> by lib/ui/theme.ts per the appearance setting.
+   - `.ink` — the Midnight Ink brand theme (navy). PanelScreen's `dark` prop
+     and the setup tab put it on the always-dark brand moments
+     (welcome/unlock/setup): navy while the scheme is light, deferring to
+     the neutral `.dark` palette when the scheme is dark.
+
+   `.colorblind` (Settings → Appearance) is an orthogonal axis: it swaps the
+   red/green status hues for Okabe–Ito blue/vermillion — distinguishable under
+   deuteranopia and protanopia — in both light and dark schemes. Brand Moonlime
+   stays: it reads against dark surfaces by luminance, not hue. */
+
+@import 'tailwindcss';
+
+@import '@fontsource/bricolage-grotesque/700.css';
+@import '@fontsource/bricolage-grotesque/800.css';
+@import '@fontsource/instrument-sans/400.css';
+@import '@fontsource/instrument-sans/500.css';
+@import '@fontsource/instrument-sans/600.css';
+@import '@fontsource/instrument-sans/700.css';
+
+/* `dark:` utilities key on the class system (either dark-surface scope), not
+   the OS media query — the appearance setting must win, and the always-navy
+   `.ink` brand panels count as dark surfaces for component overrides. */
+@custom-variant dark (&:where(.dark, .dark *, .ink, .ink *));
+
+:root {
+  color-scheme: light;
+
+  --background: #fcfcfa; /* Milk — near-white, faint warmth so white cards still lift */
+  --foreground: #1c1f36; /* Midnight Ink */
+  --card: #ffffff;
+  --card-foreground: #1c1f36;
+  --primary: #aeeb6b; /* Moonlime */
+  --primary-foreground: #1c1f36;
+  --secondary: #1c1f36; /* Ink buttons */
+  --secondary-foreground: #ffffff;
+  --muted: #edf1e8; /* Stone — milk with a faint lime whisper (was warm Sand) */
+  --muted-foreground: #63677e;
+  --accent: #ebf6dd; /* Lime tint */
+  --accent-foreground: #2e4a1e;
+  --destructive: #b0453f;
+  --border: #e3e9db; /* Stone hairline, green-leaning */
+  --input: #e3e9db;
+  --ring: #1c1f36;
+
+  --success: #4e8a6c;
+  --success-tint: #ebf6dd; /* Positive-STATUS fill (e.g. permission allowed). Same lime as
+     --accent here, but status must follow the colorblind swap — accent stays brand lime. */
+  --link: #3f6b28;
+  --error-tint: #fbeaea;
+  --error-text: #7a322d;
+  --error-border: #e5847d; /* Soft red for invalid-input borders (readable on dark too) */
+  --disabled-fill: #e7ebe1; /* Stone, matches the muted family */
+  --disabled-text: #1c1f36; /* Ink — dark on the light disabled fill */
+
+  --selected: #f0f4ea; /* Chosen-row / ready-state tint (token picker, fee card) */
+  --border-strong: #d3dcc7; /* Dashed placeholders (empty recovery-word slots) */
+  --overlay: rgba(28, 31, 54, 0.45); /* Ink scrim behind dialogs */
+
+  /* Elevation (Ink-based in light, deepened in dark). */
+  --elevation-pop: 0 10px 28px rgba(28, 31, 54, 0.16); /* dialogs, menus, pickers */
+  --elevation-float: 0 14px 34px rgba(28, 31, 54, 0.14); /* anchored popovers */
+  --elevation-lift: 0 4px 14px rgba(28, 31, 54, 0.06); /* selected cards */
+  --glow: 0 0 18px rgba(174, 235, 107, 0.9); /* Moonlime orbit dot */
+}
+
+.dark {
+  color-scheme: dark;
+
+  /* Surfaces: iOS-style neutral dark replaces the navy Ink surfaces. */
+  --background: #1c1c1e;
+  --foreground: #ffffff;
+  --card: #2c2c2e;
+  --card-foreground: #ffffff;
+  --primary: #aeeb6b; /* Moonlime holds on dark */
+  --primary-foreground: #1c1f36;
+  --secondary: #2e4a1e; /* Deep green (light accent-foreground): pills, chips,
+     dust card, active tab. Dark leans green rather than remapping the light
+     roles — Moonlime marks selection, this carries surfaces. */
+  --secondary-foreground: #ffffff;
+  /* --muted (white/8) and --secondary are a pair: the active tab pill must
+     read against the TabsList track (here by hue; text color adds the cue). */
+  --muted: rgba(255, 255, 255, 0.08); /* Fills: tab track, sand surfaces */
+  --muted-foreground: rgba(255, 255, 255, 0.6);
+  --accent: rgba(174, 235, 107, 0.16);
+  --accent-foreground: #d3f0ab;
+  --destructive: #e5847d; /* Dark error border hue; ~6:1 on background as text */
+  --border: rgba(255, 255, 255, 0.22);
+  --input: rgba(255, 255, 255, 0.22);
+  --ring: #aeeb6b;
+
+  --success: #7fc7a1;
+  --success-tint: rgba(174, 235, 107, 0.16);
+  --link: #b7e88a;
+  --error-tint: rgba(229, 132, 125, 0.14);
+  --error-text: #f0a9a3;
+  --disabled-fill: rgba(255, 255, 255, 0.08);
+  --disabled-text: rgba(255, 255, 255, 0.5);
+
+  --selected: rgba(174, 235, 107, 0.16); /* Tracks --accent, as in light */
+  --border-strong: rgba(255, 255, 255, 0.3);
+  --overlay: rgba(0, 0, 0, 0.6);
+
+  --elevation-pop: 0 10px 28px rgba(0, 0, 0, 0.5);
+  --elevation-float: 0 14px 34px rgba(0, 0, 0, 0.45);
+  --elevation-lift: 0 4px 14px rgba(0, 0, 0, 0.3);
+}
+
+/* Midnight Ink — the navy brand theme, not a color scheme. PanelScreen's
+   `dark` prop and the setup tab put it on the always-dark brand moments.
+   It only asserts navy while the app is LIGHT (the brand contrast moment);
+   in the dark scheme these screens inherit the neutral dark palette from
+   <html> instead — navy panels on near-black read muddy, not branded.
+   `:where()` keeps specificity at one class so `.colorblind .ink` still wins.
+   Values are the pre-neutral-dark `.dark` palette. */
+:where(:root:not(.dark)) .ink {
+  color-scheme: dark;
+
+  --background: #1c1f36; /* Midnight Ink */
+  --foreground: #ffffff;
+  --card: #262a47;
+  --card-foreground: #ffffff;
+  /* Moonlime and its ink text stay put — it reads on both schemes. Pinned
+     here so an ink panel nested in a future divergent scheme stays stable. */
+  --primary: #aeeb6b;
+  --primary-foreground: #1c1f36;
+  --secondary: #303659; /* Elevated ink: buttons/avatars/dust card keep their dark surface */
+  --secondary-foreground: #ffffff;
+  --muted: rgba(255, 255, 255, 0.12);
+  --muted-foreground: rgba(255, 255, 255, 0.6);
+  --accent: rgba(174, 235, 107, 0.14);
+  --accent-foreground: #cdeda6;
+  --destructive: #f0a9a3;
+  --border: rgba(255, 255, 255, 0.22);
+  --input: rgba(255, 255, 255, 0.22);
+  --ring: #aeeb6b;
+
+  --success: #8fd0ae;
+  --success-tint: rgba(174, 235, 107, 0.14);
+  --link: #b3e084;
+  --error-tint: rgba(226, 132, 125, 0.16);
+  --error-text: #f0a9a3;
+  --disabled-fill: rgba(255, 255, 255, 0.1);
+  --disabled-text: #ffffff;
+
+  --selected: rgba(174, 235, 107, 0.14);
+  --border-strong: rgba(255, 255, 255, 0.3);
+  --overlay: rgba(0, 0, 0, 0.6);
+
+  --elevation-pop: 0 10px 28px rgba(0, 0, 0, 0.5);
+  --elevation-float: 0 14px 34px rgba(0, 0, 0, 0.45);
+  --elevation-lift: 0 4px 14px rgba(0, 0, 0, 0.3);
+}
+
+/* Color-blind friendly status hues (Okabe–Ito): success/link go blue,
+   destructive/error go vermillion — the red/green axis disappears. */
+.colorblind {
+  --success: #0072b2;
+  --success-tint: #e3f1fa;
+  --link: #0b5fa5;
+  --destructive: #c05000;
+  --error-tint: #fdeee1;
+  --error-text: #8a4a0b;
+  --error-border: #e69f00;
+}
+
+/* Lightened for dark surfaces — the dark scheme and the Ink brand panels
+   (the descendant selectors out-rank `.ink`/`.dark`'s own status values). */
+.dark.colorblind,
+.colorblind .dark,
+.ink.colorblind,
+.colorblind .ink {
+  --success: #56b4e9;
+  --success-tint: rgba(86, 180, 233, 0.18);
+  --link: #7cc3ee;
+  --destructive: #f4a15d;
+  --error-tint: rgba(213, 94, 0, 0.18);
+  --error-text: #ffb885;
+  --error-border: #e69f00;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-success-tint: var(--success-tint);
+  --color-link: var(--link);
+  --color-error-tint: var(--error-tint);
+  --color-error-text: var(--error-text);
+  --color-error-border: var(--error-border);
+  --color-disabled-fill: var(--disabled-fill);
+  --color-disabled-text: var(--disabled-text);
+  --color-selected: var(--selected);
+  --color-border-strong: var(--border-strong);
+  --color-overlay: var(--overlay);
+
+  --shadow-pop: var(--elevation-pop);
+  --shadow-float: var(--elevation-float);
+  --shadow-lift: var(--elevation-lift);
+  --shadow-glow: var(--glow);
+
+  --font-sans: 'Instrument Sans', system-ui, sans-serif;
+  --font-display: 'Bricolage Grotesque', var(--font-sans);
+  --font-mono: ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: 14.5px;
+  /* Base body weight is Medium (500), not Regular — plain and muted copy read a
+     touch bolder app-wide; explicit font-semibold/bold headings are unaffected. */
+  font-weight: 500;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Section labels: 13px uppercase 700, tracked */
+.section-label {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+/* Wingbeat: the wing foreshortens rather than rotating, which is what a beat
+   looks like viewed from above. Neutralised by the reduce-motion rule below. */
+@keyframes wingbeat {
+  0%,
+  100% {
+    transform: scaleX(1);
+  }
+  50% {
+    transform: scaleX(0.58);
+  }
+}
+
+/* Honor the OS "reduce motion" setting: keep the hover/press feedback instant
+   instead of animating transforms and colors. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

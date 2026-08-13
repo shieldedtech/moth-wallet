@@ -1,0 +1,168 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency: ${{ github.workflow }}-${{ github.ref }}
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write       # version-bump commit + git tags
+      pull-requests: write  # open the "version packages" PR
+      id-token: write       # npm Trusted Publishing (OIDC) + provenance
+    outputs:
+      hasReleases: ${{ steps.releases.outputs.hasReleases }}
+
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      # Node 24 ships npm 11.6+, which supports npm Trusted Publishing (OIDC) + provenance.
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: 'yarn'
+
+      - name: Install Dependencies
+        run: yarn install --immutable
+
+      - name: Build Packages
+        run: yarn build
+
+      # Detect whether pending changesets actually bump any package — the signal
+      # the canary job gates on. (An empty changeset bumps nothing → no canary.)
+      - name: Detect releasable changesets
+        id: releases
+        run: |
+          set -uo pipefail
+          rm -f changeset-status.json
+          yarn changeset status --output=changeset-status.json || true
+          COUNT=0
+          if [ -f changeset-status.json ]; then
+            COUNT=$(node -p "require('./changeset-status.json').releases.length" 2>/dev/null || echo 0)
+            rm -f changeset-status.json
+          fi
+          if [ "${COUNT:-0}" -gt 0 ]; then
+            echo "hasReleases=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "hasReleases=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # A single changesets/action drives the whole release lifecycle:
+      #   - changesets present → runs `yarn version`, opens/updates the "version packages" PR
+      #   - no changesets left → runs `yarn release` (publish), pushes the git tags, and
+      #                          creates a GitHub Release for each newly published package
+      # Publishing uses npm Trusted Publishing (OIDC): with `id-token: write` and no NPM_TOKEN,
+      # the action publishes via the OIDC token — no stored credential. Already-published
+      # versions are skipped, so a push that releases nothing is a clean no-op.
+      #
+      # Steady state only: packages must already exist on npm and have a trusted publisher
+      # configured. The first publish is a one-time token bootstrap — see
+      # .github/workflows/publish-bootstrap.yml and SRE_PUBLISHING_SETUP.md.
+      - name: Version PR / Publish (Trusted Publishing + provenance)
+        uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d  # v1.9.0
+        with:
+          # `yarn run` so Yarn Berry runs the package scripts, not its built-in
+          # `yarn version` command (which needs a <strategy> arg and ignores the
+          # "version" script — the cause of the release failure).
+          version: yarn run version
+          publish: yarn run release
+          title: "chore: version packages"
+          commit: "chore: version packages"
+        env:
+          # MidnightCI machine-user PAT (has write on this repo), NOT the default
+          # Actions token: the org hardens GITHUB_TOKEN with
+          # can_approve_pull_request_reviews=false, so the Actions token can't open
+          # the "version packages" PR. A machine-user token is exempt and creates
+          # the PR as MidnightCI.
+          GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+          # Publish auth: token (shielded-bot), NOT OIDC. OIDC trusted publishing
+          # fails these PRIVATE packages with E409 "Failed to save packument"
+          # (same action + token published 0.1.0 fine via publish-bootstrap.yml).
+          # changesets/action writes an .npmrc from NPM_TOKEN. Switch back to OIDC
+          # when @shieldedtech/moth-* go public.
+          NPM_TOKEN: ${{ secrets.SHIELDED_NPMJS_TOKEN }}
+          # Provenance requires PUBLIC packages; these are private for now.
+          # Flip back to true when @shieldedtech/moth-* go public.
+          NPM_CONFIG_PROVENANCE: false
+
+  # Publishes a snapshot under the `canary` dist-tag on every merge to main that
+  # has pending changesets (i.e. before the "version packages" PR is merged).
+  # Versions look like 0.2.0-canary.<timestamp>-<sha>; internal deps are pinned to
+  # the snapshot version so the canary set installs as a coherent group. Mutually
+  # exclusive with the stable publish above (which runs only when no changesets remain).
+  canary:
+    name: Canary
+    needs: [release]
+    if: ${{ needs.release.outputs.hasReleases == 'true' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write       # npm Trusted Publishing (OIDC) + provenance
+
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: 'yarn'
+          # Token auth (below) needs a registry-scoped .npmrc that reads
+          # NODE_AUTH_TOKEN — see the publish step for why token, not OIDC.
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install Dependencies
+        run: yarn install --immutable
+
+      - name: Publish canary snapshot
+        env:
+          # Publish auth: token (shielded-bot), NOT OIDC. OIDC trusted publishing
+          # fails these PRIVATE packages with E409 "Failed to save packument"; the
+          # token published 0.1.0 fine (publish-bootstrap.yml). setup-node's
+          # registry-url wires this into .npmrc. Switch to OIDC when public.
+          NODE_AUTH_TOKEN: ${{ secrets.SHIELDED_NPMJS_TOKEN }}
+          # Provenance requires PUBLIC packages; these are private for now.
+          # Flip back to true when @shieldedtech/moth-* go public.
+          NPM_CONFIG_PROVENANCE: false
+        run: |
+          set -euo pipefail
+          SHORT_SHA=$(git rev-parse --short=7 HEAD)
+          TIMESTAMP=$(date +%Y%m%d%H%M%S)
+
+          # Pin internal sibling ranges to the snapshot version: a "-canary"
+          # prerelease doesn't satisfy a caret range, so without this the siblings
+          # would resolve from the registry (stale) and the published canary set
+          # would be internally inconsistent.
+          node -e '
+            const fs = require("fs");
+            const p = ".changeset/config.json";
+            const c = JSON.parse(fs.readFileSync(p, "utf8"));
+            c.___experimentalUnsafeOptions_WILL_CHANGE_IN_PATCH = {
+              ...c.___experimentalUnsafeOptions_WILL_CHANGE_IN_PATCH,
+              updateInternalDependents: "always",
+            };
+            fs.writeFileSync(p, JSON.stringify(c, null, 2) + "\n");
+          '
+
+          yarn changeset version --snapshot "canary.${TIMESTAMP}-${SHORT_SHA}"
+          yarn install --mode=update-lockfile
+          yarn build
+          yarn changeset publish --tag canary --no-git-tag
