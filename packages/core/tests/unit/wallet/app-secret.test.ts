@@ -9,9 +9,8 @@ import { describe, it, expect } from 'vitest';
 import { mnemonicToSeed } from '../../../src/wallet/mnemonic.js';
 import { deriveAppSecret } from '../../../src/wallet/app-secret.js';
 import { deriveRawKeys, deriveAllAddressesFromSeed, Roles } from '../../../src/wallet/address.js';
+import { TEST_MNEMONIC } from '../../helpers/seed.js';
 
-const TEST_MNEMONIC =
-  'tribe eternal ritual flush hold victory effort monkey bounce sure bounce output burger broccoli wedding warrior salad hurt focus service claw glide sell eye';
 // A different, valid BIP-39 24-word mnemonic (all-"abandon" with the correct
 // final checksum word) — the "different seed" case.
 const OTHER_MNEMONIC =

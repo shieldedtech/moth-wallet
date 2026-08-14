@@ -1,9 +1,21 @@
-import { describe, it, expect } from 'vitest';
-import { encryptKeystore, decryptKeystore } from '../../../src/wallet/keystore.js';
+import { describe, it, expect, beforeAll } from 'vitest';
+import { encryptKeystore, decryptKeystore, type EncryptedKeystore } from '../../../src/wallet/keystore.js';
 
+// Every encrypt and decrypt here runs scrypt at the v2 parameter N=2^18 (~256 MiB,
+// ~300ms), which is the security control working as designed — so the cost is not
+// a thing to optimise away, only to stop paying more times than the assertions
+// need. The round-trip test keeps its own independent encrypt+decrypt so the
+// full-strength path is exercised end to end; the shape and tamper-detection
+// tests share one keystore, since re-deriving a key proves nothing they assert.
 describe('Encrypted Keystore', () => {
   const testMnemonic = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
   const passphrase = 'test-passphrase-2026';
+
+  let shared: EncryptedKeystore;
+
+  beforeAll(async () => {
+    shared = await encryptKeystore(testMnemonic, passphrase);
+  });
 
   it('should encrypt and decrypt a mnemonic round-trip', async () => {
     const encrypted = await encryptKeystore(testMnemonic, passphrase);
@@ -11,29 +23,25 @@ describe('Encrypted Keystore', () => {
     expect(decrypted).toBe(testMnemonic);
   });
 
-  it('should produce a keystore with required fields', async () => {
-    const encrypted = await encryptKeystore(testMnemonic, passphrase);
-    expect(encrypted.version).toBe(2);
-    expect(encrypted.algorithm).toBe('chacha20-poly1305');
-    expect(encrypted.salt).toBeInstanceOf(Uint8Array);
-    expect(encrypted.nonce).toBeInstanceOf(Uint8Array);
-    expect(encrypted.ciphertext).toBeInstanceOf(Uint8Array);
-    expect(encrypted.tag).toBeInstanceOf(Uint8Array);
+  it('should produce a keystore with required fields', () => {
+    expect(shared.version).toBe(2);
+    expect(shared.algorithm).toBe('chacha20-poly1305');
+    expect(shared.salt).toBeInstanceOf(Uint8Array);
+    expect(shared.nonce).toBeInstanceOf(Uint8Array);
+    expect(shared.ciphertext).toBeInstanceOf(Uint8Array);
+    expect(shared.tag).toBeInstanceOf(Uint8Array);
   });
 
   it('should reject wrong passphrase', async () => {
-    const encrypted = await encryptKeystore(testMnemonic, passphrase);
     await expect(
-      decryptKeystore(encrypted, 'wrong-passphrase'),
+      decryptKeystore(shared, 'wrong-passphrase'),
     ).rejects.toThrow();
   });
 
   it('should detect corruption (tampered ciphertext)', async () => {
-    const encrypted = await encryptKeystore(testMnemonic, passphrase);
-    // Tamper with ciphertext
     const tampered = {
-      ...encrypted,
-      ciphertext: new Uint8Array(encrypted.ciphertext),
+      ...shared,
+      ciphertext: new Uint8Array(shared.ciphertext),
     };
     tampered.ciphertext[0] ^= 0xff;
 
@@ -43,10 +51,9 @@ describe('Encrypted Keystore', () => {
   });
 
   it('should detect corruption (tampered tag)', async () => {
-    const encrypted = await encryptKeystore(testMnemonic, passphrase);
     const tampered = {
-      ...encrypted,
-      tag: new Uint8Array(encrypted.tag),
+      ...shared,
+      tag: new Uint8Array(shared.tag),
     };
     tampered.tag[0] ^= 0xff;
 
@@ -55,12 +62,13 @@ describe('Encrypted Keystore', () => {
     ).rejects.toThrow();
   });
 
+  // Both keystores must be freshly encrypted: the property under test is that a
+  // second encryption of the same input draws a new salt and nonce.
   it('should produce different ciphertext for same input (random salt/nonce)', async () => {
-    const enc1 = await encryptKeystore(testMnemonic, passphrase);
     const enc2 = await encryptKeystore(testMnemonic, passphrase);
-    expect(enc1.ciphertext).not.toEqual(enc2.ciphertext);
-    expect(enc1.salt).not.toEqual(enc2.salt);
-    expect(enc1.nonce).not.toEqual(enc2.nonce);
+    expect(shared.ciphertext).not.toEqual(enc2.ciphertext);
+    expect(shared.salt).not.toEqual(enc2.salt);
+    expect(shared.nonce).not.toEqual(enc2.nonce);
   });
 
   it('should handle empty mnemonic', async () => {

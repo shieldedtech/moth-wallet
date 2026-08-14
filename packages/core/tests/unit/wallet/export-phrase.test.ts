@@ -1,30 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { StorageAdapter } from '../../../src/storage/adapter.js';
 import { WalletManager } from '../../../src/wallet/manager.js';
-
-class MemoryStorage implements StorageAdapter {
-  private readonly values = new Map<string, Uint8Array>();
-
-  async read(key: string): Promise<Uint8Array | null> {
-    return this.values.get(key) ?? null;
-  }
-
-  async write(key: string, data: Uint8Array): Promise<void> {
-    this.values.set(key, data);
-  }
-
-  async delete(key: string): Promise<void> {
-    this.values.delete(key);
-  }
-
-  async list(prefix: string): Promise<string[]> {
-    return [...this.values.keys()].filter((key) => key.startsWith(prefix));
-  }
-
-  async exists(key: string): Promise<boolean> {
-    return this.values.has(key);
-  }
-}
+import { MemoryStorage } from '../../helpers/memory-storage.js';
 
 describe('WalletManager.exportPhrase', () => {
   it('returns the original mnemonic for a generated wallet', async () => {

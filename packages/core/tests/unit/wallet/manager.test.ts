@@ -2,33 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { chacha20poly1305 } from '@noble/ciphers/chacha.js';
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { scrypt } from '@noble/hashes/scrypt.js';
-import type { StorageAdapter } from '../../../src/storage/adapter.js';
 import { WalletManager } from '../../../src/wallet/manager.js';
 import { deriveAllAddressesFromSeed } from '../../../src/wallet/address.js';
-
-class MemoryStorage implements StorageAdapter {
-  private readonly values = new Map<string, Uint8Array>();
-
-  async read(key: string): Promise<Uint8Array | null> {
-    return this.values.get(key) ?? null;
-  }
-
-  async write(key: string, data: Uint8Array): Promise<void> {
-    this.values.set(key, data);
-  }
-
-  async delete(key: string): Promise<void> {
-    this.values.delete(key);
-  }
-
-  async list(prefix: string): Promise<string[]> {
-    return [...this.values.keys()].filter((key) => key.startsWith(prefix));
-  }
-
-  async exists(key: string): Promise<boolean> {
-    return this.values.has(key);
-  }
-}
+import { MemoryStorage } from '../../helpers/memory-storage.js';
 
 describe('WalletManager.setLabel', () => {
   const encoder = new TextEncoder();
@@ -144,52 +120,44 @@ describe('WalletManager.setNetwork', () => {
 describe('WalletManager.exportSeedHex', () => {
   const PASS = 'correct horse battery staple';
 
-  it(
-    'round-trips: the exported seed reconstructs the wallet it was created with',
-    async () => {
-      const manager = new WalletManager(new MemoryStorage());
-      const created = await manager.generate('alice', PASS, 'devnet');
+  // These derive keys with scrypt at the v2 parameters, so they inherit the
+  // project's raised testTimeout rather than carrying their own: a per-test
+  // literal overrides the config and fails a --coverage run, where the same
+  // derivation takes several times longer.
+  it('round-trips: the exported seed reconstructs the wallet it was created with', async () => {
+    const manager = new WalletManager(new MemoryStorage());
+    const created = await manager.generate('alice', PASS, 'devnet');
 
-      const seedHex = await manager.exportSeedHex('alice', PASS);
+    const seedHex = await manager.exportSeedHex('alice', PASS);
 
-      expect(seedHex).toMatch(/^[0-9a-f]+$/);
-      // The seed must derive exactly the addresses generate() produced — this is
-      // what lets the offscreen rebuild walletKeys from the re-supplied seed.
-      expect(deriveAllAddressesFromSeed(seedHex)).toEqual(created.addresses);
-    },
-    15_000,
-  );
+    expect(seedHex).toMatch(/^[0-9a-f]+$/);
+    // The seed must derive exactly the addresses generate() produced — this is
+    // what lets the offscreen rebuild walletKeys from the re-supplied seed.
+    expect(deriveAllAddressesFromSeed(seedHex)).toEqual(created.addresses);
+  });
 
-  it(
-    'keeps unlock() seed-free while exportSeedHex supplies the seed (Option A invariant)',
-    async () => {
-      const manager = new WalletManager(new MemoryStorage());
-      await manager.generate('alice', PASS, 'devnet');
+  it('keeps unlock() seed-free while exportSeedHex supplies the seed (Option A invariant)', async () => {
+    const manager = new WalletManager(new MemoryStorage());
+    await manager.generate('alice', PASS, 'devnet');
 
-      const unlocked = await manager.unlock('alice', PASS);
-      // If seedHex ever reappears on the unlocked object, the offscreen's
-      // exportSeedHex detour is no longer needed — revisit walletUnlock.
-      expect((unlocked as unknown as { seedHex?: string }).seedHex).toBeUndefined();
-      expect(unlocked.walletKeys).toBeDefined();
-      expect(unlocked.walletKeys.shieldedSecretKeys).toBeDefined();
-      unlocked.lock();
+    const unlocked = await manager.unlock('alice', PASS);
+    // If seedHex ever reappears on the unlocked object, the offscreen's
+    // exportSeedHex detour is no longer needed — revisit walletUnlock.
+    expect((unlocked as unknown as { seedHex?: string }).seedHex).toBeUndefined();
+    expect(unlocked.walletKeys).toBeDefined();
+    expect(unlocked.walletKeys.shieldedSecretKeys).toBeDefined();
+    unlocked.lock();
 
-      const seedHex = await manager.exportSeedHex('alice', PASS);
-      expect(deriveAllAddressesFromSeed(seedHex)).toEqual(unlocked.addresses);
-    },
-    15_000,
-  );
+    const seedHex = await manager.exportSeedHex('alice', PASS);
+    expect(deriveAllAddressesFromSeed(seedHex)).toEqual(unlocked.addresses);
+  });
 
-  it(
-    'rejects the wrong passphrase rather than returning a bogus seed',
-    async () => {
-      const manager = new WalletManager(new MemoryStorage());
-      await manager.generate('alice', PASS, 'devnet');
+  it('rejects the wrong passphrase rather than returning a bogus seed', async () => {
+    const manager = new WalletManager(new MemoryStorage());
+    await manager.generate('alice', PASS, 'devnet');
 
-      await expect(manager.exportSeedHex('alice', 'not the passphrase')).rejects.toThrow();
-    },
-    15_000,
-  );
+    await expect(manager.exportSeedHex('alice', 'not the passphrase')).rejects.toThrow();
+  });
 
   it('rejects an unknown wallet', async () => {
     const manager = new WalletManager(new MemoryStorage());
@@ -201,8 +169,12 @@ describe('WalletManager keystore KDF upgrade', () => {
   const PASS = 'correct horse battery staple';
   const KEYSTORE_KEY = 'wallets/carol.keystore';
 
-  it(
-    'upgrades a v1 keystore in place on first unlock, at the key unlock() reads, exactly once',
+  // Three scrypt derivations at the v2 parameters plus one at v1, so this is the
+  // slowest test in the suite and the first to fail when instrumentation slows
+  // it down. It takes the timeout from the config rather than a literal of its
+  // own, which would override both the project setting and the larger bound the
+  // coverage run passes on the command line.
+  it('upgrades a v1 keystore in place on first unlock, at the key unlock() reads, exactly once',
     async () => {
       const storage = new MemoryStorage();
       const manager = new WalletManager(storage);
@@ -253,7 +225,5 @@ describe('WalletManager keystore KDF upgrade', () => {
       const second = await manager.unlock('carol', PASS);
       expect(second.addresses).toEqual(created.addresses);
       expect(keystoreWrites).not.toContain(KEYSTORE_KEY);
-    },
-    30_000,
-  );
+    });
 });
