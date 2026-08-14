@@ -33,17 +33,17 @@ jobs:
           case "$REQUESTED_NETWORK" in
             preview)
               printf '%s\n' \
-                'matrix={"include":[{"network":"preview","secret_name":"PRESEED_MNEMONIC_PREVIEW"}]}' \
+                'matrix={"network":["preview"]}' \
                 >> "$GITHUB_OUTPUT"
               ;;
             preprod)
               printf '%s\n' \
-                'matrix={"include":[{"network":"preprod","secret_name":"PRESEED_MNEMONIC_PREPROD"}]}' \
+                'matrix={"network":["preprod"]}' \
                 >> "$GITHUB_OUTPUT"
               ;;
             both)
               printf '%s\n' \
-                'matrix={"include":[{"network":"preview","secret_name":"PRESEED_MNEMONIC_PREVIEW"},{"network":"preprod","secret_name":"PRESEED_MNEMONIC_PREPROD"}]}' \
+                'matrix={"network":["preview","preprod"]}' \
                 >> "$GITHUB_OUTPUT"
               ;;
             *)
@@ -61,7 +61,6 @@ jobs:
       matrix: ${{ fromJSON(needs.select-networks.outputs.matrix) }}
     env:
       NETWORK: ${{ matrix.network }}
-      PRESEED_MNEMONIC: ${{ secrets[matrix.secret_name] }}
       PREPARE_SUMMARY: ${{ github.workspace }}/.preseed-output/preseed-${{ matrix.network }}.json
       EXPORT_DIR: packages/extension/public/preseed/${{ matrix.network }}
     steps:
@@ -94,7 +93,20 @@ jobs:
           restore-keys: |
             preseed-v1-${{ matrix.network }}-
 
-      - name: Install unfunded reference mnemonic
+      - name: Install preview reference mnemonic
+        if: matrix.network == 'preview'
+        env:
+          PRESEED_MNEMONIC: ${{ secrets.PRESEED_MNEMONIC_PREVIEW }}
+        run: |
+          test -n "$PRESEED_MNEMONIC"
+          umask 077
+          install -d -m 700 "$HOME/.moth/empty-ref/$NETWORK"
+          printf '%s' "$PRESEED_MNEMONIC" > "$HOME/.moth/empty-ref/$NETWORK/mnemonic.txt"
+
+      - name: Install preprod reference mnemonic
+        if: matrix.network == 'preprod'
+        env:
+          PRESEED_MNEMONIC: ${{ secrets.PRESEED_MNEMONIC_PREPROD }}
         run: |
           test -n "$PRESEED_MNEMONIC"
           umask 077

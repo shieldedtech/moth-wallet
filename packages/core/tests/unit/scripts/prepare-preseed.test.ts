@@ -100,6 +100,9 @@ describe('prepare-preseed workflow', () => {
     expect(workflow).toContain('workflow_dispatch:');
     expect(workflow).toMatch(/permissions:\n  contents: read/);
     expect(workflow).not.toMatch(/id-token: write|npm publish|git push|gh pr|aws /);
+    expect(workflow).not.toContain('secrets[matrix.secret_name]');
+    expect(workflow).toContain('secrets.PRESEED_MNEMONIC_PREVIEW');
+    expect(workflow).toContain('secrets.PRESEED_MNEMONIC_PREPROD');
   });
 
   it('can only be started by an explicit manual dispatch', () => {
