@@ -11,13 +11,8 @@ import {
   type WalletKeys,
 } from '../../../src/sync/operations.js';
 import { deriveAllAddressesFromSeed } from '../../../src/wallet/address.js';
-import { mnemonicToSeed } from '../../../src/wallet/mnemonic.js';
 import { NIGHT_TOKEN_ID } from '../../../src/types/tokens.js';
-
-const TEST_MNEMONIC =
-  'tribe eternal ritual flush hold victory effort monkey bounce sure bounce output burger broccoli wedding warrior salad hurt focus service claw glide sell eye';
-const PREPROD_ADDRESS =
-  'mn_addr_preprod1qw986g7d2hx35u237672j0fr38eacad9ns6uf5ewrphmgptda6zq2ssx95';
+import { VERIFIED_PREPROD_ADDRESS as PREPROD_ADDRESS, testSeedHex } from '../../helpers/seed.js';
 
 let seedHex: string;
 // Pre-derived key bundle (Option A). The seed-based ops derive this internally
@@ -25,8 +20,7 @@ let seedHex: string;
 let keys: WalletKeys;
 
 beforeAll(async () => {
-  const seed = await mnemonicToSeed(TEST_MNEMONIC);
-  seedHex = Array.from(seed, (byte) => byte.toString(16).padStart(2, '0')).join('');
+  seedHex = await testSeedHex();
   keys = deriveWalletKeys(seedHex);
 });
 

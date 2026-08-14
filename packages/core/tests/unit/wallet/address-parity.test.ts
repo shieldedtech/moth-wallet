@@ -7,17 +7,16 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { mnemonicToSeed } from '../../../src/wallet/mnemonic.js';
 import { deriveAllAddressesFromSeed } from '../../../src/wallet/address.js';
+import { VERIFIED_PREPROD_ADDRESS, testSeedHex } from '../../helpers/seed.js';
 
-const TEST_MNEMONIC =
-  'tribe eternal ritual flush hold victory effort monkey bounce sure bounce output burger broccoli wedding warrior salad hurt focus service claw glide sell eye';
-
-// Expected addresses verified against the official wallet SDK
+// Expected addresses verified against the official wallet SDK.
+// There was a `nightExternalHex` entry here pinning a raw key; nothing asserted
+// against it, and nothing could — `hex` is now asserted to be empty below,
+// because raw role bytes were deliberately removed from WalletAddresses.
 const EXPECTED = {
-  nightExternalHex: '5634737b469d279ab9b8fe2bed658a939a5824eb436e9e8cdc77941d3b665dac',
   preprod: {
-    unshielded: 'mn_addr_preprod1qw986g7d2hx35u237672j0fr38eacad9ns6uf5ewrphmgptda6zq2ssx95',
+    unshielded: VERIFIED_PREPROD_ADDRESS,
     dust: 'mn_dust_preprod1wwxhaf472uhxnltad72rmph52gdpef7a7ytq78vneqs2secjdyjzyh4t0ey',
   },
   preview: {
@@ -32,9 +31,7 @@ describe('Address Derivation Parity', () => {
   let addresses: ReturnType<typeof deriveAllAddressesFromSeed>;
 
   it('should derive addresses from the test mnemonic', async () => {
-    const seed = await mnemonicToSeed(TEST_MNEMONIC);
-    const seedHex = Array.from(seed).map((b: number) => b.toString(16).padStart(2, '0')).join('');
-    addresses = deriveAllAddressesFromSeed(seedHex);
+    addresses = deriveAllAddressesFromSeed(await testSeedHex());
   });
 
   it('should not expose raw private keys in hex field', () => {
