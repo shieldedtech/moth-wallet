@@ -22,7 +22,7 @@ Everyone below wrote code that is in the tree today.
 terminal UI and for the thinking behind it. The TUI is the surface most of this
 project's early debugging happened through, and it started as his work.
 
-Parts of this codebase were written with AI assistance, under human review. 
+Parts of this codebase were written with AI assistance, under human review.
 Individual commits in the pre-squash history carry
 `Co-Authored-By` trailers recording where.
 
