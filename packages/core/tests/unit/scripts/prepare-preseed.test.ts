@@ -127,12 +127,12 @@ describe('prepare-preseed workflow', () => {
 });
 
 describe('extension release workflow', () => {
-  it('fails the release when the zip is missing preprod preseed assets', () => {
+  it('fails the release when the zip is missing either network preseed assets', () => {
     const workflow = readFileSync(cdWorkflowPath, 'utf8');
 
-    expect(workflow).toContain('unzip -p "$ARTIFACT" preseed/preprod/manifest.json');
-    expect(workflow).toContain('preseed/preprod/dust.dat.gz');
-    expect(workflow).toContain('preseed/preprod/shielded.dat.gz');
-    expect(workflow).toContain('preseed/preprod/unshielded.dat.gz');
+    expect(workflow).toContain('for network in preview preprod; do');
+    expect(workflow).toContain('unzip -tq "$ARTIFACT" "preseed/${network}/${part}"');
+    expect(workflow).toContain('unzip -p "$ARTIFACT" "preseed/${network}/manifest.json"');
+    expect(workflow).toContain('manifest.network !== network');
   });
 });

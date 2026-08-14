@@ -67,30 +67,31 @@ jobs:
           set -euo pipefail
           test -s "$ARTIFACT"
           unzip -tq "$ARTIFACT"
-          for path in \
-            preseed/preprod/manifest.json \
-            preseed/preprod/dust.dat.gz \
-            preseed/preprod/shielded.dat.gz \
-            preseed/preprod/unshielded.dat.gz; do
-            unzip -tq "$ARTIFACT" "$path"
+          for network in preview preprod; do
+            for part in manifest.json dust.dat.gz shielded.dat.gz unshielded.dat.gz; do
+              unzip -tq "$ARTIFACT" "preseed/${network}/${part}"
+            done
           done
 
-          manifest="$RUNNER_TEMP/preseed-manifest.json"
-          unzip -p "$ARTIFACT" preseed/preprod/manifest.json > "$manifest"
-          MANIFEST="$manifest" node --input-type=module -e '
+          for network in preview preprod; do
+            manifest="$RUNNER_TEMP/preseed-${network}-manifest.json"
+            unzip -p "$ARTIFACT" "preseed/${network}/manifest.json" > "$manifest"
+            NETWORK="$network" MANIFEST="$manifest" node --input-type=module -e '
             import fs from "node:fs";
 
+            const network = process.env.NETWORK;
             const manifest = JSON.parse(fs.readFileSync(process.env.MANIFEST, "utf8"));
             const parts = ["dust", "shielded", "unshielded"];
-            if (manifest.network !== "preprod" || !Number.isInteger(manifest.height) || manifest.height <= 0) {
-              throw new Error("Preprod preseed manifest has no valid network or height");
+            if (manifest.network !== network || !Number.isInteger(manifest.height) || manifest.height <= 0) {
+              throw new Error(network + " preseed manifest has no valid network or height");
             }
             for (const part of parts) {
               if (!Number.isInteger(manifest.parts?.[part]?.gzipBytes) || manifest.parts[part].gzipBytes <= 0) {
-                throw new Error("Preprod preseed manifest is missing a valid " + part + " gzip size");
+                throw new Error(network + " preseed manifest is missing a valid " + part + " gzip size");
               }
             }
-          '
+            '
+          done
 
       - name: Create GitHub release
         env:

@@ -46,7 +46,7 @@ Two things constrain when it is used:
 - It is applied **only to wallets that provably cannot have had activity before the reference height** — a wallet created after the reference was built. A wallet restored from a seed phrase has no such guarantee and takes the full walk, because starting it mid-history would hide its own funds from it.
 - Each sub-wallet carries an independent cursor, so DUST can start at the reference height while shielded and unshielded resume from their own caches.
 
-Builds bundle a reference for preprod. Other networks sync from genesis until one is built.
+Builds bundle references for preview and preprod. Other networks sync from genesis until one is built.
 
 Building and refreshing is two steps: sync an unfunded reference wallet to tip, then package it into the extension. The first sync is the slow part, so budget tens of minutes to an hour depending on the network. Later runs resume the cached reference and only process the intervening blocks.
 

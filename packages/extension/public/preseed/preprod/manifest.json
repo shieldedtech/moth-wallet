@@ -1,18 +1,18 @@
 {
   "network": "preprod",
-  "height": 2064324,
+  "height": 2104384,
   "parts": {
     "shielded": {
-      "bytes": 3970,
-      "gzipBytes": 2007
+      "bytes": 3906,
+      "gzipBytes": 1978
     },
     "unshielded": {
       "bytes": 369,
-      "gzipBytes": 279
+      "gzipBytes": 282
     },
     "dust": {
-      "bytes": 10737141,
-      "gzipBytes": 5043153
+      "bytes": 10879717,
+      "gzipBytes": 5107648
     }
   }
 }
