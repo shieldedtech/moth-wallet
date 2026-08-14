@@ -8,9 +8,10 @@ An isomorphic wallet tool for the Midnight Network. Provides single-command wall
 
 Built for DApp developers, CI pipelines, and developing AI coding agents.
 
-[![Tests and coverage](https://img.shields.io/github/actions/workflow/status/shieldedtech/moth-wallet/ci.yml?branch=main&label=tests%20%26%20coverage)](https://github.com/shieldedtech/moth-wallet/actions/workflows/ci.yml)
-[![Security scan](https://img.shields.io/github/actions/workflow/status/shieldedtech/moth-wallet/scan.yaml?branch=main&label=security%20scan)](https://github.com/shieldedtech/moth-wallet/actions/workflows/scan.yaml)
-[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/shieldedtech/moth-wallet/badge)](https://securityscorecards.dev/viewer/?uri=github.com/shieldedtech/moth-wallet)
+[![Tests and coverage](https://github.com/shieldedtech/moth-wallet/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/shieldedtech/moth-wallet/actions/workflows/ci.yml)
+[![OSS and security scan](https://github.com/shieldedtech/moth-wallet/actions/workflows/scan.yaml/badge.svg?branch=main)](https://github.com/shieldedtech/moth-wallet/actions/workflows/scan.yaml)
+
+The security scan includes OpenSSF Scorecard; coverage is published as a CI artifact while its measurement remains advisory.
 
 ## Status: Experimental and Unsupported
 
