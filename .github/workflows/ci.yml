@@ -72,6 +72,10 @@ jobs:
   # and the continue-on-error below must come off.
   coverage:
     name: Coverage (advisory)
+    # V8 instrumentation plus the scrypt-backed suite can take 10+ minutes.
+    # PRs already run the complete uninstrumented test suite above; measure
+    # coverage on main after merge so this advisory report does not delay review.
+    if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
