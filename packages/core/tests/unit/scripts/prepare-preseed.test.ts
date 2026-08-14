@@ -6,6 +6,9 @@ const helperPath = '../../../../../scripts/lib/prepare-preseed.mjs';
 const workflowPath = fileURLToPath(
   new URL('../../../../../.github/workflows/prepare-preseed.yml', import.meta.url),
 );
+const cdWorkflowPath = fileURLToPath(
+  new URL('../../../../../.github/workflows/cd.yml', import.meta.url),
+);
 
 async function loadHelper(): Promise<Record<string, unknown>> {
   return import(helperPath).catch(() => ({}));
@@ -120,5 +123,16 @@ describe('prepare-preseed workflow', () => {
     expect(cachePaths).toContain('__empty_ref__');
     expect(cachePaths).toContain('height.txt');
     expect(cachePaths).not.toContain('mnemonic.txt');
+  });
+});
+
+describe('extension release workflow', () => {
+  it('fails the release when the zip is missing preprod preseed assets', () => {
+    const workflow = readFileSync(cdWorkflowPath, 'utf8');
+
+    expect(workflow).toContain('unzip -p "$ARTIFACT" preseed/preprod/manifest.json');
+    expect(workflow).toContain('preseed/preprod/dust.dat.gz');
+    expect(workflow).toContain('preseed/preprod/shielded.dat.gz');
+    expect(workflow).toContain('preseed/preprod/unshielded.dat.gz');
   });
 });

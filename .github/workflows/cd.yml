@@ -64,8 +64,33 @@ jobs:
         env:
           ARTIFACT: ${{ steps.release.outputs.artifact }}
         run: |
+          set -euo pipefail
           test -s "$ARTIFACT"
           unzip -tq "$ARTIFACT"
+          for path in \
+            preseed/preprod/manifest.json \
+            preseed/preprod/dust.dat.gz \
+            preseed/preprod/shielded.dat.gz \
+            preseed/preprod/unshielded.dat.gz; do
+            unzip -tq "$ARTIFACT" "$path"
+          done
+
+          manifest="$RUNNER_TEMP/preseed-manifest.json"
+          unzip -p "$ARTIFACT" preseed/preprod/manifest.json > "$manifest"
+          MANIFEST="$manifest" node --input-type=module -e '
+            import fs from "node:fs";
+
+            const manifest = JSON.parse(fs.readFileSync(process.env.MANIFEST, "utf8"));
+            const parts = ["dust", "shielded", "unshielded"];
+            if (manifest.network !== "preprod" || !Number.isInteger(manifest.height) || manifest.height <= 0) {
+              throw new Error("Preprod preseed manifest has no valid network or height");
+            }
+            for (const part of parts) {
+              if (!Number.isInteger(manifest.parts?.[part]?.gzipBytes) || manifest.parts[part].gzipBytes <= 0) {
+                throw new Error("Preprod preseed manifest is missing a valid " + part + " gzip size");
+              }
+            }
+          '
 
       - name: Create GitHub release
         env:
