@@ -35,6 +35,8 @@ ae48cb37574a6f3d07610dc1b02229c3c1afeb98c13da4af38cf6006a6ca5890  packages/exten
 0b6acf51e83c2d46091cc7acaa36366e26d15c769b6c40196dc100b4cc385ce3  packages/extension/public/preseed/preview/unshielded.dat.gz
 ```
 
-The exact candidate source SHA is the commit that adds this record. Governance
-should record that SHA and require the release tag to point at the reviewed
-merge commit, not at a mutable branch name.
+After the reviewed change is merged to `main`, the extension CD workflow creates
+the matching `moth-extension-v0.11.0` tag and GitHub Release automatically. The
+exact candidate source SHA is the reviewed merge commit. Governance should
+record that SHA and require the generated release tag to point at it, not at a
+mutable branch name.

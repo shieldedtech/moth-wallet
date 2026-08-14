@@ -130,6 +130,9 @@ describe('extension release workflow', () => {
   it('fails the release when the zip is missing either network preseed assets', () => {
     const workflow = readFileSync(cdWorkflowPath, 'utf8');
 
+    expect(workflow).toContain("branches:\n      - main");
+    expect(workflow).toContain('echo "tag=moth-extension-v${version}"');
+    expect(workflow).toContain('git push origin "$TAG"');
     expect(workflow).toContain('for network in preview preprod; do');
     expect(workflow).toContain('unzip -tq "$ARTIFACT" "preseed/${network}/${part}"');
     expect(workflow).toContain('unzip -p "$ARTIFACT" "preseed/${network}/manifest.json"');

@@ -2,8 +2,20 @@ name: Extension CD
 
 on:
   push:
-    tags:
-      - 'moth-extension-v*'
+    branches:
+      - main
+    paths:
+      - 'packages/extension/**'
+      - 'packages/core/**'
+      - 'packages/browser/**'
+      - 'packages/cli/**'
+      - 'packages/tui/**'
+      - 'packages/extension/public/preseed/**'
+      - 'yarn.lock'
+      - '.nvmrc'
+      - 'package.json'
+      - 'turbo.json'
+  workflow_dispatch: {}
 
 concurrency:
   group: extension-release-${{ github.ref }}
@@ -18,8 +30,10 @@ jobs:
       contents: write
 
     steps:
-      - name: Checkout tagged source
+      - name: Checkout release source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
 
       - name: Enable Corepack
         run: corepack enable
@@ -43,16 +57,11 @@ jobs:
         shell: bash
         run: |
           version="$(node -p "require('./packages/extension/package.json').version")"
-          expected_tag="moth-extension-v${version}"
-
-          if [[ "$GITHUB_REF_NAME" != "$expected_tag" ]]; then
-            echo "Tag $GITHUB_REF_NAME does not match extension version $version." >&2
-            echo "Expected tag: $expected_tag" >&2
-            exit 1
-          fi
-
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "artifact=packages/extension/.output/moth-extension-${version}-chrome.zip" >> "$GITHUB_OUTPUT"
+          {
+            echo "version=$version"
+            echo "tag=moth-extension-v${version}"
+            echo "artifact=packages/extension/.output/moth-extension-${version}-chrome.zip"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Typecheck extension
         run: yarn workspace @shieldedtech/moth-extension compile
@@ -93,15 +102,31 @@ jobs:
             '
           done
 
+      - name: Create extension tag
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if git show-ref --tags --verify --quiet "refs/tags/$TAG"; then
+            echo "Tag $TAG already exists; reusing it for an idempotent release run."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Release Moth Wallet Extension ${TAG#moth-extension-v}"
+          git push origin "$TAG"
+
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           ARTIFACT: ${{ steps.release.outputs.artifact }}
+          TAG: ${{ steps.release.outputs.tag }}
           VERSION: ${{ steps.release.outputs.version }}
         shell: bash
         run: |
           release_args=(
-            "$GITHUB_REF_NAME"
+            "$TAG"
             "$ARTIFACT#Moth Wallet Extension for Chrome (Manifest V3)"
             --repo "$GITHUB_REPOSITORY"
             --verify-tag
@@ -113,8 +138,8 @@ jobs:
             release_args+=(--prerelease)
           fi
 
-          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" \
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" \
               "$ARTIFACT#Moth Wallet Extension for Chrome (Manifest V3)" \
               --repo "$GITHUB_REPOSITORY" \
               --clobber
