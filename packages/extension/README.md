@@ -72,18 +72,11 @@ yarn workspace @shieldedtech/moth-extension zip            # store-ready zips
 
 ## Create a GitHub release
 
-Set the desired version in this package's `package.json`, merge the change, and
-push a matching extension tag:
-
-```bash
-version="$(node -p "require('./packages/extension/package.json').version")"
-git tag "moth-extension-v${version}"
-git push origin "moth-extension-v${version}"
-```
-
-The extension CD workflow validates that the tag matches the package version,
-builds the production Chrome extension, creates the GitHub release, and uploads
-`moth-extension-<version>-chrome.zip`.
+Merge the reviewed version and extension changes to `main`. The extension CD
+workflow then validates the package version, builds the production Chrome
+extension, creates the matching `moth-extension-v<version>` tag, and creates the
+GitHub release with `moth-extension-<version>-chrome.zip`. Operators do not push
+the release tag manually.
 
 ## Notes
 

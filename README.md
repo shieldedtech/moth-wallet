@@ -8,6 +8,11 @@ An isomorphic wallet tool for the Midnight Network. Provides single-command wall
 
 Built for DApp developers, CI pipelines, and developing AI coding agents.
 
+[![Tests and coverage](https://github.com/shieldedtech/moth-wallet/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/shieldedtech/moth-wallet/actions/workflows/ci.yml)
+[![OSS and security scan](https://github.com/shieldedtech/moth-wallet/actions/workflows/scan.yaml/badge.svg?branch=main)](https://github.com/shieldedtech/moth-wallet/actions/workflows/scan.yaml)
+
+The security scan includes OpenSSF Scorecard; coverage is published as a CI artifact while its measurement remains advisory.
+
 ## Status: Experimental and Unsupported
 
 Moth is an experimental wallet built for internal testing. It is published as-is, for reference and evaluation only.
@@ -46,13 +51,13 @@ Two things constrain when it is used:
 - It is applied **only to wallets that provably cannot have had activity before the reference height** — a wallet created after the reference was built. A wallet restored from a seed phrase has no such guarantee and takes the full walk, because starting it mid-history would hide its own funds from it.
 - Each sub-wallet carries an independent cursor, so DUST can start at the reference height while shielded and unshielded resume from their own caches.
 
-Builds bundle a reference for preprod. Other networks sync from genesis until one is built.
+Builds bundle references for preview and preprod. Other networks sync from genesis until one is built.
 
-Building and refreshing is two steps: warm a reference by syncing an unfunded wallet to tip, then package it into the extension. The warm is the slow part — it is the chain walk itself, so budget tens of minutes to an hour depending on the network.
+Building and refreshing is two steps: sync an unfunded reference wallet to tip, then package it into the extension. The first sync is the slow part, so budget tens of minutes to an hour depending on the network. Later runs resume the cached reference and only process the intervening blocks.
 
 ```bash
-# 1. Warm: sync an unfunded wallet to tip and write the reference to ~/.moth
-node scripts/sync-benchmark.mjs --warm-reference --network preprod --timeout 9000
+# 1. Prepare: build or incrementally refresh the reference in ~/.moth
+node scripts/prepare-preseed.mjs --network preprod
 
 # 2. Package: copy it into packages/extension/public/preseed/<network>/
 node scripts/export-preseed.mjs --network preprod
@@ -63,7 +68,7 @@ node scripts/export-preseed.mjs --check
 
 A stale reference costs catch-up time, not correctness — the wallet syncs forward from the reference height — so one cut at release time stays useful for as long as the release does. Roughly half a second of catch-up per hour of age, measured on preprod. Refresh it when cutting a release rather than on a schedule; `--check` reports the age it would ship.
 
-There is no CI job that refreshes it, so this is a manual step in the release process. See [`docs/BENCHMARKING.md`](docs/BENCHMARKING.md) for what the warm actually does and the sharp edges around it, and [ADR 0004](docs/adr/0004-preseed-distribution.md) for why the reference is distributed in the package rather than fetched.
+The manually dispatched `Prepare preseed references` workflow prepares preview, preprod, or both in parallel. It restores only public reference state, refreshes to chain tip, exports the files, records SHA-256 checksums, and uploads reviewable workflow artifacts. It does not publish assets, modify the repository, open or merge a PR, or use OIDC. See [`docs/BENCHMARKING.md`](docs/BENCHMARKING.md) for what the preparation does and the sharp edges around it, and [ADR 0004](docs/adr/0004-preseed-distribution.md) for the longer-term distribution design.
 
 ## Prerequisites
 

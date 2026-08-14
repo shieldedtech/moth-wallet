@@ -1,0 +1,156 @@
+name: Prepare preseed references
+
+on:
+  workflow_dispatch:
+    inputs:
+      network:
+        description: Network reference to prepare
+        required: true
+        default: both
+        type: choice
+        options:
+          - both
+          - preview
+          - preprod
+permissions:
+  contents: read
+
+concurrency:
+  group: prepare-preseed-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  select-networks:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.select.outputs.matrix }}
+    steps:
+      - id: select
+        name: Select networks
+        env:
+          REQUESTED_NETWORK: ${{ inputs.network || 'both' }}
+        run: |
+          case "$REQUESTED_NETWORK" in
+            preview)
+              printf '%s\n' \
+                'matrix={"network":["preview"]}' \
+                >> "$GITHUB_OUTPUT"
+              ;;
+            preprod)
+              printf '%s\n' \
+                'matrix={"network":["preprod"]}' \
+                >> "$GITHUB_OUTPUT"
+              ;;
+            both)
+              printf '%s\n' \
+                'matrix={"network":["preview","preprod"]}' \
+                >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              printf 'Unsupported network: %s\n' "$REQUESTED_NETWORK" >&2
+              exit 2
+              ;;
+          esac
+
+  prepare:
+    needs: select-networks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.select-networks.outputs.matrix) }}
+    env:
+      NETWORK: ${{ matrix.network }}
+      PREPARE_SUMMARY: ${{ github.workspace }}/.preseed-output/preseed-${{ matrix.network }}.json
+      EXPORT_DIR: packages/extension/public/preseed/${{ matrix.network }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: yarn
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Build core package
+        run: yarn workspace @shieldedtech/moth-wallet build
+
+      - name: Restore public preseed state
+        id: restore-preseed
+        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: |
+            ~/.moth/sync/${{ matrix.network }}/__empty_ref__
+            ~/.moth/empty-ref/${{ matrix.network }}/height.txt
+          key: preseed-v1-${{ matrix.network }}-${{ github.run_id }}
+          restore-keys: |
+            preseed-v1-${{ matrix.network }}-
+
+      - name: Install preview reference mnemonic
+        if: matrix.network == 'preview'
+        env:
+          PRESEED_MNEMONIC: ${{ secrets.PRESEED_MNEMONIC_PREVIEW }}
+        run: |
+          test -n "$PRESEED_MNEMONIC"
+          umask 077
+          install -d -m 700 "$HOME/.moth/empty-ref/$NETWORK"
+          printf '%s' "$PRESEED_MNEMONIC" > "$HOME/.moth/empty-ref/$NETWORK/mnemonic.txt"
+
+      - name: Install preprod reference mnemonic
+        if: matrix.network == 'preprod'
+        env:
+          PRESEED_MNEMONIC: ${{ secrets.PRESEED_MNEMONIC_PREPROD }}
+        run: |
+          test -n "$PRESEED_MNEMONIC"
+          umask 077
+          install -d -m 700 "$HOME/.moth/empty-ref/$NETWORK"
+          printf '%s' "$PRESEED_MNEMONIC" > "$HOME/.moth/empty-ref/$NETWORK/mnemonic.txt"
+
+      - name: Refresh preseed reference to chain tip
+        run: node scripts/prepare-preseed.mjs --network "$NETWORK" --summary "$PREPARE_SUMMARY"
+
+      - name: Save public preseed state
+        if: always()
+        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: |
+            ~/.moth/sync/${{ matrix.network }}/__empty_ref__
+            ~/.moth/empty-ref/${{ matrix.network }}/height.txt
+          key: preseed-v1-${{ matrix.network }}-${{ github.run_id }}
+
+      - name: Remove reference mnemonic
+        if: always()
+        run: rm -f "$HOME/.moth/empty-ref/$NETWORK/mnemonic.txt"
+
+      - name: Export preseed files
+        run: node scripts/export-preseed.mjs --network "$NETWORK"
+
+      - name: Record checksums and job summary
+        run: |
+          shasum -a 256 "$EXPORT_DIR"/* > "$EXPORT_DIR/checksums.sha256"
+          {
+            printf '## Prepared %s preseed\n\n' "$NETWORK"
+            printf '### Refresh result\n\n'
+            sed 's/^/    /' "$PREPARE_SUMMARY"
+            printf '\n### Export manifest\n\n'
+            sed 's/^/    /' "$EXPORT_DIR/manifest.json"
+            printf '\n### SHA-256 checksums\n\n'
+            sed 's/^/    /' "$EXPORT_DIR/checksums.sha256"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload prepared preseed
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: preseed-${{ matrix.network }}-${{ github.run_id }}
+          path: |
+            ${{ env.EXPORT_DIR }}
+            ${{ env.PREPARE_SUMMARY }}
+          if-no-files-found: error
+          retention-days: 14
