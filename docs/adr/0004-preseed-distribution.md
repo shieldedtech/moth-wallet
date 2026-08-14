@@ -4,6 +4,21 @@
 - **Date:** 2026-08-10
 - **Related:** ADR 0003 (the pre-seed mechanism, the `height <= birthday` guard, and why a reference is publishable); `scripts/export-preseed.mjs` (packaging); `packages/extension/lib/offscreen/bundled-preseed.ts` (the loader this would extend)
 
+## Implementation status (2026-08-14)
+
+The first phase of item 2 is implemented in
+`.github/workflows/prepare-preseed.yml`: a manually dispatched run refreshes
+preview and preprod from persistent public-state caches, exports checksummed
+artifacts, and stops for human review. It does not publish, open, or merge a
+change. The reviewed artifacts are promoted into a release candidate by a
+separate signed commit.
+
+The current extension candidate bundles both preview and preprod. This is an
+interim packaging choice for the reference implementation, not a reversal of
+item 3's longer-term direction. Mainnet remains the intended bundled default
+once a mainnet reference has been built, validated, and accepted through the
+governance process. Hosting non-default references remains an open follow-up.
+
 ## Context
 
 ADR 0003 established that a pre-seed reference removes the DUST chain walk —
@@ -12,8 +27,9 @@ swaps the new wallet's keys in and keeps only `state`, `protocolVersion` and
 `offset`, so a reference contains no user-specific or secret material.
 
 Preprod's reference now ships **inside the extension package** (4.81 MB gzipped),
-loaded into IndexedDB on first sync. That solves the fresh-install case for one
-network and leaves three problems:
+loaded into IndexedDB on first sync. The release candidate also bundles the
+preview reference, solving the fresh-install case for both test networks while
+leaving three problems:
 
 1. **Only what existed at build time.** A network with no bundled reference gets
    the slow path until the user installs a new build. Mainnet — the default
