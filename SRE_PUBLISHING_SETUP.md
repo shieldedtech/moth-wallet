@@ -24,9 +24,10 @@ npmjs.com:
 - Environment name: blank
 - Allowed action: `npm publish`
 
-The workflow runs on a GitHub-hosted runner with npm 11.5.1 or newer and grants
-`id-token: write`. Do not add an npm publish token: npm exchanges the workflow's
-OIDC identity for a short-lived, package-scoped credential.
+The workflow runs on a GitHub-hosted runner, installs the reviewed npm 12.0.2
+CLI, and grants `id-token: write`. The automatic jobs do not receive an npm
+publish token: npm exchanges the workflow's OIDC identity for a short-lived,
+package-scoped credential.
 
 Trusted Publishing works for restricted packages. npm adds provenance
 automatically when both the repository and package are public; restricted
@@ -43,6 +44,22 @@ packages remain without public provenance.
 
 The workflow uses `MIDNIGHTCI_PACKAGES_WRITE` only for GitHub operations needed
 to open the Changesets PR. npm publishing does not use that secret.
+
+## Temporary OIDC recovery stage
+
+Keep `SHIELDED_NPMJS_TOKEN` available only until the first automatic OIDC
+publish succeeds. It is scoped exclusively to the manual `token-recovery` job;
+the automatic stable and canary jobs cannot access it.
+
+Use the recovery job only with explicit SRE approval:
+
+1. Open the **Release** workflow and choose **Run workflow** on `main`.
+2. Enter `publish-with-token` as the confirmation value.
+3. Preserve the run URL and publish results as temporary-path evidence.
+
+The recovery job sets provenance off because the packages and repository remain
+private during governance review. It must be removed by the follow-up PR after
+a successful OIDC run; it is not the steady-state release path.
 
 ## Public release gate
 
@@ -82,7 +99,7 @@ intended dist-tag.
   on every package and exactly matches `shieldedtech/moth-wallet` and
   `release.yml` with no environment.
 - **OIDC exchange failure:** confirm the job runs on a GitHub-hosted runner, has
-  `id-token: write`, and uses npm 11.5.1 or newer.
+  `id-token: write`, and installs the reviewed npm 12.0.2 CLI.
 - **Unexpected `E404`:** verify the npm identity can read the restricted package.
 - **`Unsupported URL Type "workspace:"`:** inspect the packed manifest and
   ensure Changesets rewrites internal workspace dependencies before publishing.
@@ -91,11 +108,13 @@ intended dist-tag.
 
 ## Credential cleanup
 
-Once an OIDC publish succeeds:
+Once an automatic OIDC publish succeeds:
 
-1. Delete the `SHIELDED_NPMJS_TOKEN` GitHub Actions secret if it still exists.
-2. Revoke the one-time npm bootstrap token.
-3. Set npm publishing access to require 2FA and disallow traditional tokens.
+1. Merge the reviewed follow-up PR that removes the `token-recovery` job and
+   `workflow_dispatch` input.
+2. Delete the `SHIELDED_NPMJS_TOKEN` GitHub Actions secret if it still exists.
+3. Revoke the npm recovery token.
+4. Set npm publishing access to require 2FA and disallow traditional tokens.
 
 These are administrative changes and must be performed only after verifying the
 Trusted Publishing path.

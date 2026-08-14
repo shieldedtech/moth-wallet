@@ -12,6 +12,7 @@
     "build": "turbo run build",
     "dev:mock-dapp": "yarn workspace @shieldedtech/moth-mock-dapp dev",
     "test": "vitest run",
+    "test:release-policy": "node scripts/test-release-policy.mjs",
     "test:watch": "vitest",
     "lint": "turbo run lint",
     "clean": "turbo run clean",

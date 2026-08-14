@@ -45,6 +45,9 @@ jobs:
       - name: Typecheck extension
         run: yarn workspace @shieldedtech/moth-extension compile
 
+      - name: Check release workflow policy
+        run: yarn test:release-policy
+
       # Devnet-dependent integration tests self-skip when no devnet is present,
       # so this stays green without Docker; unit tests + guards always run.
       - name: Run tests
