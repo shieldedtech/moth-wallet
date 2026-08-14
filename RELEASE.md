@@ -4,11 +4,10 @@ This repository uses [Changesets](https://github.com/changesets/changesets) for 
 
 ## Setup (One-time)
 
-Publishing uses **npm Trusted Publishing (OIDC)** under the `@shieldedtech` scope. The automatic
-jobs receive no npm token. During initial OIDC verification, a separately gated manual recovery
-job retains the existing token; it must be removed after the first successful OIDC publish.
-Configuring and verifying each package's trusted publisher is a release-maintainer task documented
-in **[NPM_PUBLISHING.md](./NPM_PUBLISHING.md)**. Developers do not need an npm token.
+Publishing uses **npm Trusted Publishing (OIDC)** under the `@shieldedtech` scope — there is no
+long-lived npm token in CI. Configuring and verifying each package's trusted publisher is a
+release-maintainer task documented in **[NPM_PUBLISHING.md](./NPM_PUBLISHING.md)**. Developers do
+not need an npm token.
 
 ## Creating a Release
 
@@ -92,10 +91,9 @@ records a final GO decision.
 
 ## Manual Publishing
 
-Local manual publishing is unsupported because it bypasses the reviewed GitHub Actions identity
-and release evidence. During the initial OIDC proof only, a release maintainer can invoke the
-main-only `token-recovery` job with the documented confirmation value. It requires explicit
-approval and must preserve the open-source governance gate.
+Manual publishing is unsupported because it bypasses the reviewed GitHub Actions identity and
+release evidence. Fix or rerun the workflow. Any emergency exception requires explicit
+release-maintainer approval and must preserve the open-source governance gate.
 
 ## Consuming @shieldedtech/moth-wallet in Other Projects
 

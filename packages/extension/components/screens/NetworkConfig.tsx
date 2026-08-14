@@ -22,7 +22,10 @@ import { NoteCard } from '../moth/note-card';
 
 export type SupportedNetwork = (typeof SUPPORTED_NETWORKS)[number];
 
-const NETWORK_LABELS: Record<SupportedNetwork, string> = {
+// Every network in SUPPORTED_NETWORKS needs an entry in both maps, or its radio
+// renders with a blank name and description. Record<SupportedNetwork, string>
+// makes that a type error rather than a silent gap in the picker.
+export const NETWORK_LABELS: Record<SupportedNetwork, string> = {
   mainnet: 'Mainnet',
   devnet: 'Devnet',
   preview: 'Preview',
@@ -31,7 +34,7 @@ const NETWORK_LABELS: Record<SupportedNetwork, string> = {
   local: 'Local',
 };
 
-const NETWORK_DESCRIPTIONS: Record<SupportedNetwork, MessageKey> = {
+export const NETWORK_DESCRIPTIONS: Record<SupportedNetwork, MessageKey> = {
   mainnet: 'network_descMainnet',
   devnet: 'network_descDevnet',
   preview: 'network_descPreview',
