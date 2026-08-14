@@ -4,11 +4,11 @@
 
 **Goal:** Prove npm Trusted Publishing without exposing a token to automatic release jobs, then remove the temporary recovery path in a gated follow-up PR.
 
-**Architecture:** PR #3 keeps stable and canary publishing on OIDC and adds a separately gated manual token-recovery job. A stacked follow-up PR removes that job after an OIDC canary succeeds, at which point SRE can delete the GitHub secret and revoke the npm token.
+**Architecture:** PR #3 keeps stable and canary publishing on OIDC and adds a separately gated manual token-recovery job. A stacked follow-up PR removes that job after an OIDC canary succeeds, at which point a release administrator can delete the GitHub secret and revoke the npm token.
 
 **Tech Stack:** GitHub Actions, npm Trusted Publishing, Changesets, Yarn 4, Node.js 24
 
-**Spec:** `SRE_PUBLISHING_SETUP.md`
+**Spec:** `NPM_PUBLISHING.md`
 
 ## Global Constraints
 
@@ -30,7 +30,7 @@
 - [x] Add a confirmation-gated `workflow_dispatch` recovery job to `release.yml`.
 - [x] Restrict the automatic stable and canary jobs to pushes on `main`.
 - [x] Install an exact npm version in every publish-capable job.
-- [x] Update release and SRE documentation with the proof and cleanup sequence.
+- [x] Update publishing documentation with the proof and cleanup sequence.
 
 ## Task 3: Verify and update PR #3
 

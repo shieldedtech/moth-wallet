@@ -1,4 +1,4 @@
-# SRE Runbook — npm Publishing (@shieldedtech)
+# npm Publishing Runbook (@shieldedtech)
 
 This repository publishes three private packages under the `@shieldedtech`
 scope using Changesets and npm Trusted Publishing:
@@ -51,7 +51,7 @@ Keep `SHIELDED_NPMJS_TOKEN` available only until the first automatic OIDC
 publish succeeds. It is scoped exclusively to the manual `token-recovery` job;
 the automatic stable and canary jobs cannot access it.
 
-Use the recovery job only with explicit SRE approval:
+Use the recovery job only with explicit release-maintainer approval:
 
 1. Open the **Release** workflow and choose **Run workflow** on `main`.
 2. Enter `publish-with-token` as the confirmation value.
