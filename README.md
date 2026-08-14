@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="brand/logo.png" alt="" width="200">
+</p>
+
 # Moth
 
 An isomorphic wallet tool for the Midnight Network. Provides single-command wallet operations across three runtime contexts: non-interactive CLI, browser library, and interactive terminal dashboard.
@@ -6,20 +10,13 @@ Built for DApp developers, CI pipelines, and developing AI coding agents.
 
 ## Status: Experimental and Unsupported
 
-Moth is an experimental wallet built for internal testing. It is published
-as-is, for reference and evaluation only.
+Moth is an experimental wallet built for internal testing. It is published as-is, for reference and evaluation only.
 
-**It is not supported.** We do not maintain it, fix bugs, patch security
-issues or respond to support requests or vulnerability reports. It may be
-incomplete, insecure or stop working at any time.
+**It is not supported.** We do not maintain it, fix bugs, patch security issues or respond to support requests or vulnerability reports. It may be incomplete, insecure or stop working at any time.
 
-**It has not been audited.** Moth handles cryptographic keys and interacts
-with the Midnight network. Using it may result in the permanent and
-irreversible loss of assets. You use it entirely at your own risk.
+**It has not been audited.** Moth handles cryptographic keys and interacts with the Midnight network. Using it may result in the permanent and irreversible loss of assets. You use it entirely at your own risk.
 
-**No warranty.** This software is provided "as is," without warranty of any
-kind. This notice is in addition to — and does not replace — the terms of the
-Apache License 2.0 under which Moth is released (see LICENSE), including its
+**No warranty.** This software is provided "as is," without warranty of any kind. This notice is in addition to  and does not replace the terms of the Apache License 2.0 under which Moth is released (see L1ICENSE), including its
 warranty disclaimer and limitation of liability.
 
 ## Architecture
@@ -27,29 +24,46 @@ warranty disclaimer and limitation of liability.
 ```
 packages/
   core/      Isomorphic engine — zero platform-specific imports
-  cli/       Non-interactive CLI commands (oclif)
   browser/   Browser adapter (IndexedDB, Web Crypto)
   tui/       Interactive terminal dashboard (React/Ink)
+  cli/       Non-interactive CLI commands (oclif)
 ```
 
-The `core` package contains all wallet logic: HD key derivation, encrypted keystores, network clients, proof orchestration, and transaction building. The `cli`, `browser`, and `tui` packages are thin shells that provide platform-specific I/O adapters around the shared core.
+The `core` package contains all wallet logic: HD key derivation, encrypted keystores, network clients, proof orchestration, and transaction building. The `browser`, `tui`, and `cli` packages are thin shells that provide platform-specific I/O adapters around the shared core.
 
-## Daemon Model
+## First Sync and the Pre-Seed Reference
 
-Moth runs in two modes:
+A brand-new account is not usable the instant you create it. The DUST sub-wallet has to reconstruct generation state by streaming the ledger events that produced it, and on a chain with real history that takes a while — not because your wallet has any transactions, but because DUST generation is global chain state that has to be replayed to be known.
 
-1. **In-process** — every CLI invocation (e.g. `moth transfer …`, `moth deploy …`) unlocks the wallet, starts its own sync, performs the operation, and exits. Simple, single-shot, but two simultaneous invocations against the same wallet race on the sync cache.
+This is a property of where zero-knowledge chains currently are, not a defect in Midnight or in Moth, and the protocol's own roadmap addresses it further later this year. What follows is how Moth makes the wait tolerable in the meantime.
 
-2. **Daemon-hosted** — one long-lived process (the TUI dashboard, or `moth daemon serve` headless) owns the wallet, keeps its sync warm, and exposes write operations over a Unix domain socket. CLI subcommands under `moth daemon …` (e.g. `moth daemon transfer`, `moth daemon deploy`) route through that socket instead of starting their own sync. This is the recommended pattern for any workflow that does more than one tx — the sync warm-up is paid once.
+Most of that replay is identical for every wallet, so it does not need doing more than once. A **pre-seed reference** is an unfunded throwaway wallet's synced state, captured at a known block height. A new account starts from that height instead of from genesis. On preprod this is the difference between roughly 78 minutes and roughly 29 seconds.
 
-The daemon's RPC verbs are: `getState`, `clearSyncCache`, `submitTransaction`, `transferTokens`, `callCircuit`, `deployContract`, `dustRegister`, `dustDeregister`, `insertVerifierKey`, `insertVerifierKeysBatch`. Each write verb triggers an L3 confirmation modal in the TUI (or auto-approves under two-flag arming in headless mode — see below).
+The reference holds nothing and controls nothing, so it is safe to distribute — it is a snapshot of public chain state, not of anyone's funds. Its *mnemonic*, by contrast, is never published; see [`docs/adr/0003-preseed-reference.md`](docs/adr/0003-preseed-reference.md).
 
-**Security layers**:
+Two things constrain when it is used:
 
-- **L1** (kernel UID enforcement): the socket lives at `~/.moth/sync/<network>/<wallet>.sock`, mode `0600` in a `0700` directory. Only the daemon's UID can connect.
-- **L3** (per-operation human consent): every write verb produces a modal in the TUI showing the operation summary, recipient/contract, amounts. The op only proceeds on explicit approval. Headless mode replaces this with auto-approve, gated by *both* `--auto-approve` AND `MOTH_DAEMON_AUTO_APPROVE=1` — belt-and-suspenders so a stray flag in shell history doesn't disable consent on a service account.
+- It is applied **only to wallets that provably cannot have had activity before the reference height** — a wallet created after the reference was built. A wallet restored from a seed phrase has no such guarantee and takes the full walk, because starting it mid-history would hide its own funds from it.
+- Each sub-wallet carries an independent cursor, so DUST can start at the reference height while shielded and unshielded resume from their own caches.
 
-The living spec at [`docs/spec/wallet-service/`](docs/spec/wallet-service/) describes the four-stage roadmap from this local-only model (stage 1) to a multi-tenant network-accessible service (stage 4): authentication, policy, audit, threat model, key management decisions.
+Builds bundle a reference for preprod. Other networks sync from genesis until one is built.
+
+Building and refreshing is two steps: warm a reference by syncing an unfunded wallet to tip, then package it into the extension. The warm is the slow part — it is the chain walk itself, so budget tens of minutes to an hour depending on the network.
+
+```bash
+# 1. Warm: sync an unfunded wallet to tip and write the reference to ~/.moth
+node scripts/sync-benchmark.mjs --warm-reference --network preprod --timeout 9000
+
+# 2. Package: copy it into packages/extension/public/preseed/<network>/
+node scripts/export-preseed.mjs --network preprod
+
+# Report age and size without writing anything
+node scripts/export-preseed.mjs --check
+```
+
+A stale reference costs catch-up time, not correctness — the wallet syncs forward from the reference height — so one cut at release time stays useful for as long as the release does. Roughly half a second of catch-up per hour of age, measured on preprod. Refresh it when cutting a release rather than on a schedule; `--check` reports the age it would ship.
+
+There is no CI job that refreshes it, so this is a manual step in the release process. See [`docs/BENCHMARKING.md`](docs/BENCHMARKING.md) for what the warm actually does and the sharp edges around it, and [ADR 0004](docs/adr/0004-preseed-distribution.md) for why the reference is distributed in the package rather than fetched.
 
 ## Prerequisites
 
@@ -80,6 +94,39 @@ yarn test
 Tests cover security-critical modules: HD key derivation (BIP-44 path `m/44'/2400'`), ChaCha20-Poly1305 keystore encryption/decryption, BIP-39 mnemonic handling, and contract artifact loading.
 
 For end-to-end verification of every mode (in-process CLI, TUI host, daemon Unix, daemon TCP + AuthN + scopes, wallet lifecycle, failure recovery), see [`docs/TESTING.md`](docs/TESTING.md). It includes the integration-test invocation, the local-stack prereqs, and per-mode smoke recipes with expected output markers.
+
+## Install the Browser Extension
+
+The extension is not on the Chrome Web Store. Build it and load it unpacked.
+
+```bash
+yarn workspace @shieldedtech/moth-extension build          # -> packages/extension/.output/chrome-mv3
+yarn workspace @shieldedtech/moth-extension build:firefox  # -> packages/extension/.output/firefox-mv2
+```
+
+In Chrome, open `chrome://extensions`, turn on **Developer mode**, choose **Load unpacked**, and select `packages/extension/.output/chrome-mv3`. After a rebuild, press the reload icon on the extension's card — Chrome does not pick up a new build on its own.
+
+In Firefox, open `about:debugging#/runtime/this-firefox`, choose **Load Temporary Add-on**, and select the `manifest.json` inside `packages/extension/.output/firefox-mv2`. Temporary add-ons are removed when Firefox restarts.
+
+To hand a build to someone else, `yarn workspace @shieldedtech/moth-extension zip` writes a store-shaped archive to `.output/`. They still load it unpacked, so they will need to unzip it first.
+
+A fresh install creates its wallet on preprod, not mainnet. That is deliberate — see [Status](#status-experimental-and-unsupported) — and you can change it in Settings once you understand what you are changing it to.
+
+The extension has a developer page that the UI does not link to: open `chrome-extension://<extension-id>/debug.html`, taking the ID from the extension's card on `chrome://extensions`. It reports phase timings and per-host request counts with outcomes, which is the first place to look when something is slow or an endpoint is refusing you.
+
+## Interactive Dashboard (TUI)
+
+`moth tui` launches the terminal dashboard. It is also the daemon host: while it runs, `moth daemon …` subcommands route to it, and every write operation raises a confirmation modal in it.
+
+| Key | Action |
+|-----|--------|
+| `M-m` (Alt+M) | Toggle navigation menu |
+| `1`-`9` | Navigate to screen (when menu is open) |
+| `M-p` (Alt+P) | Pause/resume wallet sync |
+| `M-q` (Alt+Q) | Quit |
+| `Esc` | Back/cancel within screens |
+
+Screens: 1 Dashboard, 2 Send, 3 Deploy, 4 Mint, 5 Contract, 6 Keys, 7 DUST, 8 Network, 9 Logs
 
 ## Install the CLI
 
@@ -346,18 +393,6 @@ Every command accepts:
 
 > For the exhaustive reference — including every `moth daemon …` subcommand (serve, transfer, call, deploy, submit-tx, dust, key gen/list/revoke, maintenance) and the full on-disk lifecycle — see [`docs/spec/wallet-service/COMMANDS.md`](docs/spec/wallet-service/COMMANDS.md).
 
-### TUI Keybindings
-
-| Key | Action |
-|-----|--------|
-| `M-m` (Alt+M) | Toggle navigation menu |
-| `1`-`9` | Navigate to screen (when menu is open) |
-| `M-p` (Alt+P) | Pause/resume wallet sync |
-| `M-q` (Alt+Q) | Quit |
-| `Esc` | Back/cancel within screens |
-
-Screens: 1 Dashboard, 2 Send, 3 Deploy, 4 Mint, 5 Contract, 6 Keys, 7 DUST, 8 Network, 9 Logs
-
 ### Exit Codes
 
 | Code | Meaning |
@@ -387,6 +422,23 @@ Text mode errors go to stderr with hints:
 Error [NETWORK_ERROR]: Could not connect to node at ws://localhost:9944
   Hint: Is your devnet running? Check your local network setup
 ```
+
+## Daemon Model
+
+Moth runs in two modes:
+
+1. **In-process** — every CLI invocation (e.g. `moth transfer …`, `moth deploy …`) unlocks the wallet, starts its own sync, performs the operation, and exits. Simple, single-shot, but two simultaneous invocations against the same wallet race on the sync cache.
+
+2. **Daemon-hosted** — one long-lived process (the TUI dashboard, or `moth daemon serve` headless) owns the wallet, keeps its sync warm, and exposes write operations over a Unix domain socket. CLI subcommands under `moth daemon …` (e.g. `moth daemon transfer`, `moth daemon deploy`) route through that socket instead of starting their own sync. This is the recommended pattern for any workflow that does more than one tx — the sync warm-up is paid once.
+
+The daemon's RPC verbs are: `getState`, `clearSyncCache`, `submitTransaction`, `transferTokens`, `callCircuit`, `deployContract`, `dustRegister`, `dustDeregister`, `insertVerifierKey`, `insertVerifierKeysBatch`. Each write verb triggers an L3 confirmation modal in the TUI (or auto-approves under two-flag arming in headless mode — see **L3** under Security layers).
+
+**Security layers**:
+
+- **L1** (kernel UID enforcement): the socket lives at `~/.moth/sync/<network>/<wallet>.sock`, mode `0600` in a `0700` directory. Only the daemon's UID can connect.
+- **L3** (per-operation human consent): every write verb produces a modal in the TUI showing the operation summary, recipient/contract, amounts. The op only proceeds on explicit approval. Headless mode replaces this with auto-approve, gated by *both* `--auto-approve` AND `MOTH_DAEMON_AUTO_APPROVE=1` — belt-and-suspenders so a stray flag in shell history doesn't disable consent on a service account.
+
+The living spec at [`docs/spec/wallet-service/`](docs/spec/wallet-service/) describes the four-stage roadmap from this local-only model (stage 1) to a multi-tenant network-accessible service (stage 4): authentication, policy, audit, threat model, key management decisions.
 
 ## CI Pipeline Example
 
@@ -589,10 +641,8 @@ The TUI component draws on architectural patterns and screen designs from [mn-tu
 
 Particular thanks to [@bwbush](https://github.com/bwbush) — Brian W. Bush — for the initial terminal UI and the thinking behind it. The TUI is the surface most of this project's early debugging happened through.
 
-Moth was built by a number of people before it was opened up, and the squash that
-created this repository credits none of them. [CONTRIBUTORS.md](CONTRIBUTORS.md)
-is the record of who wrote it.
+Moth was built by a number of people before it was opened up, and the squash that created this repository credits none of them. [CONTRIBUTORS.md](CONTRIBUTORS.md) is the record of who wrote it.
 
 ## License
 
-See LICENSE file.
+See [LICENSE](LICENSE).
