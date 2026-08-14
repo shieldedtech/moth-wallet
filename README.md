@@ -8,6 +8,10 @@ An isomorphic wallet tool for the Midnight Network. Provides single-command wall
 
 Built for DApp developers, CI pipelines, and developing AI coding agents.
 
+[![Tests and coverage](https://img.shields.io/github/actions/workflow/status/shieldedtech/moth-wallet/ci.yml?branch=main&label=tests%20%26%20coverage)](https://github.com/shieldedtech/moth-wallet/actions/workflows/ci.yml)
+[![Security scan](https://img.shields.io/github/actions/workflow/status/shieldedtech/moth-wallet/scan.yaml?branch=main&label=security%20scan)](https://github.com/shieldedtech/moth-wallet/actions/workflows/scan.yaml)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/shieldedtech/moth-wallet/badge)](https://securityscorecards.dev/viewer/?uri=github.com/shieldedtech/moth-wallet)
+
 ## Status: Experimental and Unsupported
 
 Moth is an experimental wallet built for internal testing. It is published as-is, for reference and evaluation only.
