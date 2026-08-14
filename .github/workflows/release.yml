@@ -4,12 +4,6 @@ on:
   push:
     branches:
       - main
-  workflow_dispatch:
-    inputs:
-      confirm:
-        description: Type publish-with-token to run the temporary recovery path.
-        required: true
-        type: string
 
 concurrency: ${{ github.workflow }}-${{ github.ref }}
 
@@ -165,49 +159,3 @@ jobs:
           yarn install --mode=update-lockfile
           yarn build
           yarn changeset publish --tag canary --no-git-tag
-
-  # Temporary escape hatch while the first OIDC publish is being proved. This
-  # job is manual, main-only, and cannot run alongside the automatic jobs.
-  token-recovery:
-    name: Token recovery
-    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirm == 'publish-with-token' }}
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-      pull-requests: write
-
-    steps:
-      - name: Checkout Repo
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          fetch-depth: 0
-
-      - name: Enable Corepack
-        run: corepack enable
-
-      - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
-        with:
-          node-version-file: .nvmrc
-          cache: 'yarn'
-
-      - name: Install npm
-        run: npm install --global npm@12.0.2
-
-      - name: Install Dependencies
-        run: yarn install --immutable
-
-      - name: Build Packages
-        run: yarn build
-
-      - name: Recover release with npm token
-        uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d  # v1.9.0
-        with:
-          version: yarn run version
-          publish: yarn run release
-          title: "chore: version packages"
-          commit: "chore: version packages"
-        env:
-          GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
-          NPM_TOKEN: ${{ secrets.SHIELDED_NPMJS_TOKEN }}
-          NPM_CONFIG_PROVENANCE: false
