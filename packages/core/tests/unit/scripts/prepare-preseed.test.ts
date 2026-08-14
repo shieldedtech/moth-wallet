@@ -133,6 +133,7 @@ describe('extension release workflow', () => {
     expect(workflow).toContain("branches:\n      - main");
     expect(workflow).toContain('echo "tag=moth-extension-v${version}"');
     expect(workflow).toContain('git push origin "$TAG"');
+    expect(workflow).toContain('Release $TAG already exists; leaving its published asset unchanged.');
     expect(workflow).toContain('for network in preview preprod; do');
     expect(workflow).toContain('unzip -tq "$ARTIFACT" "preseed/${network}/${part}"');
     expect(workflow).toContain('unzip -p "$ARTIFACT" "preseed/${network}/manifest.json"');

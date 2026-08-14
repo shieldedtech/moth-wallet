@@ -103,12 +103,14 @@ jobs:
           done
 
       - name: Create extension tag
+        id: tag
         env:
           TAG: ${{ steps.release.outputs.tag }}
         run: |
           set -euo pipefail
           if git show-ref --tags --verify --quiet "refs/tags/$TAG"; then
             echo "Tag $TAG already exists; reusing it for an idempotent release run."
+            echo "created=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -116,15 +118,22 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag -a "$TAG" -m "Release Moth Wallet Extension ${TAG#moth-extension-v}"
           git push origin "$TAG"
+          echo "created=true" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           ARTIFACT: ${{ steps.release.outputs.artifact }}
           TAG: ${{ steps.release.outputs.tag }}
+          TAG_CREATED: ${{ steps.tag.outputs.created }}
           VERSION: ${{ steps.release.outputs.version }}
         shell: bash
         run: |
+          if [[ "$TAG_CREATED" != "true" ]] && gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; leaving its published asset unchanged."
+            exit 0
+          fi
+
           release_args=(
             "$TAG"
             "$ARTIFACT#Moth Wallet Extension for Chrome (Manifest V3)"
