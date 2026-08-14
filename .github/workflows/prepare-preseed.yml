@@ -12,11 +12,6 @@ on:
           - both
           - preview
           - preprod
-  # POC only: remove after the first branch run proves the workflow.
-  push:
-    branches:
-      - 8-preseed-preparation-poc
-
 permissions:
   contents: read
 

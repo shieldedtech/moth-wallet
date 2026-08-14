@@ -102,6 +102,12 @@ describe('prepare-preseed workflow', () => {
     expect(workflow).not.toMatch(/id-token: write|npm publish|git push|gh pr|aws /);
   });
 
+  it('can only be started by an explicit manual dispatch', () => {
+    const workflow = readFileSync(workflowPath, 'utf8');
+
+    expect(workflow).not.toContain('\n  push:');
+  });
+
   it('caches only public reference state', () => {
     const workflow = readFileSync(workflowPath, 'utf8');
     const cachePaths = [...workflow.matchAll(/uses: actions\/cache\/(?:restore|save)@[^\n]+\n\s+with:\n\s+path: \|\n((?:\s{12}.+\n)+)/g)]
