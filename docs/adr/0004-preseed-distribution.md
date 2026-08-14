@@ -65,16 +65,19 @@ correctness (ADR 0003), so the difference between a nightly reference and one cu
 per release is invisible to users. A nightly job would burn 71 min × N networks
 every night to save a handful of seconds.
 
-Proposed: a manually-dispatchable workflow that also runs **before a release**,
-building or refreshing each supported network's reference, running
-`scripts/export-preseed.mjs`, and opening a PR with the updated assets. Keeping a
-human in the loop via PR matters because the artifacts are large binaries and
-because a wrong reference is a correctness problem, not a cosmetic one.
+The first phase is a manually-dispatchable workflow that builds or refreshes the
+preview and preprod references, runs `scripts/export-preseed.mjs`, records
+checksums and uploads reviewable workflow artifacts. It deliberately does not
+publish assets or modify the repository. Integrating those reviewed artifacts
+into a release or PR remains a separate, human-approved step while the signing
+and storage decisions below are unresolved.
 
 CI needs persistent state for refresh to beat rebuild — a cache keyed by network
-holding `sync/<net>/__empty_ref__/` and `empty-ref/<net>/`. Without it, refresh
-degrades to rebuild and the cadence argument above applies with more force. With
-it, a refresh job is seconds, so cadence stops being a cost question at all.
+holding `sync/<net>/__empty_ref__/` and `empty-ref/<net>/height.txt`. The adjacent
+`mnemonic.txt` is a secret and must never enter the cache or an artifact. Without
+the public-state cache, refresh degrades to rebuild and the cadence argument
+above applies with more force. With it, a refresh job is seconds, so cadence
+stops being a cost question at all.
 
 ### 3. Storage: bundle the default network, host the rest
 
@@ -184,8 +187,9 @@ references would, and that is out of scope here.
 
 ## Open
 
-- **Refresh does not exist.** Everything above is cheaper once it does, and
-  several parts are impractical until then. This is the first piece of work.
+- **How reviewed CI artifacts enter a release.** The preparation workflow stops
+  at checksummed artifacts; publishing or opening an asset-update PR remains a
+  separate, human-approved action.
 - **Who signs, and where the key lives.** Unresolved, and it gates hosting.
 - **Whether mainnet's reference is even tractable to build in CI.** It is the
   longest chain and has never been built; 71.3 min is preprod's number, and
