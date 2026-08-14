@@ -110,14 +110,16 @@ Security issues go through [SECURITY.md](./SECURITY.md), not the public issue tr
 3. **Write tests.** New behavior needs unit tests; bug fixes need a regression test.
 4. **Update documentation** in the same PR as the code change.
 5. **No `--force` pushes** once review has started. Add fixup commits instead — reviewers can re-review just the delta. Squash before merge if requested.
-6. **Pass CI.** All scan, lint, and test jobs must be green before merge.
+6. **Pass CI.** The scan and test jobs must be green before merge.
 7. **Request review** from CODEOWNERS.
 
 ## Coding standards
 
 Each repo defines its own style guide. Defaults across the org:
 
-- **TypeScript/JavaScript:** Biome or ESLint + Prettier — config lives in the repo.
+- **TypeScript/JavaScript:** Biome or ESLint + Prettier. **Not yet configured in this
+  repo** — there is no linter config and no `lint` script, so match the style of the
+  file you are editing. Wiring one up is tracked separately.
 - **Rust:** `rustfmt` + `clippy -D warnings`.
 - **Compact (Midnight smart contracts):** `compact format` + the language version pinned in the project.
 - **Commit messages:** Conventional Commits is encouraged but not required.

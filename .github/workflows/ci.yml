@@ -49,3 +49,53 @@ jobs:
       # so this stays green without Docker; unit tests + guards always run.
       - name: Run tests
         run: yarn turbo run test
+
+  # Reported, not enforced: there are no thresholds yet, so this job exists to
+  # publish a number and make the trend visible. Once thresholds are set from
+  # this baseline, they become a floor, at which point this stops being advisory
+  # and the continue-on-error below must come off.
+  coverage:
+    name: Coverage (advisory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: yarn
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Build packages
+        run: yarn build
+
+      # V8 coverage collection slows the scrypt-backed suites (N=2^18,
+      # deliberately expensive) by more than an order of magnitude, and the
+      # resulting >60s of worker-side work trips vitest's internal RPC timeout.
+      # Every test still passes and lcov.info is still written, but the run
+      # exits non-zero, so this step cannot gate anything until that is
+      # resolved. Scoped to the step rather than the job on purpose: the upload
+      # below must stay able to fail the job, or a run that produces no report
+      # at all would still report green — the same do-nothing gate this repo
+      # just deleted `lint` for.
+      - name: Measure coverage
+        continue-on-error: true
+        run: yarn test:coverage
+
+      - name: Upload lcov report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: coverage-lcov
+          path: coverage/lcov.info
+          if-no-files-found: error
+          retention-days: 14

@@ -1,25 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { StorageAdapter } from '../../../src/storage/adapter.js';
 import { WalletManager } from '../../../src/wallet/manager.js';
-
-class MemoryStorage implements StorageAdapter {
-  private readonly values = new Map<string, Uint8Array>();
-  async read(key: string) {
-    return this.values.get(key) ?? null;
-  }
-  async write(key: string, data: Uint8Array) {
-    this.values.set(key, data);
-  }
-  async delete(key: string) {
-    this.values.delete(key);
-  }
-  async list(prefix: string) {
-    return [...this.values.keys()].filter((key) => key.startsWith(prefix));
-  }
-  async exists(key: string) {
-    return this.values.has(key);
-  }
-}
+import { MemoryStorage } from '../../helpers/memory-storage.js';
 
 const PASS = 'test-passphrase';
 const decoder = new TextDecoder();

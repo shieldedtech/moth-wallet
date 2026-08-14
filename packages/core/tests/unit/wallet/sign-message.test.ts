@@ -7,16 +7,8 @@
 
 import { describe, it, expect } from 'vitest';
 import * as ledger from '@midnight-ntwrk/ledger-v8';
-import { mnemonicToSeed } from '../../../src/wallet/mnemonic.js';
 import { signMessage, signedMessageBytes } from '../../../src/wallet/sign-message.js';
-
-const TEST_MNEMONIC =
-  'tribe eternal ritual flush hold victory effort monkey bounce sure bounce output burger broccoli wedding warrior salad hurt focus service claw glide sell eye';
-
-async function seedHex(): Promise<string> {
-  const seed = await mnemonicToSeed(TEST_MNEMONIC);
-  return Array.from(seed).map((b: number) => b.toString(16).padStart(2, '0')).join('');
-}
+import { testSeedHex as seedHex } from '../../helpers/seed.js';
 
 describe('signMessage', () => {
   it('prepends the midnight_signed_message prefix with the decoded byte length', () => {
