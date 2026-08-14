@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="brand/logo.png" alt="" width="200">
+</p>
+
 # Moth
 
 An isomorphic wallet tool for the Midnight Network. Provides single-command wallet operations across three runtime contexts: non-interactive CLI, browser library, and interactive terminal dashboard.
@@ -50,6 +54,50 @@ The daemon's RPC verbs are: `getState`, `clearSyncCache`, `submitTransaction`, `
 - **L3** (per-operation human consent): every write verb produces a modal in the TUI showing the operation summary, recipient/contract, amounts. The op only proceeds on explicit approval. Headless mode replaces this with auto-approve, gated by *both* `--auto-approve` AND `MOTH_DAEMON_AUTO_APPROVE=1` — belt-and-suspenders so a stray flag in shell history doesn't disable consent on a service account.
 
 The living spec at [`docs/spec/wallet-service/`](docs/spec/wallet-service/) describes the four-stage roadmap from this local-only model (stage 1) to a multi-tenant network-accessible service (stage 4): authentication, policy, audit, threat model, key management decisions.
+
+## First Sync and the Pre-Seed Reference
+
+A brand-new account is not usable the instant you create it. The DUST sub-wallet
+has to reconstruct generation state by streaming the ledger events that produced
+it, and on a chain with real history that takes a while — not because your wallet
+has any transactions, but because DUST generation is global chain state that has
+to be replayed to be known.
+
+This is a property of where zero-knowledge chains currently are, not a defect in
+Midnight or in Moth, and the protocol's own roadmap addresses it further later
+this year. What follows is how Moth makes the wait tolerable in the meantime.
+
+Most of that replay is identical for every wallet, so it does not need doing more
+than once. A **pre-seed reference** is an unfunded throwaway wallet's synced
+state, captured at a known block height. A new account starts from that height
+instead of from genesis. On preprod this is the difference between roughly 78
+minutes and roughly 29 seconds.
+
+The reference holds nothing and controls nothing, so it is safe to distribute —
+it is a snapshot of public chain state, not of anyone's funds. Its *mnemonic*, by
+contrast, is never published; see [`docs/adr/0003-preseed-reference.md`](docs/adr/0003-preseed-reference.md).
+
+Two things constrain when it is used:
+
+- It is applied **only to wallets that provably cannot have had activity before
+  the reference height** — a wallet created after the reference was built. A
+  wallet restored from a seed phrase has no such guarantee and takes the full
+  walk, because starting it mid-history would hide its own funds from it.
+- Each sub-wallet carries an independent cursor, so DUST can start at the
+  reference height while shielded and unshielded resume from their own caches.
+
+Builds bundle a reference for preprod. Other networks sync from genesis unless
+you build one: the reference is produced by syncing an unfunded wallet on that
+network, then exported into the extension package with
+
+```bash
+node scripts/export-preseed.mjs --network preview
+node scripts/export-preseed.mjs --check          # report, write nothing
+```
+
+A stale reference costs catch-up time, not correctness — the wallet syncs forward
+from the reference height — so one cut at release time stays useful for as long
+as the release does.
 
 ## Prerequisites
 
