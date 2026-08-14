@@ -1,0 +1,34 @@
+# Repository-local checks aligned with shieldedtech/agent-rules.
+# Install: pre-commit install
+# Run manually: pre-commit run --all-files
+
+minimum_pre_commit_version: "4.0.0"
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c # v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-merge-conflict
+      - id: detect-private-key
+
+  - repo: https://github.com/rhysd/actionlint
+    rev: 914e7df21a07ef503a81201c76d2b11c789d3fca # v1.7.12
+    hooks:
+      - id: actionlint
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: 83d9cd684c87d95d656c1458ef04895a7f1cbd8e # v8.30.1
+    hooks:
+      - id: gitleaks
+
+  - repo: local
+    hooks:
+      - id: release-workflow-policy
+        name: release workflow policy
+        entry: node scripts/test-release-policy.mjs
+        language: system
+        pass_filenames: false
+        files: ^(\.github/workflows/release\.yml|package\.json|scripts/test-release-policy\.mjs)$
