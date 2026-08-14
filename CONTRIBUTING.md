@@ -91,7 +91,9 @@ GitHub's own guide covers edge cases (Smart Cards, S/MIME, multiple identities):
 
 1. **Search existing issues and PRs** before opening a new one.
 2. **Read the project README** — every repo has its own setup steps.
-3. **Open a draft PR early** if the change is non-trivial. It's cheaper to align on direction before code is written.
+3. **Install the repository hooks** with `pre-commit install`, then verify the checkout with
+   `pre-commit run --all-files`.
+4. **Open a draft PR early** if the change is non-trivial. It's cheaper to align on direction before code is written.
 
 ## Submitting issues
 

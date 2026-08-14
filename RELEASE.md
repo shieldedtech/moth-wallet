@@ -4,10 +4,11 @@ This repository uses [Changesets](https://github.com/changesets/changesets) for 
 
 ## Setup (One-time)
 
-Publishing uses **npm Trusted Publishing (OIDC)** under the `@shieldedtech` scope — there is no
-long-lived npm token in CI. The one-time setup (npm org, a token-bootstrap first publish, and
-configuring trusted publishers) is an SRE task documented in
-**[SRE_PUBLISHING_SETUP.md](./SRE_PUBLISHING_SETUP.md)**. Developers do not need an npm token.
+Publishing uses **npm Trusted Publishing (OIDC)** under the `@shieldedtech` scope. The automatic
+jobs receive no npm token. During initial OIDC verification, a separately gated manual recovery
+job retains the existing token; it must be removed after the first successful OIDC publish.
+Configuring and verifying each package's trusted publisher is a release-maintainer task documented
+in **[NPM_PUBLISHING.md](./NPM_PUBLISHING.md)**. Developers do not need an npm token.
 
 ## Creating a Release
 
@@ -79,7 +80,9 @@ When you push to `main`, the GitHub Action will:
 
 ## Package Access
 
-The `@shieldedtech/moth-wallet` package is published as **public** and available on npm.
+The three published packages are **restricted** while the repository completes the open-source
+governance process. Do not change npm access or repository visibility until the governance case
+records a final GO decision.
 
 ## Semver Guidelines
 
@@ -87,22 +90,12 @@ The `@shieldedtech/moth-wallet` package is published as **public** and available
 - **Minor** (1.0.0 → 1.1.0): New features, backwards compatible
 - **Patch** (1.0.0 → 1.0.1): Bug fixes, backwards compatible
 
-## Manual Publishing (Emergency)
+## Manual Publishing
 
-Prefer fixing the workflow over publishing by hand — manual publishes cannot use OIDC trusted
-publishing and will not have provenance. If you must publish manually, you need an npm token with
-publish rights to `@shieldedtech` configured locally (`npm login`), then:
-
-```bash
-# Bump versions
-yarn changeset version
-
-# Build packages
-yarn build
-
-# Publish (uses your local npm credentials)
-yarn release
-```
+Local manual publishing is unsupported because it bypasses the reviewed GitHub Actions identity
+and release evidence. During the initial OIDC proof only, a release maintainer can invoke the
+main-only `token-recovery` job with the documented confirmation value. It requires explicit
+approval and must preserve the open-source governance gate.
 
 ## Consuming @shieldedtech/moth-wallet in Other Projects
 
@@ -126,15 +119,13 @@ import { deployContract, createWallet } from '@shieldedtech/moth-wallet';
 In steady state publishing is OIDC-based. Make sure:
 1. The job has `id-token: write` permission (see `.github/workflows/release.yml`).
 2. A **trusted publisher** is configured for the package on npmjs.com pointing at this repo and
-   the `release.yml` workflow (see [SRE_PUBLISHING_SETUP.md](./SRE_PUBLISHING_SETUP.md)).
-3. npm is ≥ 11.5.1 in the workflow (provided by Node 24's bundled npm).
+   the `release.yml` workflow (see [NPM_PUBLISHING.md](./NPM_PUBLISHING.md)).
+3. The workflow successfully installs the reviewed npm 12.0.2 CLI.
 
 ### "You do not have permission to publish"
 
-Ensure the publishing identity has access to the `@shieldedtech` org. For a manual publish:
-```bash
-npm owner add <username> @shieldedtech/moth-wallet
-```
+Confirm the package has a trusted publisher that exactly matches this repository and workflow, and
+that the publishing job is running from the permitted branch and GitHub-hosted environment.
 
 ### "Package already exists"
 
