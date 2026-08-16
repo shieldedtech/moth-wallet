@@ -89,6 +89,12 @@ records a final GO decision.
 - **Minor** (1.0.0 → 1.1.0): New features, backwards compatible
 - **Patch** (1.0.0 → 1.0.1): Bug fixes, backwards compatible
 
+The wallet, browser, CLI, TUI, and private extension packages are one fixed
+release group in `.changeset/config.json`. Changesets versions them together so
+the NPM packages and the downloadable extension carry the same release number.
+Private packages are versioned but never published. The historical extension
+`0.11.0` tag is retained; the next aligned release advances from that version.
+
 ## Manual Publishing
 
 Manual publishing is unsupported because it bypasses the reviewed GitHub Actions identity and
