@@ -120,13 +120,11 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      # Configure CODECOV_TOKEN as a repository secret before enabling public
-      # coverage reporting. The artifact above remains the local evidence path.
+      # Private repositories use CODECOV_TOKEN; public repositories may use
+      # Codecov's tokenless GitHub Actions upload path. The artifact above
+      # remains the local evidence path in either case.
       - name: Publish coverage to Codecov
-        if: ${{ env.CODECOV_TOKEN != '' }}
         uses: codecov/codecov-action@0f8570b1a125f4937846a11fcfa3bcd548bd8c97  # v4.6.0
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         with:
           files: coverage/lcov.info
           flags: unittests
