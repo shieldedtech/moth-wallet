@@ -119,3 +119,17 @@ jobs:
           path: coverage/lcov.info
           if-no-files-found: error
           retention-days: 14
+
+      # Configure CODECOV_TOKEN as a repository secret before enabling public
+      # coverage reporting. The artifact above remains the local evidence path.
+      - name: Publish coverage to Codecov
+        if: ${{ env.CODECOV_TOKEN != '' }}
+        uses: codecov/codecov-action@0f8570b1a125f4937846a11fcfa3bcd548bd8c97  # v4.6.0
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        with:
+          files: coverage/lcov.info
+          flags: unittests
+          slug: shieldedtech/moth-wallet
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: true
