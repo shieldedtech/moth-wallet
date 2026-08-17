@@ -86,7 +86,10 @@ jobs:
               continue
             fi
             published_version=$(npm view "${package_name}@${package_version}" version --json 2>/dev/null || true)
-            if [ "$published_version" != "\"${package_version}\"" ]; then
+            # npm may emit a JSON string with or without quotes depending on
+            # the npm version used by the runner; normalize both forms.
+            published_version=${published_version//\"/}
+            if [ "$published_version" != "${package_version}" ]; then
               echo "${package_name}@${package_version} is not published"
               has_unpublished=true
             fi
