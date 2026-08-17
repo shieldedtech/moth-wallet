@@ -1,5 +1,11 @@
 # @shieldedtech/moth-browser
 
+## 0.12.1
+
+### Patch Changes
+
+- @shieldedtech/moth-wallet@0.12.1
+
 ## 0.12.0
 
 ### Minor Changes
