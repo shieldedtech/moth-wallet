@@ -78,7 +78,7 @@ jobs:
           # `yarn run` so Yarn Berry runs the package scripts, not its built-in
           # `yarn version` command (which needs a <strategy> arg and ignores the
           # "version" script — the cause of the release failure).
-          version: yarn run version
+          version: yarn run version && yarn install
           title: "chore: version packages"
           commit: "chore: version packages"
         env:
