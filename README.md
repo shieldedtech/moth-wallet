@@ -11,7 +11,7 @@ Built for DApp developers, CI pipelines, and developing AI coding agents.
 [![Tests and coverage](https://github.com/shieldedtech/moth-wallet/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/shieldedtech/moth-wallet/actions/workflows/ci.yml)
 [![OSS and security scan](https://github.com/shieldedtech/moth-wallet/actions/workflows/scan.yaml/badge.svg?branch=main)](https://github.com/shieldedtech/moth-wallet/actions/workflows/scan.yaml)
 [![Coverage](https://codecov.io/gh/shieldedtech/moth-wallet/branch/main/graph/badge.svg)](https://codecov.io/gh/shieldedtech/moth-wallet)
-[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/shieldedtech/moth-wallet/badge)](https://scorecard.dev/viewer/?uri=github.com/shieldedtech/moth-wallet)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/shieldedtech/moth-wallet/badge)](https://scorecard.dev/viewer/?uri=github.com/shieldedtech/moth-wallet)
 
 Coverage and Scorecard setup details are documented in [`docs/QUALITY_METRICS.md`](docs/QUALITY_METRICS.md).
 
