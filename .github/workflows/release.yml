@@ -85,10 +85,10 @@ jobs:
             if [ "$is_private" = "true" ]; then
               continue
             fi
-            published_version=$(npm view "${package_name}@${package_version}" version --json 2>/dev/null || true)
+            published_version=$(npm view "${package_name}@${package_version}" version --json)
             # npm may emit a JSON string with or without quotes depending on
             # the npm version used by the runner; normalize both forms.
-            published_version=${published_version//\"/}
+            published_version=$(printf '%s' "$published_version" | tr -d '"[:space:]')
             if [ "$published_version" != "${package_version}" ]; then
               echo "${package_name}@${package_version} is not published"
               has_unpublished=true
