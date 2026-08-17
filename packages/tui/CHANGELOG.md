@@ -1,5 +1,12 @@
 # @shieldedtech/moth-tui
 
+## 0.12.1
+
+### Patch Changes
+
+- bd8d41f: Fix the published TUI package to use a semver dependency range for `moth-wallet` so npm consumers can install it outside the Yarn workspace.
+  - @shieldedtech/moth-wallet@0.12.1
+
 ## 0.12.0
 
 ### Minor Changes

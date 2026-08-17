@@ -1,5 +1,13 @@
 # @shieldedtech/moth-cli
 
+## 0.12.1
+
+### Patch Changes
+
+- Updated dependencies [bd8d41f]
+  - @shieldedtech/moth-tui@0.12.1
+  - @shieldedtech/moth-wallet@0.12.1
+
 ## 0.12.0
 
 ### Minor Changes
