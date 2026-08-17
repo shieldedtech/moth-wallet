@@ -69,6 +69,30 @@ jobs:
             echo "hasChangesets=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # A push with no Changesets is usually a documentation or workflow-only
+      # change. Do not invoke `changeset publish` in that case: npm versions are
+      # immutable, so it would fail while trying to republish the current
+      # versions. Only publish when a public package version is absent from npm.
+      - name: Detect unpublished package versions
+        id: unpublished
+        run: |
+          set -euo pipefail
+          has_unpublished=false
+          for package_json in packages/*/package.json; do
+            package_name=$(node -p "require('./${package_json}').name")
+            package_version=$(node -p "require('./${package_json}').version")
+            is_private=$(node -p "Boolean(require('./${package_json}').private)")
+            if [ "$is_private" = "true" ]; then
+              continue
+            fi
+            published_version=$(npm view "${package_name}@${package_version}" version --json 2>/dev/null || true)
+            if [ "$published_version" != "\"${package_version}\"" ]; then
+              echo "${package_name}@${package_version} is not published"
+              has_unpublished=true
+            fi
+          done
+          echo "hasUnpublished=${has_unpublished}" >> "$GITHUB_OUTPUT"
+
       # Use the machine-user PAT only while opening or updating the version PR.
       # It is deliberately absent from the stable publish process below.
       - name: Create or update version PR
@@ -87,7 +111,7 @@ jobs:
       # With no Changesets left, publish through npm Trusted Publishing (OIDC),
       # then use the ephemeral Actions token for tags and GitHub Releases.
       - name: Publish stable release
-        if: ${{ steps.releases.outputs.hasChangesets == 'false' }}
+        if: ${{ steps.releases.outputs.hasChangesets == 'false' && steps.unpublished.outputs.hasUnpublished == 'true' }}
         uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d  # v1.9.0
         with:
           publish: yarn run release
