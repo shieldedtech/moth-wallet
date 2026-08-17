@@ -12,6 +12,19 @@ function requirePolicy(condition, message) {
   }
 }
 
+for (const packagePath of ['packages/core/package.json', 'packages/tui/package.json', 'packages/cli/package.json']) {
+  const packageJson = JSON.parse(readFileSync(new URL(`../${packagePath}`, import.meta.url), 'utf8'));
+  const dependencies = {
+    ...packageJson.dependencies,
+    ...packageJson.optionalDependencies,
+    ...packageJson.peerDependencies,
+  };
+  requirePolicy(
+    !Object.values(dependencies).some((range) => range.startsWith('workspace:')),
+    `${packageJson.name} must not publish workspace: dependency ranges`,
+  );
+}
+
 function job(name) {
   const marker = `  ${name}:`;
   const start = workflow.indexOf(marker);
