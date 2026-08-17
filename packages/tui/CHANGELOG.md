@@ -1,5 +1,23 @@
 # @shieldedtech/moth-tui
 
+## 0.12.0
+
+### Minor Changes
+
+- ea15676: Coordinate the first public package release under the Moth package names.
+
+  This is a minor bump because no package has previously been published under the
+  new names. The release remains experimental and unsupported, so it stays below
+  1.0.0. Package names, CLI identifiers, environment variables, connector identity,
+  and local state paths are aligned before publication; no compatibility shim is
+  required for an unpublished package.
+
+### Patch Changes
+
+- Updated dependencies [be98f55]
+- Updated dependencies [ea15676]
+  - @shieldedtech/moth-wallet@0.12.0
+
 ## 0.2.0
 
 ### Minor Changes
