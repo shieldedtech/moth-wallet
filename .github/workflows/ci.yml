@@ -119,3 +119,15 @@ jobs:
           path: coverage/lcov.info
           if-no-files-found: error
           retention-days: 14
+
+      # Private repositories use CODECOV_TOKEN; public repositories may use
+      # Codecov's tokenless GitHub Actions upload path. The artifact above
+      # remains the local evidence path in either case.
+      - name: Publish coverage to Codecov
+        uses: codecov/codecov-action@0f8570b1a125f4937846a11fcfa3bcd548bd8c97  # v4.6.0
+        with:
+          files: coverage/lcov.info
+          flags: unittests
+          slug: shieldedtech/moth-wallet
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: true
