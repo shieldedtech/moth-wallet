@@ -79,15 +79,10 @@ jobs:
           # `yarn version` command (which needs a <strategy> arg and ignores the
           # "version" script — the cause of the release failure).
           version: yarn run version && yarn install
+          commitMode: github-api
+          github-token: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
           title: "chore: version packages"
           commit: "chore: version packages"
-        env:
-          # MidnightCI machine-user PAT (has write on this repo), NOT the default
-          # Actions token: the org hardens GITHUB_TOKEN with
-          # can_approve_pull_request_reviews=false, so the Actions token can't open
-          # the "version packages" PR. A machine-user token is exempt and creates
-          # the PR as MidnightCI.
-          GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
       # With no Changesets left, publish through npm Trusted Publishing (OIDC),
       # then use the ephemeral Actions token for tags and GitHub Releases.
