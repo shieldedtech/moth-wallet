@@ -31,6 +31,8 @@ vi.mock('../lib/background/sync-service', () => ({
   stopSync: () => stopSync(),
   clearSnapshot: () => clearSnapshot(),
   startSync: (...args: unknown[]) => startSync(...(args as [])),
+  // A failed restart is reported to the panels rather than dropped.
+  broadcastSyncFailure: vi.fn(),
   getSnapshot: vi.fn(),
   beginOp: vi.fn(),
   endOp: vi.fn(),

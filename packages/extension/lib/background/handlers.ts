@@ -32,6 +32,7 @@ import {
 } from './retained-request-stats';
 import {
   startSync,
+  broadcastSyncFailure,
   stopSync,
   clearSnapshot,
   getSnapshot,
@@ -210,10 +211,10 @@ export async function saveNetworkConfig(data: {
     });
     if (networkChanged) await saveSession(nextSession);
     if (resyncRequired) await clearSnapshot();
-    if (restartRequired) void startSync(nextSession, nextConfig).catch(() => {});
+    if (restartRequired) void startSync(nextSession, nextConfig).catch(broadcastSyncFailure);
     return statusFromSession(nextSession);
   } catch (error) {
-    if (restartRequired) void startSync(session, previousConfig).catch(() => {});
+    if (restartRequired) void startSync(session, previousConfig).catch(broadcastSyncFailure);
     throw error;
   }
 }
@@ -405,7 +406,7 @@ export function registerHandlers(): void {
     if (hasOpenPorts()) {
       void getNetworkConfig()
         .then((network) => startSync(session, network))
-        .catch(() => {});
+        .catch(broadcastSyncFailure);
     }
     // Resume an opted-in reference build. It takes ~an hour and is expected to be
     // interrupted by the idle teardown, so each unlock picks it up where the last

@@ -209,6 +209,19 @@ export function broadcastApproval(id: string | null): void {
   broadcast({ kind: 'approval', id });
 }
 
+/**
+ * Report a failed sync start to every open panel.
+ *
+ * startSync is dispatched fire-and-forget from several places, and a bare
+ * `.catch(() => {})` there leaves the panel sitting on whatever progress line
+ * it last received — a thrown error presenting as a hang. Whatever went wrong,
+ * the user is owed the news rather than a spinner.
+ */
+export function broadcastSyncFailure(error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error);
+  broadcast({ kind: 'syncMessage', message: `Sync failed: ${message}` });
+}
+
 // Fully idle: nothing watching, nothing in flight, no decision pending. An
 // approval popup may hold no balances port, so it's checked explicitly — don't
 // tear the wallet down under a pending dApp decision.
