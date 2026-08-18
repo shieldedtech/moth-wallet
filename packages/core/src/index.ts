@@ -22,6 +22,13 @@ export {
   resetLedgerRegistry,
   type LedgerModule,
 } from './ledger/index.js';
+export {
+  PROTOCOL_VERSION_V8,
+  PROTOCOL_VERSION_V9,
+  ledgerVersionForProtocol,
+  assertLedgerForNetwork,
+  verifyNetworkLedger,
+} from './ledger/protocol-version.js';
 
 // Wallet
 export { WalletManager } from './wallet/manager.js';

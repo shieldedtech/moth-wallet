@@ -111,9 +111,16 @@ Specifically:
    `faucetUrl`, and add `stagenet` (rpc + indexer + faucet) to `DEFAULT_NETWORKS`.
 3. Thread `SignatureKind` through key derivation, keystore construction, and the dApp
    connector's `signData`, defaulting to `schnorr`.
-4. Implement `airdrop` against a real faucet, network-gated by config rather than the
+4. Guard submission rather than prompting for a ledger. The network determines the ledger —
+   devnet *is* v9, preprod *is* v8 — so it is not a user preference, and offering the choice
+   at wallet load would invite selecting a combination that cannot work. Instead the version
+   is derived from network config, checked against the indexer's reported `protocolVersion`
+   before anything is submitted, and a mismatch refuses with an error naming both sides.
+   Key derivation is unaffected either way: it is fork-invariant (`derivation-invariance.test.ts`),
+   so at wallet load there is nothing ledger-specific to decide.
+5. Implement `airdrop` against a real faucet, network-gated by config rather than the
    current hardcoded devnet check, and stop reporting success when nothing was requested.
-5. Track the upstream SDK's variant machinery rather than building our own fork-handoff.
+6. Track the upstream SDK's variant machinery rather than building our own fork-handoff.
 
 Scope limit: this ADR covers Moth running against a v8 *or* a v9 network, selected per
 network. It does **not** cover a live mid-sync handoff at the fork block; that follows the

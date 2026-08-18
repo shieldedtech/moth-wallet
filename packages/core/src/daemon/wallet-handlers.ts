@@ -11,7 +11,8 @@ import {resolve as resolvePath} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {Buffer} from 'node:buffer';
 import type * as ledger from '@midnight-ntwrk/ledger-v8';
-import {ledger as activeLedger} from '../ledger/index.js';
+import {ledger as activeLedger, activeLedgerVersion} from '../ledger/index.js';
+import {verifyNetworkLedger} from '../ledger/protocol-version.js';
 import type {WalletFacade} from '@midnightntwrk/wallet-sdk/facade';
 
 import {DaemonProtocolError} from './protocol.js';
@@ -53,7 +54,7 @@ import {resolveInitialPrivateState} from '../contract/initial-private-state.js';
 import {clearSyncCache} from '../sync/wallet-sync.js';
 import {NIGHT_DENOMINATION, formatBalance} from '../wallet/balance-format.js';
 import type {SyncedWallet, WalletBalances} from '../sync/wallet-sync.js';
-import type {NetworkConfig} from '../types/network.js';
+import {resolveLedgerVersion, type NetworkConfig} from '../types/network.js';
 import type {TransactionResult} from '../types/transaction.js';
 import type {DerivedKeys} from '../types/wallet.js';
 
@@ -281,6 +282,12 @@ export function buildWalletHandlers(deps: WalletHandlerDeps): Record<string, Rpc
         ],
         ctx,
         async () => {
+          // Refuse before deserializing. The two ledgers reject each other's
+          // transactions with a bare header-tag error, and Merkle sync succeeds
+          // across the fork, so without this the first sign of a mismatched
+          // wallet is an unreadable failure at submission time.
+          await verifyNetworkLedger(network, {using: activeLedgerVersion() ?? resolveLedgerVersion(network)});
+
           let tx: ledger.FinalizedTransaction;
           try {
             tx = activeLedger().Transaction.deserialize(
