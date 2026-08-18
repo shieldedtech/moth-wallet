@@ -86,18 +86,9 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/release-packages.mjs --github-output --validate
 
-      - name: Verify version PR credential
-        if: ${{ steps.releases.outputs.hasReleases == 'true' }}
-        env:
-          VERSION_PR_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
-        shell: bash
-        run: |
-          if [ -z "$VERSION_PR_TOKEN" ]; then
-            echo "::error::MIDNIGHTCI_PACKAGES_WRITE is unavailable; configure it as a repository Actions secret for this public repository."
-            exit 1
-          fi
-
-      # The machine-user PAT makes the generated PR trigger its normal CI.
+      # GITHUB_TOKEN keeps release automation secretless. GitHub puts the
+      # generated PR's workflow runs into an approval-required state; a
+      # maintainer approves those runs before the version PR can merge.
       - name: Create or update version PR
         if: ${{ steps.releases.outputs.hasReleases == 'true' }}
         uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d  # v1.9.0
@@ -107,7 +98,7 @@ jobs:
           # "version" script — the cause of the release failure).
           version: yarn run version && yarn install
           commitMode: github-api
-          github-token: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+          github-token: ${{ github.token }}
           title: "chore: version packages"
           commit: "chore: version packages"
 

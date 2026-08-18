@@ -65,17 +65,13 @@ requirePolicy(
 );
 requirePolicy(
   workflow.includes(
-    "- name: Verify version PR credential\n        if: ${{ steps.releases.outputs.hasReleases == 'true' }}",
-  ) &&
-    workflow.includes('VERSION_PR_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}') &&
-    workflow.includes('MIDNIGHTCI_PACKAGES_WRITE is unavailable'),
-  'a real package release must fail clearly when its version-PR credential is unavailable',
+    "- name: Create or update version PR\n        if: ${{ steps.releases.outputs.hasReleases == 'true' }}",
+  ) && workflow.includes('github-token: ${{ github.token }}'),
+  'the version PR action must use the repository GITHUB_TOKEN and run only for releasable changesets',
 );
 requirePolicy(
-  workflow.includes(
-    "- name: Create or update version PR\n        if: ${{ steps.releases.outputs.hasReleases == 'true' }}",
-  ),
-  'the version PR action must run only for changesets that release packages',
+  !workflow.includes('secrets.') && !workflow.includes('MIDNIGHTCI_PACKAGES_WRITE'),
+  'the release workflow must not depend on PATs or repository secrets',
 );
 requirePolicy(
   !workflow.includes('steps.releases.outputs.hasChangesets') &&
@@ -94,9 +90,10 @@ requirePolicy(
   'stable publishing must use the idempotent package reconciler',
 );
 requirePolicy(
-  /repository-level\s+`MIDNIGHTCI_PACKAGES_WRITE`/u.test(publishingRunbook) &&
-    publishingRunbook.includes('public repository'),
-  'the public-repository version-PR credential requirement must be documented',
+  publishingRunbook.includes('Approve workflows') &&
+    publishingRunbook.includes('GITHUB_TOKEN') &&
+    !publishingRunbook.includes('MIDNIGHTCI_PACKAGES_WRITE'),
+  'the secretless version-PR approval step must be documented',
 );
 
 if (workflow.includes('SHIELDED_NPMJS_TOKEN')) {
