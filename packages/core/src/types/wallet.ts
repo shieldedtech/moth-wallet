@@ -49,6 +49,12 @@ export interface WalletInfo {
   readonly birthday?: number;
   /** User-chosen display label; `name` remains the immutable storage key. */
   readonly label?: string;
+  /**
+   * Signature algorithm for this wallet's unshielded identity. Absent means
+   * schnorr — the only kind ledger v8 has, and what every wallet predating this
+   * field used. Fixed at creation; see WalletMeta for why it cannot change.
+   */
+  readonly signatureKind?: 'schnorr' | 'ecdsa';
 }
 
 export interface UnlockedWallet {

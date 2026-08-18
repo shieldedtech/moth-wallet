@@ -4,6 +4,7 @@ import { WalletError } from '../types/errors.js';
 import { generateMnemonic24, validateMnemonic, mnemonicToSeed, hexSeedToUint8Array } from './mnemonic.js';
 import { encryptKeystore, decryptKeystore, keystoreNeedsUpgrade, type EncryptedKeystore } from './keystore.js';
 import { deriveAllAddressesFromSeed, deriveRawKeys, Roles } from './address.js';
+import type { SignatureKind } from './signature-encoding.js';
 import { deriveWalletKeys, type WalletKeys } from '../sync/operations.js';
 import { removeWalletSyncArtifacts } from '../sync/wallet-sync.js';
 
@@ -42,6 +43,17 @@ interface WalletMeta {
   name: string;
   network: string;
   createdAt: string;
+  /**
+   * Which signature algorithm this wallet's unshielded identity uses. Absent
+   * means schnorr, which is what every wallet written before this field used
+   * and the only kind ledger v8 has.
+   *
+   * Fixed at creation and never rewritten: it determines the unshielded
+   * address, and DustRegistration binds the tagged night key, so changing it
+   * would strand NIGHT at the old address and silently stop DUST generation
+   * until re-registered.
+   */
+  signatureKind?: SignatureKind;
   /** Public night receive address (bech32m). Absent for wallets created before this field existed. */
   address?: string;
   /**
@@ -139,8 +151,8 @@ export class WalletManager {
     return Array.from(seed).map((b: number) => b.toString(16).padStart(2, '0')).join('');
   }
 
-  private deriveAddressesFromSeed(seedHex: string): WalletAddresses {
-    return deriveAllAddressesFromSeed(seedHex);
+  private deriveAddressesFromSeed(seedHex: string, kind: SignatureKind = 'schnorr'): WalletAddresses {
+    return deriveAllAddressesFromSeed(seedHex, kind);
   }
 
   /** Public night receive address, preferring the wallet's own network. */
@@ -164,6 +176,10 @@ export class WalletManager {
     // setup flow shows the words before asking for a password, then hands the
     // same phrase back here so the stored wallet matches what the user wrote down.
     mnemonic?: string,
+    // Fixed at creation: it selects the unshielded identity, and switching later
+    // strands NIGHT and de-registers DUST. Only offer it on ledger v9 networks —
+    // v8 has no ECDSA at all.
+    signatureKind: SignatureKind = 'schnorr',
   ): Promise<WalletInfo & { mnemonic: string }> {
     this.validateName(name);
     const config = await this.loadConfig();
@@ -178,7 +194,7 @@ export class WalletManager {
     const phrase = mnemonic ?? generateMnemonic24();
     const seed = await mnemonicToSeed(phrase);
     const seedHex = this.seedToHex(seed);
-    const addresses = this.deriveAddressesFromSeed(seedHex);
+    const addresses = this.deriveAddressesFromSeed(seedHex, signatureKind);
     const address = this.primaryAddress(addresses, network);
 
     const keystore = await encryptKeystore(phrase, passphrase);
@@ -190,6 +206,9 @@ export class WalletManager {
       createdAt: new Date().toISOString(),
       address,
       createdHere: true,
+      // Only recorded when it is not the default, so existing records and new
+      // schnorr wallets stay byte-identical.
+      ...(signatureKind !== 'schnorr' ? { signatureKind } : {}),
       ...(birthday !== undefined ? { birthdays: { [network]: birthday } } : {}),
     };
     await this.saveMeta(meta);
@@ -316,8 +335,11 @@ export class WalletManager {
       seed.fill(0);
     }
 
-    const addresses = this.deriveAddressesFromSeed(seedHex);
+    // Meta first: it carries the signature kind, which selects the unshielded
+    // identity. Deriving before reading it would silently produce schnorr
+    // addresses for an ECDSA wallet.
     const meta = await this.loadMeta(name);
+    const addresses = this.deriveAddressesFromSeed(seedHex, meta?.signatureKind ?? 'schnorr');
     const network = meta?.network ?? (await this.loadConfig()).defaultNetwork;
     const address = this.primaryAddress(addresses, network);
     // Backfill the public address for wallets created before it was stored (or
@@ -490,6 +512,7 @@ export class WalletManager {
         active: config.activeWallet === name,
         birthday: meta ? birthdayFor(meta, meta.network) : undefined,
         label: meta?.label,
+        signatureKind: meta?.signatureKind,
       });
     }
     return wallets;
