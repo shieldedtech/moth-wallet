@@ -44,6 +44,13 @@ Trusted Publishing releases automatically.
 The workflow uses `MIDNIGHTCI_PACKAGES_WRITE` only for GitHub operations needed
 to open the Changesets PR. npm publishing does not use that secret.
 
+Because this is a public repository, configure a repository-level
+`MIDNIGHTCI_PACKAGES_WRITE` Actions secret. Use a fine-grained token owned by the
+release machine account and limit it to this repository with Contents and Pull
+requests write access. A private-only organization secret is not available to a
+public repository, while a PR created with the default Actions token does not
+trigger the normal pull-request CI.
+
 ## Public release approval
 
 The private open-source governance case recorded its final GO on 2026-08-17.
@@ -89,6 +96,8 @@ intended dist-tag.
   repository and npm package are public.
 - **Release commit mismatch:** rerun the workflow for the commit that introduced
   the package version; never publish that version from a later source revision.
+- **`MIDNIGHTCI_PACKAGES_WRITE is unavailable`:** add the release machine
+  account token as the repository-level Actions secret documented above.
 
 ## Credential cleanup
 

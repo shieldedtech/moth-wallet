@@ -77,26 +77,29 @@ jobs:
             echo "hasReleases=false" >> "$GITHUB_OUTPUT"
           fi
 
-          CHANGESET_COUNT=$(find .changeset -maxdepth 1 -type f -name '*.md' ! -name README.md | wc -l | tr -d ' ')
-          if [ "${CHANGESET_COUNT:-0}" -gt 0 ]; then
-            echo "hasChangesets=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "hasChangesets=false" >> "$GITHUB_OUTPUT"
-          fi
-
       # Registry, tag, and GitHub Release state survive canceled and partial runs.
       # The same process also dry-runs only packages that still need publication.
       - name: Detect incomplete package releases
-        if: ${{ steps.releases.outputs.hasChangesets == 'false' }}
+        if: ${{ steps.releases.outputs.hasReleases == 'false' }}
         id: package_changes
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/release-packages.mjs --github-output --validate
 
-      # Use the machine-user PAT only while opening or updating the version PR.
-      # It is deliberately absent from the stable publish process below.
+      - name: Verify version PR credential
+        if: ${{ steps.releases.outputs.hasReleases == 'true' }}
+        env:
+          VERSION_PR_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+        shell: bash
+        run: |
+          if [ -z "$VERSION_PR_TOKEN" ]; then
+            echo "::error::MIDNIGHTCI_PACKAGES_WRITE is unavailable; configure it as a repository Actions secret for this public repository."
+            exit 1
+          fi
+
+      # The machine-user PAT makes the generated PR trigger its normal CI.
       - name: Create or update version PR
-        if: ${{ steps.releases.outputs.hasChangesets == 'true' }}
+        if: ${{ steps.releases.outputs.hasReleases == 'true' }}
         uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d  # v1.9.0
         with:
           # `yarn run` so Yarn Berry runs the package scripts, not its built-in
@@ -111,7 +114,7 @@ jobs:
       # With no Changesets left, publish through npm Trusted Publishing (OIDC),
       # then recover or create tags and GitHub Releases through Changesets.
       - name: Publish stable release
-        if: ${{ steps.releases.outputs.hasChangesets == 'false' && steps.package_changes.outputs.hasReleaseWork == 'true' }}
+        if: ${{ steps.releases.outputs.hasReleases == 'false' && steps.package_changes.outputs.hasReleaseWork == 'true' }}
         uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d  # v1.9.0
         with:
           publish: yarn run release
