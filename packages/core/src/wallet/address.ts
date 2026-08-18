@@ -28,6 +28,9 @@ import {
 import {createKeystore} from '@midnightntwrk/wallet-sdk/unshielded';
 import {setNetworkId} from '@midnight-ntwrk/midnight-js/network-id';
 import type {WalletAddresses} from '../types/wallet.js';
+import type {SignatureKind} from './signature-encoding.js';
+import {createKeystoreFor} from '../sdk/index.js';
+import {DEFAULT_NETWORKS, resolveLedgerVersion} from '../types/network.js';
 
 const ALL_NETWORKS = ['mainnet', 'devnet', 'preview', 'preprod', 'qanet', 'stagenet', 'local', 'undeployed'] as const;
 
@@ -63,14 +66,35 @@ function toHex(bytes: Uint8Array): string {
  * - Shielded: ZswapSecretKeys.fromSeed() → coin + encryption public keys
  * - DUST: DustSecretKey.fromSeed() → public key → DustAddress
  */
-function deriveForNetwork(keys: Record<number, Uint8Array>, network: string) {
+/** ECDSA exists only on ledger v9, so a v8 network has no ECDSA address at all. */
+function networkLedger(network: string) {
+  const preset = DEFAULT_NETWORKS[network];
+  return preset ? resolveLedgerVersion(preset) : 'v8';
+}
+
+/**
+ * Unshielded addresses depend on the signature kind; shielded and DUST do not.
+ * Schnorr takes the direct v8 path, which needs no SDK loaded because the two
+ * generations derive identical addresses. ECDSA has to go through the seam,
+ * since v8 has no such concept.
+ */
+function unshieldedFor(secret: Uint8Array, network: string, kind: SignatureKind): string {
+  if (kind === 'schnorr') return (createKeystore(secret, network).getBech32Address() as any).toString();
+  return (createKeystoreFor(secret, network, 'ecdsa').getBech32Address() as any).toString();
+}
+
+function deriveForNetwork(keys: Record<number, Uint8Array>, network: string, kind: SignatureKind) {
   setNetworkId(network);
 
-  const unshielded: string = (createKeystore(keys[Roles.NightExternal], network).getBech32Address() as any).toString();
+  // An ECDSA wallet simply has no unshielded identity on a v8 network. Emitting
+  // one would mean showing an address that can never receive.
+  const unshieldedUsable = kind === 'schnorr' || networkLedger(network) === 'v9';
 
-  const unshieldedInternal: string = (
-    createKeystore(keys[Roles.NightInternal], network).getBech32Address() as any
-  ).toString();
+  const unshielded: string = unshieldedUsable ? unshieldedFor(keys[Roles.NightExternal], network, kind) : '';
+
+  const unshieldedInternal: string = unshieldedUsable
+    ? unshieldedFor(keys[Roles.NightInternal], network, kind)
+    : '';
 
   const zswapKeys = ZswapSecretKeys.fromSeed(keys[Roles.Zswap]);
   const shielded: string = (
@@ -86,7 +110,7 @@ function deriveForNetwork(keys: Record<number, Uint8Array>, network: string) {
   const dustKey = DustSecretKey.fromSeed(keys[Roles.Dust]);
   const dust: string = DustAddress.encodePublicKey(network, dustKey.publicKey);
 
-  const metadata: string = (createKeystore(keys[Roles.Metadata], network).getBech32Address() as any).toString();
+  const metadata: string = unshieldedUsable ? unshieldedFor(keys[Roles.Metadata], network, kind) : '';
 
   return {unshielded, unshieldedInternal, shielded, dust, metadata};
 }
@@ -94,7 +118,10 @@ function deriveForNetwork(keys: Record<number, Uint8Array>, network: string) {
 /**
  * Derive all Midnight addresses from a hex seed, for all networks.
  */
-export function deriveAllAddressesFromSeed(seedHex: string): WalletAddresses {
+export function deriveAllAddressesFromSeed(
+  seedHex: string,
+  kind: SignatureKind = 'schnorr',
+): WalletAddresses {
   const keys = deriveRawKeys(seedHex);
 
   const ne: Record<string, string> = {};
@@ -104,7 +131,7 @@ export function deriveAllAddressesFromSeed(seedHex: string): WalletAddresses {
   const md: Record<string, string> = {};
 
   for (const network of ALL_NETWORKS) {
-    const addrs = deriveForNetwork(keys, network);
+    const addrs = deriveForNetwork(keys, network, kind);
     ne[network] = addrs.unshielded;
     ni[network] = addrs.unshieldedInternal;
     du[network] = addrs.dust;
