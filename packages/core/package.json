@@ -45,6 +45,7 @@
     "graphql-request": "^7.4.0",
     "graphql-ws": "^6.0.0",
     "rxjs": "7.8.2",
+    "wallet-sdk-v9": "npm:@midnightntwrk/wallet-sdk@2.0.0-beta.2",
     "ws": "8.21.0"
   },
   "devDependencies": {

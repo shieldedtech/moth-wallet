@@ -1,7 +1,8 @@
 export async function preparePreseed(networkId, dependencies) {
   const {networks, status, refresh, onProgress, now = Date.now, startedAt = now()} = dependencies;
-  if (networkId !== 'preview' && networkId !== 'preprod') {
-    throw new Error(`Unknown network "${networkId}". Expected preview or preprod.`);
+  if (!networks[networkId]) {
+    const known = Object.keys(networks).join(', ');
+    throw new Error(`Unknown network "${networkId}". Expected one of: ${known}.`);
   }
   const network = networks[networkId];
   const before = await status(network);
