@@ -3,7 +3,7 @@
 // See NOTICE for attribution to mn-tui (Apache-2.0).
 
 import {HDWallet, Roles} from '@midnightntwrk/wallet-sdk/hd';
-import {ZswapSecretKeys, DustSecretKey} from '@midnight-ntwrk/ledger-v8';
+import {ledger as activeLedger} from '../ledger/index.js';
 import {
   ShieldedAddress,
   ShieldedCoinPublicKey,
@@ -46,8 +46,8 @@ function toHex(bytes: Uint8Array): string {
  * Derive proper Midnight addresses for a specific network.
  *
  * - Unshielded: createKeystore(secretKey) → Ed25519 public key → bech32m
- * - Shielded: ZswapSecretKeys.fromSeed() → coin + encryption public keys
- * - DUST: DustSecretKey.fromSeed() → public key → DustAddress
+ * - Shielded: activeLedger().ZswapSecretKeys.fromSeed() → coin + encryption public keys
+ * - DUST: activeLedger().DustSecretKey.fromSeed() → public key → DustAddress
  */
 function deriveForNetwork(keys: Record<number, Uint8Array>, network: string) {
   setNetworkId(network);
@@ -58,7 +58,7 @@ function deriveForNetwork(keys: Record<number, Uint8Array>, network: string) {
     createKeystore(keys[Roles.NightInternal], network).getBech32Address() as any
   ).toString();
 
-  const zswapKeys = ZswapSecretKeys.fromSeed(keys[Roles.Zswap]);
+  const zswapKeys = activeLedger().ZswapSecretKeys.fromSeed(keys[Roles.Zswap]);
   const shielded: string = (
     MidnightBech32m.encode(
       network,
@@ -69,7 +69,7 @@ function deriveForNetwork(keys: Record<number, Uint8Array>, network: string) {
     ) as any
   ).toString();
 
-  const dustKey = DustSecretKey.fromSeed(keys[Roles.Dust]);
+  const dustKey = activeLedger().DustSecretKey.fromSeed(keys[Roles.Dust]);
   const dust: string = DustAddress.encodePublicKey(network, dustKey.publicKey);
 
   const metadata: string = (createKeystore(keys[Roles.Metadata], network).getBech32Address() as any).toString();
@@ -121,7 +121,7 @@ export function deriveShieldedPublicKeys(seedHex: string): {
   encryptionPublicKey: string;
 } {
   const keys = deriveRawKeys(seedHex);
-  const zswapKeys = ZswapSecretKeys.fromSeed(keys[Roles.Zswap]);
+  const zswapKeys = activeLedger().ZswapSecretKeys.fromSeed(keys[Roles.Zswap]);
   return {
     coinPublicKey: zswapKeys.coinPublicKey,
     encryptionPublicKey: zswapKeys.encryptionPublicKey,

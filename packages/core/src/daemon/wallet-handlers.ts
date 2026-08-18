@@ -10,7 +10,8 @@
 import {resolve as resolvePath} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {Buffer} from 'node:buffer';
-import * as ledger from '@midnight-ntwrk/ledger-v8';
+import type * as ledger from '@midnight-ntwrk/ledger-v8';
+import {ledger as activeLedger} from '../ledger/index.js';
 import type {WalletFacade} from '@midnightntwrk/wallet-sdk/facade';
 
 import {DaemonProtocolError} from './protocol.js';
@@ -282,7 +283,7 @@ export function buildWalletHandlers(deps: WalletHandlerDeps): Record<string, Rpc
         async () => {
           let tx: ledger.FinalizedTransaction;
           try {
-            tx = ledger.Transaction.deserialize(
+            tx = activeLedger().Transaction.deserialize(
               'signature' as never,
               'proof' as never,
               'binding' as never,

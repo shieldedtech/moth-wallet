@@ -5,7 +5,8 @@
 // See NOTICE for attribution.
 
 import * as Rx from 'rxjs';
-import * as ledger from '@midnight-ntwrk/ledger-v8';
+import type * as ledger from '@midnight-ntwrk/ledger-v8';
+import {ledger as activeLedger} from '../ledger/index.js';
 import {DefaultConfiguration, WalletFacade, type FacadeState} from '@midnightntwrk/wallet-sdk/facade';
 import {
   makeDefaultSubmissionService,
@@ -598,7 +599,7 @@ export async function startWalletSync(
   if (!dustWallet) {
     dustWallet = CustomDustWallet(dustCfg, dustBuilder).startWithSecretKey(
       dustSecretKey,
-      ledger.LedgerParameters.initialParameters().dust
+      activeLedger().LedgerParameters.initialParameters().dust
     );
   }
 
@@ -1001,7 +1002,7 @@ function extractBalancesPartial(state: FacadeState, syncStartTime = 0, prevPct =
   // Extract DUST generation info from the facade's dust sub-wallet state.
   // This matches mn-tui's extractDustGeneration pattern.
   try {
-    const nightRatio = ledger.LedgerParameters.initialParameters().dust.nightDustRatio as bigint;
+    const nightRatio = activeLedger().LedgerParameters.initialParameters().dust.nightDustRatio as bigint;
     // v4 API: availableCoins is a property returning DustFullInfo[]
     const coins = state.dust.availableCoins.filter((coin) => coin.maxCap > 0n);
 

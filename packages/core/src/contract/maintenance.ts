@@ -13,7 +13,8 @@ import {indexerPublicDataProvider} from '@midnight-ntwrk/midnight-js-indexer-pub
 import {WalletError} from '../types/errors.js';
 import {setNetworkId} from '@midnight-ntwrk/midnight-js/network-id';
 import * as Rx from 'rxjs';
-import * as ledger from '@midnight-ntwrk/ledger-v8';
+import type * as ledger from '@midnight-ntwrk/ledger-v8';
+import {ledger as activeLedger} from '../ledger/index.js';
 import {HDWallet, Roles} from '@midnightntwrk/wallet-sdk/hd';
 import {createKeystore} from '@midnightntwrk/wallet-sdk/unshielded';
 import type {SyncedWallet} from '../sync/wallet-sync.js';
@@ -108,8 +109,8 @@ async function insertViaSDK(options: InsertVerifierKeyOptions): Promise<Transact
       .deriveKeysAt(0);
     if (keyResult.type !== 'keysDerived') throw new WalletError('WALLET_ERROR', 'Key derivation failed');
     hdWallet.hdWallet.clear();
-    shieldedSecretKeys = ledger.ZswapSecretKeys.fromSeed(keyResult.keys[Roles.Zswap]);
-    dustSecretKey = ledger.DustSecretKey.fromSeed(keyResult.keys[Roles.Dust]);
+    shieldedSecretKeys = activeLedger().ZswapSecretKeys.fromSeed(keyResult.keys[Roles.Zswap]);
+    dustSecretKey = activeLedger().DustSecretKey.fromSeed(keyResult.keys[Roles.Dust]);
     nightExternalKey = keyResult.keys[Roles.NightExternal];
   }
   const keystore = createKeystore(nightExternalKey, network.id);
@@ -349,8 +350,8 @@ async function insertBatchViaSDK(options: InsertVerifierKeysOptions): Promise<Ba
       .deriveKeysAt(0);
     if (keyResult.type !== 'keysDerived') throw new WalletError('WALLET_ERROR', 'Key derivation failed');
     hdWallet.hdWallet.clear();
-    shieldedSecretKeys = ledger.ZswapSecretKeys.fromSeed(keyResult.keys[Roles.Zswap]);
-    dustSecretKey = ledger.DustSecretKey.fromSeed(keyResult.keys[Roles.Dust]);
+    shieldedSecretKeys = activeLedger().ZswapSecretKeys.fromSeed(keyResult.keys[Roles.Zswap]);
+    dustSecretKey = activeLedger().DustSecretKey.fromSeed(keyResult.keys[Roles.Dust]);
     nightExternalKey = keyResult.keys[Roles.NightExternal];
   }
   const keystore = createKeystore(nightExternalKey, network.id);
@@ -571,7 +572,7 @@ function signTransactionIntents(tx: any, signFn: (p: Uint8Array) => any, proofMa
   for (const segment of tx.intents.keys()) {
     const intent = tx.intents.get(segment);
     if (!intent) continue;
-    const cloned = (ledger as any).Intent.deserialize('signature', proofMarker, 'pre-binding', intent.serialize());
+    const cloned = (activeLedger() as any).Intent.deserialize('signature', proofMarker, 'pre-binding', intent.serialize());
     const signature = signFn(cloned.signatureData(segment));
     if (cloned.fallibleUnshieldedOffer) {
       const sigs = cloned.fallibleUnshieldedOffer.inputs.map(

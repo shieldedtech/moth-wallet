@@ -1,4 +1,5 @@
-import * as ledger from '@midnight-ntwrk/ledger-v8';
+import type * as ledger from '@midnight-ntwrk/ledger-v8';
+import {ledger as activeLedger} from '../ledger/index.js';
 import {httpClientProvingProvider, httpClientProofProvider} from '@midnight-ntwrk/midnight-js-http-client-proof-provider';
 import {ZKConfigProvider, type KeyMaterialProvider} from '@midnight-ntwrk/midnight-js/types';
 import {
@@ -86,7 +87,7 @@ export function createProofProvider(
   const provingProvider = createProvingProvider(config, keyMaterialProvider);
   return {
     proveTx: (transaction: ledger.UnprovenTransaction) =>
-      transaction.prove(provingProvider, ledger.CostModel.initialCostModel()),
+      transaction.prove(provingProvider, activeLedger().CostModel.initialCostModel()),
   };
 }
 
@@ -109,7 +110,7 @@ export function createWalletProvingService(config: ProverConfig) {
   const provider = wasmProvingProvider(defaultWasmKeyMaterialProvider());
   return {
     prove: (transaction: ledger.UnprovenTransaction) =>
-      transaction.prove(provider, ledger.CostModel.initialCostModel()),
+      transaction.prove(provider, activeLedger().CostModel.initialCostModel()),
   };
 }
 

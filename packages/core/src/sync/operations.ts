@@ -2,7 +2,8 @@
 // Architecture follows mn-tui's wallet.ts pattern. See NOTICE for attribution.
 
 import * as Rx from 'rxjs';
-import * as ledger from '@midnight-ntwrk/ledger-v8';
+import type * as ledger from '@midnight-ntwrk/ledger-v8';
+import {ledger as activeLedger} from '../ledger/index.js';
 import {
   MidnightBech32m,
   ShieldedAddress,
@@ -99,8 +100,8 @@ export function deriveWalletKeys(seedHex: string): WalletKeys {
   hdWallet.hdWallet.clear();
 
   return {
-    shieldedSecretKeys: ledger.ZswapSecretKeys.fromSeed(result.keys[Roles.Zswap]),
-    dustSecretKey: ledger.DustSecretKey.fromSeed(result.keys[Roles.Dust]),
+    shieldedSecretKeys: activeLedger().ZswapSecretKeys.fromSeed(result.keys[Roles.Zswap]),
+    dustSecretKey: activeLedger().DustSecretKey.fromSeed(result.keys[Roles.Dust]),
     nightExternalKey: result.keys[Roles.NightExternal],
   };
 }
@@ -282,7 +283,7 @@ export async function balanceTransaction(
   onProgress?.('building');
   const recipe = sealed
     ? await facade.balanceFinalizedTransaction(
-        ledger.Transaction.deserialize<ledger.SignatureEnabled, ledger.Proof, ledger.Binding>(
+        activeLedger().Transaction.deserialize<ledger.SignatureEnabled, ledger.Proof, ledger.Binding>(
           'signature',
           'proof',
           'binding',
@@ -292,7 +293,7 @@ export async function balanceTransaction(
         {ttl}
       )
     : await facade.balanceUnboundTransaction(
-        ledger.Transaction.deserialize<ledger.SignatureEnabled, ledger.Proof, ledger.PreBinding>(
+        activeLedger().Transaction.deserialize<ledger.SignatureEnabled, ledger.Proof, ledger.PreBinding>(
           'signature',
           'proof',
           'pre-binding',
