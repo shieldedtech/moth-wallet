@@ -1,0 +1,4 @@
+[[IgnoredVulns]]
+id = "GHSA-848j-6mx2-7j84"
+ignoreUntil = 2026-11-30
+reason = "elliptic is an unpatched, transitive dependency of the build-only node polyfill shim. The shipped wallet uses Midnight ledger WASM/Web Crypto and does not invoke elliptic. Reassess before this exception expires or when an upstream fix is available."
