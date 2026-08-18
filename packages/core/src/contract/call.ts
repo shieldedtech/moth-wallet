@@ -2,7 +2,7 @@
 // Mirrors deploy.ts: syncs wallet, balances transaction, signs intents, submits.
 
 import type {TransactionResult} from '../types/transaction.js';
-import {resolveProverConfig, type NetworkConfig} from '../types/network.js';
+import {resolveProverConfig, type NetworkConfig, resolveLedgerVersion} from '../types/network.js';
 import type {DerivedKeys} from '../types/wallet.js';
 import type {WalletKeys} from '../sync/operations.js';
 import {createProofProvider, ensureProverReady} from '../proof/provider.js';
@@ -14,7 +14,8 @@ import {toPositionalArgs} from './args-parser.js';
 import {setNetworkId} from '@midnight-ntwrk/midnight-js/network-id';
 import * as Rx from 'rxjs';
 import type * as ledger from '@midnight-ntwrk/ledger-v8';
-import {ledger as activeLedger} from '../ledger/index.js';
+import {ledger as activeLedger, activeLedgerVersion} from '../ledger/index.js';
+import {verifyNetworkLedger} from '../ledger/protocol-version.js';
 import {HDWallet, Roles} from '@midnightntwrk/wallet-sdk/hd';
 import {createKeystoreFor, sdk} from '../sdk/index.js';
 import type {WitnessProvider} from './witness-loader.js';
@@ -221,6 +222,11 @@ async function callViaSDK(options: CallOptions): Promise<TransactionResult> {
       return (facade as any).finalizeRecipe(recipe);
     },
     submitTx: async (tx: any) => {
+      // Refuse before submitting if the wallet's ledger does not match the
+      // network's. The two ledgers reject each other's transactions with a bare
+      // header-tag error, and Merkle sync succeeds across the fork, so without
+      // this the mismatch first shows up as an unreadable failure here.
+      await verifyNetworkLedger(network, {using: activeLedgerVersion() ?? resolveLedgerVersion(network)});
       return (facade as any).submitTransaction(tx);
     },
   };

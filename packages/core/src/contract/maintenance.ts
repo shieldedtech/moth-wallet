@@ -4,7 +4,7 @@
 
 import {readFileSync} from 'node:fs';
 import type {TransactionResult} from '../types/transaction.js';
-import {resolveProverConfig, type NetworkConfig} from '../types/network.js';
+import {resolveProverConfig, type NetworkConfig, resolveLedgerVersion} from '../types/network.js';
 import type {DerivedKeys} from '../types/wallet.js';
 import {createProofProvider, ensureProverReady} from '../proof/provider.js';
 import {NodeZkConfigProvider} from '@midnight-ntwrk/midnight-js-node-zk-config-provider';
@@ -14,7 +14,8 @@ import {WalletError} from '../types/errors.js';
 import {setNetworkId} from '@midnight-ntwrk/midnight-js/network-id';
 import * as Rx from 'rxjs';
 import type * as ledger from '@midnight-ntwrk/ledger-v8';
-import {ledger as activeLedger} from '../ledger/index.js';
+import {ledger as activeLedger, activeLedgerVersion} from '../ledger/index.js';
+import {verifyNetworkLedger} from '../ledger/protocol-version.js';
 import {HDWallet, Roles} from '@midnightntwrk/wallet-sdk/hd';
 import {createKeystoreFor} from '../sdk/index.js';
 import type {SyncedWallet} from '../sync/wallet-sync.js';
@@ -213,6 +214,11 @@ async function insertViaSDK(options: InsertVerifierKeyOptions): Promise<Transact
       return (facade as any).finalizeRecipe(recipe);
     },
     submitTx: async (tx: any) => {
+      // Refuse before submitting if the wallet's ledger does not match the
+      // network's. The two ledgers reject each other's transactions with a bare
+      // header-tag error, and Merkle sync succeeds across the fork, so without
+      // this the mismatch first shows up as an unreadable failure here.
+      await verifyNetworkLedger(network, {using: activeLedgerVersion() ?? resolveLedgerVersion(network)});
       return (facade as any).submitTransaction(tx);
     },
   };
@@ -445,6 +451,11 @@ async function insertBatchViaSDK(options: InsertVerifierKeysOptions): Promise<Ba
       return (facade as any).finalizeRecipe(recipe);
     },
     submitTx: async (tx: any) => {
+      // Refuse before submitting if the wallet's ledger does not match the
+      // network's. The two ledgers reject each other's transactions with a bare
+      // header-tag error, and Merkle sync succeeds across the fork, so without
+      // this the mismatch first shows up as an unreadable failure here.
+      await verifyNetworkLedger(network, {using: activeLedgerVersion() ?? resolveLedgerVersion(network)});
       return (facade as any).submitTransaction(tx);
     },
   };

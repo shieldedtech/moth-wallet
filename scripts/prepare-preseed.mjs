@@ -6,7 +6,7 @@ import {parseArgs} from 'node:util';
 
 import {
   DEFAULT_NETWORKS,
-  initLedger,
+  initSdk,
   preseedReferenceStatus,
   refreshEmptyRefCache,
   resolveLedgerVersion,
@@ -28,9 +28,10 @@ if (!values.network) {
 }
 
 try {
-  // Load the ledger this network speaks; the sync below reaches the seam.
+  // Load the SDK generation and ledger this network speaks; the sync below
+  // reaches both seams.
   const selected = DEFAULT_NETWORKS[values.network];
-  if (selected) await initLedger(resolveLedgerVersion(selected));
+  if (selected) await initSdk(resolveLedgerVersion(selected));
 
   const result = await preparePreseed(values.network, {
     networks: DEFAULT_NETWORKS,

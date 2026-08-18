@@ -7,7 +7,8 @@ import {pathToFileURL} from 'node:url';
 import {createRequire} from 'node:module';
 import * as Rx from 'rxjs';
 import type * as ledger from '@midnight-ntwrk/ledger-v8';
-import {ledger as activeLedger} from '../ledger/index.js';
+import {ledger as activeLedger, activeLedgerVersion} from '../ledger/index.js';
+import {verifyNetworkLedger} from '../ledger/protocol-version.js';
 import {setNetworkId} from '@midnight-ntwrk/midnight-js/network-id';
 import {NodeZkConfigProvider} from '@midnight-ntwrk/midnight-js-node-zk-config-provider';
 import {indexerPublicDataProvider} from '@midnight-ntwrk/midnight-js-indexer-public-data-provider';
@@ -18,7 +19,7 @@ import {MidnightBech32m, UnshieldedAddress} from '@midnightntwrk/wallet-sdk/addr
 import {homedir} from 'node:os';
 
 import type {TransactionResult} from '../types/transaction.js';
-import {resolveProverConfig, type NetworkConfig} from '../types/network.js';
+import {resolveProverConfig, type NetworkConfig, resolveLedgerVersion} from '../types/network.js';
 import {createProofProvider, ensureProverReady} from '../proof/provider.js';
 import type {ContractArtifact} from './artifact-loader.js';
 import {WalletError, TimeoutError} from '../types/errors.js';
@@ -329,6 +330,11 @@ export async function deployContract(options: DeployOptions): Promise<Transactio
       return (facade as any).finalizeRecipe(recipe);
     },
     submitTx: async (tx: any) => {
+      // Refuse before submitting if the wallet's ledger does not match the
+      // network's. The two ledgers reject each other's transactions with a bare
+      // header-tag error, and Merkle sync succeeds across the fork, so without
+      // this the mismatch first shows up as an unreadable failure here.
+      await verifyNetworkLedger(network, {using: activeLedgerVersion() ?? resolveLedgerVersion(network)});
       return (facade as any).submitTransaction(tx);
     },
   };
