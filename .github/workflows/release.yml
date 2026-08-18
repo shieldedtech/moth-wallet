@@ -5,7 +5,12 @@ on:
     branches:
       - main
 
-concurrency: ${{ github.workflow }}-${{ github.ref }}
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Preserve every main push so a version commit cannot be replaced while pending.
+  queue: max
 
 jobs:
   release:
@@ -33,9 +38,19 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: 'yarn'
+          registry-url: https://registry.npmjs.org
 
-      - name: Install npm
-        run: npm install --global npm@12.0.2
+      - name: Configure pinned npm CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/npm-bin"
+          cat > "$RUNNER_TEMP/npm-bin/npm" <<'EOF'
+          #!/usr/bin/env bash
+          exec npx --yes --package=npm@12.0.2 npm "$@"
+          EOF
+          chmod +x "$RUNNER_TEMP/npm-bin/npm"
+          echo "$RUNNER_TEMP/npm-bin" >> "$GITHUB_PATH"
 
       - name: Install Dependencies
         run: yarn install --immutable
@@ -69,6 +84,15 @@ jobs:
             echo "hasChangesets=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # Registry, tag, and GitHub Release state survive canceled and partial runs.
+      # The same process also dry-runs only packages that still need publication.
+      - name: Detect incomplete package releases
+        if: ${{ steps.releases.outputs.hasChangesets == 'false' }}
+        id: package_changes
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/release-packages.mjs --github-output --validate
+
       # Use the machine-user PAT only while opening or updating the version PR.
       # It is deliberately absent from the stable publish process below.
       - name: Create or update version PR
@@ -78,21 +102,16 @@ jobs:
           # `yarn run` so Yarn Berry runs the package scripts, not its built-in
           # `yarn version` command (which needs a <strategy> arg and ignores the
           # "version" script — the cause of the release failure).
-          version: yarn run version
+          version: yarn run version && yarn install
+          commitMode: github-api
+          github-token: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
           title: "chore: version packages"
           commit: "chore: version packages"
-        env:
-          # MidnightCI machine-user PAT (has write on this repo), NOT the default
-          # Actions token: the org hardens GITHUB_TOKEN with
-          # can_approve_pull_request_reviews=false, so the Actions token can't open
-          # the "version packages" PR. A machine-user token is exempt and creates
-          # the PR as MidnightCI.
-          GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
       # With no Changesets left, publish through npm Trusted Publishing (OIDC),
-      # then use the ephemeral Actions token for tags and GitHub Releases.
+      # then recover or create tags and GitHub Releases through Changesets.
       - name: Publish stable release
-        if: ${{ steps.releases.outputs.hasChangesets == 'false' }}
+        if: ${{ steps.releases.outputs.hasChangesets == 'false' && steps.package_changes.outputs.hasReleaseWork == 'true' }}
         uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d  # v1.9.0
         with:
           publish: yarn run release
@@ -127,9 +146,19 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: 'yarn'
+          registry-url: https://registry.npmjs.org
 
       - name: Install npm
-        run: npm install --global npm@12.0.2
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/npm-bin"
+          cat > "$RUNNER_TEMP/npm-bin/npm" <<'EOF'
+          #!/usr/bin/env bash
+          exec npx --yes --package=npm@12.0.2 npm "$@"
+          EOF
+          chmod +x "$RUNNER_TEMP/npm-bin/npm"
+          echo "$RUNNER_TEMP/npm-bin" >> "$GITHUB_PATH"
 
       - name: Install Dependencies
         run: yarn install --immutable

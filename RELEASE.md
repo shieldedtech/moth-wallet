@@ -79,9 +79,10 @@ When you push to `main`, the GitHub Action will:
 
 ## Package Access
 
-The three published packages are **restricted** while the repository completes the open-source
-governance process. Do not change npm access or repository visibility until the governance case
-records a final GO decision.
+The three published packages are **public** following the final GO recorded in the
+[`shieldedtech/open-source-governance` case](https://github.com/shieldedtech/open-source-governance/issues/19).
+Keep publication limited to the approved wallet, CLI, and TUI packages; private workspaces remain
+outside the npm release scope.
 
 ## Semver Guidelines
 
@@ -94,6 +95,24 @@ release group in `.changeset/config.json`. Changesets versions them together so
 the NPM packages and the downloadable extension carry the same release number.
 Private packages are versioned but never published. The historical extension
 `0.11.0` tag is retained; the next aligned release advances from that version.
+
+### Cutting the next aligned GA (`0.12.0`)
+
+The `0.3.0-canary` snapshots are not GA releases. After the fixed-version policy
+PR is merged, the pending Changesets will produce a **Version Packages** PR. For
+the current release train, review that PR and verify that the fixed group is
+versioned to `0.12.0`, then merge it. The release workflow will publish the
+public NPM packages through Trusted Publishing/OIDC and create their git tags.
+
+The same version PR updates the private extension package. That `main` push
+triggers extension CD, which builds and verifies the preview/preprod preseeds,
+creates `moth-extension-v0.12.0` in CI, and publishes the GitHub Release with
+`moth-extension-0.12.0-chrome.zip`. No maintainer manually pushes an extension
+tag.
+
+Before changing repository visibility, record the Version Packages merge SHA,
+the NPM tags, the extension tag, the ZIP checksum, and the Codecov/Scorecard
+results in the open-source governance case.
 
 ## Manual Publishing
 

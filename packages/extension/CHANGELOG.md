@@ -1,5 +1,322 @@
 # @shieldedtech/moth-extension
 
+## 0.12.1
+
+### Patch Changes
+
+- @shieldedtech/moth-wallet@0.12.1
+- @shieldedtech/moth-browser@0.12.1
+
+## 0.12.0
+
+### Minor Changes
+
+- ea15676: Coordinate the first public package release under the Moth package names.
+
+  This is a minor bump because no package has previously been published under the
+  new names. The release remains experimental and unsupported, so it stays below
+  1.0.0. Package names, CLI identifiers, environment variables, connector identity,
+  and local state paths are aligned before publication; no compatibility shim is
+  required for an unpublished package.
+
+- ea15676: Count requests to the node and indexer, with outcomes, on the debug page.
+
+  Written for a specific problem: one person sees HTTP 403 from the node and
+  nobody else does. 403 there means rate limiting, so the useful evidence is
+  request volume — but nothing measured it, and "it feels like a lot" is not
+  something you can take to whoever runs the endpoint.
+
+  `debug.html` now shows, per host over a rolling five minutes: total requests,
+  the rate now, the mean over the last minute, the **busiest single second and
+  when it occurred**, and what came back.
+
+  The peak is the number that matters most. A mean of 0.8/s reads as harmless
+  while a burst of forty in one second is what actually gets refused — and by the
+  time anyone opens this page the burst is over, so it has to be retained rather
+  than sampled. It is measured as a sliding second, not a fixed bucket, so a burst
+  that straddles a boundary is not split in half and understated. 403 is
+  called out by name rather than folded into a 4xx bucket, because it is the
+  answer this exists to give, and a network-level failure is counted separately
+  from an HTTP error — they are different problems.
+
+  The figures outlive both things that used to erase them. Rates are windowed
+  because a rate over all time means nothing, but totals, outcomes and the peak
+  are kept for as long as the browser has been open. Two separate mechanisms were
+  throwing them away: the rolling window pruned a host out of existence once its
+  last request aged past five minutes, and the meter itself lives in the offscreen
+  document, which every lock closes — so a wallet that got two 403s and then
+  auto-locked showed an empty page. Both cases hid exactly the evidence someone
+  opened the page to read. The peak is now computed as each request arrives rather
+  than swept from a list that pruning may since have emptied, and the background
+  retains each meter's figures across the gap when a new one replaces it. Folding
+  is a sum for counts and a **max** for the peak — two bursts of 30 are a peak of
+  30, not 60. Each row carries how long that host has been quiet, so a retained
+  403 from an hour ago cannot read as one happening now.
+
+  The retained figures live in `storage.session`: memory-only, never written to
+  disk, which matters because the captured failures carry request bodies. Nothing
+  drops them implicitly — which is why **Clear** now zeroes the counters as well
+  as the timings, since otherwise there would be no way to start from a known
+  baseline before reproducing a problem.
+
+  Two things worth knowing about the numbers. Requests are counted when **sent**,
+  not when they resolve, because that is what a rate limiter sees; a request still
+  in flight appears in the total with no outcome yet. And the meter wraps `fetch`
+  and `WebSocket` in the offscreen worker, installed before the host is
+  lazy-imported, so it catches the wallet SDK's own traffic — which is most of it.
+  Counting only our `IndexerClient` would have measured a small fraction and
+  looked reassuring.
+
+  Always on, with no toggle. A counter you have to remember to enable is one you
+  do not have when the problem happens. The cost is an array push per request
+  against a network round trip, and the window is pruned on every read so a long
+  session cannot grow it.
+
+  Counts alone answer "how much", but not "is it us". A 403 could be the wallet
+  sending something malformed or the endpoint refusing this caller, and telling
+  those apart means sending the same request from outside the extension. So the
+  last five failures are also kept verbatim — method, URL, headers, body, and
+  what came back — each with a **Copy as curl** button that replays it.
+
+  The curl emits `$MOTH_NODE_AUTH` where the node auth header belongs. That header
+  is injected by `declarativeNetRequest` after JavaScript hands the request off,
+  so it is genuinely not visible to the capture; a command that quietly omitted it
+  would fail for a different reason than the original and send someone chasing the
+  wrong thing.
+
+  One rejection is deliberately not captured. The relay probe GETs the JSON-RPC
+  endpoint once a minute in order to be refused — a healthy Midnight node answers
+  405, and any HTTP answer at all proves the endpoint is alive rather than down.
+  Recording that as a failure filled all five slots with the same expected 405
+  within five minutes and evicted the 403s the panel exists to preserve. It is
+  still counted in the table, because volume is volume; it just does not consume
+  the evidence buffer. A POST that gets 405 is a genuine surprise and is still
+  captured.
+
+  Capture is deliberately conservative. A request body is only read when it is
+  already a string — a stream is left alone and reported as absent, because
+  consuming it would break the very request being diagnosed. The response is read
+  from a clone, so the wallet still gets its own body. Header values matching
+  `auth|token|cookie|secret|key|bypass` are replaced with `[redacted]`, bodies are
+  truncated, and only the newest five are held.
+
+  This splits the page in two, and the UI says so. The counts remain hosts and
+  numbers only, and **Copy JSON** exports just those — still safe to paste into an
+  issue unread. The failures panel carries real request contents, is marked as
+  such, and is copied one at a time on purpose: nothing puts it on the clipboard
+  without a deliberate click.
+
+### Patch Changes
+
+- be98f55: Measure test coverage in CI, and share the core test fixtures.
+
+  Adds a second job to `.github/workflows/ci.yml` that runs `yarn test:coverage`
+  and archives `lcov.info`. The measurement step is advisory: V8 instrumentation
+  slows the scrypt-backed keystore and seed-export suites enough to trip vitest's
+  internal worker RPC timeout, so the run exits non-zero even though every test
+  passes and the report is written. `continue-on-error` is scoped to that step
+  rather than the job, so a run that produces no report at all still fails on the
+  upload. The strict gate stays the `test` job. Baseline at the time of writing:
+  62.54% lines, 83.76% branch over 686 tests, with entrypoints and screens excluded
+  as shells the E2E tier covers.
+
+  The three `exportSeedHex` tests no longer carry a per-test 15s timeout. A
+  literal there overrides the project config — which already raises the timeout
+  precisely because these derive keys at the v2 scrypt parameters — and made them
+  the only thing failing a `--coverage` run.
+
+  Shared test fixtures now live in `packages/core/tests/helpers/`. Every core test
+  that needs an in-memory `StorageAdapter` or the reference mnemonic takes it from
+  there — four hand-rolled `MemoryStorage` classes and four copies of the mnemonic
+  are gone, so a change to `StorageAdapter` now breaks compilation at every call
+  site, and no test can drift from the seed the address-parity fixtures pin. The
+  keystore suite shares one encrypted keystore across its shape and tamper
+  assertions while keeping an independent full-strength round trip, cutting its
+  scrypt derivations from thirteen to nine.
+
+  The extension's network picker test now asserts that every network in
+  `SUPPORTED_NETWORKS` is both named and described in the rendered markup, with
+  developer mode on so the gated mainnet is covered too. The radio count derives
+  from the state's `available` list rather than any literal, so gating a second
+  network cannot fail a correct picker; a hardcoded count disagreed with the
+  picker for twelve days after `local` was added without label entries.
+  `NETWORK_LABELS` and `NETWORK_DESCRIPTIONS` are exported for that assertion.
+
+  Root vitest config: `projects` is now globbed rather than listed, so a new
+  package cannot be gated by CI while staying invisible to the coverage number,
+  and `coverage.exclude` extends vitest's defaults rather than replacing them.
+
+  Removes the root `lint` script and turbo's `lint` task. No package defined a
+  `lint` script, so `turbo run lint` linted nothing and reported success, which
+  read as a passing gate — worse than having none. `CONTRIBUTING.md` no longer
+  claims a linter config lives in the repo.
+
+  The root `vitest` range now matches `@vitest/coverage-v8`, which declares an
+  exact peer on the vitest it ships with, so the two cannot drift onto an
+  unsupported pairing.
+
+- ea15676: Say what the wallet is on the first screen: a developer wallet for Midnight.
+
+  The welcome panel and setup tab opened with **"Money, but private."** Both halves
+  of that were claims the wallet does not keep.
+
+  There is no money. `DEFAULT_SETTINGS` puts a fresh install on preprod, and the
+  comment above it says why: the wallet is unaudited and for development, so a new
+  install must not land on a network carrying real value. The first screen was
+  promising money immediately before a deliberate decision to keep the user away
+  from any. What they actually hold is tNIGHT.
+
+  Privacy is not unconditional. This wallet holds a shielded _and_ an unshielded
+  sub-wallet, and unshielded balances and transfers are public on chain. "but
+  private." made an absolute promise on the screen before the user learns there
+  are two kinds of address — the intro line beneath it was already more careful
+  ("with your details shielded"), but the 72px headline is what gets read.
+
+  It now reads **"Your wallet for Midnight."**, describing the tool rather than
+  making a claim on the network's behalf, with the qualification below the buttons
+  where it belongs: unaudited, built for development, new wallets start on a test
+  network. Under the buttons rather than in the headline, so it qualifies the
+  offer instead of competing with it.
+
+  Both screens also stop naming mainnet's assets. `nativeAssetLabelsForNetwork`
+  was called with a hardcoded `'mainnet'`, so the intro said "hold NIGHT" on a
+  screen whose own button creates a wallet on preprod holding tNIGHT. There is no
+  selected network before a wallet exists, so the honest thing to name is the one
+  the next step will use — `DEFAULT_SETTINGS.network`.
+
+  Translations updated. The French line one is "Portefeuille" rather than "Votre
+  portefeuille": the setup tab sets the first line at 72px in a 520px column, and
+  eighteen characters there wrap into a third line the layout is not built for.
+
+- ea15676: Stop reporting a DUST registration that never happened, and show why.
+
+  A registration that registers nothing resolves normally — it returns no
+  transaction hash rather than throwing. The timings log recorded "complete" for
+  anything that did not throw, so a wallet which submitted nothing at all wrote
+  `tx: register complete`, indistinguishable from a real registration. A log
+  showing two of those, with NIGHT flat and DUST at zero for thirteen minutes,
+  therefore said the opposite of what had happened.
+
+  The label now names the outcome: `submitted`, `no-op (fee not affordable yet)`,
+  or `no-op (no available unregistered NIGHT)`. The two no-ops are kept apart
+  because they have different causes and different fixes — one resolves by
+  waiting, the other by settling a stuck transaction — so folding them together
+  would only move the ambiguity somewhere else. No transaction hash is recorded:
+  the timings page promises labels and durations only, and a hash is
+  chain-linkable to the wallet.
+
+  "Your NIGHT is not available to register right now" is raised when there is no
+  available _unregistered_ NIGHT while the wallet still shows a balance. Those are
+  different numbers. The displayed balance folds in **booked** coins — inputs
+  reserved by a transaction that has not settled — so a wallet can read 500 NIGHT
+  and have nothing to register. Telling "all booked" apart from "all already
+  registered" meant opening the TUI, the only surface carrying per-coin flags.
+
+  The DUST screen now offers a per-coin breakdown: each NIGHT coin as generating,
+  not registered, or booked, with the booked total named explicitly. Values only —
+  no UTXO ids, addresses or nonces: enough to explain the balance, not enough to
+  identify a coin on chain. Collapsed by default, since it answers a question most
+  people never ask and the fetch reaches the offscreen host.
+
+- ea15676: Stop telling people to wait for tNIGHT they already hold, and always show the
+  DUST meter.
+
+  The meter's fallback text was "Waiting for tNIGHT" whenever generation capacity
+  was zero. Capacity is zero in two quite different situations: the wallet holds no
+  NIGHT, and the wallet holds NIGHT that has not been registered for generation.
+  Only the first is waiting for anything. The second is a wallet with capacity
+  available to it and an action to take, being told to sit still.
+
+  It now distinguishes them. No NIGHT reads "Waiting for tNIGHT"; NIGHT held but
+  unregistered reads "tNIGHT not registered yet"; registered NIGHT reports its ETA
+  as before. `DustView` also exposes `unregisteredNight`, so a caller can offer the
+  registration action rather than re-deriving the state.
+
+  The card is now shown whenever balances exist. It was previously hidden for a
+  wallet with no NIGHT and no tokens, which made the DUST mechanism look absent
+  rather than idle — and #101 had already carved out an exception for holding DUST
+  without NIGHT. Two exceptions to a rule is a sign the rule was wrong: the card
+  says which state it is in, so the panel does not need to decide by omission.
+
+  This supersedes #101's "hide the meter when there is no DUST either", and that
+  test is updated rather than deleted so the change of intent is visible.
+
+- ea15676: Make the DUST components' asset labels a required prop, so mainnet cannot
+  silently render tNIGHT/tDUST.
+
+  `DustMeterCard` and `DustRingGauge` defaulted `labels` to
+  `TESTNET_NATIVE_ASSET_LABELS`. Any caller that omitted the prop got testnet
+  naming on every network, mainnet included, with nothing to indicate it — a
+  default that is wrong on the one network where being wrong matters. Calling real
+  NIGHT "tNIGHT" tells someone their funds are test funds.
+
+  Both existing callers already pass labels, so this changes no rendering today.
+  It makes the failure a compile error rather than a silent one, which is the
+  point: the next caller cannot introduce it.
+
+  Adds tests for `nativeAssetLabelsForNetwork`, including that it tolerates case
+  and whitespace in the network id — it is fed from stored settings and message
+  payloads, neither normalised — and that an unknown network falls back to testnet
+  names. That direction is deliberate: understating real assets as test assets is
+  recoverable, while labelling test assets as real could persuade someone to send
+  funds they cannot get back.
+
+- ea15676: Show the real version in Settings, instead of "Moth 1.0".
+
+  The footer read `Moth 1.0 · Your keys never leave this device`. Two problems in
+  one line.
+
+  The version was wrong, and had been through eleven releases — the extension is
+  at 0.11.0. A hardcoded version string has no mechanism to stay true, so it drifts
+  from the first release onward. It now reads
+  `browser.runtime.getManifest().version`, which cannot.
+
+  The claim was dropped rather than reworded. It is broadly accurate — keys are
+  derived and dropped, and the keystore never leaves the device — but an
+  unqualified security assurance sits badly on a wallet that says elsewhere, at
+  some length, that it is unaudited, unsupported and for development. The mainnet
+  gating exists to make exactly that point. A footer quietly asserting the opposite
+  undercuts it.
+
+  Keeping a version display rather than removing the footer entirely: the
+  bug-report template asks reporters for "Version / commit", and this was the only
+  place in the UI showing one.
+
+  Adds a **Copy diagnostics** button under a new Support section, producing a
+  markdown block for bug reports: wallet version, browser, OS, network, whether
+  endpoints are overridden and to what, prover type, auto-lock, developer mode,
+  and pre-seed reference state.
+
+  What it excludes matters more than what it includes, because a user pastes this
+  into a public issue without auditing it first. No addresses, account names,
+  balances or key material — the input type has no field for any of them, so a
+  later edit to the renderer cannot leak one by accident. The node auth header is
+  reported as set or not set, never by value; it is a shared secret. Any userinfo
+  in a URL is stripped, since `https://user:pass@host` is a credential wearing a
+  URL's clothes. The output says so on its last line, so a reader can trust it at
+  a glance rather than reading it line by line.
+
+  The redaction rules are a pure function with 12 tests, since that is the part
+  worth getting right.
+
+- ea15676: Show the DUST meter when a wallet holds DUST but no NIGHT or tokens.
+
+  DUST is earned by registering NIGHT, not received, so it outlives the NIGHT that
+  generated it — after spending, or while a transfer is in flight, a wallet can
+  hold DUST and nothing else. The panel treated that as an unfunded wallet: it hid
+  the meter and showed the "add your first NIGHT" prompt, reporting a balance of
+  nothing while the total was demonstrably non-zero.
+
+  The `fresh` flag is deliberately unchanged. It also disables Send, and with no
+  NIGHT there is genuinely nothing to send — so the funding prompt stays and Send
+  stays disabled. Only the meter's visibility is separated out, because that is
+  what was actually wrong.
+
+- Updated dependencies [be98f55]
+- Updated dependencies [ea15676]
+  - @shieldedtech/moth-wallet@0.12.0
+  - @shieldedtech/moth-browser@0.12.0
+
 ## 0.11.0
 
 ### Minor Changes

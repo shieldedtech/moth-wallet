@@ -15,8 +15,8 @@ permissions:
 jobs:
   check-changeset:
     name: Check for Changeset
-    # Skip the changesets-generated "version packages" PR — it has no changeset by design.
-    if: ${{ !startsWith(github.head_ref, 'changeset-release/') }}
+    # Skip generated version-package PRs; they contain consumed Changesets by design.
+    if: ${{ !startsWith(github.head_ref, 'changeset-release/') && github.head_ref != 'chore/align-release-versions' }}
     runs-on: ubuntu-24.04
 
     steps:

@@ -1,6 +1,6 @@
 {
   "name": "@shieldedtech/moth-browser",
-  "version": "0.1.1",
+  "version": "0.12.1",
   "private": true,
   "description": "Browser-compatible wallet library for Midnight Network. USE AT YOUR OWN RISK. Experimental software provided AS-IS with no warranty. Not audited. For development and testing purposes only.",
   "license": "Apache-2.0",
@@ -27,7 +27,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@shieldedtech/moth-wallet": "^0.2.0"
+    "@shieldedtech/moth-wallet": "^0.12.1"
   },
   "devDependencies": {
     "typescript": "^5.5.0",

@@ -1,6 +1,6 @@
 {
   "name": "@shieldedtech/moth-extension",
-  "version": "0.11.0",
+  "version": "0.12.1",
   "private": true,
   "description": "Moth Wallet browser extension for the Midnight Network. USE AT YOUR OWN RISK. This is experimental software provided AS-IS with no warranty. Not audited. For development and testing purposes only.",
   "license": "Apache-2.0",

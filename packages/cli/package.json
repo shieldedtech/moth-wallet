@@ -1,11 +1,11 @@
 {
   "name": "@shieldedtech/moth-cli",
-  "version": "0.2.0",
+  "version": "0.12.1",
   "description": "CLI tool for Midnight Network wallet operations and contract deployments. USE AT YOUR OWN RISK. Experimental software provided AS-IS with no warranty. Not audited. For development and testing purposes only.",
   "license": "Apache-2.0",
   "type": "module",
   "publishConfig": {
-    "access": "restricted"
+    "access": "public"
   },
   "files": [
     "dist",
@@ -32,8 +32,8 @@
   },
   "dependencies": {
     "@oclif/core": "^4.2.0",
-    "@shieldedtech/moth-tui": "^0.2.0",
-    "@shieldedtech/moth-wallet": "^0.2.0",
+    "@shieldedtech/moth-tui": "^0.12.1",
+    "@shieldedtech/moth-wallet": "^0.12.1",
     "dotenv": "17.4.2",
     "ink": "^7.0.1"
   },
