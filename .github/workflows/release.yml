@@ -55,10 +55,24 @@ jobs:
       - name: Build Packages
         run: yarn build
 
+      # npm 12 rejects an already-published version even with --dry-run. Only
+      # validate publication when this commit actually changes a package version.
+      - name: Detect package version changes
+        id: package_changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --unified=0 HEAD^ HEAD -- 'packages/*/package.json' \
+            | rg -q '^[+-][[:space:]]*"version"[[:space:]]*:'; then
+            echo "hasVersionChanges=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "hasVersionChanges=false" >> "$GITHUB_OUTPUT"
+          fi
+
       # Scorecard recognizes this as the repository's npm packaging workflow.
-      # It is deliberately a dry run: Changesets remains the single publisher
-      # and Trusted Publishing continues to perform the real upload below.
+      # It is deliberately a dry run: Changesets remains the single publisher.
       - name: Validate npm package publication
+        if: ${{ steps.package_changes.outputs.hasVersionChanges == 'true' }}
         run: npm publish --dry-run --workspace packages/core --ignore-scripts
 
       # Detect whether pending changesets actually bump any package — the signal
@@ -87,24 +101,6 @@ jobs:
             echo "hasChangesets=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # A push with no Changesets is usually a documentation or workflow-only
-      # change. Do not invoke `changeset publish` in that case: npm versions are
-      # immutable, so it would fail while trying to republish the current
-      # versions. A stable release is only eligible when this commit changed a
-      # publishable package manifest or changelog (the version-package PR path).
-      - name: Detect package release changes
-        id: package_changes
-        run: |
-          set -euo pipefail
-          if git diff --quiet HEAD^ HEAD -- \
-            'packages/*/package.json' \
-            'packages/*/CHANGELOG.md' \
-            'CHANGELOG.md'; then
-            echo "hasPackageChanges=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "hasPackageChanges=true" >> "$GITHUB_OUTPUT"
-          fi
-
       # Use the machine-user PAT only while opening or updating the version PR.
       # It is deliberately absent from the stable publish process below.
       - name: Create or update version PR
@@ -123,7 +119,7 @@ jobs:
       # With no Changesets left, publish through npm Trusted Publishing (OIDC),
       # then use the ephemeral Actions token for tags and GitHub Releases.
       - name: Publish stable release
-        if: ${{ steps.releases.outputs.hasChangesets == 'false' && steps.package_changes.outputs.hasPackageChanges == 'true' }}
+        if: ${{ steps.releases.outputs.hasChangesets == 'false' && steps.package_changes.outputs.hasVersionChanges == 'true' }}
         uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d  # v1.9.0
         with:
           publish: yarn run release
