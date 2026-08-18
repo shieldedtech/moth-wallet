@@ -2983,6 +2983,7 @@ __metadata:
     "@scure/bip39": "npm:^2.2.0"
     "@types/node": "npm:^25.6.0"
     "@types/ws": "npm:^8"
+    fast-check: "npm:3.23.2"
     graphql: "npm:^16.10.0"
     graphql-request: "npm:^7.4.0"
     graphql-ws: "npm:^6.0.0"
@@ -5455,7 +5456,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"fast-check@npm:^3.23.1":
+"fast-check@npm:3.23.2, fast-check@npm:^3.23.1":
   version: 3.23.2
   resolution: "fast-check@npm:3.23.2"
   dependencies:

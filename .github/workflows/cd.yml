@@ -17,6 +17,8 @@ on:
       - 'turbo.json'
   workflow_dispatch: {}
 
+permissions: {}
+
 concurrency:
   group: extension-release-${{ github.ref }}
   cancel-in-progress: false
@@ -28,6 +30,9 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
 
     steps:
       - name: Checkout release source
@@ -82,6 +87,31 @@ jobs:
             done
           done
 
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@d7d6bc7722e3daa8354c50bcb52f4837da5e9b6a  # v3.8.1
+        with:
+          cosign-release: v2.4.1
+
+      - name: Sign extension ZIP
+        env:
+          ARTIFACT: ${{ steps.release.outputs.artifact }}
+        run: cosign sign-blob --yes --bundle "${ARTIFACT}.sigstore" "$ARTIFACT"
+
+      - name: Generate extension provenance
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763  # v4.1.1
+        with:
+          subject-path: ${{ steps.release.outputs.artifact }}
+
+      - name: Materialize extension provenance
+        env:
+          ARTIFACT: ${{ steps.release.outputs.artifact }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          attestation_path="$(tail -n 1 "$RUNNER_TEMP/created_attestation_paths.txt")"
+          test -s "$attestation_path"
+          cp "$attestation_path" "${ARTIFACT}.intoto.jsonl"
+
           for network in preview preprod; do
             manifest="$RUNNER_TEMP/preseed-${network}-manifest.json"
             unzip -p "$ARTIFACT" "preseed/${network}/manifest.json" > "$manifest"
@@ -124,6 +154,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           ARTIFACT: ${{ steps.release.outputs.artifact }}
+          SIGNATURE: ${{ steps.release.outputs.artifact }}.sigstore
+          PROVENANCE: ${{ steps.release.outputs.artifact }}.intoto.jsonl
           TAG: ${{ steps.release.outputs.tag }}
           TAG_CREATED: ${{ steps.tag.outputs.created }}
           VERSION: ${{ steps.release.outputs.version }}
@@ -131,12 +163,15 @@ jobs:
         run: |
           if [[ "$TAG_CREATED" != "true" ]] && gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "Release $TAG already exists; leaving its published asset unchanged."
+            gh release upload "$TAG" "$ARTIFACT#Moth Wallet Extension for Chrome (Manifest V3)" "$SIGNATURE" "$PROVENANCE" --repo "$GITHUB_REPOSITORY" --clobber
             exit 0
           fi
 
           release_args=(
             "$TAG"
             "$ARTIFACT#Moth Wallet Extension for Chrome (Manifest V3)"
+            "$SIGNATURE"
+            "$PROVENANCE"
             --repo "$GITHUB_REPOSITORY"
             --verify-tag
             --title "Moth Wallet Extension v${VERSION}"
@@ -150,6 +185,8 @@ jobs:
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$TAG" \
               "$ARTIFACT#Moth Wallet Extension for Chrome (Manifest V3)" \
+              "$SIGNATURE" \
+              "$PROVENANCE" \
               --repo "$GITHUB_REPOSITORY" \
               --clobber
           else
