@@ -18,7 +18,7 @@
     "clean": "turbo run clean",
     "changeset": "changeset",
     "version": "changeset version",
-    "release": "changeset publish"
+    "release": "node scripts/release-packages.mjs"
   },
   "resolutions": {
     "@midnight-ntwrk/compact-js": "2.5.1",

@@ -55,26 +55,6 @@ jobs:
       - name: Build Packages
         run: yarn build
 
-      # npm 12 rejects an already-published version even with --dry-run. Only
-      # validate publication when this commit actually changes a package version.
-      - name: Detect package version changes
-        id: package_changes
-        shell: bash
-        run: |
-          set -euo pipefail
-          if git diff --unified=0 "${{ github.event.before }}" "$GITHUB_SHA" -- 'packages/*/package.json' \
-            | rg -q '^[+-][[:space:]]*"version"[[:space:]]*:'; then
-            echo "hasVersionChanges=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "hasVersionChanges=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      # Scorecard recognizes this as the repository's npm packaging workflow.
-      # It is deliberately a dry run: Changesets remains the single publisher.
-      - name: Validate npm package publication
-        if: ${{ steps.package_changes.outputs.hasVersionChanges == 'true' }}
-        run: npm publish --dry-run --workspace packages/core --ignore-scripts
-
       # Detect whether pending changesets actually bump any package — the signal
       # the canary job gates on. (An empty changeset bumps nothing → no canary.)
       - name: Detect releasable changesets
@@ -101,6 +81,15 @@ jobs:
             echo "hasChangesets=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # Registry, tag, and GitHub Release state survive canceled and partial runs.
+      # The same process also dry-runs only packages that still need publication.
+      - name: Detect incomplete package releases
+        if: ${{ steps.releases.outputs.hasChangesets == 'false' }}
+        id: package_changes
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/release-packages.mjs --github-output --validate
+
       # Use the machine-user PAT only while opening or updating the version PR.
       # It is deliberately absent from the stable publish process below.
       - name: Create or update version PR
@@ -117,9 +106,9 @@ jobs:
           commit: "chore: version packages"
 
       # With no Changesets left, publish through npm Trusted Publishing (OIDC),
-      # then use the ephemeral Actions token for tags and GitHub Releases.
+      # then recover or create tags and GitHub Releases through Changesets.
       - name: Publish stable release
-        if: ${{ steps.releases.outputs.hasChangesets == 'false' && steps.package_changes.outputs.hasVersionChanges == 'true' }}
+        if: ${{ steps.releases.outputs.hasChangesets == 'false' && steps.package_changes.outputs.hasReleaseWork == 'true' }}
         uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d  # v1.9.0
         with:
           publish: yarn run release
