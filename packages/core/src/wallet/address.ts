@@ -3,7 +3,16 @@
 // See NOTICE for attribution to mn-tui (Apache-2.0).
 
 import {HDWallet, Roles} from '@midnightntwrk/wallet-sdk/hd';
-import {ledger as activeLedger} from '../ledger/index.js';
+// Derivation is taken from v8 directly rather than through the ledger seam, and
+// deliberately so. fromSeed is fork-invariant — v8 and v9 produce byte-identical
+// coin, encryption and DUST public keys from the same seed, pinned by
+// tests/unit/ledger/derivation-invariance.test.ts. This function also derives for
+// every network at once, spanning both ledger generations, so there is no single
+// "current" ledger it could ask for. It is safe here only because the derived
+// objects never leave: their public key *values* are read and encoded as bech32m.
+// Code that passes a ZswapSecretKeys or DustSecretKey object on into transaction
+// machinery must use the seam, since the two ledgers' classes are distinct.
+import {ZswapSecretKeys, DustSecretKey} from '@midnight-ntwrk/ledger-v8';
 import {
   ShieldedAddress,
   ShieldedCoinPublicKey,
@@ -46,8 +55,8 @@ function toHex(bytes: Uint8Array): string {
  * Derive proper Midnight addresses for a specific network.
  *
  * - Unshielded: createKeystore(secretKey) → Ed25519 public key → bech32m
- * - Shielded: activeLedger().ZswapSecretKeys.fromSeed() → coin + encryption public keys
- * - DUST: activeLedger().DustSecretKey.fromSeed() → public key → DustAddress
+ * - Shielded: ZswapSecretKeys.fromSeed() → coin + encryption public keys
+ * - DUST: DustSecretKey.fromSeed() → public key → DustAddress
  */
 function deriveForNetwork(keys: Record<number, Uint8Array>, network: string) {
   setNetworkId(network);
@@ -58,7 +67,7 @@ function deriveForNetwork(keys: Record<number, Uint8Array>, network: string) {
     createKeystore(keys[Roles.NightInternal], network).getBech32Address() as any
   ).toString();
 
-  const zswapKeys = activeLedger().ZswapSecretKeys.fromSeed(keys[Roles.Zswap]);
+  const zswapKeys = ZswapSecretKeys.fromSeed(keys[Roles.Zswap]);
   const shielded: string = (
     MidnightBech32m.encode(
       network,
@@ -69,7 +78,7 @@ function deriveForNetwork(keys: Record<number, Uint8Array>, network: string) {
     ) as any
   ).toString();
 
-  const dustKey = activeLedger().DustSecretKey.fromSeed(keys[Roles.Dust]);
+  const dustKey = DustSecretKey.fromSeed(keys[Roles.Dust]);
   const dust: string = DustAddress.encodePublicKey(network, dustKey.publicKey);
 
   const metadata: string = (createKeystore(keys[Roles.Metadata], network).getBech32Address() as any).toString();
@@ -121,7 +130,7 @@ export function deriveShieldedPublicKeys(seedHex: string): {
   encryptionPublicKey: string;
 } {
   const keys = deriveRawKeys(seedHex);
-  const zswapKeys = activeLedger().ZswapSecretKeys.fromSeed(keys[Roles.Zswap]);
+  const zswapKeys = ZswapSecretKeys.fromSeed(keys[Roles.Zswap]);
   return {
     coinPublicKey: zswapKeys.coinPublicKey,
     encryptionPublicKey: zswapKeys.encryptionPublicKey,
