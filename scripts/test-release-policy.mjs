@@ -4,6 +4,7 @@
 import {readFileSync} from 'node:fs';
 
 const workflow = readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
+const rootPackage = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 const credentialPattern = /(?:SHIELDED_NPMJS_TOKEN|NPM_TOKEN|NODE_AUTH_TOKEN)/;
 
 function requirePolicy(condition, message) {
@@ -23,6 +24,10 @@ for (const packagePath of ['packages/core/package.json', 'packages/tui/package.j
     !Object.values(dependencies).some((range) => range.startsWith('workspace:')),
     `${packageJson.name} must not publish workspace: dependency ranges`,
   );
+  requirePolicy(
+    packageJson.publishConfig?.access === 'public',
+    `${packageJson.name} must explicitly publish with public npm access`,
+  );
 }
 
 function job(name) {
@@ -41,6 +46,33 @@ for (const name of ['release', 'canary']) {
   requirePolicy(!credentialPattern.test(block), `${name} must not receive an npm credential`);
   requirePolicy(block.includes('npm@12.0.2'), `${name} must install the reviewed npm version`);
 }
+
+requirePolicy(
+  workflow.includes('node scripts/release-packages.mjs --github-output --validate'),
+  'release eligibility must use durable npm and Git tag state',
+);
+requirePolicy(
+  workflow.includes('concurrency:\n  group: ${{ github.workflow }}-${{ github.ref }}') &&
+    /^  queue: max$/mu.test(workflow),
+  'release runs must queue every main push so version commits cannot be replaced while pending',
+);
+requirePolicy(
+  workflow.includes(
+    "- name: Detect incomplete package releases\n        if: ${{ steps.releases.outputs.hasChangesets == 'false' }}",
+  ),
+  'registry reconciliation must only gate the stable no-changeset path',
+);
+requirePolicy(!workflow.includes('UNPUBLISHED_WORKSPACES'), 'release validation must not shuttle plan JSON through env');
+requirePolicy(!workflow.includes('mapfile'), 'release validation must stay inside the release planner');
+requirePolicy(!workflow.includes('github.event.before'), 'release eligibility must not depend on one push range');
+requirePolicy(
+  workflow.includes("steps.package_changes.outputs.hasReleaseWork == 'true'"),
+  'stable publishing must require incomplete release work',
+);
+requirePolicy(
+  rootPackage.scripts.release === 'node scripts/release-packages.mjs',
+  'stable publishing must use the idempotent package reconciler',
+);
 
 if (workflow.includes('SHIELDED_NPMJS_TOKEN')) {
   const recovery = job('token-recovery');
