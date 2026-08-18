@@ -65,3 +65,12 @@ commitment for this repository.
 
 Open an issue or pull request for non-sensitive policy improvements. Send
 sensitive policy concerns to `security@shielded.io`.
+
+## Known dependency exception
+
+The root [`osv-scanner.toml`](./osv-scanner.toml) contains a time-bounded
+exception for [GHSA-848j-6mx2-7j84](https://osv.dev/vulnerability/GHSA-848j-6mx2-7j84).
+It is currently pulled only by the build-time browser polyfill dependency,
+not by the wallet's shipped runtime cryptography, and no fixed upstream
+`elliptic` release is available. The exception expires on 2026-11-30 and must
+be reassessed before renewal.
