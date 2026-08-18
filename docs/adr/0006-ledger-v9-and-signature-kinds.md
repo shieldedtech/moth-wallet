@@ -57,8 +57,8 @@ that blocker, so this is a custody feature, not only a fork requirement.
 | devnet | `2000000` |
 | stagenet (node `state_getRuntimeVersion.specVersion`) | `2000000` |
 
-Moth lists devnet as supported and pins v8 against it. Whether that combination still works
-is an open question below, but the split is real and devnet is on the far side of it.
+Moth lists devnet as supported and pins v8 against it. **That combination is broken** —
+see "Fork incompatibility, measured" below.
 
 Stagenet — the MNF demo network ([stagenet.md]) — runs node `2.0.0-d9729c13`, RPC at
 `wss://rpc.stagenet.shielded.tools`, indexer at
@@ -228,6 +228,46 @@ Note the repo-root `resolutions` block pins `@midnight-ntwrk/ledger-v8: 8.1.0` a
 | Faucet | `cli/src/commands/airdrop.ts`, `core/src/types/network.ts` | Implement the real request; add `faucetUrl`; drop the hardcoded devnet gate |
 | Fixtures | `packages/mock-dapp/src/night-transfer-fixture.ts(+.test)` | Version-pin or route through the seam |
 
+## Fork incompatibility, measured
+
+Cross-decoding real transactions from live networks on 2026-08-18, using both ledger modules
+in one process:
+
+| Network | protocolVersion | Transaction wire tag | ledger-v8 | ledger-v9 |
+|---|---|---|---|---|
+| preprod | `1000000` | `transaction[v9](signature[v1],proof,pedersen-schnorr[v1])` | **decodes** | rejects |
+| devnet | `2000000` | `transaction[v12](signature[v2],proof,pedersen-schnorr[v1])` | rejects | **decodes** |
+
+Each rejection is a header-tag mismatch, raised before any structural parsing. Three
+consequences:
+
+1. **`protocolVersion` is the ledger generation.** `1000000` is v8 and `2000000` is v9, for
+   transactions at least. This is what the network selection can key on.
+2. **Moth's devnet support is already broken.** A v8 build against devnet fails on the first
+   transaction it meets — it does not degrade, it does not partially work. So the v9 work is
+   a *fix* for a network Moth already claims to support, not only preparation for a future
+   fork. Preprod and preview are confirmed working on v8, consistent with their `1000000`.
+3. **There is no cross-version transaction compatibility in either direction.** #629 declined
+   to assert this; measured, it is a clean mutual rejection. Any design that assumed a v9
+   build could read pre-fork history, or a v8 build could limp along post-fork, is unsound.
+
+The `signature[v1]` -> `signature[v2]` bump in the tag is the same change as the `Signature`
+type going from bare hex to `{tag, value}` — the wire format and the TypeScript type moved
+together.
+
+**Not everything forked.** Both zswap and DUST collapsed Merkle updates are tagged
+`merkle-tree-collapsed-update[v1]` on both networks, and *both* ledgers decode *both*
+networks' updates. Parts of the sync path are format-stable across the fork; transactions are
+not. So "does v8 work against devnet" has no single answer — the Merkle sync would proceed
+and the transaction handling would fail, which is a worse failure mode than a clean refusal
+and an argument for selecting the ledger up front from `protocolVersion` rather than
+discovering the mismatch mid-sync.
+
+These tags are pinned in `packages/core/tests/unit/ledger/fork-incompatibility.test.ts`,
+asserted through each module's own error message so the test needs neither the network nor
+multi-kilobyte fixtures.
+
+
 ## Single-build feasibility
 
 One build can carry both stacks. This was tested, not assumed, on 2026-08-18.
@@ -283,16 +323,15 @@ libraries.
 
 ## Open questions
 
-1. **Does `protocolVersion 2000000` mean ledger v9?** Strongly implied by devnet/stagenet
-   sitting there while the other four are at `1000000`, but not proven — the SDK deliberately
-   keeps the fork version out of code ([midnight-wallet#628] calls it "not-yet-final"), and
-   `MinSupportedVersion`/`MaxSupportedVersion` are `0n`/`MAX_SAFE_INTEGER` with no mapping.
-2. **Does Moth's v8 stack still work against devnet today?** If not, devnet support is
-   already broken and this work is a fix, not a feature. Empirically testable and should be
-   answered before implementation is scoped.
-3. **Cross-version state compatibility** — whether v9 can deserialize v8 bytes, and whether
-   commitments and token types match across versions. [midnight-wallet#629] explicitly
-   declines to assert this: "separate open questions for the ledger team".
+1. ~~Does `protocolVersion 2000000` mean ledger v9?~~ **Answered:** yes, for transactions —
+   see "Fork incompatibility, measured". Note the SDK still keeps the fork version out of its
+   own code ([midnight-wallet#628] calls it "not-yet-final"), so this mapping is measured
+   behavior, not a published constant, and should be re-checked if the tags move.
+2. ~~Does Moth's v8 stack still work against devnet today?~~ **Answered:** no. Transactions
+   fail on a header-tag mismatch. Preprod and preview work, matching their `1000000`.
+3. ~~Cross-version state compatibility~~ **Partly answered:** transactions are mutually
+   unreadable; collapsed Merkle updates are shared. Whether *commitments and token types*
+   match across versions is still open and still belongs to the ledger team.
 4. **Proof server and indexer compatibility** with v9, and whether the indexer `api/v4`
    contract is unchanged.
 5. **Which ledger-v9 scope to depend on** — `@midnight-ntwrk` or `@midnightntwrk`. Identical
