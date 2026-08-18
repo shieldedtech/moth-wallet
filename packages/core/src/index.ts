@@ -1,8 +1,9 @@
 // Types
 export * from './types/index.js';
-export type { NetworkConfig, NetworkEndpoints, ProverConfig } from './types/network.js';
+export type { NetworkConfig, NetworkEndpoints, ProverConfig, LedgerVersion } from './types/network.js';
 export {
   DEFAULT_NETWORKS,
+  resolveLedgerVersion,
   validateNetworkUrl,
   validateNetworkConfig,
   serverProver,
@@ -25,6 +26,12 @@ export { Roles } from './wallet/address.js';
 export { encryptKeystore, decryptKeystore, type EncryptedKeystore } from './wallet/keystore.js';
 export { deriveAllAddressesFromSeed, deriveRawKeys, deriveShieldedPublicKeys, decodeBech32mAddress } from './wallet/address.js';
 export { signMessage, signedMessageBytes, type SignEncoding, type SignedMessage } from './wallet/sign-message.js';
+export {
+  signatureKindOf,
+  unwrapSignatureValue,
+  type SignatureKind,
+  type TaggedOrBare,
+} from './wallet/signature-encoding.js';
 export { deriveAppSecret } from './wallet/app-secret.js';
 export { loadBatchFile, executeBatchTransfer, batchExitCode, type BatchTransferEntry, type BatchTransferResult, type BatchTransferSummary } from './wallet/batch-transfer.js';
 

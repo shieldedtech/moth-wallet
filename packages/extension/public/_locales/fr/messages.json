@@ -704,6 +704,9 @@
   "network_descQanet": {
     "message": "Réseau d'assurance qualité"
   },
+  "network_descStagenet": {
+    "message": "Réseau de démonstration sur le registre v9"
+  },
   "network_endpointUrls": {
     "message": "URL des endpoints"
   },

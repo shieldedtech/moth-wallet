@@ -44,6 +44,15 @@ describe('signMessage', () => {
     expect(() => signMessage(sh, 'devnet', '!!!!', 'base64')).toThrow();
   });
 
+  it('reports the signature kind, and never stringifies a tagged value', async () => {
+    const {signature, verifyingKey, signatureKind} = signMessage(await seedHex(), 'devnet', 'x', 'text');
+    // v8 has only Schnorr; v9 will report the kind the keystore was built with.
+    expect(signatureKind).toBe('schnorr');
+    expect(signature).not.toBe('[object Object]');
+    expect(verifyingKey).not.toBe('[object Object]');
+    expect(typeof signature).toBe('string');
+  });
+
   it('derives a network-independent verifying key', async () => {
     const sh = await seedHex();
     expect(signMessage(sh, 'devnet', 'x', 'text').verifyingKey).toBe(

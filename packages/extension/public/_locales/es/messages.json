@@ -704,6 +704,9 @@
   "network_descQanet": {
     "message": "Red de control de calidad"
   },
+  "network_descStagenet": {
+    "message": "Red de demostración en el ledger v9"
+  },
   "network_endpointUrls": {
     "message": "URLs de endpoints"
   },

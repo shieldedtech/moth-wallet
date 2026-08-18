@@ -704,6 +704,9 @@
   "network_descQanet": {
     "message": "Netzwerk für Qualitätssicherung"
   },
+  "network_descStagenet": {
+    "message": "Demonetzwerk auf dem v9-Ledger"
+  },
   "network_endpointUrls": {
     "message": "Endpunkt-URLs"
   },

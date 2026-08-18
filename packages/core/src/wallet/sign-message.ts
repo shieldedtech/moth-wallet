@@ -11,6 +11,12 @@
 
 import { createKeystore } from '@midnightntwrk/wallet-sdk/unshielded';
 import { Roles, deriveRawKeys } from './address.js';
+import {
+  signatureKindOf,
+  unwrapSignatureValue,
+  type SignatureKind,
+  type TaggedOrBare,
+} from './signature-encoding.js';
 
 export type SignEncoding = 'hex' | 'base64' | 'text';
 
@@ -22,6 +28,8 @@ export interface SignedMessage {
   signature: string;
   /** Verifying (public) key in the keystore's native hex encoding. */
   verifyingKey: string;
+  /** The algorithm that produced the signature. Always `schnorr` on ledger v8. */
+  signatureKind: SignatureKind;
 }
 
 const MESSAGE_PREFIX = 'midnight_signed_message';
@@ -69,9 +77,12 @@ export function signMessage(
   const payload = signedMessageBytes(decodeData(data, encoding));
   const keys = deriveRawKeys(seedHex);
   const keystore = createKeystore(keys[Roles.NightExternal], networkId);
+  const signature = keystore.signData(payload) as TaggedOrBare;
+  const verifyingKey = keystore.getPublicKey() as TaggedOrBare;
   return {
     data,
-    signature: String(keystore.signData(payload)),
-    verifyingKey: String(keystore.getPublicKey()),
+    signature: unwrapSignatureValue(signature),
+    verifyingKey: unwrapSignatureValue(verifyingKey),
+    signatureKind: signatureKindOf(signature),
   };
 }
