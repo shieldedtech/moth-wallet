@@ -2958,7 +2958,6 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@shieldedtech/moth-tui@workspace:packages/tui"
   dependencies:
-    "@midnight-ntwrk/ledger-v8": "npm:8.1.0"
     "@midnightntwrk/wallet-sdk": "npm:^1.2.0"
     "@shieldedtech/moth-wallet": "npm:^0.12.1"
     "@types/react": "npm:^19.0.0"
