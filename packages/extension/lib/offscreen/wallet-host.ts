@@ -9,6 +9,7 @@ import { requestMeter, type MeterSnapshot } from './request-meter';
 import {
   createMothBrowser,
   initLedger,
+  initSdk,
   resolveLedgerVersion,
   startWalletSync,
   buildTransferTransaction,
@@ -153,13 +154,19 @@ export async function walletCreate(
   network: string,
   birthday?: number,
   mnemonic?: string,
+  signatureKind: 'schnorr' | 'ecdsa' = 'schnorr',
 ) {
-  const { mnemonic: phrase, ...info } = await (await getMoth(network)).wallets.generate(
+  const moth = await getMoth(network);
+  // Schnorr derives without the SDK seam; ECDSA does not exist on v8 and needs
+  // the v9 generation loaded before any address is derived.
+  if (signatureKind === 'ecdsa') await initSdk('v9');
+  const { mnemonic: phrase, ...info } = await moth.wallets.generate(
     name,
     passphrase,
     network,
     birthday,
     mnemonic,
+    signatureKind,
   );
   return { info, mnemonic: phrase };
 }

@@ -1268,6 +1268,24 @@
   "setup_networkNote": {
     "message": "Modifiable à tout moment dans Paramètres, sous Réseau."
   },
+  "setup_signingTitle": {
+    "message": "Algorithme de signature"
+  },
+  "setup_signingSchnorr": {
+    "message": "Schnorr (recommandé)"
+  },
+  "setup_signingSchnorrDesc": {
+    "message": "Fonctionne sur tous les réseaux Midnight."
+  },
+  "setup_signingEcdsa": {
+    "message": "ECDSA"
+  },
+  "setup_signingEcdsaDesc": {
+    "message": "Pour la conservation de clés secp256k1, via un HSM ou un KMS."
+  },
+  "setup_signingEcdsaWarning": {
+    "message": "ECDSA donne à ce compte une adresse unshielded différente, et aucune sur les réseaux utilisant encore l'ancien registre. Ce choix est définitif après la création du compte."
+  },
   "setup_phraseTitle": {
     "message": "Notez votre phrase secrète"
   },

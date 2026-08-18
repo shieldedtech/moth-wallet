@@ -25,7 +25,8 @@ type Dispatch = {
 export const hostDispatch: Dispatch = {
   // walletList wraps an already-async wallets.list() — flatten the extra Promise.
   'os/walletList': async (host, d) => host.walletList(d.network),
-  'os/walletCreate': (host, d) => host.walletCreate(d.name, d.passphrase, d.network, d.birthday, d.mnemonic),
+  'os/walletCreate': (host, d) =>
+    host.walletCreate(d.name, d.passphrase, d.network, d.birthday, d.mnemonic, d.signatureKind),
   'os/walletImport': (host, d) => host.walletImport(d.name, d.mnemonic, d.passphrase, d.network),
   'os/walletRemove': (host, d) => host.walletRemove(d.name, d.network),
   'os/walletSetActive': (host, d) => host.walletSetActive(d.name, d.network),

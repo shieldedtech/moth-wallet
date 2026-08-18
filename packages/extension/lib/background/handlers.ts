@@ -332,6 +332,7 @@ export function registerHandlers(): void {
       network: target,
       birthday: data.birthday ?? (await chainTip(target)),
       mnemonic: data.mnemonic,
+      signatureKind: data.signatureKind,
     });
   });
 

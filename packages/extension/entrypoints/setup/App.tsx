@@ -24,6 +24,9 @@ import { browser } from 'wxt/browser';
 // (@scure BIP-39), so it stays out of the ledger WASM the barrel would drag in —
 // generating the phrase in-page keeps "Create" instant.
 import { generateMnemonic24 } from '@shieldedtech/moth-wallet/wallet/mnemonic';
+// Also a subpath, for the same reason as the line above: types/network is pure
+// config and URL checks, so asking which ledger a network speaks costs nothing.
+import { DEFAULT_NETWORKS, resolveLedgerVersion } from '@shieldedtech/moth-wallet/types/network';
 import { t } from '../../lib/i18n';
 import { sendMessage } from '../../lib/messaging/protocol';
 import { holdSetupPort } from '../../lib/ui/setup-port';
@@ -65,6 +68,7 @@ export function App() {
   // to the auto-assigned "Account N"). Stored as the wallet's label — the
   // storage name stays the immutable "Account-N" key.
   const [accountName, setAccountName] = useState('');
+  const [signatureKind, setSignatureKind] = useState<'schnorr' | 'ecdsa'>('schnorr');
   const [walletCount, setWalletCount] = useState(0);
   // Held open so the side panel shows its "finish setup in the tab" screen for
   // the whole flow. Released only once setup is fully complete (the Done step,
@@ -117,7 +121,7 @@ export function App() {
       const label = accountName.trim();
       if (mode === 'create') {
         // Persist the phrase the user already backed up on the phrase step.
-        await sendMessage('walletCreate', { name: storageName, passphrase, network, mnemonic });
+        await sendMessage('walletCreate', { name: storageName, passphrase, network, mnemonic, signatureKind });
       } else {
         await sendMessage('walletImport', { name: storageName, mnemonic: words.join(' ').trim(), passphrase, network });
       }
@@ -197,8 +201,9 @@ export function App() {
         busy={busy}
         firstRun={!hasWallets}
         onBack={() => setStep(mode === 'create' ? 'phrase' : 'words')}
-        onContinue={(chosen) => {
+        onContinue={(chosen, kind) => {
           setNetwork(chosen);
+          setSignatureKind(kind);
           setStep('password');
         }}
       />
@@ -419,17 +424,24 @@ function NetworkStep({
   busy: boolean;
   firstRun: boolean;
   onBack: () => void;
-  onContinue: (network: SupportedNetwork) => void | Promise<void>;
+  onContinue: (network: SupportedNetwork, signatureKind: 'schnorr' | 'ecdsa') => void | Promise<void>;
 }) {
   const net = useNetworkConfig();
   const [saving, setSaving] = useState(false);
+  const [kind, setKind] = useState<'schnorr' | 'ecdsa'>('schnorr');
   const working = saving || busy;
+
+  // ECDSA exists only on ledger v9. On a v8 network there is nothing to choose,
+  // so the control is absent rather than disabled.
+  const preset = DEFAULT_NETWORKS[net.network];
+  const offersEcdsa = preset !== undefined && resolveLedgerVersion(preset) === 'v9';
+  const effectiveKind = offersEcdsa ? kind : 'schnorr';
 
   const save = async () => {
     setSaving(true);
     try {
       await net.save();
-      await onContinue(net.network);
+      await onContinue(net.network, effectiveKind);
     } finally {
       setSaving(false);
     }
@@ -443,6 +455,35 @@ function NetworkStep({
       </p>
       <div className="flex max-w-[520px] flex-col gap-5 pt-6">
         <NetworkFields state={net} />
+        {offersEcdsa ? (
+          <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
+            <legend className="p-0 text-sm font-bold">{t('setup_signingTitle')}</legend>
+            {(['schnorr', 'ecdsa'] as const).map((option) => (
+              <label key={option} className="flex cursor-pointer items-start gap-2 text-sm">
+                <input
+                  type="radio"
+                  name="signatureKind"
+                  className="mt-1"
+                  checked={kind === option}
+                  onChange={() => setKind(option)}
+                />
+                <span>
+                  <span className="block font-bold">
+                    {option === 'schnorr' ? t('setup_signingSchnorr') : t('setup_signingEcdsa')}
+                  </span>
+                  <span className="block text-muted-foreground">
+                    {option === 'schnorr' ? t('setup_signingSchnorrDesc') : t('setup_signingEcdsaDesc')}
+                  </span>
+                </span>
+              </label>
+            ))}
+            {kind === 'ecdsa' ? (
+              <NoteCard variant="warning" icon={TriangleAlert}>
+                {t('setup_signingEcdsaWarning')}
+              </NoteCard>
+            ) : null}
+          </fieldset>
+        ) : null}
         <NoteCard variant="neutral" icon={Globe}>
           {t('setup_networkNote')}
         </NoteCard>

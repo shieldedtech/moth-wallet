@@ -109,7 +109,7 @@ export const offscreen = {
     await ensureOffscreen();
     return offscreenSend('os/walletList', { network });
   },
-  async walletCreate(data: { name: string; passphrase: string; network: string; birthday?: number; mnemonic?: string }) {
+  async walletCreate(data: { name: string; passphrase: string; network: string; birthday?: number; mnemonic?: string; signatureKind?: 'schnorr' | 'ecdsa' }) {
     await ensureOffscreen();
     return offscreenSend('os/walletCreate', data);
   },
