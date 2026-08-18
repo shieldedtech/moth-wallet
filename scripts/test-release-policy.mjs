@@ -5,6 +5,7 @@ import {readFileSync} from 'node:fs';
 
 const workflow = readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
 const rootPackage = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+const publishingRunbook = readFileSync(new URL('../NPM_PUBLISHING.md', import.meta.url), 'utf8');
 const credentialPattern = /(?:SHIELDED_NPMJS_TOKEN|NPM_TOKEN|NODE_AUTH_TOKEN)/;
 
 function requirePolicy(condition, message) {
@@ -58,9 +59,24 @@ requirePolicy(
 );
 requirePolicy(
   workflow.includes(
-    "- name: Detect incomplete package releases\n        if: ${{ steps.releases.outputs.hasChangesets == 'false' }}",
+    "- name: Detect incomplete package releases\n        if: ${{ steps.releases.outputs.hasReleases == 'false' }}",
   ),
-  'registry reconciliation must only gate the stable no-changeset path',
+  'registry reconciliation must run whenever no package release is pending',
+);
+requirePolicy(
+  workflow.includes(
+    "- name: Create or update version PR\n        if: ${{ steps.releases.outputs.hasReleases == 'true' }}",
+  ) && workflow.includes('github-token: ${{ github.token }}'),
+  'the version PR action must use the repository GITHUB_TOKEN and run only for releasable changesets',
+);
+requirePolicy(
+  !workflow.includes('secrets.') && !workflow.includes('MIDNIGHTCI_PACKAGES_WRITE'),
+  'the release workflow must not depend on PATs or repository secrets',
+);
+requirePolicy(
+  !workflow.includes('steps.releases.outputs.hasChangesets') &&
+    !workflow.includes('echo "hasChangesets='),
+  'empty changesets must not select the version-PR path or block stable reconciliation',
 );
 requirePolicy(!workflow.includes('UNPUBLISHED_WORKSPACES'), 'release validation must not shuttle plan JSON through env');
 requirePolicy(!workflow.includes('mapfile'), 'release validation must stay inside the release planner');
@@ -72,6 +88,12 @@ requirePolicy(
 requirePolicy(
   rootPackage.scripts.release === 'node scripts/release-packages.mjs',
   'stable publishing must use the idempotent package reconciler',
+);
+requirePolicy(
+  publishingRunbook.includes('Approve workflows') &&
+    publishingRunbook.includes('GITHUB_TOKEN') &&
+    !publishingRunbook.includes('MIDNIGHTCI_PACKAGES_WRITE'),
+  'the secretless version-PR approval step must be documented',
 );
 
 if (workflow.includes('SHIELDED_NPMJS_TOKEN')) {
