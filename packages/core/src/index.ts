@@ -13,6 +13,16 @@ export {
   describeProver,
 } from './types/network.js';
 
+// Ledger seam (v8 / v9)
+export {
+  initLedger,
+  ledger,
+  ledgerFor,
+  activeLedgerVersion,
+  resetLedgerRegistry,
+  type LedgerModule,
+} from './ledger/index.js';
+
 // Wallet
 export { WalletManager } from './wallet/manager.js';
 export {
