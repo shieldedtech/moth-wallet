@@ -41,8 +41,13 @@ Trusted Publishing releases automatically.
 4. After review, merging the version PR makes the same workflow publish the
    stable versions, push tags, and create GitHub Releases.
 
-The workflow uses `MIDNIGHTCI_PACKAGES_WRITE` only for GitHub operations needed
-to open the Changesets PR. npm publishing does not use that secret.
+The workflow uses the repository's built-in `GITHUB_TOKEN` to open the
+Changesets PR. It does not use a PAT, GitHub App credential, or npm token.
+
+When `GITHUB_TOKEN` creates or updates the version PR, GitHub creates its
+`pull_request` workflow runs in an approval-required state. A maintainer must
+select **Approve workflows** on the version PR before its required checks run.
+This is GitHub's documented recursion protection for automated pull requests.
 
 ## Public release approval
 
@@ -89,6 +94,8 @@ intended dist-tag.
   repository and npm package are public.
 - **Release commit mismatch:** rerun the workflow for the commit that introduced
   the package version; never publish that version from a later source revision.
+- **Version PR checks await approval:** select **Approve workflows** on the PR,
+  then wait for all required checks before review and merge.
 
 ## Credential cleanup
 
