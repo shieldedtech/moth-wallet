@@ -478,7 +478,7 @@ function NetworkStep({
               </label>
             ))}
             {kind === 'ecdsa' ? (
-              <NoteCard variant="warning" icon={TriangleAlert}>
+              <NoteCard variant="error" icon={TriangleAlert}>
                 {t('setup_signingEcdsaWarning')}
               </NoteCard>
             ) : null}

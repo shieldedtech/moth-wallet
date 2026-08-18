@@ -8,7 +8,6 @@ import { installBundledReference, hasBundledReference } from './bundled-preseed'
 import { requestMeter, type MeterSnapshot } from './request-meter';
 import {
   createMothBrowser,
-  initLedger,
   initSdk,
   resolveLedgerVersion,
   startWalletSync,
@@ -105,14 +104,15 @@ function serializeForClients(balances: WalletBalances): string {
 type Moth = ReturnType<typeof createMothBrowser>;
 let cachedMoth: { network: string; moth: Moth } | null = null;
 
-// Async because the ledger WASM the network needs must be loaded before any
-// core call reaches the seam. initLedger caches, so this is a no-op after the
-// first call for a given version.
+// Async because the ledger WASM and the SDK generation the network needs must
+// both be loaded before any core call reaches a seam — deriveWalletKeys builds
+// a keystore, which is SDK-side. initSdk loads the matching ledger too and
+// caches, so this is a no-op after the first call for a given version.
 async function getMoth(network: string): Promise<Moth> {
   if (cachedMoth?.network !== network) {
     cachedMoth = { network, moth: createMothBrowser({ network }) };
   }
-  await initLedger(resolveLedgerVersion(cachedMoth.moth.config));
+  await initSdk(resolveLedgerVersion(cachedMoth.moth.config));
   return cachedMoth.moth;
 }
 
@@ -629,7 +629,7 @@ export async function registerDust(
   dustAddress?: string,
 ): Promise<{ txHash: string | null; notYet?: DustNotYet }> {
   // Load the ledger this network speaks before any core call reaches the seam.
-  await initLedger(resolveLedgerVersion(network));
+  await initSdk(resolveLedgerVersion(network));
   return trackOp(async () => {
     await ensureProver(network);
     const wallet = await syncEnsure(seedHex, walletName, network);
@@ -674,7 +674,7 @@ export async function deregisterDust(
   network: NetworkConfig,
 ): Promise<{ txHash: string }> {
   // Load the ledger this network speaks before any core call reaches the seam.
-  await initLedger(resolveLedgerVersion(network));
+  await initSdk(resolveLedgerVersion(network));
   return trackOp(async () => {
     await ensureProver(network);
     const wallet = await syncEnsure(seedHex, walletName, network);
@@ -696,7 +696,7 @@ export async function transferBuild(
   requests: TransferRequestDTO[],
 ): Promise<{ txHex: string }> {
   // Load the ledger this network speaks before any core call reaches the seam.
-  await initLedger(resolveLedgerVersion(network));
+  await initSdk(resolveLedgerVersion(network));
   return trackOp(async () => {
     await ensureProver(network);
     const wallet = await syncEnsure(seedHex, walletName, network);
@@ -722,7 +722,7 @@ export async function balanceTransaction(
   sealed: boolean,
 ): Promise<{ txHex: string }> {
   // Load the ledger this network speaks before any core call reaches the seam.
-  await initLedger(resolveLedgerVersion(network));
+  await initSdk(resolveLedgerVersion(network));
   return trackOp(async () => {
     await ensureProver(network);
     const wallet = await syncEnsure(seedHex, walletName, network);
@@ -749,7 +749,7 @@ export async function makeIntent(
   payFees: boolean,
 ): Promise<{ txHex: string }> {
   // Load the ledger this network speaks before any core call reaches the seam.
-  await initLedger(resolveLedgerVersion(network));
+  await initSdk(resolveLedgerVersion(network));
   return trackOp(async () => {
     const wallet = await syncEnsure(seedHex, walletName, network);
     const intent = await buildSwapIntent(
@@ -772,7 +772,7 @@ export async function transferSubmit(
   txHex: string,
 ): Promise<void> {
   // Load the ledger this network speaks before any core call reaches the seam.
-  await initLedger(resolveLedgerVersion(network));
+  await initSdk(resolveLedgerVersion(network));
   return trackOp(async () => {
     const wallet = await syncEnsure(seedHex, walletName, network);
     const transaction = ledger.Transaction.deserialize<ledger.SignatureEnabled, ledger.Proof, ledger.Binding>(
