@@ -375,7 +375,7 @@ export function preSeedNewWallet(
 
     // Keys arrive pre-derived (Option A) — no seed to re-derive from.
     const shieldedSecretKeys = walletKeys.shieldedSecretKeys;
-    const ks = createKeystoreFor(walletKeys.nightExternalKey, networkId);
+    const ks = createKeystoreFor(walletKeys.nightExternalKey, networkId, walletKeys.signatureKind);
     const pk = sdk().unshielded.PublicKey.fromKeyStore(ks);
 
     // Parse reference states

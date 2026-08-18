@@ -22,6 +22,13 @@ export interface WalletKeys {
   readonly shieldedSecretKeys: ledger.ZswapSecretKeys;
   readonly dustSecretKey: ledger.DustSecretKey;
   readonly nightExternalKey: Uint8Array;
+  /**
+   * The signature kind this wallet's unshielded identity uses. It has to travel
+   * with the keys: the same secret yields a different unshielded address under
+   * ECDSA than under schnorr, so a wallet that syncs the wrong one watches an
+   * address it never gave out and reports an empty balance.
+   */
+  readonly signatureKind: 'schnorr' | 'ecdsa';
 }
 
 export interface AddressEncoding {

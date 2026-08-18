@@ -18,7 +18,7 @@ import type {UnshieldedWallet} from '@midnightntwrk/wallet-sdk/unshielded';
 
 import {HDWallet, Roles} from '@midnightntwrk/wallet-sdk/hd';
 import {setNetworkId} from '@midnight-ntwrk/midnight-js/network-id';
-import {resolveProverConfig, type NetworkConfig} from '../types/network.js';
+import {resolveProverConfig, type NetworkConfig, resolveLedgerVersion} from '../types/network.js';
 import {createWalletProvingService} from '../proof/provider.js';
 import {NIGHT_TOKEN_ID, formatNight} from '../types/tokens.js';
 import {formatDustBalance} from '../wallet/balance-format.js';
@@ -26,6 +26,8 @@ import {ensureEmptyRefCache, preSeedNewWallet} from './preseed.js';
 import {InMemorySyncStateStore, syncStateKey, type SyncStateStore, type WalletPart} from './sync-store.js';
 import {dedupingShieldedBuilder, dedupingDustBuilder} from './sdk-dedup.js';
 import {sdk, createKeystoreFor} from '../sdk/index.js';
+import {activeLedgerVersion} from '../ledger/index.js';
+import {verifyNetworkLedger} from '../ledger/protocol-version.js';
 import {overallSyncProgress, type SubWallet} from './progress.js';
 import {partsToSeed} from './preseed-parts.js';
 import type {WalletKeys} from './operations.js';
@@ -415,6 +417,17 @@ export async function startWalletSync(
   options?: WalletSyncOptions
 ): Promise<SyncedWallet> {
   installLogSuppression();
+
+  // Check the ledger before a single block is read. The fork is partial —
+  // collapsed Merkle updates are tagged [v1] and decode under both ledgers,
+  // while transactions do not — so a mismatched wallet syncs along happily and
+  // only fails when it first touches a transaction. Refusing here turns a late,
+  // unreadable failure into an immediate, legible one.
+  await verifyNetworkLedger(network, {
+    using: activeLedgerVersion() ?? resolveLedgerVersion(network),
+    action: 'sync',
+  });
+
   await ensureWebSocket();
   const store = await resolveSyncStore(options?.syncStore);
 
@@ -426,7 +439,9 @@ export async function startWalletSync(
   // Option A: keys arrive pre-derived; the seed was dropped at unlock.
   const shieldedSecretKeys = keys.shieldedSecretKeys;
   const dustSecretKey = keys.dustSecretKey;
-  const keystore = createKeystoreFor(keys.nightExternalKey, network.id);
+  // The watched unshielded address depends on the kind; getting this wrong
+  // means syncing an address the user was never shown.
+  const keystore = createKeystoreFor(keys.nightExternalKey, network.id, keys.signatureKind);
 
   const indexerHttpUrl = network.indexerUrl;
   const indexerWsUrl = toWsUrl(indexerHttpUrl) + '/ws';
