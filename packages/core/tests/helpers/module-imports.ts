@@ -92,11 +92,17 @@ const FROM_STATEMENT =
 const SIDE_EFFECT_STATEMENT = /^[ \t]*import[ \t]*['"]([^'"]+)['"]/gm;
 
 /**
- * `import('m')` with a literal specifier, tolerating any number of leading
- * bundler pragmas, a trailing comma, and arbitrary wrapping — a formatter moving
- * a long call onto several lines must not blind the guard.
+ * `import('m')` with a literal specifier, tolerating a trailing comma and
+ * arbitrary wrapping — a formatter moving a long call onto several lines must not
+ * blind the guard.
+ *
+ * Leading bundler pragmas need no handling here because `stripComments` has
+ * already replaced them with spaces, which `\s*` absorbs. Matching them in this
+ * pattern as well would nest a lazy quantifier inside a repetition group, which
+ * backtracks exponentially on a run of overlapping block-comment delimiters — a
+ * real ReDoS that CodeQL flagged, and pointless work besides.
  */
-const DYNAMIC_LITERAL = /\bimport\s*\(\s*(?:\/\*[\s\S]*?\*\/\s*)*['"]([^'"]+)['"]\s*,?\s*\)/g;
+const DYNAMIC_LITERAL = /\bimport\s*\(\s*['"]([^'"]+)['"]\s*,?\s*\)/g;
 
 /** Any `import(` call, literal or not. */
 const DYNAMIC_ANY = /\bimport\s*\(([^)]*)\)/g;
