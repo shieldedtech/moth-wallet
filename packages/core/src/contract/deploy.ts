@@ -13,7 +13,7 @@ import {NodeZkConfigProvider} from '@midnight-ntwrk/midnight-js-node-zk-config-p
 import {indexerPublicDataProvider} from '@midnight-ntwrk/midnight-js-indexer-public-data-provider';
 import {levelPrivateStateProvider} from '@midnight-ntwrk/midnight-js-level-private-state-provider';
 import {HDWallet, Roles} from '@midnightntwrk/wallet-sdk/hd';
-import {createKeystore, PublicKey} from '@midnightntwrk/wallet-sdk/unshielded';
+import {createKeystoreFor, sdk} from '../sdk/index.js';
 import {MidnightBech32m, UnshieldedAddress} from '@midnightntwrk/wallet-sdk/address-format';
 import {homedir} from 'node:os';
 
@@ -250,7 +250,7 @@ export async function deployContract(options: DeployOptions): Promise<Transactio
     dustSecretKey = activeLedger().DustSecretKey.fromSeed(keyResult.keys[Roles.Dust]);
     nightExternalKey = keyResult.keys[Roles.NightExternal];
   }
-  const keystore = createKeystore(nightExternalKey, network.id);
+  const keystore = createKeystoreFor(nightExternalKey, network.id);
 
   // Build wallet provider from facade (same as mn-tui's buildWalletProvider)
   if (!syncedWallet?.facade) {

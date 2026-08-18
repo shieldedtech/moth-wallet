@@ -7,18 +7,15 @@
 import * as Rx from 'rxjs';
 import type * as ledger from '@midnight-ntwrk/ledger-v8';
 import {ledger as activeLedger} from '../ledger/index.js';
-import {DefaultConfiguration, WalletFacade, type FacadeState} from '@midnightntwrk/wallet-sdk/facade';
-import {
-  makeDefaultSubmissionService,
-  type SubmissionService,
-} from '@midnightntwrk/wallet-sdk/capabilities/submission';
+import type {DefaultConfiguration, WalletFacade, FacadeState} from '@midnightntwrk/wallet-sdk/facade';
+import type {SubmissionService} from '@midnightntwrk/wallet-sdk/capabilities/submission';
 // CustomDustWallet/CustomShieldedWallet let v8's dedup builders wrap the sync
 // pipeline (see sdk-dedup); the plain wallets remain for non-deduped paths.
-import {DustWallet, CustomDustWallet} from '@midnightntwrk/wallet-sdk/dust';
-import {ShieldedWallet, CustomShieldedWallet} from '@midnightntwrk/wallet-sdk/shielded';
-import {UnshieldedWallet, PublicKey, createKeystore} from '@midnightntwrk/wallet-sdk/unshielded';
-import {InMemoryTransactionHistoryStorage} from '@midnightntwrk/wallet-sdk';
-import {WalletEntrySchema, mergeWalletEntries} from '@midnightntwrk/wallet-sdk/facade';
+import type {DustWallet} from '@midnightntwrk/wallet-sdk/dust';
+import type {ShieldedWallet} from '@midnightntwrk/wallet-sdk/shielded';
+import type {UnshieldedWallet} from '@midnightntwrk/wallet-sdk/unshielded';
+
+
 import {HDWallet, Roles} from '@midnightntwrk/wallet-sdk/hd';
 import {setNetworkId} from '@midnight-ntwrk/midnight-js/network-id';
 import {resolveProverConfig, type NetworkConfig} from '../types/network.js';
@@ -28,6 +25,7 @@ import {formatDustBalance} from '../wallet/balance-format.js';
 import {ensureEmptyRefCache, preSeedNewWallet} from './preseed.js';
 import {InMemorySyncStateStore, syncStateKey, type SyncStateStore, type WalletPart} from './sync-store.js';
 import {dedupingShieldedBuilder, dedupingDustBuilder} from './sdk-dedup.js';
+import {sdk, createKeystoreFor} from '../sdk/index.js';
 import {overallSyncProgress, type SubWallet} from './progress.js';
 import {partsToSeed} from './preseed-parts.js';
 import type {WalletKeys} from './operations.js';
@@ -57,7 +55,7 @@ export {NIGHT_TOKEN_ID, formatNight};
 function makeSubmittedOnlySubmissionService(
   relayURL: URL,
 ): SubmissionService<ledger.FinalizedTransaction> {
-  const inner = makeDefaultSubmissionService<ledger.FinalizedTransaction>({relayURL});
+  const inner = sdk().submission.makeDefaultSubmissionService<ledger.FinalizedTransaction>({relayURL});
   return {
     submitTransaction: ((tx: ledger.FinalizedTransaction) =>
       inner.submitTransaction(tx, 'Submitted')) as SubmissionService<ledger.FinalizedTransaction>['submitTransaction'],
@@ -428,7 +426,7 @@ export async function startWalletSync(
   // Option A: keys arrive pre-derived; the seed was dropped at unlock.
   const shieldedSecretKeys = keys.shieldedSecretKeys;
   const dustSecretKey = keys.dustSecretKey;
-  const keystore = createKeystore(keys.nightExternalKey, network.id);
+  const keystore = createKeystoreFor(keys.nightExternalKey, network.id);
 
   const indexerHttpUrl = network.indexerUrl;
   const indexerWsUrl = toWsUrl(indexerHttpUrl) + '/ws';
@@ -545,7 +543,7 @@ export async function startWalletSync(
   if (savedShielded) {
     try {
       onProgress?.('Restoring shielded state from cache...');
-      shieldedWallet = CustomShieldedWallet(walletCfg, shieldedBuilder).restore(savedShielded);
+      shieldedWallet = sdk().shielded.CustomShieldedWallet(walletCfg, shieldedBuilder).restore(savedShielded);
       restoredFromCache = true;
     } catch {
       onProgress?.('Shielded cache corrupted, syncing from genesis...');
@@ -553,7 +551,7 @@ export async function startWalletSync(
     }
   }
   if (!shieldedWallet) {
-    shieldedWallet = CustomShieldedWallet(walletCfg, shieldedBuilder).startWithSecretKeys(shieldedSecretKeys);
+    shieldedWallet = sdk().shielded.CustomShieldedWallet(walletCfg, shieldedBuilder).startWithSecretKeys(shieldedSecretKeys);
   }
 
   // --- Unshielded wallet: try restore from cache ---
@@ -563,14 +561,14 @@ export async function startWalletSync(
   if (savedUnshielded) {
     try {
       onProgress?.('Restoring unshielded state from cache...');
-      unshieldedWallet = UnshieldedWallet(walletCfg).restore(savedUnshielded);
+      unshieldedWallet = sdk().unshielded.UnshieldedWallet(walletCfg).restore(savedUnshielded);
     } catch {
       onProgress?.('Unshielded cache corrupted, syncing from genesis...');
       await evictCachedState(store, name, network.id, 'unshielded');
     }
   }
   if (!unshieldedWallet) {
-    unshieldedWallet = UnshieldedWallet(walletCfg).startWithPublicKey(PublicKey.fromKeyStore(keystore));
+    unshieldedWallet = sdk().unshielded.UnshieldedWallet(walletCfg).startWithPublicKey(sdk().unshielded.PublicKey.fromKeyStore(keystore));
   }
 
   // --- Dust wallet: try restore from cache ---
@@ -590,14 +588,14 @@ export async function startWalletSync(
   if (savedDust) {
     try {
       onProgress?.('Restoring dust state from cache...');
-      dustWallet = CustomDustWallet(dustCfg, dustBuilder).restore(savedDust);
+      dustWallet = sdk().dust.CustomDustWallet(dustCfg, dustBuilder).restore(savedDust);
     } catch {
       onProgress?.('Dust cache corrupted, syncing from genesis...');
       await evictCachedState(store, name, network.id, 'dust');
     }
   }
   if (!dustWallet) {
-    dustWallet = CustomDustWallet(dustCfg, dustBuilder).startWithSecretKey(
+    dustWallet = sdk().dust.CustomDustWallet(dustCfg, dustBuilder).startWithSecretKey(
       dustSecretKey,
       activeLedger().LedgerParameters.initialParameters().dust
     );
@@ -609,7 +607,7 @@ export async function startWalletSync(
 
   // --- WalletFacade ---
   onProgress?.('Initializing wallet facade...');
-  const facade = await WalletFacade.init({
+  const facade = await sdk().facade.WalletFacade.init({
     configuration: walletCfg,
     // The SDK defaults to a proof server. Supply the service explicitly so
     // WASM mode follows the documented makeWasmProvingService() path.
@@ -790,13 +788,13 @@ async function loadHistoryStorage(
   if (saved) {
     try {
       onProgress?.('Restoring transaction history from cache...');
-      return InMemoryTransactionHistoryStorage.restore(saved, WalletEntrySchema, mergeWalletEntries);
+      return sdk().root.InMemoryTransactionHistoryStorage.restore(saved, sdk().facade.WalletEntrySchema, sdk().facade.mergeWalletEntries);
     } catch {
       onProgress?.('Transaction history cache corrupted, rebuilding from sync...');
       await evictCachedState(store, walletName, networkId, 'history');
     }
   }
-  return new InMemoryTransactionHistoryStorage(WalletEntrySchema, mergeWalletEntries);
+  return new (sdk().root.InMemoryTransactionHistoryStorage)(sdk().facade.WalletEntrySchema, sdk().facade.mergeWalletEntries);
 }
 
 async function saveCache(

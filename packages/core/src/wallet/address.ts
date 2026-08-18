@@ -20,6 +20,11 @@ import {
   DustAddress,
   MidnightBech32m,
 } from '@midnightntwrk/wallet-sdk/address-format';
+// Direct, not through the SDK seam, for the same reason the ledger import above
+// is direct: measured fork-invariant. The v8 and v9 SDKs derive the same
+// unshielded bech32m address from the same seed, and this function only reads
+// the address off the keystore — it never signs. Code that signs must use
+// createKeystoreFor, since the signature bytes do differ.
 import {createKeystore} from '@midnightntwrk/wallet-sdk/unshielded';
 import {setNetworkId} from '@midnight-ntwrk/midnight-js/network-id';
 import type {WalletAddresses} from '../types/wallet.js';

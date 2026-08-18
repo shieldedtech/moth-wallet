@@ -5,10 +5,17 @@
  * unprefixed data (the property that stops a signed message being a valid tx).
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import * as ledger from '@midnight-ntwrk/ledger-v8';
 import { signMessage, signedMessageBytes } from '../../../src/wallet/sign-message.js';
 import { testSeedHex as seedHex } from '../../helpers/seed.js';
+import { initSdk } from '../../../src/sdk/index.js';
+
+// Signing goes through the SDK seam: signature bytes differ across the fork,
+// so the keystore must come from the generation matching the ledger.
+beforeAll(async () => {
+  await initSdk('v8');
+});
 
 describe('signMessage', () => {
   it('prepends the midnight_signed_message prefix with the decoded byte length', () => {

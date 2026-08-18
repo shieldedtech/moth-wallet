@@ -9,7 +9,7 @@
 //   utf8(`midnight_signed_message:${byteLength}:`) ++ decodedData
 // where byteLength is the length of the decoded data in bytes.
 
-import { createKeystore } from '@midnightntwrk/wallet-sdk/unshielded';
+import {createKeystoreFor} from '../sdk/index.js';
 import { Roles, deriveRawKeys } from './address.js';
 import {
   signatureKindOf,
@@ -76,7 +76,7 @@ export function signMessage(
 ): SignedMessage {
   const payload = signedMessageBytes(decodeData(data, encoding));
   const keys = deriveRawKeys(seedHex);
-  const keystore = createKeystore(keys[Roles.NightExternal], networkId);
+  const keystore = createKeystoreFor(keys[Roles.NightExternal], networkId);
   const signature = keystore.signData(payload) as TaggedOrBare;
   const verifyingKey = keystore.getPublicKey() as TaggedOrBare;
   return {

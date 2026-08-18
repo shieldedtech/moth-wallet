@@ -30,6 +30,17 @@ export {
   verifyNetworkLedger,
 } from './ledger/protocol-version.js';
 
+// Wallet SDK seam (v8 / v9)
+export {
+  initSdk,
+  sdk,
+  sdkFor,
+  activeSdkVersion,
+  resetSdkRegistry,
+  createKeystoreFor,
+  type SdkModule,
+} from './sdk/index.js';
+
 // Wallet
 export { WalletManager } from './wallet/manager.js';
 export {

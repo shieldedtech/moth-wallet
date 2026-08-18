@@ -16,7 +16,7 @@ import * as Rx from 'rxjs';
 import type * as ledger from '@midnight-ntwrk/ledger-v8';
 import {ledger as activeLedger} from '../ledger/index.js';
 import {HDWallet, Roles} from '@midnightntwrk/wallet-sdk/hd';
-import {createKeystore} from '@midnightntwrk/wallet-sdk/unshielded';
+import {createKeystoreFor} from '../sdk/index.js';
 import type {SyncedWallet} from '../sync/wallet-sync.js';
 import type {WalletKeys} from '../sync/operations.js';
 
@@ -113,7 +113,7 @@ async function insertViaSDK(options: InsertVerifierKeyOptions): Promise<Transact
     dustSecretKey = activeLedger().DustSecretKey.fromSeed(keyResult.keys[Roles.Dust]);
     nightExternalKey = keyResult.keys[Roles.NightExternal];
   }
-  const keystore = createKeystore(nightExternalKey, network.id);
+  const keystore = createKeystoreFor(nightExternalKey, network.id);
 
   // Wait for wallet sync + dust stabilization (same as call.ts)
   const facade = syncedWallet!.facade;
@@ -354,7 +354,7 @@ async function insertBatchViaSDK(options: InsertVerifierKeysOptions): Promise<Ba
     dustSecretKey = activeLedger().DustSecretKey.fromSeed(keyResult.keys[Roles.Dust]);
     nightExternalKey = keyResult.keys[Roles.NightExternal];
   }
-  const keystore = createKeystore(nightExternalKey, network.id);
+  const keystore = createKeystoreFor(nightExternalKey, network.id);
 
   const facade = syncedWallet!.facade;
   const state: any = await Rx.firstValueFrom(

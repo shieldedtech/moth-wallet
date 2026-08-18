@@ -10,7 +10,7 @@ import {
   UnshieldedAddress,
   DustAddress,
 } from '@midnightntwrk/wallet-sdk/address-format';
-import {createKeystore} from '@midnightntwrk/wallet-sdk/unshielded';
+import {createKeystoreFor} from '../sdk/index.js';
 import type {
   WalletFacade,
   UtxoWithMeta,
@@ -183,7 +183,7 @@ export async function buildTransferTransaction(
   onProgress?: (stage: TxStage) => void
 ): Promise<FinalizedTransaction> {
   setNetworkId(networkId);
-  const ks = createKeystore(keys.nightExternalKey, networkId);
+  const ks = createKeystoreFor(keys.nightExternalKey, networkId);
   const transfers = combinedTransfers(networkId, requests);
   const ttl = new Date(Date.now() + 30 * 60_000);
 
@@ -276,7 +276,7 @@ export async function balanceTransaction(
   onProgress?: (stage: TxStage) => void
 ): Promise<FinalizedTransaction> {
   setNetworkId(networkId);
-  const ks = createKeystore(keys.nightExternalKey, networkId);
+  const ks = createKeystoreFor(keys.nightExternalKey, networkId);
   const secretKeys = {shieldedSecretKeys: keys.shieldedSecretKeys, dustSecretKey: keys.dustSecretKey};
   const ttl = new Date(Date.now() + 30 * 60_000);
 
@@ -421,7 +421,7 @@ export async function designateForDustWithKeys(
   selectedUtxos?: NightUtxo[],
 ): Promise<string | null> {
   setNetworkId(networkId);
-  const ks = createKeystore(keys.nightExternalKey, networkId);
+  const ks = createKeystoreFor(keys.nightExternalKey, networkId);
 
   return designateForDustImpl(facade, ks, networkId, receiver, onProgress, selectedUtxos);
 }
@@ -441,7 +441,7 @@ export async function designateForDust(
 ): Promise<string | null> {
   setNetworkId(networkId);
   const keys = deriveKeysFromSeed(seedHex);
-  const ks = createKeystore(keys.nightExternalKey, networkId);
+  const ks = createKeystoreFor(keys.nightExternalKey, networkId);
   return designateForDustImpl(facade, ks, networkId, receiver, onProgress, selectedUtxos);
 }
 
@@ -498,7 +498,7 @@ async function unregisteredNightUtxos(facade: WalletFacade): Promise<UtxoWithMet
 // designateForDustWithKeys(walletKeys).
 async function designateForDustImpl(
   facade: WalletFacade,
-  ks: ReturnType<typeof createKeystore>,
+  ks: ReturnType<typeof createKeystoreFor>,
   networkId: string,
   receiver: string | undefined,
   onProgress: ((stage: TxStage) => void) | undefined,
@@ -575,7 +575,7 @@ export async function dedesignateFromDustWithKeys(
   selectedUtxos?: NightUtxo[],
 ): Promise<string> {
   setNetworkId(networkId);
-  const ks = createKeystore(keys.nightExternalKey, networkId);
+  const ks = createKeystoreFor(keys.nightExternalKey, networkId);
   return dedesignateFromDustImpl(facade, ks, keys, onProgress, selectedUtxos);
 }
 
@@ -593,13 +593,13 @@ export async function dedesignateFromDust(
 ): Promise<string> {
   setNetworkId(networkId);
   const keys = deriveKeysFromSeed(seedHex);
-  const ks = createKeystore(keys.nightExternalKey, networkId);
+  const ks = createKeystoreFor(keys.nightExternalKey, networkId);
   return dedesignateFromDustImpl(facade, ks, keys, onProgress, selectedUtxos);
 }
 
 async function dedesignateFromDustImpl(
   facade: WalletFacade,
-  ks: ReturnType<typeof createKeystore>,
+  ks: ReturnType<typeof createKeystoreFor>,
   keys: WalletKeys,
   onProgress: ((stage: TxStage) => void) | undefined,
   selectedUtxos: NightUtxo[] | undefined,

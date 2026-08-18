@@ -6,11 +6,7 @@ import {
   provingProvider as wasmProvingProvider,
   type KeyMaterialProvider as WasmKeyMaterialProvider,
 } from '@midnight-ntwrk/zkir-v2';
-import {
-  makeServerProvingService,
-  makeWasmProvingService,
-} from '@midnightntwrk/wallet-sdk/capabilities/proving';
-import {WasmProver} from '@midnightntwrk/wallet-sdk/prover-client/effect';
+import {sdk} from '../sdk/index.js';
 import {ProofClient} from './client.js';
 import type {ProverConfig} from '../types/network.js';
 
@@ -36,7 +32,7 @@ class KeyMaterialZkConfigProvider extends ZKConfigProvider<string> {
 let defaultWasmKeys: WasmKeyMaterialProvider | undefined;
 
 function defaultWasmKeyMaterialProvider(): WasmKeyMaterialProvider {
-  return (defaultWasmKeys ??= WasmProver.makeDefaultKeyMaterialProvider());
+  return (defaultWasmKeys ??= sdk().proverClient.WasmProver.makeDefaultKeyMaterialProvider());
 }
 
 function wasmKeyMaterialProvider(source: KeyMaterialProvider): WasmKeyMaterialProvider {
@@ -94,13 +90,13 @@ export function createProofProvider(
 /** Build the wallet facade service. WASM follows the SDK's documented setup. */
 export function createWalletProvingService(config: ProverConfig) {
   if (config.type === 'server') {
-    return makeServerProvingService({provingServerUrl: new URL(config.url)});
+    return sdk().proving.makeServerProvingService({provingServerUrl: new URL(config.url)});
   }
 
   // This is the SDK-documented path and works in Node, where the package's
   // proof-worker.js is addressable from node_modules.
   if (typeof process !== 'undefined' && process.versions?.node) {
-    return makeWasmProvingService();
+    return sdk().proving.makeWasmProvingService();
   }
 
   // Browser bundles do not emit the SDK's dependency-internal proof-worker.js.
