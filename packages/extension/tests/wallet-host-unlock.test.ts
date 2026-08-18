@@ -13,7 +13,10 @@ const { unlock, exportSeedHex } = vi.hoisted(() => ({
 }));
 
 vi.mock('@shieldedtech/moth-browser', () => ({
-  createMothBrowser: () => ({ wallets: { unlock, exportSeedHex } }),
+  createMothBrowser: () => ({ wallets: { unlock, exportSeedHex }, config: { id: 'devnet' } }),
+  // getMoth loads the network's ledger before handing back the instance.
+  initLedger: vi.fn(async () => undefined),
+  resolveLedgerVersion: () => 'v8',
   deriveShieldedPublicKeys: (seedHex: string) => ({
     coinPublicKey: `coin:${seedHex}`,
     encryptionPublicKey: `enc:${seedHex}`,

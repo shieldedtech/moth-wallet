@@ -8,6 +8,8 @@ import { installBundledReference, hasBundledReference } from './bundled-preseed'
 import { requestMeter, type MeterSnapshot } from './request-meter';
 import {
   createMothBrowser,
+  initLedger,
+  resolveLedgerVersion,
   startWalletSync,
   buildTransferTransaction,
   estimateTransferFee as coreEstimateTransferFee,
@@ -102,10 +104,14 @@ function serializeForClients(balances: WalletBalances): string {
 type Moth = ReturnType<typeof createMothBrowser>;
 let cachedMoth: { network: string; moth: Moth } | null = null;
 
-function getMoth(network: string): Moth {
+// Async because the ledger WASM the network needs must be loaded before any
+// core call reaches the seam. initLedger caches, so this is a no-op after the
+// first call for a given version.
+async function getMoth(network: string): Promise<Moth> {
   if (cachedMoth?.network !== network) {
     cachedMoth = { network, moth: createMothBrowser({ network }) };
   }
+  await initLedger(resolveLedgerVersion(cachedMoth.moth.config));
   return cachedMoth.moth;
 }
 
@@ -136,7 +142,7 @@ async function ensureProver(network: NetworkConfig): Promise<void> {
 // --- Wallet CRUD ----------------------------------------------------------
 
 export async function walletList(network: string): Promise<ReturnType<Moth['wallets']['list']>> {
-  return getMoth(network).wallets.list();
+  return (await getMoth(network)).wallets.list();
 }
 
 // The setup UI generates and shows the phrase (pure JS, no WASM) before asking
@@ -148,7 +154,7 @@ export async function walletCreate(
   birthday?: number,
   mnemonic?: string,
 ) {
-  const { mnemonic: phrase, ...info } = await getMoth(network).wallets.generate(
+  const { mnemonic: phrase, ...info } = await (await getMoth(network)).wallets.generate(
     name,
     passphrase,
     network,
@@ -159,19 +165,19 @@ export async function walletCreate(
 }
 
 export async function walletImport(name: string, mnemonic: string, passphrase: string, network: string) {
-  return getMoth(network).wallets.import(name, mnemonic, passphrase, network);
+  return (await getMoth(network)).wallets.import(name, mnemonic, passphrase, network);
 }
 
 export async function walletRemove(name: string, network: string): Promise<void> {
-  await getMoth(network).wallets.remove(name);
+  (await getMoth(network)).wallets.remove(name);
 }
 
 export async function walletSetActive(name: string, network: string): Promise<void> {
-  await getMoth(network).wallets.setActive(name);
+  (await getMoth(network)).wallets.setActive(name);
 }
 
 export async function walletSetLabel(name: string, label: string, network: string): Promise<void> {
-  await getMoth(network).wallets.setLabel(name, label);
+  (await getMoth(network)).wallets.setLabel(name, label);
 }
 
 // Reveal-phrase (Accounts screen): the original mnemonic, or the raw hex seed
@@ -182,7 +188,7 @@ export async function walletExportPhrase(
   passphrase: string,
   network: string,
 ): Promise<{ kind: 'mnemonic' | 'seed'; value: string }> {
-  return getMoth(network).wallets.exportPhrase(name, passphrase);
+  return (await getMoth(network)).wallets.exportPhrase(name, passphrase);
 }
 
 export async function walletSetNetwork(
@@ -211,12 +217,12 @@ export async function walletSetNetwork(
   // records it only on first arrival and only for wallets created here — an
   // imported wallet could hold funds on that chain at any height, so it keeps
   // scanning from genesis.
-  await getMoth(fromNetwork).wallets.setNetwork(name, network, address, birthday);
+  (await getMoth(fromNetwork)).wallets.setNetwork(name, network, address, birthday);
   return { address, addresses };
 }
 
 export async function walletUnlock(name: string, passphrase: string, network: string): Promise<UnlockedWallet> {
-  const unlocked = await getMoth(network).wallets.unlock(name, passphrase);
+  const unlocked = await (await getMoth(network)).wallets.unlock(name, passphrase);
   try {
     // The offscreen is the key-holder. Core's unlock() is seed-free (Option A),
     // so recover the serializable seed explicitly: Chrome tears the offscreen
@@ -224,7 +230,7 @@ export async function walletUnlock(name: string, passphrase: string, network: st
     // rebuild the WASM key bundle on each restart (walletKeys can't cross the
     // runtime-message boundary). The seed is dropped again after each op derives
     // its keys. See core WalletManager.exportSeedHex / D-KM-3.
-    const seedHex = await getMoth(network).wallets.exportSeedHex(name, passphrase);
+    const seedHex = await (await getMoth(network)).wallets.exportSeedHex(name, passphrase);
     const shielded = deriveShieldedPublicKeys(seedHex);
     return {
       name: unlocked.name,
@@ -290,7 +296,7 @@ export async function syncEnsure(
   // Wallets created by the extension store the chain tip at creation time as
   // their birthday; it lets the first sync pre-seed at tip instead of
   // scanning from genesis. Imported wallets have none and scan everything.
-  const birthday = (await getMoth(network.id).wallets.list())
+  const birthday = (await (await getMoth(network.id)).wallets.list())
     .find((wallet) => wallet.name === walletName)?.birthday;
 
   // Derive the key bundle once for this session (Option A derive-and-drop):
@@ -615,6 +621,8 @@ export async function registerDust(
   network: NetworkConfig,
   dustAddress?: string,
 ): Promise<{ txHash: string | null; notYet?: DustNotYet }> {
+  // Load the ledger this network speaks before any core call reaches the seam.
+  await initLedger(resolveLedgerVersion(network));
   return trackOp(async () => {
     await ensureProver(network);
     const wallet = await syncEnsure(seedHex, walletName, network);
@@ -658,6 +666,8 @@ export async function deregisterDust(
   walletName: string,
   network: NetworkConfig,
 ): Promise<{ txHash: string }> {
+  // Load the ledger this network speaks before any core call reaches the seam.
+  await initLedger(resolveLedgerVersion(network));
   return trackOp(async () => {
     await ensureProver(network);
     const wallet = await syncEnsure(seedHex, walletName, network);
@@ -678,6 +688,8 @@ export async function transferBuild(
   network: NetworkConfig,
   requests: TransferRequestDTO[],
 ): Promise<{ txHex: string }> {
+  // Load the ledger this network speaks before any core call reaches the seam.
+  await initLedger(resolveLedgerVersion(network));
   return trackOp(async () => {
     await ensureProver(network);
     const wallet = await syncEnsure(seedHex, walletName, network);
@@ -702,6 +714,8 @@ export async function balanceTransaction(
   txHex: string,
   sealed: boolean,
 ): Promise<{ txHex: string }> {
+  // Load the ledger this network speaks before any core call reaches the seam.
+  await initLedger(resolveLedgerVersion(network));
   return trackOp(async () => {
     await ensureProver(network);
     const wallet = await syncEnsure(seedHex, walletName, network);
@@ -727,6 +741,8 @@ export async function makeIntent(
   outputs: TransferRequestDTO[],
   payFees: boolean,
 ): Promise<{ txHex: string }> {
+  // Load the ledger this network speaks before any core call reaches the seam.
+  await initLedger(resolveLedgerVersion(network));
   return trackOp(async () => {
     const wallet = await syncEnsure(seedHex, walletName, network);
     const intent = await buildSwapIntent(
@@ -748,6 +764,8 @@ export async function transferSubmit(
   network: NetworkConfig,
   txHex: string,
 ): Promise<void> {
+  // Load the ledger this network speaks before any core call reaches the seam.
+  await initLedger(resolveLedgerVersion(network));
   return trackOp(async () => {
     const wallet = await syncEnsure(seedHex, walletName, network);
     const transaction = ledger.Transaction.deserialize<ledger.SignatureEnabled, ledger.Proof, ledger.Binding>(
