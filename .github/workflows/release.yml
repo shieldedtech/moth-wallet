@@ -62,7 +62,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if git diff --unified=0 HEAD^ HEAD -- 'packages/*/package.json' \
+          if git diff --unified=0 "${{ github.event.before }}" "$GITHUB_SHA" -- 'packages/*/package.json' \
             | rg -q '^[+-][[:space:]]*"version"[[:space:]]*:'; then
             echo "hasVersionChanges=true" >> "$GITHUB_OUTPUT"
           else
