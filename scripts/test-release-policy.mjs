@@ -52,6 +52,11 @@ requirePolicy(
   'release eligibility must use durable npm and Git tag state',
 );
 requirePolicy(
+  workflow.includes('concurrency:\n  group: ${{ github.workflow }}-${{ github.ref }}') &&
+    /^  queue: max$/mu.test(workflow),
+  'release runs must queue every main push so version commits cannot be replaced while pending',
+);
+requirePolicy(
   workflow.includes(
     "- name: Detect incomplete package releases\n        if: ${{ steps.releases.outputs.hasChangesets == 'false' }}",
   ),

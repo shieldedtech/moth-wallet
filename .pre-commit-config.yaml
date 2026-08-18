@@ -18,6 +18,11 @@ repos:
     rev: 914e7df21a07ef503a81201c76d2b11c789d3fca # v1.7.12
     hooks:
       - id: actionlint
+        # GitHub supports concurrency.queue, but actionlint v1.7.12 does not yet
+        # include it in the workflow schema. The release policy test pins its use.
+        args:
+          - -ignore
+          - 'unexpected key "queue" for "concurrency" section'
 
   - repo: https://github.com/gitleaks/gitleaks
     rev: 83d9cd684c87d95d656c1458ef04895a7f1cbd8e # v8.30.1
