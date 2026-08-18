@@ -31,4 +31,10 @@ repos:
         entry: node scripts/test-release-policy.mjs
         language: system
         pass_filenames: false
-        files: ^(\.github/workflows/release\.yml|package\.json|scripts/test-release-policy\.mjs)$
+        files: ^(\.github/workflows/release\.yml|package\.json|packages/[^/]+/package\.json|scripts/(test-)?release-(policy|packages)\.mjs)$
+      - id: release-package-reconciliation
+        name: release package reconciliation
+        entry: node scripts/test-release-packages.mjs
+        language: system
+        pass_filenames: false
+        files: ^(package\.json|packages/[^/]+/package\.json|scripts/(test-)?release-packages\.mjs)$
