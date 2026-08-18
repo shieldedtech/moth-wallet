@@ -79,9 +79,10 @@ When you push to `main`, the GitHub Action will:
 
 ## Package Access
 
-The three published packages are **restricted** while the repository completes the open-source
-governance process. Do not change npm access or repository visibility until the governance case
-records a final GO decision.
+The three published packages are **public** following the final GO recorded in the
+[`shieldedtech/open-source-governance` case](https://github.com/shieldedtech/open-source-governance/issues/19).
+Keep publication limited to the approved wallet, CLI, and TUI packages; private workspaces remain
+outside the npm release scope.
 
 ## Semver Guidelines
 

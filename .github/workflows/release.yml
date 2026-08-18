@@ -5,7 +5,12 @@ on:
     branches:
       - main
 
-concurrency: ${{ github.workflow }}-${{ github.ref }}
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Preserve every main push so a version commit cannot be replaced while pending.
+  queue: max
 
 jobs:
   release:
@@ -33,9 +38,19 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: 'yarn'
+          registry-url: https://registry.npmjs.org
 
-      - name: Install npm
-        run: npm install --global npm@12.0.2
+      - name: Configure pinned npm CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/npm-bin"
+          cat > "$RUNNER_TEMP/npm-bin/npm" <<'EOF'
+          #!/usr/bin/env bash
+          exec npx --yes --package=npm@12.0.2 npm "$@"
+          EOF
+          chmod +x "$RUNNER_TEMP/npm-bin/npm"
+          echo "$RUNNER_TEMP/npm-bin" >> "$GITHUB_PATH"
 
       - name: Install Dependencies
         run: yarn install --immutable
@@ -69,23 +84,14 @@ jobs:
             echo "hasChangesets=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # A push with no Changesets is usually a documentation or workflow-only
-      # change. Do not invoke `changeset publish` in that case: npm versions are
-      # immutable, so it would fail while trying to republish the current
-      # versions. A stable release is only eligible when this commit changed a
-      # publishable package manifest or changelog (the version-package PR path).
-      - name: Detect package release changes
+      # Registry, tag, and GitHub Release state survive canceled and partial runs.
+      # The same process also dry-runs only packages that still need publication.
+      - name: Detect incomplete package releases
+        if: ${{ steps.releases.outputs.hasChangesets == 'false' }}
         id: package_changes
-        run: |
-          set -euo pipefail
-          if git diff --quiet HEAD^ HEAD -- \
-            'packages/*/package.json' \
-            'packages/*/CHANGELOG.md' \
-            'CHANGELOG.md'; then
-            echo "hasPackageChanges=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "hasPackageChanges=true" >> "$GITHUB_OUTPUT"
-          fi
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/release-packages.mjs --github-output --validate
 
       # Use the machine-user PAT only while opening or updating the version PR.
       # It is deliberately absent from the stable publish process below.
@@ -103,9 +109,9 @@ jobs:
           commit: "chore: version packages"
 
       # With no Changesets left, publish through npm Trusted Publishing (OIDC),
-      # then use the ephemeral Actions token for tags and GitHub Releases.
+      # then recover or create tags and GitHub Releases through Changesets.
       - name: Publish stable release
-        if: ${{ steps.releases.outputs.hasChangesets == 'false' && steps.package_changes.outputs.hasPackageChanges == 'true' }}
+        if: ${{ steps.releases.outputs.hasChangesets == 'false' && steps.package_changes.outputs.hasReleaseWork == 'true' }}
         uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d  # v1.9.0
         with:
           publish: yarn run release
@@ -140,9 +146,19 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: 'yarn'
+          registry-url: https://registry.npmjs.org
 
       - name: Install npm
-        run: npm install --global npm@12.0.2
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/npm-bin"
+          cat > "$RUNNER_TEMP/npm-bin/npm" <<'EOF'
+          #!/usr/bin/env bash
+          exec npx --yes --package=npm@12.0.2 npm "$@"
+          EOF
+          chmod +x "$RUNNER_TEMP/npm-bin/npm"
+          echo "$RUNNER_TEMP/npm-bin" >> "$GITHUB_PATH"
 
       - name: Install Dependencies
         run: yarn install --immutable
