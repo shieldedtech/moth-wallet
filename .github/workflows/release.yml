@@ -7,7 +7,10 @@ on:
 
 permissions: {}
 
-concurrency: ${{ github.workflow }}-${{ github.ref }}
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Preserve every main push so a version commit cannot be replaced while pending.
+  queue: max
 
 jobs:
   release:
