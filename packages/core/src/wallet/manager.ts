@@ -403,8 +403,12 @@ export class WalletManager {
     // identity. Deriving before reading it would silently produce schnorr
     // addresses for an ECDSA wallet.
     const meta = await this.loadMeta(name);
-    const addresses = this.deriveAddressesFromSeed(seedHex, meta?.signatureKind ?? 'schnorr');
     const network = meta?.network ?? (await this.loadConfig()).defaultNetwork;
+    // Then the runtime, before any derivation. Schnorr derives from a direct v8
+    // import and needs nothing loaded, but ECDSA goes through the seam — so an
+    // ECDSA wallet cannot even have its address derived until the SDK is up.
+    await this.ensureRuntimeFor(network);
+    const addresses = this.deriveAddressesFromSeed(seedHex, meta?.signatureKind ?? 'schnorr');
     const address = this.primaryAddress(addresses, network);
     // Backfill the public address for wallets created before it was stored (or
     // re-derive it after a network change), so the account list can show it
@@ -420,14 +424,8 @@ export class WalletManager {
       zswap: rawKeys[Roles.Zswap],
       metadata: rawKeys[Roles.Metadata],
     };
-    // deriveWalletKeys reaches both seams, so the ledger and SDK its network
-    // speaks have to be up first. Doing it here rather than in each caller is
-    // deliberate: the CLI unlocked before resolving its network and failed with
-    // "No ledger loaded", and every other surface had the same ordering to get
-    // right independently.
-    await this.ensureRuntimeFor(meta?.network ?? network);
     // The stored kind must reach the bundle, or an ECDSA wallet signs and
-    // watches with the schnorr key.
+    // watches with the schnorr key. The runtime is already up (see above).
     const walletKeys: WalletKeys = deriveWalletKeys(seedHex, meta?.signatureKind ?? 'schnorr');
     // Seed is no longer needed — overwrite the local variable.
     seedHex = '';
