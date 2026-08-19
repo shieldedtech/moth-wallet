@@ -26,6 +26,7 @@ import {ensureEmptyRefCache, preSeedNewWallet} from './preseed.js';
 import {InMemorySyncStateStore, syncStateKey, type SyncStateStore, type WalletPart} from './sync-store.js';
 import {dedupingShieldedBuilder, dedupingDustBuilder} from './sdk-dedup.js';
 import {sdk, createKeystoreFor} from '../sdk/index.js';
+import type {SignatureKind} from '../wallet/signature-encoding.js';
 import {activeLedgerVersion} from '../ledger/index.js';
 import {verifyNetworkLedger} from '../ledger/protocol-version.js';
 import {overallSyncProgress, type SubWallet} from './progress.js';
@@ -324,13 +325,28 @@ export async function resolveSyncStore(explicit?: SyncStateStore): Promise<SyncS
   return store;
 }
 
+/**
+ * Cached unshielded state embeds the public key it was watching, and that key
+ * depends on the signature kind. An ECDSA wallet restoring state cached while
+ * schnorr was in force keeps watching the schnorr address: it reports "Synced"
+ * with a zero balance while its funds sit at the address it displayed.
+ *
+ * Schnorr keeps the original key, so no existing wallet is made to resync;
+ * ECDSA gets its own namespace, which also means a wallet poisoned by that bug
+ * simply finds nothing cached and syncs correctly from scratch.
+ */
+function cacheIdentity(walletName: string, part: WalletPart, kind: SignatureKind): string {
+  return part === 'unshielded' && kind === 'ecdsa' ? `${walletName}#ecdsa` : walletName;
+}
+
 function loadCachedState(
   store: SyncStateStore,
   walletName: string,
   networkId: string,
-  part: WalletPart
+  part: WalletPart,
+  kind: SignatureKind = 'schnorr'
 ): Promise<string | null> {
-  return store.get(syncStateKey(networkId, walletName, part));
+  return store.get(syncStateKey(networkId, cacheIdentity(walletName, part, kind), part));
 }
 
 function saveCachedState(
@@ -338,9 +354,10 @@ function saveCachedState(
   walletName: string,
   networkId: string,
   part: WalletPart,
-  state: string
+  state: string,
+  kind: SignatureKind = 'schnorr'
 ): Promise<void> {
-  return store.put(syncStateKey(networkId, walletName, part), state);
+  return store.put(syncStateKey(networkId, cacheIdentity(walletName, part, kind), part), state);
 }
 
 // Store-based (async) — keeps the browser (IndexedDB) path working; the Node
@@ -351,10 +368,11 @@ async function evictCachedState(
   store: SyncStateStore,
   walletName: string,
   networkId: string,
-  part: WalletPart
+  part: WalletPart,
+  kind: SignatureKind = 'schnorr'
 ): Promise<void> {
   try {
-    await store.delete(syncStateKey(networkId, walletName, part));
+    await store.delete(syncStateKey(networkId, cacheIdentity(walletName, part, kind), part));
   } catch {
     /* ignore */
   }
@@ -488,7 +506,7 @@ export async function startWalletSync(
   // shielded at tip (64,982) reached fully synced in 1.0s with identical balances.
   const cached = {
     shielded: await loadCachedState(store, name, network.id, 'shielded'),
-    unshielded: await loadCachedState(store, name, network.id, 'unshielded'),
+    unshielded: await loadCachedState(store, name, network.id, 'unshielded', keys.signatureKind),
     dust: await loadCachedState(store, name, network.id, 'dust'),
   };
   const missingParts = partsToSeed(cached);
@@ -526,7 +544,7 @@ export async function startWalletSync(
             seeded.push('shielded');
           }
           if (!cached.unshielded) {
-            await saveCachedState(store, name, network.id, 'unshielded', preSeeded.unshielded);
+            await saveCachedState(store, name, network.id, 'unshielded', preSeeded.unshielded, keys.signatureKind);
             seeded.push('unshielded');
           }
           if (!cached.dust && preSeeded.dust) {
@@ -572,14 +590,14 @@ export async function startWalletSync(
   // --- Unshielded wallet: try restore from cache ---
   onProgress?.('Starting unshielded wallet...');
   let unshieldedWallet: UnshieldedWallet | undefined;
-  const savedUnshielded = await loadCachedState(store, name, network.id, 'unshielded');
+  const savedUnshielded = await loadCachedState(store, name, network.id, 'unshielded', keys.signatureKind);
   if (savedUnshielded) {
     try {
       onProgress?.('Restoring unshielded state from cache...');
       unshieldedWallet = sdk().unshielded.UnshieldedWallet(walletCfg).restore(savedUnshielded);
     } catch {
       onProgress?.('Unshielded cache corrupted, syncing from genesis...');
-      await evictCachedState(store, name, network.id, 'unshielded');
+      await evictCachedState(store, name, network.id, 'unshielded', keys.signatureKind);
     }
   }
   if (!unshieldedWallet) {
@@ -720,12 +738,12 @@ export async function startWalletSync(
         const cacheNow = Date.now();
         if (cacheNow - lastCacheSaveTime > 60_000) {
           lastCacheSaveTime = cacheNow;
-          saveCache(store, facade, txHistoryStorage, name, network.id).catch(() => {});
+          saveCache(store, facade, txHistoryStorage, name, network.id, keys.signatureKind).catch(() => {});
         }
 
         if (balances.synced && !hasSavedCache) {
           hasSavedCache = true;
-          saveCache(store, facade, txHistoryStorage, name, network.id).catch(() => {});
+          saveCache(store, facade, txHistoryStorage, name, network.id, keys.signatureKind).catch(() => {});
         }
       },
       error: (err: any) => {
@@ -763,7 +781,7 @@ export async function startWalletSync(
 
   const stop = async () => {
     subscription.unsubscribe();
-    await saveCache(store, facade, txHistoryStorage, name, network.id).catch(() => {});
+    await saveCache(store, facade, txHistoryStorage, name, network.id, keys.signatureKind).catch(() => {});
 
     try {
       await facade.stop();
@@ -817,7 +835,10 @@ async function saveCache(
   facade: WalletFacade,
   history: {serialize(): Promise<string>},
   walletName: string,
-  networkId: string
+  networkId: string,
+  // Must match what loadCachedState will look for, or an ECDSA wallet writes
+  // to one key and reads from another and never restores.
+  signatureKind: SignatureKind = 'schnorr'
 ): Promise<void> {
   try {
     const [sh, un, du, hi] = await Promise.all([
@@ -836,7 +857,7 @@ async function saveCache(
       history.serialize().catch(() => null),
     ]).catch(() => [null, null, null, null]);
     if (sh) await saveCachedState(store, walletName, networkId, 'shielded', sh);
-    if (un) await saveCachedState(store, walletName, networkId, 'unshielded', un);
+    if (un) await saveCachedState(store, walletName, networkId, 'unshielded', un, signatureKind);
     if (du) await saveCachedState(store, walletName, networkId, 'dust', du);
     if (hi) await saveCachedState(store, walletName, networkId, 'history', hi);
   } catch {
