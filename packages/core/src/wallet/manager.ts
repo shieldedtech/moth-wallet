@@ -166,15 +166,39 @@ export class WalletManager {
    */
   private async assertKindUsable(networkId: string, kind: SignatureKind): Promise<void> {
     if (kind !== 'ecdsa') return;
+    if (await this.networkSupportsKind(networkId, kind)) return;
+    throw new WalletError(
+      'INVALID_INPUT',
+      `ECDSA signing needs a ledger v9 network; ${networkId} is on v8. ` +
+        `Use schnorr there, or pick a v9 network.`,
+    );
+  }
+
+  /** Whether a network's ledger has the signing algorithm this wallet uses. */
+  private async networkSupportsKind(networkId: string, kind: SignatureKind): Promise<boolean> {
+    if (kind !== 'ecdsa') return true;
     const preset = DEFAULT_NETWORKS[networkId];
     const version = preset ? (await detectLedgerVersion(preset)).version : 'v8';
-    if (version !== 'v9') {
-      throw new WalletError(
-        'INVALID_INPUT',
-        `ECDSA signing needs a ledger v9 network; ${networkId} is on ${version}. ` +
-          `Use schnorr there, or pick a v9 network.`,
-      );
-    }
+    return version === 'v9';
+  }
+
+  /**
+   * Refuse to open an existing wallet on a network its signing algorithm does
+   * not exist on. An ECDSA wallet has no unshielded identity on a v8 network,
+   * so the sync would fail somewhere deep and unhelpfully; saying so here names
+   * the cause and the remedy at the moment the user chose the network.
+   */
+  private async assertWalletUsableOn(networkId: string, kind: SignatureKind): Promise<void> {
+    if (await this.networkSupportsKind(networkId, kind)) return;
+    const usable = Object.entries(DEFAULT_NETWORKS)
+      .filter(([, cfg]) => cfg.ledgerVersion === 'v9')
+      .map(([id]) => id)
+      .join(', ');
+    throw new WalletError(
+      'INVALID_INPUT',
+      `This account signs with ECDSA, which exists only on ledger v9 networks, so it has no ` +
+        `address on ${networkId}. Switch to ${usable || 'a v9 network'} to use it.`,
+    );
   }
 
   private async ensureRuntimeFor(networkId: string): Promise<void> {
@@ -408,6 +432,7 @@ export class WalletManager {
     // import and needs nothing loaded, but ECDSA goes through the seam — so an
     // ECDSA wallet cannot even have its address derived until the SDK is up.
     await this.ensureRuntimeFor(network);
+    await this.assertWalletUsableOn(network, meta?.signatureKind ?? 'schnorr');
     const addresses = this.deriveAddressesFromSeed(seedHex, meta?.signatureKind ?? 'schnorr');
     const address = this.primaryAddress(addresses, network);
     // Backfill the public address for wallets created before it was stored (or
