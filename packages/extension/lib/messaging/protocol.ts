@@ -68,15 +68,17 @@ export interface ImportWalletRequest {
   passphrase: string;
   network?: string;
   /**
-   * The user asserts this seed was generated just now, so it cannot hold
-   * earlier history and its first sync may start at the tip rather than walking
-   * from genesis. The background resolves it to a height; the panel never deals
-   * in block numbers.
+   * What the user asserts about the seed's history, mirroring the CLI's
+   * --birthday-tip / --birthday-date / --birthday-height. The background
+   * resolves each to a block height; the panel never deals in block numbers.
    *
-   * Absent is the safe default: moth cannot infer an imported seed's history,
-   * and a wrong assertion hides funds.
+   * Absent is the safe default — moth cannot infer an imported seed's history,
+   * and a claim that is too late hides funds.
    */
-  freshSeed?: boolean;
+  birthday?:
+    | {kind: 'tip'}
+    | {kind: 'date'; value: string}
+    | {kind: 'height'; value: number};
 }
 
 export interface SendTokensRequest {

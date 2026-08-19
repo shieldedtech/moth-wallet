@@ -16,9 +16,14 @@ export const setup = {
   setup_stepProgress: '$1 of $2',
   setup_importTitle: 'Bring your wallet back',
   setup_importSubtitle: 'Type your 24-word secret phrase in order, or paste the whole thing at once.',
-  setup_freshSeed: 'I just generated this recovery phrase',
-  setup_freshSeedHint:
-    'Skips scanning the chain for older history, so the first sync takes seconds instead of up to an hour. Leave this unchecked if the phrase has ever been used before.',
+  setup_birthdayTitle: 'When did this phrase start being used?',
+  setup_birthdayHint:
+    'Telling Moth this lets the first sync skip older blocks — seconds instead of up to an hour. Answer early rather than late: too early only costs time, while too late hides anything received before it, and shielded balances give no sign that anything is missing. Clearing the sync cache recovers it.',
+  setup_birthdayUnknown: "I don't know — scan the whole chain",
+  setup_birthdayTip: 'I just generated it — nothing to scan',
+  setup_birthdayDate: 'Not used before a date',
+  setup_birthdayHeight: 'Not used before a block height',
+  setup_birthdayHeightPlaceholder: 'Block height',
   setup_pastePhrase: 'Paste phrase',
   setup_copyPhrase: 'Copy phrase',
   setup_copyPhraseDone: 'Copied',

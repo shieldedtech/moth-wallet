@@ -373,8 +373,15 @@ moth wallet import --name w --seed-hex --birthday-tip
 ```
 
 The failure modes are not symmetric, so err early: **too early costs sync time,
-too late hides funds.** If a balance looks wrong, clearing the account's sync
-cache falls back to a full scan.
+too late hides anything received before the birthday.** Nothing is lost — clearing
+the account's sync cache falls back to a full scan and recovers it.
+
+The consequence differs by token type, and shielded is the one to be careful
+about. Unshielded coins belong to an address, so what you hold is in principle
+discoverable. Shielded coins are found by trial-decrypting every output with your
+viewing key: there is no query, so a birthday set too late leaves them
+*unfindable* until a rescan, and the balance simply looks smaller with no sign
+anything is absent.
 
 `moth wallet list` shows each account's creation date and where its sync starts
 (`genesis` when no birthday is known). The extension shows the same under

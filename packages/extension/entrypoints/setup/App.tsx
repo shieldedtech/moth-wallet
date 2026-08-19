@@ -38,6 +38,13 @@ import { NoteCard } from '../../components/moth/note-card';
 import { WordChipGrid, WordInputGrid } from '../../components/moth/words';
 import { useNetworkConfig, NetworkFields, type SupportedNetwork } from '../../components/screens/NetworkConfig';
 
+const BIRTHDAY_LABELS = {
+  unknown: 'setup_birthdayUnknown',
+  tip: 'setup_birthdayTip',
+  date: 'setup_birthdayDate',
+  height: 'setup_birthdayHeight',
+} as const;
+
 type Mode = 'create' | 'import';
 type Step = 'welcome' | 'words' | 'password' | 'network' | 'phrase' | 'done';
 
@@ -65,9 +72,12 @@ export function App() {
   // to the auto-assigned "Account N"). Stored as the wallet's label — the
   // storage name stays the immutable "Account-N" key.
   const [accountName, setAccountName] = useState('');
-  // Only meaningful for an import: a seed generated moments ago cannot have
-  // history, so its sync can start at the tip instead of walking from genesis.
-  const [freshSeed, setFreshSeed] = useState(false);
+  // Only meaningful for an import. Without a claim the first sync walks the
+  // chain from genesis: correct, but up to an hour on DUST. Mirrors the CLI's
+  // --birthday-tip / --birthday-date / --birthday-height.
+  const [birthdayKind, setBirthdayKind] = useState<'unknown' | 'tip' | 'date' | 'height'>('unknown');
+  const [birthdayDate, setBirthdayDate] = useState('');
+  const [birthdayHeight, setBirthdayHeight] = useState('');
   const [walletCount, setWalletCount] = useState(0);
   // Held open so the side panel shows its "finish setup in the tab" screen for
   // the whole flow. Released only once setup is fully complete (the Done step,
@@ -129,7 +139,13 @@ export function App() {
           network,
           // Absent unless asserted: without a birthday the first sync scans from
           // genesis, which is correct but slow, and guessing one hides funds.
-          freshSeed,
+          ...(birthdayKind === 'tip'
+            ? {birthday: {kind: 'tip' as const}}
+            : birthdayKind === 'date' && birthdayDate
+              ? {birthday: {kind: 'date' as const, value: birthdayDate}}
+              : birthdayKind === 'height' && Number(birthdayHeight) > 0
+                ? {birthday: {kind: 'height' as const, value: Number(birthdayHeight)}}
+                : {}),
         });
       }
       // Set the label before unlocking so the session picks it up immediately.
@@ -180,18 +196,39 @@ export function App() {
         >
           {t('setup_pastePhrase')}
         </button>
-        <label className="mt-4 flex cursor-pointer items-start gap-2 self-start text-sm">
-          <input
-            type="checkbox"
-            className="mt-1"
-            checked={freshSeed}
-            onChange={(e) => setFreshSeed(e.target.checked)}
-          />
-          <span>
-            <span className="block font-bold">{t('setup_freshSeed')}</span>
-            <span className="block text-muted-foreground">{t('setup_freshSeedHint')}</span>
-          </span>
-        </label>
+        <fieldset className="m-0 mt-5 flex max-w-[520px] flex-col gap-2 border-0 p-0">
+          <legend className="p-0 text-sm font-bold">{t('setup_birthdayTitle')}</legend>
+          <p className="m-0 text-[13px] text-muted-foreground">{t('setup_birthdayHint')}</p>
+          {(['unknown', 'tip', 'date', 'height'] as const).map((kind) => (
+            <label key={kind} className="flex cursor-pointer items-start gap-2 text-sm">
+              <input
+                type="radio"
+                name="birthday"
+                className="mt-1"
+                checked={birthdayKind === kind}
+                onChange={() => setBirthdayKind(kind)}
+              />
+              <span>{t(BIRTHDAY_LABELS[kind])}</span>
+            </label>
+          ))}
+          {birthdayKind === 'date' ? (
+            <Input
+              type="date"
+              value={birthdayDate}
+              onChange={(e) => setBirthdayDate(e.target.value)}
+              aria-label={t(BIRTHDAY_LABELS.date)}
+            />
+          ) : null}
+          {birthdayKind === 'height' ? (
+            <Input
+              inputMode="numeric"
+              value={birthdayHeight}
+              onChange={(e) => setBirthdayHeight(e.target.value.replace(/[^0-9]/g, ''))}
+              placeholder={t('setup_birthdayHeightPlaceholder')}
+              aria-label={t(BIRTHDAY_LABELS.height)}
+            />
+          ) : null}
+        </fieldset>
         {error && <p className="m-0 pt-2 text-sm text-destructive">{error}</p>}
         <div className="flex justify-end pt-8">
           <Button variant="secondary" size="lg" className={STEP_CTA} disabled={words.some((w) => !w)} onClick={() => setStep('network')}>

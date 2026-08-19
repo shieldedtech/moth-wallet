@@ -1223,11 +1223,26 @@
   "setup_importSubtitle": {
     "message": "Escribe tus 24 palabras secretas en orden, o pega la frase completa de una vez."
   },
-  "setup_freshSeed": {
-    "message": "Acabo de generar esta frase de recuperación"
+  "setup_birthdayTitle": {
+    "message": "¿Desde cuándo se usa esta frase?"
   },
-  "setup_freshSeedHint": {
-    "message": "Omite la búsqueda de historial anterior, así la primera sincronización tarda segundos en lugar de hasta una hora. No la marques si la frase ya se ha usado antes."
+  "setup_birthdayHint": {
+    "message": "Indicárselo a Moth permite que la primera sincronización omita bloques antiguos: segundos en lugar de hasta una hora. Responde antes que después: demasiado pronto solo cuesta tiempo, demasiado tarde oculta todo lo recibido antes, y en los saldos shielded no hay ninguna señal de que falte algo. Vaciar la caché de sincronización lo recupera."
+  },
+  "setup_birthdayUnknown": {
+    "message": "No lo sé: analizar toda la cadena"
+  },
+  "setup_birthdayTip": {
+    "message": "Acabo de generarla: no hay nada que analizar"
+  },
+  "setup_birthdayDate": {
+    "message": "Sin usar antes de una fecha"
+  },
+  "setup_birthdayHeight": {
+    "message": "Sin usar antes de una altura de bloque"
+  },
+  "setup_birthdayHeightPlaceholder": {
+    "message": "Altura de bloque"
   },
   "setup_pastePhrase": {
     "message": "Pegar frase"

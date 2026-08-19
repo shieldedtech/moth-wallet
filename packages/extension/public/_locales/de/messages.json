@@ -1223,11 +1223,26 @@
   "setup_importSubtitle": {
     "message": "Tippe deine geheime 24-Wort-Phrase der Reihe nach ein oder füge alles auf einmal ein."
   },
-  "setup_freshSeed": {
-    "message": "Ich habe diese Wiederherstellungsphrase gerade erstellt"
+  "setup_birthdayTitle": {
+    "message": "Seit wann wird diese Phrase verwendet?"
   },
-  "setup_freshSeedHint": {
-    "message": "Überspringt die Suche nach älterer Historie, sodass die erste Synchronisierung Sekunden statt bis zu einer Stunde dauert. Nicht ankreuzen, wenn die Phrase schon einmal verwendet wurde."
+  "setup_birthdayHint": {
+    "message": "Wenn du Moth das mitteilst, überspringt die erste Synchronisierung ältere Blöcke — Sekunden statt bis zu einer Stunde. Antworte lieber zu früh als zu spät: zu früh kostet nur Zeit, zu spät verbirgt alles, was vorher empfangen wurde, und bei shielded Guthaben ist nicht erkennbar, dass etwas fehlt. Das Leeren des Sync-Caches stellt es wieder her."
+  },
+  "setup_birthdayUnknown": {
+    "message": "Ich weiß es nicht — die gesamte Chain durchsuchen"
+  },
+  "setup_birthdayTip": {
+    "message": "Gerade erst erstellt — nichts zu durchsuchen"
+  },
+  "setup_birthdayDate": {
+    "message": "Vor einem Datum nicht verwendet"
+  },
+  "setup_birthdayHeight": {
+    "message": "Vor einer Blockhöhe nicht verwendet"
+  },
+  "setup_birthdayHeightPlaceholder": {
+    "message": "Blockhöhe"
   },
   "setup_pastePhrase": {
     "message": "Phrase einfügen"

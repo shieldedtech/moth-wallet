@@ -83,6 +83,32 @@ async function sessionStatus(): Promise<SessionStatus> {
  * effort: an unreachable indexer must not block wallet creation (the wallet
  * then simply genesis-syncs).
  */
+/**
+ * Turn the user's claim about a seed's history into a block height.
+ *
+ * A date is resolved by binary search over block timestamps and lands on the
+ * last block strictly *before* it, because the failure modes are asymmetric:
+ * too early costs sync time, too late hides funds. Anything unresolvable
+ * returns undefined, which means "no birthday" — the slow, safe answer.
+ */
+async function resolveBirthday(
+  networkId: string,
+  birthday: {kind: 'tip'} | {kind: 'date'; value: string} | {kind: 'height'; value: number} | undefined,
+): Promise<number | undefined> {
+  if (!birthday) return undefined;
+  if (birthday.kind === 'height') return birthday.value > 0 ? birthday.value : undefined;
+  if (birthday.kind === 'tip') return chainTip(networkId);
+  const when = new Date(birthday.value);
+  if (Number.isNaN(when.getTime())) return undefined;
+  try {
+    const config = await getNetworkConfig(networkId);
+    const {heightForDate} = await import('@shieldedtech/moth-wallet/network/block-time');
+    return (await heightForDate(config.indexerUrl, when)).height;
+  } catch {
+    return undefined;
+  }
+}
+
 async function chainTip(networkId: string): Promise<number | undefined> {
   try {
     const config = await getNetworkConfig(networkId);
@@ -346,9 +372,8 @@ export function registerHandlers(): void {
       // Always recorded, for "when did this account start here". Never used as
       // a birthday — moth cannot know an imported seed's history.
       currentHeight: await chainTip(target),
-      // Only when the user asserted the seed is new. Resolved here because the
-      // panel deals in intent, not block heights.
-      birthdayHeight: data.freshSeed ? await chainTip(target) : undefined,
+      // Resolved here because the panel deals in intent, not block heights.
+      birthdayHeight: await resolveBirthday(target, data.birthday),
     });
   });
 

@@ -4,6 +4,16 @@ import type { WalletInfo } from '@shieldedtech/moth-wallet';
 
 export type SeedSource = 'mnemonic' | 'hex' | 'random';
 
+/**
+ * What the user asserts about an imported seed's history. Mirrors the CLI's
+ * --birthday-tip / --birthday-date / --birthday-height. Absent means unknown,
+ * which is the safe answer: the sync scans from genesis.
+ */
+export type BirthdayClaim =
+  | { kind: 'tip' }
+  | { kind: 'date'; value: string }
+  | { kind: 'height'; value: number };
+
 export interface OnboardingState {
   network: string;
   source: SeedSource;
@@ -13,10 +23,15 @@ export interface OnboardingState {
   passphrase: string;
   /** Mnemonic returned from generate(); shown on the ack screen. */
   generatedMnemonic?: string;
+  /** Import only. Absent for a generated wallet, which gets its birthday from
+   *  the chain tip automatically. */
+  birthday?: BirthdayClaim;
 }
 
-export type CompletedOnboarding = Required<Omit<OnboardingState, 'seedInput' | 'generatedMnemonic'>> &
-  Pick<OnboardingState, 'seedInput' | 'generatedMnemonic'>;
+export type CompletedOnboarding = Required<
+  Omit<OnboardingState, 'seedInput' | 'generatedMnemonic' | 'birthday'>
+> &
+  Pick<OnboardingState, 'seedInput' | 'generatedMnemonic' | 'birthday'>;
 
 export type OnComplete = (state: CompletedOnboarding) => void;
 /** Called by the unlock screen with the passphrase; resolves on success, rejects on bad passphrase. */
@@ -40,6 +55,7 @@ export type Routes = {
   'onboarding-source': { onComplete: OnComplete; partial: Partial<OnboardingState> };
   'onboarding-name': { onComplete: OnComplete; partial: Partial<OnboardingState> };
   'onboarding-seed': { onComplete: OnComplete; partial: Partial<OnboardingState> };
+  'onboarding-birthday': { onComplete: OnComplete; partial: Partial<OnboardingState> };
   'onboarding-passphrase': { onComplete: OnComplete; partial: Partial<OnboardingState> };
   'onboarding-mnemonic-display': { onComplete: OnComplete; partial: Partial<OnboardingState> };
   'onboarding-initializing': { onComplete: OnComplete; partial: Partial<OnboardingState> };

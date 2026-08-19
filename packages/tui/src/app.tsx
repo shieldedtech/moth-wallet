@@ -13,8 +13,36 @@ import {
   clearSyncCache,
   NIGHT_TOKEN_ID,
   type SendRequest,
+  heightForDate,
+  DEFAULT_NETWORKS,
 } from '@shieldedtech/moth-wallet';
 import { syncedWalletStub } from './utils/synced-wallet-stub.js';
+import type { BirthdayClaim } from './navigation/index.js';
+
+/**
+ * Turn the user's claim about an imported seed into a block height.
+ *
+ * A date is resolved by binary search over block timestamps and lands on the
+ * last block strictly before it, because the failure modes are asymmetric: too
+ * early costs sync time, too late hides anything received before it. Anything
+ * unresolvable returns undefined — no birthday, the slow but safe answer.
+ */
+async function resolveBirthdayClaim(
+  claim: BirthdayClaim | undefined,
+  networkId: string,
+  tip: number | null | undefined,
+): Promise<number | undefined> {
+  if (!claim) return undefined;
+  if (claim.kind === 'height') return claim.value > 0 ? claim.value : undefined;
+  if (claim.kind === 'tip') return tip ?? undefined;
+  try {
+    const preset = DEFAULT_NETWORKS[networkId];
+    if (!preset) return undefined;
+    return (await heightForDate(preset.indexerUrl, new Date(claim.value))).height;
+  } catch {
+    return undefined;
+  }
+}
 import { parseNightAmount } from './utils/balance.js';
 import { useStackNavigator } from './navigation/index.js';
 import type { CompletedOnboarding, OnComplete, OnUnlock } from './navigation/index.js';
@@ -174,11 +202,13 @@ export function App({ networkId: networkIdProp }: AppProps) {
         // so the assertion stays explicit (moth wallet import --birthday-*).
         await wallet.importWallet(state.name, state.seedInput!, state.passphrase, state.network, {
           currentHeight: network.blockHeight ?? undefined,
+          birthdayHeight: await resolveBirthdayClaim(state.birthday, state.network, network.blockHeight),
         });
         nav.reset('dashboard', undefined);
       } else if (state.source === 'hex') {
         await wallet.importFromSeed(state.name, state.seedInput!, state.passphrase, state.network, {
           currentHeight: network.blockHeight ?? undefined,
+          birthdayHeight: await resolveBirthdayClaim(state.birthday, state.network, network.blockHeight),
         });
         nav.reset('dashboard', undefined);
       }
