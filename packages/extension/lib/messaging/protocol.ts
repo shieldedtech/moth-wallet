@@ -67,6 +67,16 @@ export interface ImportWalletRequest {
   mnemonic: string;
   passphrase: string;
   network?: string;
+  /**
+   * The user asserts this seed was generated just now, so it cannot hold
+   * earlier history and its first sync may start at the tip rather than walking
+   * from genesis. The background resolves it to a height; the panel never deals
+   * in block numbers.
+   *
+   * Absent is the safe default: moth cannot infer an imported seed's history,
+   * and a wrong assertion hides funds.
+   */
+  freshSeed?: boolean;
 }
 
 export interface SendTokensRequest {

@@ -158,8 +158,14 @@ export async function walletCreate(
   return { info, mnemonic: phrase };
 }
 
-export async function walletImport(name: string, mnemonic: string, passphrase: string, network: string) {
-  return getMoth(network).wallets.import(name, mnemonic, passphrase, network);
+export async function walletImport(
+  name: string,
+  mnemonic: string,
+  passphrase: string,
+  network: string,
+  options: {currentHeight?: number; birthdayHeight?: number} = {},
+) {
+  return getMoth(network).wallets.import(name, mnemonic, passphrase, network, options);
 }
 
 export async function walletRemove(name: string, network: string): Promise<void> {

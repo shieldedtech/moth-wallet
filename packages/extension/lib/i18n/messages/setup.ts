@@ -16,6 +16,9 @@ export const setup = {
   setup_stepProgress: '$1 of $2',
   setup_importTitle: 'Bring your wallet back',
   setup_importSubtitle: 'Type your 24-word secret phrase in order, or paste the whole thing at once.',
+  setup_freshSeed: 'I just generated this recovery phrase',
+  setup_freshSeedHint:
+    'Skips scanning the chain for older history, so the first sync takes seconds instead of up to an hour. Leave this unchecked if the phrase has ever been used before.',
   setup_pastePhrase: 'Paste phrase',
   setup_copyPhrase: 'Copy phrase',
   setup_copyPhraseDone: 'Copied',

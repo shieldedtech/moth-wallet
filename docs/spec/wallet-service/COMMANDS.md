@@ -59,8 +59,8 @@ Every command accepts these. Defaults shown.
 | Command | Purpose |
 |---|---|
 | `moth wallet generate [--name <n>]` | Generate a new wallet from a random BIP-39 mnemonic. Prompts (or reads `MOTH_PASSPHRASE`) for the passphrase that encrypts the keystore at rest. |
-| `moth wallet import [--name <n>]` | Import from a recovery phrase (stdin or interactive) or `--seed-hex`. |
-| `moth wallet list` | List all configured wallets in `~/.moth/wallets/`. |
+| `moth wallet import [--name <n>]` | Import from a recovery phrase (stdin or interactive) or `--seed-hex`. `--birthday-date`, `--birthday-height` or `--birthday-tip` assert the seed had no activity before that point, which lets the first sync pre-seed instead of walking from genesis. Err early: too early costs sync time, too late hides funds. See [ADR-0003](../../adr/0003-preseed-reference.md). |
+| `moth wallet list` | List all configured wallets in `~/.moth/wallets/`, with each one's creation date and the height its sync starts from (`genesis` when no birthday is known). |
 | `moth wallet address --name <n>` | Print a wallet's receive addresses — NIGHT external, DUST, and shielded (zswap) — for every network. Unlocks the keystore but runs fully offline (no sync). |
 | `moth wallet use [<name>]` | Switch the active wallet. |
 | `moth wallet remove [<name>] [--yes]` | Delete a wallet. Requires `--yes` for non-interactive use. See [Wallet lifecycle](#wallet-lifecycle) below for what this touches on disk. |

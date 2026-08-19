@@ -1223,6 +1223,12 @@
   "setup_importSubtitle": {
     "message": "Escribe tus 24 palabras secretas en orden, o pega la frase completa de una vez."
   },
+  "setup_freshSeed": {
+    "message": "Acabo de generar esta frase de recuperación"
+  },
+  "setup_freshSeedHint": {
+    "message": "Omite la búsqueda de historial anterior, así la primera sincronización tarda segundos en lugar de hasta una hora. No la marques si la frase ya se ha usado antes."
+  },
   "setup_pastePhrase": {
     "message": "Pegar frase"
   },

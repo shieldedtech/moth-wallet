@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { WalletManager, type WalletInfo, type UnlockedWallet, type StorageAdapter, type WalletAddresses, type WalletKeys } from '@shieldedtech/moth-wallet';
+import { WalletManager, type WalletInfo, type UnlockedWallet, type StorageAdapter, type WalletAddresses, type WalletKeys,
+  type ImportOptions,
+} from '@shieldedtech/moth-wallet';
 import type { WalletState } from '../types.js';
 
 interface UnlockedEntry {
@@ -93,15 +95,27 @@ export function useWallet(storage: StorageAdapter) {
     return info;
   }, [manager, refresh]);
 
-  const importWallet = useCallback(async (name: string, mnemonic: string, passphrase: string, network: string) => {
-    await manager.import(name, mnemonic, passphrase, network);
+  const importWallet = useCallback(async (
+    name: string,
+    mnemonic: string,
+    passphrase: string,
+    network: string,
+    options: ImportOptions = {},
+  ) => {
+    await manager.import(name, mnemonic, passphrase, network, options);
     const wallet = await manager.unlock(name, passphrase);
     sessionCache.current.set(name, { wallet, addresses: wallet.addresses });
     await refresh();
   }, [manager, refresh]);
 
-  const importFromSeed = useCallback(async (name: string, hexSeed: string, passphrase: string, network: string) => {
-    await manager.importFromSeed(name, hexSeed, passphrase, network);
+  const importFromSeed = useCallback(async (
+    name: string,
+    hexSeed: string,
+    passphrase: string,
+    network: string,
+    options: ImportOptions = {},
+  ) => {
+    await manager.importFromSeed(name, hexSeed, passphrase, network, options);
     const wallet = await manager.unlock(name, passphrase);
     sessionCache.current.set(name, { wallet, addresses: wallet.addresses });
     await refresh();
