@@ -224,7 +224,13 @@ export const offscreen = {
     await ensureOffscreen();
     return offscreenSend('os/activityGet', data);
   },
-  async signData(data: { seedHex: string; network: NetworkConfig; data: string; encoding: SignEncoding }) {
+  async signData(data: {
+    seedHex: string;
+    network: NetworkConfig;
+    data: string;
+    encoding: SignEncoding;
+    walletName: string;
+  }) {
     await ensureOffscreen();
     return offscreenSend('os/signData', data);
   },

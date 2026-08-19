@@ -14,6 +14,7 @@ import {NodeZkConfigProvider} from '@midnight-ntwrk/midnight-js-node-zk-config-p
 import {indexerPublicDataProvider} from '@midnight-ntwrk/midnight-js-indexer-public-data-provider';
 import {levelPrivateStateProvider} from '@midnight-ntwrk/midnight-js-level-private-state-provider';
 import {HDWallet, Roles} from '@midnightntwrk/wallet-sdk/hd';
+import type {SignatureKind} from '../wallet/signature-encoding.js';
 import {createKeystoreFor, sdk} from '../sdk/index.js';
 import {MidnightBech32m, UnshieldedAddress} from '@midnightntwrk/wallet-sdk/address-format';
 import {homedir} from 'node:os';
@@ -231,10 +232,14 @@ export async function deployContract(options: DeployOptions): Promise<Transactio
   let shieldedSecretKeys: ledger.ZswapSecretKeys;
   let dustSecretKey: ledger.DustSecretKey;
   let nightExternalKey: Uint8Array;
+  // A bundle knows its kind. A bare seed does not — it is the legacy path, and
+  // a caller that needs ECDSA has to pass walletKeys.
+  let signatureKind: SignatureKind = 'schnorr';
   if (walletKeys) {
     shieldedSecretKeys = walletKeys.shieldedSecretKeys;
     dustSecretKey = walletKeys.dustSecretKey;
     nightExternalKey = walletKeys.nightExternalKey;
+    signatureKind = walletKeys.signatureKind;
   } else {
     if (!seedHex) {
       throw new WalletError('WALLET_ERROR', 'deployContract requires either walletKeys or seedHex');
@@ -251,7 +256,7 @@ export async function deployContract(options: DeployOptions): Promise<Transactio
     dustSecretKey = activeLedger().DustSecretKey.fromSeed(keyResult.keys[Roles.Dust]);
     nightExternalKey = keyResult.keys[Roles.NightExternal];
   }
-  const keystore = createKeystoreFor(nightExternalKey, network.id);
+  const keystore = createKeystoreFor(nightExternalKey, network.id, signatureKind);
 
   // Build wallet provider from facade (same as mn-tui's buildWalletProvider)
   if (!syncedWallet?.facade) {

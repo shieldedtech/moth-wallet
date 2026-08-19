@@ -17,6 +17,7 @@ import type * as ledger from '@midnight-ntwrk/ledger-v8';
 import {ledger as activeLedger, activeLedgerVersion} from '../ledger/index.js';
 import {verifyNetworkLedger} from '../ledger/protocol-version.js';
 import {HDWallet, Roles} from '@midnightntwrk/wallet-sdk/hd';
+import type {SignatureKind} from '../wallet/signature-encoding.js';
 import {createKeystoreFor} from '../sdk/index.js';
 import type {SyncedWallet} from '../sync/wallet-sync.js';
 import type {WalletKeys} from '../sync/operations.js';
@@ -94,10 +95,14 @@ async function insertViaSDK(options: InsertVerifierKeyOptions): Promise<Transact
   let shieldedSecretKeys: ledger.ZswapSecretKeys;
   let dustSecretKey: ledger.DustSecretKey;
   let nightExternalKey: Uint8Array;
+  // A bundle knows its kind. A bare seed does not — it is the legacy path, and
+  // a caller that needs ECDSA has to pass walletKeys.
+  let signatureKind: SignatureKind = 'schnorr';
   if (walletKeys) {
     shieldedSecretKeys = walletKeys.shieldedSecretKeys;
     dustSecretKey = walletKeys.dustSecretKey;
     nightExternalKey = walletKeys.nightExternalKey;
+    signatureKind = walletKeys.signatureKind;
   } else {
     if (!seedHex) {
       throw new WalletError('WALLET_ERROR', 'insertVerifierKey requires either walletKeys or seedHex');
@@ -114,7 +119,7 @@ async function insertViaSDK(options: InsertVerifierKeyOptions): Promise<Transact
     dustSecretKey = activeLedger().DustSecretKey.fromSeed(keyResult.keys[Roles.Dust]);
     nightExternalKey = keyResult.keys[Roles.NightExternal];
   }
-  const keystore = createKeystoreFor(nightExternalKey, network.id);
+  const keystore = createKeystoreFor(nightExternalKey, network.id, signatureKind);
 
   // Wait for wallet sync + dust stabilization (same as call.ts)
   const facade = syncedWallet!.facade;
@@ -340,10 +345,14 @@ async function insertBatchViaSDK(options: InsertVerifierKeysOptions): Promise<Ba
   let shieldedSecretKeys: ledger.ZswapSecretKeys;
   let dustSecretKey: ledger.DustSecretKey;
   let nightExternalKey: Uint8Array;
+  // A bundle knows its kind. A bare seed does not — it is the legacy path, and
+  // a caller that needs ECDSA has to pass walletKeys.
+  let signatureKind: SignatureKind = 'schnorr';
   if (walletKeys) {
     shieldedSecretKeys = walletKeys.shieldedSecretKeys;
     dustSecretKey = walletKeys.dustSecretKey;
     nightExternalKey = walletKeys.nightExternalKey;
+    signatureKind = walletKeys.signatureKind;
   } else {
     if (!seedHex) {
       throw new WalletError('WALLET_ERROR', 'insertVerifierKeys requires either walletKeys or seedHex');
@@ -360,7 +369,7 @@ async function insertBatchViaSDK(options: InsertVerifierKeysOptions): Promise<Ba
     dustSecretKey = activeLedger().DustSecretKey.fromSeed(keyResult.keys[Roles.Dust]);
     nightExternalKey = keyResult.keys[Roles.NightExternal];
   }
-  const keystore = createKeystoreFor(nightExternalKey, network.id);
+  const keystore = createKeystoreFor(nightExternalKey, network.id, signatureKind);
 
   const facade = syncedWallet!.facade;
   const state: any = await Rx.firstValueFrom(

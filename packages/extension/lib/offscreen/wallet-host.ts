@@ -813,13 +813,21 @@ function toHistoryEntry(entry: { hash: string; status: 'SUCCESS' | 'FAILURE' | '
 
 // Signing needs only the seed + network id (no sync engine), so this is
 // deliberately independent of syncEnsure.
-export function signData(
+export async function signData(
   seedHex: string,
   network: NetworkConfig,
   data: string,
   encoding: SignEncoding,
-): SignedMessage {
-  return signMessage(seedHex, network.id, data, encoding);
+  walletName: string,
+): Promise<SignedMessage> {
+  // An ECDSA wallet signs with a different key and publishes a different
+  // verifying key, so signing with the default would hand the dApp a signature
+  // that verifies against a key the wallet never gave it.
+  const moth = await getMoth(network.id);
+  const record = (await moth.wallets.list()).find((w) => w.name === walletName);
+  const signatureKind = record?.signatureKind ?? 'schnorr';
+  if (signatureKind === 'ecdsa') await initSdk('v9');
+  return signMessage(seedHex, network.id, data, encoding, signatureKind);
 }
 
 // Deterministic per-(origin, domain) app secret. Like signData, this needs

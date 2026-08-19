@@ -249,6 +249,8 @@ export interface OffscreenProtocol {
     network: NetworkConfig;
     data: string;
     encoding: SignEncoding;
+    /** Selects the signing key; the host reads the wallet's kind from it. */
+    walletName: string;
   }): SignedMessage;
 
   /** Derive a deterministic per-(origin, domain) 32-byte app secret from the

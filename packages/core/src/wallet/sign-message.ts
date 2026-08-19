@@ -73,10 +73,14 @@ export function signMessage(
   networkId: string,
   data: string,
   encoding: SignEncoding,
+  // The wallet's kind. A signature made with the wrong one verifies against a
+  // key the dApp was never given, so this has to follow the wallet rather than
+  // default silently.
+  signatureKind: SignatureKind = 'schnorr',
 ): SignedMessage {
   const payload = signedMessageBytes(decodeData(data, encoding));
   const keys = deriveRawKeys(seedHex);
-  const keystore = createKeystoreFor(keys[Roles.NightExternal], networkId);
+  const keystore = createKeystoreFor(keys[Roles.NightExternal], networkId, signatureKind);
   const signature = keystore.signData(payload) as TaggedOrBare;
   const verifyingKey = keystore.getPublicKey() as TaggedOrBare;
   return {
