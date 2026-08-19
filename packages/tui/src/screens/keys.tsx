@@ -20,6 +20,22 @@ interface KeysProps {
 
 type Mode = 'list' | 'unlock';
 
+/**
+ * When an account started, and where its sync begins.
+ *
+ * "from genesis" is the part worth surfacing: without a birthday the first sync
+ * replays the whole chain, which on DUST is the difference between seconds and
+ * the better part of an hour. Saying so next to the account beats leaving it to
+ * be inferred from a slow progress bar.
+ */
+function describeOrigin(w: WalletInfo): string {
+  const parts: string[] = [];
+  if (w.createdAt) parts.push(`created ${w.createdAt.slice(0, 10)}`);
+  if (w.createdAtHeight) parts.push(`block ${w.createdAtHeight.height}`);
+  parts.push(w.birthday !== undefined ? `syncs from ${w.birthday}` : 'syncs from genesis');
+  return parts.join(' · ');
+}
+
 export function Keys({
   wallets, isUnlocked, getAddresses, onUnlock, onLock, onSwitch, onRemove, onClearCache, onCreateNew, onBack,
 }: KeysProps) {
@@ -156,6 +172,9 @@ export function Keys({
                     }
                     {w.active && ' ← active'}
                   </Text>
+                </Box>
+                <Box paddingLeft={4}>
+                  <Text dimColor>{describeOrigin(w)}</Text>
                 </Box>
                 {addrs && (
                   <Box flexDirection="column" paddingLeft={4}>
