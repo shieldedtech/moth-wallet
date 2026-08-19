@@ -9,10 +9,16 @@ import { PanelScreen, Crescent } from '../moth/panel';
 export function Unlock({
   walletName,
   accountName,
+  accounts,
   onUnlock,
   onCancel,
 }: {
   walletName: string;
+  /** Every account available to unlock. When more than one exists the user
+   *  picks; without this the screen silently unlocks whichever is active, which
+   *  after deleting the active account is a different one than they expect —
+   *  and the only symptom is a rejected password. */
+  accounts?: ReadonlyArray<{ name: string; label?: string; network: string }>;
   /** Display label of the account being unlocked. Shown when switching so the
    *  target is unambiguous; omitted on a cold unlock (generic welcome). */
   accountName?: string;
@@ -26,12 +32,16 @@ export function Unlock({
   const [show, setShow] = useState(false);
   const [error, setError] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [selected, setSelected] = useState(walletName);
+
+  const choices = accounts && accounts.length > 1 ? accounts : null;
+  const target = choices ? selected : walletName;
 
   const submit = async () => {
     setBusy(true);
     setError(false);
     try {
-      await onUnlock(walletName, passphrase);
+      await onUnlock(target, passphrase);
     } catch {
       setError(true);
     } finally {
@@ -47,8 +57,35 @@ export function Unlock({
           {accountName ? t('unlock_unlockAccount', [accountName]) : t('unlock_welcomeBack')}
         </h1>
         <p className="m-0 text-[13.5px] text-muted-foreground">
-          {accountName ? t('unlock_switchHint') : t('unlock_enterPassword')}
+          {choices ? t('unlock_chooseAccount') : accountName ? t('unlock_switchHint') : t('unlock_enterPassword')}
         </p>
+        {choices ? (
+          <div className="flex w-full flex-col gap-1.5" role="radiogroup" aria-label={t('unlock_chooseAccount')}>
+            {choices.map((account) => {
+              const active = account.name === target;
+              return (
+                <button
+                  key={account.name}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => {
+                    setSelected(account.name);
+                    setError(false);
+                  }}
+                  className={`flex w-full items-center justify-between rounded-2xl border px-4 py-2.5 text-left transition-colors duration-150 ${
+                    active ? 'border-foreground bg-white/10' : 'border-input bg-white/5 hover:bg-white/8'
+                  }`}
+                >
+                  <span className="truncate text-sm font-semibold">{account.label?.trim() || account.name}</span>
+                  <span className="ml-3 shrink-0 text-[11px] uppercase tracking-wide text-muted-foreground">
+                    {account.network}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
         <div className="relative w-full">
           <input
             type={show ? 'text' : 'password'}
