@@ -9,6 +9,7 @@
 - [ ] Useful pull request description
 - [ ] Tests are provided (if possible)
 - [ ] Key commits have useful messages
+- [ ] Every non-merge, non-bot commit has a matching DCO `Signed-off-by` trailer
 - [ ] All check jobs of the CI have succeeded
 - [ ] Self-reviewed the diff
 - [ ] Reviewer requested
