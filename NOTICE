@@ -31,6 +31,33 @@ License: Apache-2.0
 
 ---
 
+midnight-wallet-cli
+Copyright 2026 Norman Lopez (nel349)
+Licensed under the Apache License, Version 2.0
+
+Portions of Moth's TUI and sync components are ported from or mirror
+midnight-wallet-cli, a standalone CLI wallet for the Midnight Network.
+Specifically:
+
+- DUST registration multi-step flow (tui/screens/dust.tsx)
+- Per-wallet sync progress formatting and the per-sub-wallet
+  applied/total progress shape (tui/utils/sync.ts, core/sync/wallet-sync.ts)
+- Balance and display formatting style (tui/utils/display.ts,
+  tui/utils/balance.ts)
+- Section heading pattern (tui/components/SectionHeader.tsx)
+- Screen navigation types (tui/navigation/types.ts)
+- Dashboard state view patterns (tui/screens/dashboard/)
+- Network endpoint values (core/types/network.ts, mirroring
+  midnight-wallet-cli/src/config/environments.ts)
+
+Moth's localnet funding flow and daemon integration tests also invoke
+the midnight-wallet-cli npm package directly (midnight airdrop).
+
+Source: https://github.com/nel349/midnight-wallet-cli
+License: Apache-2.0
+
+---
+
 Midnight Network SDK packages (@midnight-ntwrk/*)
 Copyright Midnight Foundation
 Licensed under the Apache License, Version 2.0
