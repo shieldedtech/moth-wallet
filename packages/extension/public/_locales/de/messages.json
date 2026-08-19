@@ -1415,6 +1415,15 @@
   "welcome_gettingThingsReady": {
     "message": "Alles wird vorbereitet"
   },
+  "welcome_loadingFailedTitle": {
+    "message": "Wallet konnte nicht geöffnet werden"
+  },
+  "welcome_loadingFailedHint": {
+    "message": "Meist ist das gewählte Netzwerk nicht erreichbar oder nicht das, auf dem dieses Konto funktioniert."
+  },
+  "welcome_loadingFailedAction": {
+    "message": "Netzwerk wechseln"
+  },
   "welcome_loadingPreparingWallet": {
     "message": "Deine Wallet wird vorbereitet"
   },

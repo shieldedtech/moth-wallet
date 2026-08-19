@@ -129,7 +129,17 @@ export function App() {
     );
   }
 
-  if (!events.balances) return <WalletLoading syncMessage={events.syncMessage} />;
+  // The loading screen short-circuits the router, so a failed sync used to be a
+  // dead end: it told the user to check the network and gave them no way to get
+  // there. Let the network screen through, and let the failure open it.
+  if (!events.balances && screen !== 'network-config') {
+    return (
+      <WalletLoading
+        syncMessage={events.syncMessage}
+        onOpenNetwork={() => setScreen('network-config')}
+      />
+    );
+  }
 
   const shared = {
     navigate: setScreen,

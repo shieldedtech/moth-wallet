@@ -5,6 +5,7 @@
 
 import { browser, type Browser } from 'wxt/browser';
 import type { NetworkConfig } from '@shieldedtech/moth-browser';
+import { SYNC_FAILURE_PREFIX } from '../messaging/protocol';
 import { type PortEvent } from '../messaging/protocol';
 import { offscreenOn, type RelayState } from '../offscreen/messaging';
 import { offscreen } from './offscreen-client';
@@ -219,7 +220,7 @@ export function broadcastApproval(id: string | null): void {
  */
 export function broadcastSyncFailure(error: unknown): void {
   const message = error instanceof Error ? error.message : String(error);
-  broadcast({ kind: 'syncMessage', message: `Sync failed: ${message}` });
+  broadcast({ kind: 'syncMessage', message: `${SYNC_FAILURE_PREFIX} ${message}` });
 }
 
 // Fully idle: nothing watching, nothing in flight, no decision pending. An

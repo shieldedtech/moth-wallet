@@ -1415,6 +1415,15 @@
   "welcome_gettingThingsReady": {
     "message": "Préparation en cours"
   },
+  "welcome_loadingFailedTitle": {
+    "message": "Impossible d'ouvrir votre wallet"
+  },
+  "welcome_loadingFailedHint": {
+    "message": "En général, le réseau sélectionné est injoignable, ou n'est pas celui sur lequel ce compte fonctionne."
+  },
+  "welcome_loadingFailedAction": {
+    "message": "Changer de réseau"
+  },
   "welcome_loadingPreparingWallet": {
     "message": "Préparation de votre portefeuille"
   },

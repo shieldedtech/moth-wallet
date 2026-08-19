@@ -1,3 +1,8 @@
+/** Marks a syncMessage as a failure rather than progress. The loading screen
+ *  matches progress text by keyword and falls through to a generic line, so a
+ *  failure smuggled in as prose renders as reassurance and spins forever. */
+export const SYNC_FAILURE_PREFIX = 'Sync failed:';
+
 // Typed request/response protocol between UI surfaces (side panel, approval
 // window) and the background service worker. All payloads must survive
 // structured cloning — bigints and Dates travel as serialized strings.

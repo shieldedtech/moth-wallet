@@ -1415,6 +1415,15 @@
   "welcome_gettingThingsReady": {
     "message": "Preparando todo"
   },
+  "welcome_loadingFailedTitle": {
+    "message": "No se pudo abrir tu wallet"
+  },
+  "welcome_loadingFailedHint": {
+    "message": "Normalmente significa que la red seleccionada no está accesible, o no es la red en la que funciona esta cuenta."
+  },
+  "welcome_loadingFailedAction": {
+    "message": "Cambiar de red"
+  },
   "welcome_loadingPreparingWallet": {
     "message": "Preparando tu billetera"
   },
