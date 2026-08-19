@@ -159,6 +159,24 @@ export class WalletManager {
    * network reports and falls back to the shipped table, so an unreachable
    * indexer still unlocks the wallet.
    */
+  /**
+   * ECDSA exists only on ledger v9, so asking for it on a v8 network cannot
+   * produce a usable wallet — it would have no unshielded address there at all.
+   * Refusing beats creating something that silently cannot receive.
+   */
+  private async assertKindUsable(networkId: string, kind: SignatureKind): Promise<void> {
+    if (kind !== 'ecdsa') return;
+    const preset = DEFAULT_NETWORKS[networkId];
+    const version = preset ? (await detectLedgerVersion(preset)).version : 'v8';
+    if (version !== 'v9') {
+      throw new WalletError(
+        'INVALID_INPUT',
+        `ECDSA signing needs a ledger v9 network; ${networkId} is on ${version}. ` +
+          `Use schnorr there, or pick a v9 network.`,
+      );
+    }
+  }
+
   private async ensureRuntimeFor(networkId: string): Promise<void> {
     const preset = DEFAULT_NETWORKS[networkId];
     const version = preset ? (await detectLedgerVersion(preset)).version : 'v8';
@@ -207,6 +225,8 @@ export class WalletManager {
     }
     const phrase = mnemonic ?? generateMnemonic24();
     const seed = await mnemonicToSeed(phrase);
+    await this.ensureRuntimeFor(network);
+    await this.assertKindUsable(network, signatureKind);
     const seedHex = this.seedToHex(seed);
     const addresses = this.deriveAddressesFromSeed(seedHex, signatureKind);
     const address = this.primaryAddress(addresses, network);
@@ -236,7 +256,13 @@ export class WalletManager {
     return { name, address, addresses, network, active: config.activeWallet === name, mnemonic: phrase, birthday };
   }
 
-  async import(name: string, mnemonic: string, passphrase: string, network = 'devnet'): Promise<WalletInfo> {
+  async import(
+    name: string,
+    mnemonic: string,
+    passphrase: string,
+    network = 'devnet',
+    signatureKind: SignatureKind = 'schnorr',
+  ): Promise<WalletInfo> {
     this.validateName(name);
 
     if (!validateMnemonic(mnemonic)) {
@@ -248,15 +274,24 @@ export class WalletManager {
       throw new WalletError('WALLET_ERROR', `Wallet "${name}" already exists`);
     }
 
+    await this.ensureRuntimeFor(network);
+    await this.assertKindUsable(network, signatureKind);
     const seed = await mnemonicToSeed(mnemonic);
     const seedHex = this.seedToHex(seed);
-    const addresses = this.deriveAddressesFromSeed(seedHex);
+    const addresses = this.deriveAddressesFromSeed(seedHex, signatureKind);
     const address = this.primaryAddress(addresses, network);
 
     const keystore = await encryptKeystore(mnemonic, passphrase);
     await this.storage.write(walletKey(name), encoder.encode(JSON.stringify(keystore)));
 
-    const meta: WalletMeta = { name, network, createdAt: new Date().toISOString(), address, createdHere: false };
+    const meta: WalletMeta = {
+      name,
+      network,
+      createdAt: new Date().toISOString(),
+      address,
+      createdHere: false,
+      ...(signatureKind !== 'schnorr' ? { signatureKind } : {}),
+    };
     await this.saveMeta(meta);
 
     config.wallets.push(name);
@@ -268,8 +303,16 @@ export class WalletManager {
     return { name, address, addresses, network, active: config.activeWallet === name };
   }
 
-  async importFromSeed(name: string, hexSeed: string, passphrase: string, network = 'devnet'): Promise<WalletInfo> {
-    const addresses = this.deriveAddressesFromSeed(hexSeed);
+  async importFromSeed(
+    name: string,
+    hexSeed: string,
+    passphrase: string,
+    network = 'devnet',
+    signatureKind: SignatureKind = 'schnorr',
+  ): Promise<WalletInfo> {
+    await this.ensureRuntimeFor(network);
+    await this.assertKindUsable(network, signatureKind);
+    const addresses = this.deriveAddressesFromSeed(hexSeed, signatureKind);
     const address = this.primaryAddress(addresses, network);
 
     const keystore = await encryptKeystore(`seed:${hexSeed}`, passphrase);
@@ -281,7 +324,14 @@ export class WalletManager {
     }
 
     await this.storage.write(walletKey(name), encoder.encode(JSON.stringify(keystore)));
-    const meta: WalletMeta = { name, network, createdAt: new Date().toISOString(), address, createdHere: false };
+    const meta: WalletMeta = {
+      name,
+      network,
+      createdAt: new Date().toISOString(),
+      address,
+      createdHere: false,
+      ...(signatureKind !== 'schnorr' ? { signatureKind } : {}),
+    };
     await this.saveMeta(meta);
 
     config.wallets.push(name);

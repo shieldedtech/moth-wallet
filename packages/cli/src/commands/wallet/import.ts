@@ -9,6 +9,14 @@ export default class WalletImport extends BaseCommand {
   static override flags = {
     ...BaseCommand.baseFlags,
     name: Flags.string({ description: 'Wallet name' }),
+    'signature-kind': Flags.string({
+      options: ['schnorr', 'ecdsa'],
+      default: 'schnorr',
+      description:
+        'Unshielded signing algorithm. ECDSA needs a ledger v9 network and gives a different ' +
+        'unshielded address; it cannot be changed after creation.',
+    }),
+
     'seed-hex': Flags.boolean({ description: 'Import from hex seed instead of mnemonic', default: false }),
   };
 
@@ -42,7 +50,13 @@ export default class WalletImport extends BaseCommand {
       } else {
         hexSeed = await this.promptIfMissing(undefined, 'Hex seed');
       }
-      info = await this.walletManager.importFromSeed(name, hexSeed, passphrase, flags.network);
+      info = await this.walletManager.importFromSeed(
+        name,
+        hexSeed,
+        passphrase,
+        flags.network,
+        flags['signature-kind'] as 'schnorr' | 'ecdsa',
+      );
     } else {
       // Mnemonic via stdin pipe or interactive prompt — never as env var or argument.
       // SR-001: mnemonics MUST NOT appear in environment variables or process arguments.
@@ -63,7 +77,13 @@ export default class WalletImport extends BaseCommand {
       } else {
         mnemonic = await this.promptIfMissing(undefined, 'Recovery phrase (24 words)');
       }
-      info = await this.walletManager.import(name, mnemonic.trim(), passphrase, flags.network);
+      info = await this.walletManager.import(
+        name,
+        mnemonic.trim(),
+        passphrase,
+        flags.network,
+        flags['signature-kind'] as 'schnorr' | 'ecdsa',
+      );
     }
 
     if (this.outputFormat === 'json') {

@@ -19,12 +19,24 @@ export default class WalletList extends BaseCommand {
     }
 
     this.outputSuccess(
-      wallets.map((w: { name: string; address: string; network: string; active: boolean }) => ({
+      wallets.map(
+        (w: {
+          name: string;
+          address: string;
+          network: string;
+          active: boolean;
+          signatureKind?: 'schnorr' | 'ecdsa';
+        }) => ({
         name: w.name,
         address: w.address,
         network: w.network,
+        // Only shown when it is not the default: an ECDSA wallet has a
+        // different unshielded address and works on v9 networks only, so
+        // knowing which is which matters. Blank for the schnorr majority.
+        signing: w.signatureKind === 'ecdsa' ? 'ecdsa' : '',
         active: w.active ? '→' : '',
-      })),
+      }),
+      ),
     );
   }
 }

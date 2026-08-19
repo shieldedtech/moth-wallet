@@ -9,6 +9,13 @@ export default class WalletGenerate extends BaseCommand {
   static override flags = {
     ...BaseCommand.baseFlags,
     name: Flags.string({ description: 'Wallet name (auto-generated if omitted)' }),
+    'signature-kind': Flags.string({
+      options: ['schnorr', 'ecdsa'],
+      default: 'schnorr',
+      description:
+        'Unshielded signing algorithm. ECDSA needs a ledger v9 network and gives a different ' +
+        'unshielded address; it cannot be changed after creation.',
+    }),
     'show-mnemonic': Flags.boolean({
       description: 'Include mnemonic in JSON output (use with caution)',
       default: false,
@@ -24,7 +31,14 @@ export default class WalletGenerate extends BaseCommand {
     const passphrase = await getPassphrase('New passphrase: ');
 
     this.log_verbose(`Generating wallet "${name}"`);
-    const info = await this.walletManager.generate(name, passphrase, flags.network);
+    const info = await this.walletManager.generate(
+      name,
+      passphrase,
+      flags.network,
+      undefined,
+      undefined,
+      flags['signature-kind'] as 'schnorr' | 'ecdsa',
+    );
 
     if (this.outputFormat === 'json') {
       const output: Record<string, unknown> = {
