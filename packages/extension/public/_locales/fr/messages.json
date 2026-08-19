@@ -11,6 +11,15 @@
   "accounts_networkAria": {
     "message": "Réseau : $1"
   },
+  "accounts_createdOn": {
+    "message": "Créé le $1"
+  },
+  "accounts_createdAtBlock": {
+    "message": "bloc $1"
+  },
+  "accounts_syncsFromGenesis": {
+    "message": "synchronise depuis genesis"
+  },
   "accounts_menuAria": {
     "message": "Menu du compte"
   },

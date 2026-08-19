@@ -12,8 +12,17 @@ export {
   describeProver,
 } from './types/network.js';
 
+// Block time
+export {
+  findHeightBefore,
+  chainTip,
+  heightForDate,
+  type BlockAt,
+  type HeightAtTime,
+} from './network/block-time.js';
+
 // Wallet
-export { WalletManager } from './wallet/manager.js';
+export { WalletManager, type ImportOptions } from './wallet/manager.js';
 export {
   NIGHT_DENOMINATION,
   DUST_DENOMINATION,

@@ -349,12 +349,45 @@ Every command accepts:
 | `--indexer` | | config | Indexer GraphQL URL override (env: `MOTH_INDEXER_URL`) |
 | `--node-url` | | config | Node URL override (env: `MOTH_NODE_URL`) |
 
+### Account birthdays
+
+A wallet's *birthday* is the height below which it is known to have no activity.
+With one, a first sync starts from a bundled reference; without one it walks the
+chain from genesis — on preprod that is 1.4M DUST events, roughly 78 minutes.
+
+Accounts created by Moth get one automatically. **Imported accounts do not**, and
+that is deliberate: an imported seed may hold funds on any chain at any height,
+and Moth cannot know which. Guessing too late would hide funds.
+
+You can supply one, if you know it:
+
+```bash
+# "I generated this seed in August" — resolved to a block height for you
+moth wallet import --name w --seed-hex --birthday-date 2026-08-01
+
+# a height you already know
+moth wallet import --name w --seed-hex --birthday-height 1905019
+
+# a seed generated moments ago
+moth wallet import --name w --seed-hex --birthday-tip
+```
+
+The failure modes are not symmetric, so err early: **too early costs sync time,
+too late hides funds.** If a balance looks wrong, clearing the account's sync
+cache falls back to a full scan.
+
+`moth wallet list` shows each account's creation date and where its sync starts
+(`genesis` when no birthday is known). The extension shows the same under
+Accounts.
+
+
 ### Wallet Management
 
 | Command | Description |
 |---------|-------------|
 | `moth wallet generate [--name <name>]` | Create new wallet from random mnemonic |
 | `moth wallet import [--name <name>]` | Import from recovery phrase (stdin or interactive) or `--seed-hex` |
+| `--birthday-date` / `--birthday-height` / `--birthday-tip` | On `import`. Assert the seed had no activity before a date, height, or now. See [Account birthdays](#account-birthdays) |
 | `moth wallet list` | List all wallets |
 | `moth wallet address --name <name>` | Print a wallet's receive addresses (NIGHT, DUST, shielded) for every network. Offline — unlocks the keystore, no sync |
 | `moth wallet use [<name>]` | Switch active wallet (prompts if name omitted) |
