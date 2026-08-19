@@ -166,6 +166,20 @@ changes what Moth infers on its own. The failure modes stay asymmetric and the
 rounding follows them: the search returns the last block strictly *before* the
 target, because too early costs sync time and too late hides funds.
 
+**The consequence of an over-late birthday differs by token type**, which the
+height≤birthday rule alone does not convey. Unshielded coins are owned by an
+address, so holdings are in principle discoverable by asking about that address.
+Shielded coins are found only by trial-decrypting every output with the viewing
+key — there is no query — so blocks skipped are coins that cannot be discovered
+without rescanning from before them. Both cases are equally wrong; only the
+unshielded one is noticeable. That is the argument for rounding early and for
+saying so in the UI rather than only in the flag's help text.
+
+The reference makes this workable at all: it carries an *empty* wallet's
+serialised shielded, unshielded and DUST state at its height — including the
+zswap state needed to build proofs onward — so a pre-seeded wallet has the local
+information it needs rather than having to reconstruct it.
+
 `createdAtHeight` is recorded separately for display — when the account was
 created here — and is deliberately not consulted by the guard. Conflating the
 two would let an informational value become a safety assertion.
