@@ -38,10 +38,35 @@ function metaKey(name: string): string {
   return `wallets/${name}.meta`;
 }
 
+/**
+ * Extra facts a caller can supply when importing.
+ *
+ * The two are deliberately separate. `currentHeight` is "where the chain was
+ * when this was imported" and is informational. `birthdayHeight` is a claim —
+ * "this seed had no activity before here" — and is the only one the pre-seed
+ * guard acts on. Merging them would let a display value silently become a
+ * safety assertion.
+ */
+export interface ImportOptions {
+  readonly currentHeight?: number;
+  readonly birthdayHeight?: number;
+}
+
 interface WalletMeta {
   name: string;
   network: string;
   createdAt: string;
+  /**
+   * Chain tip when this wallet record was created here, and the network it was
+   * read from. Informational: it answers "when did this account start?" for the
+   * accounts view.
+   *
+   * Deliberately NOT a birthday. A birthday asserts "no activity before this
+   * height", which is only true for a wallet whose keys were generated here —
+   * an imported seed may hold funds from long before the moment it was typed
+   * in. `birthdays` remains the only thing the pre-seed guard reads.
+   */
+  createdAtHeight?: {readonly network: string; readonly height: number};
   /** Public night receive address (bech32m). Absent for wallets created before this field existed. */
   address?: string;
   /**
@@ -190,6 +215,7 @@ export class WalletManager {
       createdAt: new Date().toISOString(),
       address,
       createdHere: true,
+      ...(birthday !== undefined ? {createdAtHeight: {network, height: birthday}} : {}),
       ...(birthday !== undefined ? { birthdays: { [network]: birthday } } : {}),
     };
     await this.saveMeta(meta);
@@ -203,7 +229,13 @@ export class WalletManager {
     return { name, address, addresses, network, active: config.activeWallet === name, mnemonic: phrase, birthday };
   }
 
-  async import(name: string, mnemonic: string, passphrase: string, network = 'devnet'): Promise<WalletInfo> {
+  async import(
+    name: string,
+    mnemonic: string,
+    passphrase: string,
+    network = 'devnet',
+    options: ImportOptions = {},
+  ): Promise<WalletInfo> {
     this.validateName(name);
 
     if (!validateMnemonic(mnemonic)) {
@@ -223,7 +255,21 @@ export class WalletManager {
     const keystore = await encryptKeystore(mnemonic, passphrase);
     await this.storage.write(walletKey(name), encoder.encode(JSON.stringify(keystore)));
 
-    const meta: WalletMeta = { name, network, createdAt: new Date().toISOString(), address, createdHere: false };
+    const meta: WalletMeta = {
+      name,
+      network,
+      createdAt: new Date().toISOString(),
+      address,
+      createdHere: false,
+      ...(options.currentHeight !== undefined
+        ? {createdAtHeight: {network, height: options.currentHeight}}
+        : {}),
+      // An asserted birthday is the user's claim, not an inference. createdHere
+      // stays false, so later network switches still never invent one.
+      ...(options.birthdayHeight !== undefined
+        ? {birthdays: {[network]: options.birthdayHeight}}
+        : {}),
+    };
     await this.saveMeta(meta);
 
     config.wallets.push(name);
@@ -235,7 +281,13 @@ export class WalletManager {
     return { name, address, addresses, network, active: config.activeWallet === name };
   }
 
-  async importFromSeed(name: string, hexSeed: string, passphrase: string, network = 'devnet'): Promise<WalletInfo> {
+  async importFromSeed(
+    name: string,
+    hexSeed: string,
+    passphrase: string,
+    network = 'devnet',
+    options: ImportOptions = {},
+  ): Promise<WalletInfo> {
     const addresses = this.deriveAddressesFromSeed(hexSeed);
     const address = this.primaryAddress(addresses, network);
 
@@ -248,7 +300,21 @@ export class WalletManager {
     }
 
     await this.storage.write(walletKey(name), encoder.encode(JSON.stringify(keystore)));
-    const meta: WalletMeta = { name, network, createdAt: new Date().toISOString(), address, createdHere: false };
+    const meta: WalletMeta = {
+      name,
+      network,
+      createdAt: new Date().toISOString(),
+      address,
+      createdHere: false,
+      ...(options.currentHeight !== undefined
+        ? {createdAtHeight: {network, height: options.currentHeight}}
+        : {}),
+      // An asserted birthday is the user's claim, not an inference. createdHere
+      // stays false, so later network switches still never invent one.
+      ...(options.birthdayHeight !== undefined
+        ? {birthdays: {[network]: options.birthdayHeight}}
+        : {}),
+    };
     await this.saveMeta(meta);
 
     config.wallets.push(name);
@@ -490,6 +556,8 @@ export class WalletManager {
         active: config.activeWallet === name,
         birthday: meta ? birthdayFor(meta, meta.network) : undefined,
         label: meta?.label,
+        createdAt: meta?.createdAt,
+        createdAtHeight: meta?.createdAtHeight,
       });
     }
     return wallets;
