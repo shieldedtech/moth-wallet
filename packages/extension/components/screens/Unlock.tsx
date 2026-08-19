@@ -32,10 +32,22 @@ export function Unlock({
   const [show, setShow] = useState(false);
   const [error, setError] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [selected, setSelected] = useState(walletName);
+  // Holds only an explicit choice. What gets unlocked is derived below, so a
+  // selection can never outlive the account it named: deleting the active
+  // account changes the list under a mounted screen, and useState would happily
+  // keep pointing at the account that just went away.
+  const [chosen, setChosen] = useState<string | null>(null);
 
   const choices = accounts && accounts.length > 1 ? accounts : null;
-  const target = choices ? selected : walletName;
+  const exists = (name: string | null) => name !== null && (accounts ?? []).some((a) => a.name === name);
+  // Preference order: an explicit choice that still exists, then the account the
+  // panel considers active, then whatever is left. With one account remaining
+  // after a deletion this lands on it without the user choosing again.
+  const target = exists(chosen)
+    ? (chosen as string)
+    : exists(walletName)
+      ? walletName
+      : (accounts?.[0]?.name ?? walletName);
 
   const submit = async () => {
     setBusy(true);
@@ -70,7 +82,7 @@ export function Unlock({
                   role="radio"
                   aria-checked={active}
                   onClick={() => {
-                    setSelected(account.name);
+                    setChosen(account.name);
                     setError(false);
                   }}
                   className={`flex w-full items-center justify-between rounded-2xl border px-4 py-2.5 text-left transition-colors duration-150 ${
