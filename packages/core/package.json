@@ -35,7 +35,7 @@
     "@midnight-ntwrk/midnight-js-indexer-public-data-provider": "4.1.1",
     "@midnight-ntwrk/midnight-js-level-private-state-provider": "4.1.1",
     "@midnight-ntwrk/midnight-js-node-zk-config-provider": "4.1.1",
-    "@midnight-ntwrk/zkir-v2": "2.1.0",
+    "@midnight-ntwrk/zkir-v2": "2.2.0-rc.3",
     "@midnightntwrk/ledger-v9": "1.0.0-rc.3",
     "@midnightntwrk/wallet-sdk": "^1.2.0",
     "@noble/ciphers": "^2.2.0",

@@ -151,3 +151,26 @@ export function createKeystoreFor(
   const arg = activeSdkVersion() === 'v9' ? {kind, secret} : secret;
   return create(arg, networkId) as ReturnType<SdkModule['unshielded']['createKeystore']>;
 }
+
+/**
+ * The signer callback each SDK generation expects.
+ *
+ * The contract changed across the fork. v8 takes a synchronous
+ * `(data) => Signature`; v9 takes `SignSegment = (data) => Promise<Signature>`,
+ * made async so out-of-process signers (MPC, HSM) can be plugged in — the whole
+ * point of ECDSA support. Handing v9 the synchronous callback gives its signing
+ * service a non-thenable, which surfaces to the user as "Signer callback
+ * failed" with nothing to indicate why.
+ *
+ * v9 keystores carry `signDataAsync` for exactly this; v8 keystores have no
+ * such method, so the shape has to be chosen per generation.
+ */
+export function signSegmentFor(
+  keystore: ReturnType<SdkModule['unshielded']['createKeystore']>,
+): (data: Uint8Array) => unknown {
+  if (activeSdkVersion() === 'v9') {
+    const async = keystore as unknown as {signDataAsync(data: Uint8Array): Promise<unknown>};
+    return (data: Uint8Array) => async.signDataAsync(data);
+  }
+  return (data: Uint8Array) => keystore.signData(data);
+}

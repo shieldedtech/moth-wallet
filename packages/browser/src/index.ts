@@ -57,7 +57,12 @@ export {
 } from '@shieldedtech/moth-wallet/types/network';
 export { initLedger, ledger, activeLedgerVersion } from '@shieldedtech/moth-wallet/ledger/index';
 export { initSdk, sdk, activeSdkVersion, createKeystoreFor } from '@shieldedtech/moth-wallet/sdk/index';
-export { verifyNetworkLedger, ledgerVersionForProtocol } from '@shieldedtech/moth-wallet/ledger/protocol-version';
+export {
+  verifyNetworkLedger,
+  ledgerVersionForProtocol,
+  detectLedgerVersion,
+  resetLedgerDetectionCache,
+} from '@shieldedtech/moth-wallet/ledger/protocol-version';
 export {
   createProvingProvider,
   createProofProvider,

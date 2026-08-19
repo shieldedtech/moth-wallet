@@ -28,6 +28,9 @@ export {
   ledgerVersionForProtocol,
   assertLedgerForNetwork,
   verifyNetworkLedger,
+  detectLedgerVersion,
+  resetLedgerDetectionCache,
+  type DetectedLedger,
 } from './ledger/protocol-version.js';
 
 // Wallet SDK seam (v8 / v9)

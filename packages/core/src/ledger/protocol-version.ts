@@ -38,20 +38,34 @@ export interface LedgerNetworkCheck {
   readonly using: LedgerVersion;
   /** protocolVersion as reported by the network's indexer. */
   readonly observedProtocolVersion: number;
+  /**
+   * What was about to happen, so the message can say what did not. Defaults to
+   * submission — the case where saying so matters most.
+   */
+  readonly action?: 'submit' | 'sync';
+}
+
+function didNotHappen(action: 'submit' | 'sync' = 'submit'): string {
+  return action === 'sync' ? 'Sync did not start.' : 'Nothing was submitted.';
 }
 
 /**
  * Throw unless the loaded ledger matches the network. Call before submitting
  * anything — the message assumes the caller has not yet transacted.
  */
-export function assertLedgerForNetwork({networkId, using, observedProtocolVersion}: LedgerNetworkCheck): void {
+export function assertLedgerForNetwork({
+  networkId,
+  using,
+  observedProtocolVersion,
+  action,
+}: LedgerNetworkCheck): void {
   const expected = ledgerVersionForProtocol(observedProtocolVersion);
 
   if (expected === undefined) {
     throw new WalletError(
       'NETWORK_ERROR',
       `${networkId} reports an unrecognised protocol version (${observedProtocolVersion}), so the ledger it ` +
-        `needs cannot be determined. This wallet is using ledger ${using}. Nothing was submitted.`,
+        `needs cannot be determined. This wallet is using ledger ${using}. ${didNotHappen(action)}`,
     );
   }
 
@@ -59,8 +73,8 @@ export function assertLedgerForNetwork({networkId, using, observedProtocolVersio
     throw new WalletError(
       'NETWORK_ERROR',
       `${networkId} is on ledger ${expected} (protocol ${observedProtocolVersion}) but this wallet is using ` +
-        `ledger ${using}. The two ledgers cannot read each other's transactions, so nothing was submitted. ` +
-        `Switch to a ${expected} network, or reconnect with ledgerVersion '${expected}' configured for ${networkId}.`,
+        `ledger ${using}. The two ledgers cannot read each other's transactions. ${didNotHappen(action)} ` +
+        `Reconnect to ${networkId} to pick up the ledger it is running.`,
     );
   }
 }
@@ -75,6 +89,7 @@ export async function verifyNetworkLedger(
   options: {
     readonly using: LedgerVersion;
     readonly probe?: (indexerUrl: string) => Promise<number | undefined>;
+    readonly action?: 'submit' | 'sync';
   },
 ): Promise<void> {
   const probe = options.probe ?? defaultProbe;
@@ -82,10 +97,16 @@ export async function verifyNetworkLedger(
   if (observed === undefined) {
     throw new WalletError(
       'NETWORK_ERROR',
-      `${network.id} did not report a protocol version, so its ledger could not be confirmed. Nothing was submitted.`,
+      `${network.id} did not report a protocol version, so its ledger could not be confirmed. ` +
+        didNotHappen(options.action),
     );
   }
-  assertLedgerForNetwork({networkId: network.id, using: options.using, observedProtocolVersion: observed});
+  assertLedgerForNetwork({
+    networkId: network.id,
+    using: options.using,
+    observedProtocolVersion: observed,
+    action: options.action,
+  });
 }
 
 async function defaultProbe(indexerUrl: string): Promise<number | undefined> {
@@ -94,4 +115,66 @@ async function defaultProbe(indexerUrl: string): Promise<number | undefined> {
   const {IndexerClient} = await import('../network/indexer-client.js');
   const block = await new IndexerClient(indexerUrl).getBlock();
   return block?.protocolVersion;
+}
+
+/** What a network turned out to be running, and where that answer came from. */
+export interface DetectedLedger {
+  readonly version: LedgerVersion;
+  /** `network` when the indexer answered and we recognised it; `config` otherwise. */
+  readonly source: 'network' | 'config';
+  /** Present whenever the indexer answered, even if we did not recognise it. */
+  readonly observedProtocolVersion?: number;
+}
+
+const detected = new Map<string, DetectedLedger>();
+
+/**
+ * Which ledger a network is actually running, preferring what it reports over
+ * what Moth was shipped believing.
+ *
+ * The static table in DEFAULT_NETWORKS is a starting point, not the truth. It
+ * was wrong about devnet from the moment devnet forked, and it will be wrong
+ * about preprod the moment preprod does — for every install, until a release
+ * ships. Asking the network costs one indexer round-trip per network per
+ * process and removes that whole class of staleness.
+ *
+ * Detection is deliberately forgiving: an unreachable indexer or an
+ * unrecognised protocol version falls back to the configured value rather than
+ * refusing to start, because a wallet that will not open is worse than one that
+ * opens with a stale guess. The unforgiving check is {@link verifyNetworkLedger}
+ * at submission, which runs live and refuses rather than guessing — so a fork
+ * that happens mid-session is caught before anything is sent.
+ */
+export async function detectLedgerVersion(
+  network: {readonly id: string; readonly indexerUrl: string; readonly ledgerVersion?: LedgerVersion},
+  options: {readonly probe?: (indexerUrl: string) => Promise<number | undefined>} = {},
+): Promise<DetectedLedger> {
+  const cached = detected.get(network.id);
+  if (cached) return cached;
+
+  const configured: LedgerVersion = network.ledgerVersion ?? 'v8';
+  const probe = options.probe ?? defaultProbe;
+
+  let observed: number | undefined;
+  try {
+    observed = await probe(network.indexerUrl);
+  } catch {
+    // Offline, blocked, or still syncing — the configured value stands.
+    observed = undefined;
+  }
+
+  const fromNetwork = observed === undefined ? undefined : ledgerVersionForProtocol(observed);
+  const result: DetectedLedger =
+    fromNetwork !== undefined
+      ? {version: fromNetwork, source: 'network', observedProtocolVersion: observed}
+      : {version: configured, source: 'config', ...(observed !== undefined ? {observedProtocolVersion: observed} : {})};
+
+  detected.set(network.id, result);
+  return result;
+}
+
+/** Forget what every network reported. For tests, and after a network edit. */
+export function resetLedgerDetectionCache(networkId?: string): void {
+  if (networkId === undefined) detected.clear();
+  else detected.delete(networkId);
 }

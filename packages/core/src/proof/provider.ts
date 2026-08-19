@@ -6,9 +6,9 @@ import {
   provingProvider as wasmProvingProvider,
   type KeyMaterialProvider as WasmKeyMaterialProvider,
 } from '@midnight-ntwrk/zkir-v2';
-import {sdk} from '../sdk/index.js';
+import {sdk, activeSdkVersion} from '../sdk/index.js';
 import {ProofClient} from './client.js';
-import type {ProverConfig} from '../types/network.js';
+import type {ProverConfig, LedgerVersion} from '../types/network.js';
 
 /** Adapter from the connector/Midnight.js key interface to ZKConfigProvider. */
 class KeyMaterialZkConfigProvider extends ZKConfigProvider<string> {
@@ -29,10 +29,22 @@ class KeyMaterialZkConfigProvider extends ZKConfigProvider<string> {
   }
 }
 
-let defaultWasmKeys: WasmKeyMaterialProvider | undefined;
+// Keyed by ledger version, not a bare singleton. Proving keys are
+// version-specific: a provider built while v8 was active produces proofs a v9
+// network rejects, and vice versa. Caching one for the life of the worker means
+// the first network a session touches decides which keys every later network
+// gets — switching preprod -> devnet silently proved with v8 keys. A proof
+// server is unaffected because it holds its own keys.
+const defaultWasmKeys = new Map<LedgerVersion, WasmKeyMaterialProvider>();
 
 function defaultWasmKeyMaterialProvider(): WasmKeyMaterialProvider {
-  return (defaultWasmKeys ??= sdk().proverClient.WasmProver.makeDefaultKeyMaterialProvider());
+  const version = activeSdkVersion() ?? 'v8';
+  let provider = defaultWasmKeys.get(version);
+  if (!provider) {
+    provider = sdk().proverClient.WasmProver.makeDefaultKeyMaterialProvider();
+    defaultWasmKeys.set(version, provider);
+  }
+  return provider;
 }
 
 function wasmKeyMaterialProvider(source: KeyMaterialProvider): WasmKeyMaterialProvider {

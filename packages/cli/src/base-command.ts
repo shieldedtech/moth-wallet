@@ -16,7 +16,7 @@ import {
   daemonSocketPath,
   type DaemonClient,
 } from '@shieldedtech/moth-wallet';
-import { FilesystemStorageAdapter, initSdk, resolveLedgerVersion } from '@shieldedtech/moth-wallet';
+import { FilesystemStorageAdapter, initSdk, detectLedgerVersion } from '@shieldedtech/moth-wallet';
 
 /**
  * Why a daemon connect failed. Distinguishes the cases the user needs to
@@ -254,9 +254,11 @@ export abstract class BaseCommand extends Command {
     // CWE-918: Validate URL schemes to prevent SSRF via user-controlled URLs
     validateNetworkConfig(config);
 
-    // Bring up the ledger and SDK this network speaks before any command
-    // reaches them. Without it every core call fails with "No ledger loaded".
-    await initSdk(resolveLedgerVersion(config));
+    // Ask the network which ledger it is running rather than trusting the
+    // shipped table, which goes stale the moment a network forks. Falls back to
+    // the configured value if the indexer cannot be reached.
+    const {version} = await detectLedgerVersion(config);
+    await initSdk(version);
 
     return config;
   }

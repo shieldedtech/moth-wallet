@@ -132,10 +132,14 @@ export const DEFAULT_NETWORKS: Record<string, NetworkConfig> = {
     indexerUrl: 'https://indexer.qanet.midnight.network/api/v4/graphql',
     prover: serverProver(),
   },
+  // Forked ahead of the other midnight.network networks: its indexer reports
+  // protocolVersion 2000000, and its transactions are tagged transaction[v12],
+  // which only ledger v9 accepts.
   devnet: {
     id: 'devnet',
     nodeUrl: 'https://rpc.devnet.midnight.network',
     indexerUrl: 'https://indexer.devnet.midnight.network/api/v4/graphql',
+    ledgerVersion: 'v9',
     prover: serverProver(),
   },
   // The MNF demo network, and the first stack Moth targets on ledger v9. Unlike

@@ -36,6 +36,22 @@ describe('ledger version', () => {
   it('keeps mainnet on v8 — it is still reporting protocol 1000000', () => {
     expect(resolveLedgerVersion(DEFAULT_NETWORKS.mainnet!)).toBe('v8');
   });
+
+  // Measured against every live indexer on 2026-08-18: devnet and stagenet
+  // report protocolVersion 2000000, the rest 1000000. The mapping is not an
+  // inference from the numbers — a devnet transaction is tagged
+  // transaction[v12] and only ledger v9 accepts it, a preprod one is tagged
+  // transaction[v9] and only v8 accepts it. See ADR-0006.
+  it.each([
+    ['mainnet', 'v8'],
+    ['preprod', 'v8'],
+    ['preview', 'v8'],
+    ['qanet', 'v8'],
+    ['devnet', 'v9'],
+    ['stagenet', 'v9'],
+  ] as const)('puts %s on ledger %s', (network, expected) => {
+    expect(resolveLedgerVersion(DEFAULT_NETWORKS[network]!)).toBe(expected);
+  });
 });
 
 describe('stagenet preset', () => {

@@ -1213,7 +1213,14 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@midnight-ntwrk/zkir-v2@npm:2.1.0, @midnight-ntwrk/zkir-v2@npm:^2.1.0":
+"@midnight-ntwrk/zkir-v2@npm:2.2.0-rc.3":
+  version: 2.2.0-rc.3
+  resolution: "@midnight-ntwrk/zkir-v2@npm:2.2.0-rc.3"
+  checksum: 10c0/35241b797652d7f7d4655f2a61a0fded1fd42642e3aa624987ab03c7b93a542876689b4011451fda68c590da1d275bea57aa603378eb2c5e8da44dd47982522d
+  languageName: node
+  linkType: hard
+
+"@midnight-ntwrk/zkir-v2@npm:^2.1.0":
   version: 2.1.0
   resolution: "@midnight-ntwrk/zkir-v2@npm:2.1.0"
   checksum: 10c0/cf139a9dc6834d5e4036af6c65a40d384a02e66c4ef14d1e948fc690be62ce1bcf79d468efb2df719ff573c1825251c9c65630f287fbc76d2026482a13b907ef
@@ -3172,7 +3179,7 @@ __metadata:
     "@midnight-ntwrk/midnight-js-indexer-public-data-provider": "npm:4.1.1"
     "@midnight-ntwrk/midnight-js-level-private-state-provider": "npm:4.1.1"
     "@midnight-ntwrk/midnight-js-node-zk-config-provider": "npm:4.1.1"
-    "@midnight-ntwrk/zkir-v2": "npm:2.1.0"
+    "@midnight-ntwrk/zkir-v2": "npm:2.2.0-rc.3"
     "@midnightntwrk/ledger-v9": "npm:1.0.0-rc.3"
     "@midnightntwrk/wallet-sdk": "npm:^1.2.0"
     "@noble/ciphers": "npm:^2.2.0"
