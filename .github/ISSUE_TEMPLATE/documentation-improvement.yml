@@ -1,7 +1,8 @@
 name: Documentation improvement
 description: Something in the docs is wrong, missing, or unclear.
 title: "docs: "
-labels: ["documentation", "triage"]
+labels: ["documentation", "status:untriaged"]
+type: Task
 body:
   - type: input
     id: location
