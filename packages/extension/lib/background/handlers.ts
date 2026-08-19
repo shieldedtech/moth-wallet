@@ -337,11 +337,18 @@ export function registerHandlers(): void {
 
   onMessage('walletImport', async ({ data }) => {
     const { network } = await getSettings();
+    const target = data.network ?? network;
     return offscreen.walletImport({
       name: data.name,
       mnemonic: data.mnemonic,
       passphrase: data.passphrase,
-      network: data.network ?? network,
+      network: target,
+      // Always recorded, for "when did this account start here". Never used as
+      // a birthday — moth cannot know an imported seed's history.
+      currentHeight: await chainTip(target),
+      // Only when the user asserted the seed is new. Resolved here because the
+      // panel deals in intent, not block heights.
+      birthdayHeight: data.freshSeed ? await chainTip(target) : undefined,
     });
   });
 

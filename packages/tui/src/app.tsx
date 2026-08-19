@@ -169,10 +169,17 @@ export function App({ networkId: networkIdProp }: AppProps) {
           partial: { ...state, generatedMnemonic: info.mnemonic },
         });
       } else if (state.source === 'mnemonic') {
-        await wallet.importWallet(state.name, state.seedInput!, state.passphrase, state.network);
+        // The tip is recorded as "when this account started here". It is never
+        // used as a birthday: an imported seed may hold funds from long before,
+        // so the assertion stays explicit (moth wallet import --birthday-*).
+        await wallet.importWallet(state.name, state.seedInput!, state.passphrase, state.network, {
+          currentHeight: network.blockHeight ?? undefined,
+        });
         nav.reset('dashboard', undefined);
       } else if (state.source === 'hex') {
-        await wallet.importFromSeed(state.name, state.seedInput!, state.passphrase, state.network);
+        await wallet.importFromSeed(state.name, state.seedInput!, state.passphrase, state.network, {
+          currentHeight: network.blockHeight ?? undefined,
+        });
         nav.reset('dashboard', undefined);
       }
       await wallet.switchWallet(state.name);

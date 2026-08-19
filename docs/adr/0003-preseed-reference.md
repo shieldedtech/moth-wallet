@@ -151,7 +151,24 @@ destroyed by every network switch, which left the wallet with no birthday at all
 and without one the guard can never pass, so a switched wallet walked from genesis
 on every network for ever after. Recording is gated on an explicit `createdHere`
 flag: an imported wallet may hold funds on any chain at any height, so it never
-gets a birthday.
+gets a birthday *automatically*.
+
+**A user may assert one.** Moth cannot infer an imported seed's first-existence
+height, but the person importing it often knows — the seed was generated minutes
+ago, or in a month they can name, or funded by a transaction they can point at.
+`wallet import` therefore accepts `--birthday-date`, `--birthday-height` and
+`--birthday-tip`, and a date is resolved to a height by binary search over block
+timestamps (~21 lookups on a 2M-block chain, so it runs inline).
+
+This extends the rule rather than weakening it. `createdHere` still gates every
+*automatic* birthday, including on a later network switch, so an assertion never
+changes what Moth infers on its own. The failure modes stay asymmetric and the
+rounding follows them: the search returns the last block strictly *before* the
+target, because too early costs sync time and too late hides funds.
+
+`createdAtHeight` is recorded separately for display — when the account was
+created here — and is deliberately not consulted by the guard. Conflating the
+two would let an informational value become a safety assertion.
 
 **Seeding is per part.** The gate once tested the *shielded* cache alone as a
 proxy for "no state yet". A DUST rebuild evicts only the dust cache, so shielded

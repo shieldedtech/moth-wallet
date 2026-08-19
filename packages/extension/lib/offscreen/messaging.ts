@@ -89,6 +89,14 @@ export interface OffscreenProtocol {
     mnemonic: string;
     passphrase: string;
     network: string;
+    /** Chain tip at import — recorded for display, never used as a birthday. */
+    currentHeight?: number;
+  /**
+   * Chain height below which this seed is known to have no activity. Lets the
+   * first sync pre-seed instead of walking from genesis. Absent means unknown,
+   * which is the safe default — moth cannot infer it for an imported seed.
+   */
+  birthdayHeight?: number;
   }): WalletInfo;
   'os/walletRemove'(data: { name: string; network: string }): void;
   'os/walletSetActive'(data: { name: string; network: string }): void;

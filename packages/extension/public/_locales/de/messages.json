@@ -1223,6 +1223,12 @@
   "setup_importSubtitle": {
     "message": "Tippe deine geheime 24-Wort-Phrase der Reihe nach ein oder füge alles auf einmal ein."
   },
+  "setup_freshSeed": {
+    "message": "Ich habe diese Wiederherstellungsphrase gerade erstellt"
+  },
+  "setup_freshSeedHint": {
+    "message": "Überspringt die Suche nach älterer Historie, sodass die erste Synchronisierung Sekunden statt bis zu einer Stunde dauert. Nicht ankreuzen, wenn die Phrase schon einmal verwendet wurde."
+  },
   "setup_pastePhrase": {
     "message": "Phrase einfügen"
   },

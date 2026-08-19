@@ -65,6 +65,9 @@ export function App() {
   // to the auto-assigned "Account N"). Stored as the wallet's label — the
   // storage name stays the immutable "Account-N" key.
   const [accountName, setAccountName] = useState('');
+  // Only meaningful for an import: a seed generated moments ago cannot have
+  // history, so its sync can start at the tip instead of walking from genesis.
+  const [freshSeed, setFreshSeed] = useState(false);
   const [walletCount, setWalletCount] = useState(0);
   // Held open so the side panel shows its "finish setup in the tab" screen for
   // the whole flow. Released only once setup is fully complete (the Done step,
@@ -119,7 +122,15 @@ export function App() {
         // Persist the phrase the user already backed up on the phrase step.
         await sendMessage('walletCreate', { name: storageName, passphrase, network, mnemonic });
       } else {
-        await sendMessage('walletImport', { name: storageName, mnemonic: words.join(' ').trim(), passphrase, network });
+        await sendMessage('walletImport', {
+          name: storageName,
+          mnemonic: words.join(' ').trim(),
+          passphrase,
+          network,
+          // Absent unless asserted: without a birthday the first sync scans from
+          // genesis, which is correct but slow, and guessing one hides funds.
+          freshSeed,
+        });
       }
       // Set the label before unlocking so the session picks it up immediately.
       if (label) await sendMessage('walletRename', { name: storageName, label });
@@ -169,6 +180,18 @@ export function App() {
         >
           {t('setup_pastePhrase')}
         </button>
+        <label className="mt-4 flex cursor-pointer items-start gap-2 self-start text-sm">
+          <input
+            type="checkbox"
+            className="mt-1"
+            checked={freshSeed}
+            onChange={(e) => setFreshSeed(e.target.checked)}
+          />
+          <span>
+            <span className="block font-bold">{t('setup_freshSeed')}</span>
+            <span className="block text-muted-foreground">{t('setup_freshSeedHint')}</span>
+          </span>
+        </label>
         {error && <p className="m-0 pt-2 text-sm text-destructive">{error}</p>}
         <div className="flex justify-end pt-8">
           <Button variant="secondary" size="lg" className={STEP_CTA} disabled={words.some((w) => !w)} onClick={() => setStep('network')}>
