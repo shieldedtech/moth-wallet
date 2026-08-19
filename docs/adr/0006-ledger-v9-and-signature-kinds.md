@@ -1,6 +1,6 @@
 # ADR-0006: Ledger v9 support and selectable signature kinds
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-18
 - **Authors:** @bobblessinghartley
 - **Reviewers:** TBD
@@ -111,16 +111,20 @@ Specifically:
    `faucetUrl`, and add `stagenet` (rpc + indexer + faucet) to `DEFAULT_NETWORKS`.
 3. Thread `SignatureKind` through key derivation, keystore construction, and the dApp
    connector's `signData`, defaulting to `schnorr`.
-4. Guard submission rather than prompting for a ledger. The network determines the ledger —
-   devnet *is* v9, preprod *is* v8 — so it is not a user preference, and offering the choice
-   at wallet load would invite selecting a combination that cannot work. Instead the version
-   is derived from network config, checked against the indexer's reported `protocolVersion`
-   before anything is submitted, and a mismatch refuses with an error naming both sides.
-   Key derivation is unaffected either way: it is fork-invariant (`derivation-invariance.test.ts`),
-   so at wallet load there is nothing ledger-specific to decide.
-5. Implement `airdrop` against a real faucet, network-gated by config rather than the
+4. Guard rather than prompt for a ledger. The network determines it — devnet *is* v9,
+   preprod *is* v8 — so it is not a user preference, and offering the choice at wallet load
+   would invite selecting a combination that cannot work. The version is **derived from the
+   indexer's reported `protocolVersion`**, with the shipped table as fallback when the
+   indexer cannot be reached; a mismatch refuses at sync start *and* at submission, naming
+   both sides. Key derivation is unaffected either way: it is fork-invariant
+   (`derivation-invariance.test.ts`), so at wallet load there is nothing ledger-specific to
+   decide.
+5. Expose signature kind wherever a wallet is created — the extension's setup flow and the
+   CLI's `wallet generate` / `wallet import` — and refuse ECDSA on a v8 network rather than
+   creating a wallet with no unshielded address there.
+6. Implement `airdrop` against a real faucet, network-gated by config rather than the
    current hardcoded devnet check, and stop reporting success when nothing was requested.
-6. Track the upstream SDK's variant machinery rather than building our own fork-handoff.
+7. Track the upstream SDK's variant machinery rather than building our own fork-handoff.
 
 Scope limit: this ADR covers Moth running against a v8 *or* a v9 network, selected per
 network. It does **not** cover a live mid-sync handoff at the fork block; that follows the
@@ -316,6 +320,33 @@ single-build tension exists for these two; the tension is entirely in the WASM-l
 libraries.
 
 
+## What implementation found
+
+The seam was necessary but not sufficient. Its static types are v8's, so every remaining
+v8/v9 difference was invisible to the compiler and surfaced only by running the wallet
+against devnet. Five did:
+
+| Contract | v8 | v9 | Symptom |
+|---|---|---|---|
+| `createKeystore` | `(secret, networkId)` | `({kind, secret}, networkId)` | throws on v9 |
+| `SignSegment` | `(data) => Signature` | `(data) => Promise<Signature>` | "Signer callback failed" |
+| `ProvingProvider` | `{check, prove}` | adds `lookupKey` | "expected proving provider property 'lookupKey'" |
+| `Signature` | hex string | `{tag, value}` | `String()` yields `"[object Object]"` |
+| WASM proving keys | — | version-specific | v8 keys proved against a v9 chain |
+
+The last was ours, not the SDK's: the key-material provider was cached in a bare singleton,
+so the first network a session touched decided which proving keys every later network got.
+
+Two further faults came from threading `SignatureKind`, not from the fork. The kind reached
+address derivation but not sync, so an ECDSA wallet displayed one address and watched
+another — reporting a zero balance while its funds sat on chain. And cached unshielded state
+embeds the key it was watching, so fixing the derivation was not enough: the cache had to be
+namespaced by kind or the wallet restored the wrong view.
+
+The lesson worth carrying: **schnorr paths bypass the seams entirely**, so any check run with
+a schnorr wallet proves nothing about the ECDSA path. Both need exercising.
+
+
 ## Validation
 
 - **Success criteria:** Moth derives addresses, syncs, and submits a transfer on a
@@ -339,8 +370,9 @@ libraries.
 3. ~~Cross-version state compatibility~~ **Partly answered:** transactions are mutually
    unreadable; collapsed Merkle updates are shared. Whether *commitments and token types*
    match across versions is still open and still belongs to the ledger team.
-4. **Proof server and indexer compatibility** with v9, and whether the indexer `api/v4`
-   contract is unchanged.
+4. ~~Proof server and indexer compatibility with v9~~ **Answered for both:** the `api/v4`
+   contract is unchanged, and a proof server works against devnet. WASM proving is still
+   failing there and is the one open defect.
 5. **Which ledger-v9 scope to depend on** — `@midnight-ntwrk` or `@midnightntwrk`. Identical
    content; the beta SDK uses the unscoped-dash form, so matching it avoids a duplicate blob.
 6. **When does stagenet's indexer finish syncing?** It is backfilling (503 as of

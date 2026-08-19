@@ -1,5 +1,8 @@
 # Dual-SDK seam: verified file map
 
+> **Status: implemented.** The seam and all twelve version-matched files landed; this
+> document is kept as the record of how the map was derived and what it missed.
+
 Supporting plan for [ADR-0006](../adr/0006-ledger-v9-and-signature-kinds.md). Every
 classification below was measured by loading both SDK generations in one Node process and
 comparing output, not inferred from signatures. Measured 2026-08-18.
@@ -110,12 +113,15 @@ The shared four keep direct imports and should carry a comment saying why, point
 
 ## Open questions
 
-1. **Does v9 sync actually complete against stagenet?** The spike proves the objects are accepted;
-   it does not prove a full sync. Rebuilding a stagenet preseed reference is the end-to-end test,
-   and stagenet is ~74k blocks, small enough to be quick.
-2. **Which SDK signs a message when the wallet is idle?** `sign-message.ts` has no network in scope
-   today; it takes a `networkId` string. It needs the ledger version threaded in.
-3. **Does the ECDSA address break existing wallets?** Since kind changes the address, an existing
-   schnorr wallet must stay schnorr. Kind is a creation-time property to be persisted, never a
-   toggle on an existing wallet.
+1. ~~Does v9 sync actually complete against stagenet?~~ **Answered:** yes. A stagenet preseed
+   reference builds to tip — shielded, unshielded and DUST all reaching 100% — which is the
+   operation that previously failed with "expected instance of DustParameters". A devnet
+   reference builds too.
+2. **Which SDK signs a message when the wallet is idle?** Still open. `sign-message.ts` takes a
+   `networkId` string with no network config in scope, and — along with the four `contract/*`
+   keystores — still defaults to schnorr regardless of the wallet's kind. An ECDSA wallet
+   therefore signs contract calls and `signData` requests with the wrong key.
+3. ~~Does the ECDSA address break existing wallets?~~ **Answered:** no. The kind is persisted at
+   creation and written only when it is not the default, so existing records are byte-identical
+   and every pre-existing wallet stays schnorr.
 4. **`wallet-sdk@2.0.0-beta.2` is a beta**, and `canary-v2` is newer. Pin deliberately.
