@@ -49,6 +49,13 @@ export function Unlock({
       ? walletName
       : (accounts?.[0]?.name ?? walletName);
 
+  // Always name what is being unlocked. The generic "Welcome back" was only
+  // unambiguous with a single account: after deleting the active one the panel
+  // promotes another silently, and a correct password for the account the user
+  // had in mind is rejected by a different one with nothing on screen to say so.
+  const targetAccount = (accounts ?? []).find((a) => a.name === target);
+  const targetLabel = targetAccount?.label?.trim() || targetAccount?.name || accountName || walletName;
+
   const submit = async () => {
     setBusy(true);
     setError(false);
@@ -66,10 +73,10 @@ export function Unlock({
       <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center">
         <Crescent />
         <h1 className="m-0 font-display text-[28px] font-extrabold">
-          {accountName ? t('unlock_unlockAccount', [accountName]) : t('unlock_welcomeBack')}
+          {t('unlock_unlockAccount', [targetLabel])}
         </h1>
         <p className="m-0 text-[13.5px] text-muted-foreground">
-          {choices ? t('unlock_chooseAccount') : accountName ? t('unlock_switchHint') : t('unlock_enterPassword')}
+          {choices ? t('unlock_chooseAccount') : onCancel ? t('unlock_switchHint') : t('unlock_enterPassword')}
         </p>
         {choices ? (
           <div className="flex w-full flex-col gap-1.5" role="radiogroup" aria-label={t('unlock_chooseAccount')}>
