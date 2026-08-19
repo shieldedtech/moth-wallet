@@ -5,6 +5,9 @@ import { generateMnemonic24, validateMnemonic, mnemonicToSeed, hexSeedToUint8Arr
 import { encryptKeystore, decryptKeystore, keystoreNeedsUpgrade, type EncryptedKeystore } from './keystore.js';
 import { deriveAllAddressesFromSeed, deriveRawKeys, Roles } from './address.js';
 import type { SignatureKind } from './signature-encoding.js';
+import { initSdk } from '../sdk/index.js';
+import { detectLedgerVersion } from '../ledger/protocol-version.js';
+import { DEFAULT_NETWORKS } from '../types/network.js';
 import { deriveWalletKeys, type WalletKeys } from '../sync/operations.js';
 import { removeWalletSyncArtifacts } from '../sync/wallet-sync.js';
 
@@ -149,6 +152,17 @@ export class WalletManager {
 
   private seedToHex(seed: Uint8Array): string {
     return Array.from(seed).map((b: number) => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  /**
+   * Bring up the ledger and SDK a network needs. Detection prefers what the
+   * network reports and falls back to the shipped table, so an unreachable
+   * indexer still unlocks the wallet.
+   */
+  private async ensureRuntimeFor(networkId: string): Promise<void> {
+    const preset = DEFAULT_NETWORKS[networkId];
+    const version = preset ? (await detectLedgerVersion(preset)).version : 'v8';
+    await initSdk(version);
   }
 
   private deriveAddressesFromSeed(seedHex: string, kind: SignatureKind = 'schnorr'): WalletAddresses {
@@ -356,7 +370,15 @@ export class WalletManager {
       zswap: rawKeys[Roles.Zswap],
       metadata: rawKeys[Roles.Metadata],
     };
-    const walletKeys: WalletKeys = deriveWalletKeys(seedHex);
+    // deriveWalletKeys reaches both seams, so the ledger and SDK its network
+    // speaks have to be up first. Doing it here rather than in each caller is
+    // deliberate: the CLI unlocked before resolving its network and failed with
+    // "No ledger loaded", and every other surface had the same ordering to get
+    // right independently.
+    await this.ensureRuntimeFor(meta?.network ?? network);
+    // The stored kind must reach the bundle, or an ECDSA wallet signs and
+    // watches with the schnorr key.
+    const walletKeys: WalletKeys = deriveWalletKeys(seedHex, meta?.signatureKind ?? 'schnorr');
     // Seed is no longer needed — overwrite the local variable.
     seedHex = '';
 
