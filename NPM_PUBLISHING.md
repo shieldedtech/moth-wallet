@@ -1,13 +1,13 @@
 # npm Publishing Runbook (@shieldedtech)
 
-This repository publishes three private packages under the `@shieldedtech`
+This repository publishes three public packages under the `@shieldedtech`
 scope using Changesets and npm Trusted Publishing:
 
 | Package | Purpose | npm access |
 | --- | --- | --- |
-| `@shieldedtech/moth-wallet` | Core library | Restricted |
-| `@shieldedtech/moth-cli` | CLI (`moth`) | Restricted |
-| `@shieldedtech/moth-tui` | Terminal UI | Restricted |
+| `@shieldedtech/moth-wallet` | Core library | Public |
+| `@shieldedtech/moth-cli` | CLI (`moth`) | Public |
+| `@shieldedtech/moth-tui` | Terminal UI | Public |
 
 `@shieldedtech/moth-browser` is excluded because
 `packages/browser/package.json` marks it private. The extension and demo
@@ -29,9 +29,8 @@ CLI, and grants `id-token: write`. The automatic jobs do not receive an npm
 publish token: npm exchanges the workflow's OIDC identity for a short-lived,
 package-scoped credential.
 
-Trusted Publishing works for restricted packages. npm adds provenance
-automatically when both the repository and package are public; restricted
-packages remain without public provenance.
+The repository and all three packages are public, so npm adds provenance to
+Trusted Publishing releases automatically.
 
 ## Release lifecycle
 
@@ -42,27 +41,31 @@ packages remain without public provenance.
 4. After review, merging the version PR makes the same workflow publish the
    stable versions, push tags, and create GitHub Releases.
 
-The workflow uses `MIDNIGHTCI_PACKAGES_WRITE` only for GitHub operations needed
-to open the Changesets PR. npm publishing does not use that secret.
+The workflow uses the repository's built-in `GITHUB_TOKEN` to open the
+Changesets PR. It does not use a PAT, GitHub App credential, or npm token.
 
-## Public release gate
+When `GITHUB_TOKEN` creates or updates the version PR, GitHub creates its
+`pull_request` workflow runs in an approval-required state. A maintainer must
+select **Approve workflows** on the version PR before its required checks run.
+This is GitHub's documented recursion protection for automated pull requests.
 
-Changing repository visibility or npm package access requires a final GO in the
-private open-source governance case.
+## Public release approval
 
-Until then:
+The private open-source governance case recorded its final GO on 2026-08-17.
+The approved npm publication scope is limited to `@shieldedtech/moth-wallet`,
+`@shieldedtech/moth-cli`, and `@shieldedtech/moth-tui`.
 
-- Keep all three npm packages restricted.
-- Do not change `publishConfig.access` from `restricted`.
-- Do not make the repository public.
+Approval evidence is recorded in
+[`shieldedtech/open-source-governance#19`](https://github.com/shieldedtech/open-source-governance/issues/19).
+Any repository visibility change, npm access change, or expansion to another
+workspace requires a new reviewed governance decision.
 
-After final approval, change package access through the reviewed release
-procedure and rerun the governance audit against the exact `main` SHA that will
-be published.
+The browser, extension, mock dapp, and template/demo workspaces remain private
+and must not be published.
 
 ## Verification
 
-Use an npm account with access to the private `@shieldedtech` packages:
+Query the public registry directly:
 
 ```bash
 for package in moth-wallet moth-cli moth-tui; do
@@ -70,8 +73,8 @@ for package in moth-wallet moth-cli moth-tui; do
 done
 ```
 
-An `E404` can mean the package is private and the current npm identity does not
-have access. Confirm with `npm whoami` and the package's npm access settings.
+An `E404` now indicates unexpected registry or package configuration. Confirm
+the registry URL, package name, and npm access settings before retrying.
 
 After a publish, verify that the GitHub Actions log contains no `NODE_AUTH_TOKEN`
 or `NPM_TOKEN` environment entry and that all expected versions share the
@@ -84,11 +87,15 @@ intended dist-tag.
   `release.yml` with no environment.
 - **OIDC exchange failure:** confirm the job runs on a GitHub-hosted runner, has
   `id-token: write`, and installs the reviewed npm 12.0.2 CLI.
-- **Unexpected `E404`:** verify the npm identity can read the restricted package.
+- **Unexpected `E404`:** verify the registry URL and confirm the package remains public.
 - **`Unsupported URL Type "workspace:"`:** inspect the packed manifest and
   ensure Changesets rewrites internal workspace dependencies before publishing.
 - **Public provenance missing:** provenance appears only after both the GitHub
   repository and npm package are public.
+- **Release commit mismatch:** rerun the workflow for the commit that introduced
+  the package version; never publish that version from a later source revision.
+- **Version PR checks await approval:** select **Approve workflows** on the PR,
+  then wait for all required checks before review and merge.
 
 ## Credential cleanup
 

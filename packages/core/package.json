@@ -5,7 +5,7 @@
   "license": "Apache-2.0",
   "type": "module",
   "publishConfig": {
-    "access": "restricted"
+    "access": "public"
   },
   "files": [
     "dist"
