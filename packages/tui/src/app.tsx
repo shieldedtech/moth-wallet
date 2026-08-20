@@ -118,7 +118,7 @@ export function App({ networkId: networkIdProp }: AppProps) {
   const networkConfig = useMemo(() => network.getConfig(), [network.getConfig]);
   const chain = useChainStatus(networkConfig);
   const activeWalletKeys = wallet.getActiveWalletKeys();
-  const balance = useBalance(activeWalletKeys, networkConfig, logs.info, wallet.activeWallet?.name, wallet.isActiveWalletNew());
+  const balance = useBalance(activeWalletKeys, networkConfig, logs.info, wallet.activeWallet?.name, wallet.isActiveWalletNew(), wallet.activeWalletBirthdayOn);
   const [lastWalletName, setLastWalletName] = useState<string | null>(null);
 
   // Daemon: keep a ref to the latest WalletBalances snapshot so daemon
@@ -211,7 +211,15 @@ export function App({ networkId: networkIdProp }: AppProps) {
     setOnboardingError(undefined);
     try {
       if (state.source === 'random') {
-        const info = await wallet.generate(state.name, state.passphrase, state.network);
+        // network.blockHeight is the tip this session is already tracking. A
+        // generated wallet cannot predate it, so it is a sound birthday — and
+        // without one the first sync walks the chain from genesis.
+        const info = await wallet.generate(
+          state.name,
+          state.passphrase,
+          state.network,
+          network.blockHeight ?? undefined,
+        );
         nav.replace('onboarding-mnemonic-display', {
           onComplete: onboardingCompleteStable,
           partial: { ...state, generatedMnemonic: info.mnemonic },
