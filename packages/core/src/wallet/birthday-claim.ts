@@ -87,7 +87,9 @@ export async function resolveBirthdayClaim(opts: {
     if (!address) {
       throw new Error(`Cannot discover a birthday without a seed and an unshielded address for "${networkId}"`);
     }
+    const startedAt = Date.now();
     const found = await firstUnshieldedActivity(indexerUrl, address);
+    const tookMs = Date.now() - startedAt;
 
     if (found === null) {
       // Never seen on this chain, so the tip is a sound birthday for unshielded
@@ -97,12 +99,18 @@ export async function resolveBirthdayClaim(opts: {
           'The indexer reports no unshielded history for this seed, but no chain tip could be read to use instead',
         );
       }
-      notes.push(`No unshielded transactions for this seed on ${networkId}; using the chain tip (${tipHeight}).`);
+      notes.push(
+        `No unshielded transactions for this seed on ${networkId}; using the chain tip (${tipHeight}). ` +
+          `Indexer answered in ${tookMs}ms.`,
+      );
       notes.push(shieldedCaveat(tipHeight));
       return {height: tipHeight, firstActivity: null, notes};
     }
 
-    notes.push(`First unshielded transaction at block ${found.height} (${isoDay(found.timestamp)}).`);
+    notes.push(
+      `First unshielded transaction at block ${found.height} (${isoDay(found.timestamp)}), ` +
+        `transaction id ${found.transactionId}. Indexer answered in ${tookMs}ms.`,
+    );
     notes.push(shieldedCaveat(found.height));
     return {height: found.height, firstActivity: found, notes};
   }
@@ -125,6 +133,7 @@ export async function resolveBirthdayClaim(opts: {
   if (!address) return {height, notes};
 
   let found: FirstActivity | null;
+  const startedAt = Date.now();
   try {
     found = await firstUnshieldedActivity(indexerUrl, address);
   } catch (err) {
@@ -134,10 +143,13 @@ export async function resolveBirthdayClaim(opts: {
     return {height, notes};
   }
 
+  const tookMs = Date.now() - startedAt;
   if (found === null || found.height >= height) {
-    if (found !== null) {
-      notes.push(`Checked: earliest unshielded transaction is at block ${found.height}, at or above this birthday.`);
-    }
+    notes.push(
+      found === null
+        ? `Checked: no unshielded transactions for this seed, so birthday ${height} cannot skip any. (${tookMs}ms)`
+        : `Checked: earliest unshielded transaction is at block ${found.height}, at or above birthday ${height}. (${tookMs}ms)`,
+    );
     return {height, firstActivity: found, notes};
   }
 

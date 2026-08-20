@@ -164,6 +164,21 @@ export async function walletCreate(
   return { info, mnemonic: phrase };
 }
 
+/**
+ * Install the packaged reference, saying so and how long it took.
+ *
+ * It decompresses and writes ~11 MB into IndexedDB, and whether it succeeded
+ * decides whether the first sync pre-seeds or walks the chain — so a silent call
+ * leaves the most consequential step of a first sync invisible in the log.
+ */
+async function installBundledReferenceLogged(networkId: string): Promise<void> {
+  const startedAt = Date.now();
+  const installed = await installBundledReference(networkId, new IdbSyncStateStore());
+  if (installed) {
+    emit('os/eventSyncMessage', `Pre-seed: installed the packaged reference for ${networkId} (${Date.now() - startedAt}ms)`);
+  }
+}
+
 export async function walletImport(
   name: string,
   mnemonic: string,
@@ -213,7 +228,7 @@ export async function walletImport(
     // installed — a false alarm on every first import, while the sync itself
     // then pre-seeded correctly. Idempotent, and the download happens moments
     // later anyway, so this only moves it earlier.
-    await installBundledReference(network, new IdbSyncStateStore());
+    await installBundledReferenceLogged(network);
 
     const outlook = await birthdayOutlook(moth.config, birthdayHeight).catch(() => null);
     if (outlook && !outlook.seedable && outlook.reason) {
@@ -346,7 +361,7 @@ export async function syncEnsure(
   // Only writes when the store has none, so a locally built reference — always
   // at least as fresh — is never overwritten. A network without a bundled
   // reference is a no-op and syncs the slow way.
-  await installBundledReference(network.id, new IdbSyncStateStore());
+  await installBundledReferenceLogged(network.id);
 
   // Wallets created by the extension store the chain tip at creation time as
   // their birthday; it lets the first sync pre-seed at tip instead of
