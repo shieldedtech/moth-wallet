@@ -29,7 +29,7 @@ export const hostDispatch: Dispatch = {
   'os/walletImport': (host, d) =>
     host.walletImport(d.name, d.mnemonic, d.passphrase, d.network, {
       currentHeight: d.currentHeight,
-      birthdayHeight: d.birthdayHeight,
+      birthdayClaim: d.birthdayClaim,
     }),
   'os/walletRemove': (host, d) => host.walletRemove(d.name, d.network),
   'os/walletSetActive': (host, d) => host.walletSetActive(d.name, d.network),

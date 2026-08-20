@@ -69,8 +69,8 @@ export interface ImportWalletRequest {
   network?: string;
   /**
    * What the user asserts about the seed's history, mirroring the CLI's
-   * --birthday-tip / --birthday-date / --birthday-height. The background
-   * resolves each to a block height; the panel never deals in block numbers.
+   * --birthday-tip / --birthday-date / --birthday-height / --birthday-discover.
+   * Resolved offscreen to a block height; the panel never deals in block numbers.
    *
    * Absent is the safe default — moth cannot infer an imported seed's history,
    * and a claim that is too late hides funds.
@@ -78,7 +78,8 @@ export interface ImportWalletRequest {
   birthday?:
     | {kind: 'tip'}
     | {kind: 'date'; value: string}
-    | {kind: 'height'; value: number};
+    | {kind: 'height'; value: number}
+    | {kind: 'discover'};
 }
 
 export interface SendTokensRequest {

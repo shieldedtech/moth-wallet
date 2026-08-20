@@ -1244,6 +1244,12 @@
   "setup_birthdayHeightPlaceholder": {
     "message": "Altura de bloque"
   },
+  "setup_birthdayDiscover": {
+    "message": "Búscalo por mí: solo historial unshielded"
+  },
+  "setup_birthdayDiscoverNote": {
+    "message": "Busca la primera transacción unshielded de esta frase. Los fondos shielded no pueden encontrarse así: si esta frase recibió fondos shielded antes, no aparecerán hasta que se vuelva a escanear la cuenta."
+  },
   "setup_pastePhrase": {
     "message": "Pegar frase"
   },

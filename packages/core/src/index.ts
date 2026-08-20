@@ -22,6 +22,13 @@ export {
 } from './network/block-time.js';
 
 export { birthdayOutlook, type BirthdayOutlook } from './sync/preseed.js';
+export { firstUnshieldedActivity, indexerWsUrl, type FirstActivity } from './network/first-activity.js';
+export {
+  resolveBirthdayClaim,
+  shieldedCaveat,
+  type BirthdayClaim,
+  type BirthdayResolution,
+} from './wallet/birthday-claim.js';
 
 // Wallet
 export { WalletManager, type ImportOptions } from './wallet/manager.js';
