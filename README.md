@@ -387,6 +387,24 @@ anything is absent.
 (`genesis` when no birthday is known). The extension shows the same under
 Accounts.
 
+A birthday only pays off if a reference sits **at or below** it. A reference is
+the chain's state at one height, not a searchable record of the blocks under it,
+so a birthday below every reference held falls back to a full scan — quietly, and
+that is the one surprise worth knowing about:
+
+```bash
+# what this machine holds, and the earliest birthday that can skip the walk
+moth preseed status --network preprod
+
+# build one at the current tip and archive it at that height (slow: DUST)
+moth preseed build --network preprod
+```
+
+References are archived per height, so each build widens the range of birthdays
+that can seed rather than replacing the last one. Building regularly is what
+keeps that range useful. The TUI shows the same figures under Network; the
+extension installs a bundled reference on first unlock.
+
 
 ### Wallet Management
 
@@ -428,6 +446,13 @@ Accounts.
 | `moth dust register` | Register for DUST generation |
 | `moth dust deregister` | Deregister from DUST |
 | `moth dust status` | Show generation status, rate, capacity |
+
+### Pre-seed References
+
+| Command | Description |
+| --- | --- |
+| `moth preseed status` | Show references held, and the earliest birthday that can skip the chain walk |
+| `moth preseed build [--force]` | Build a reference at chain tip and archive it at that height (resumable) |
 
 ### Utility
 

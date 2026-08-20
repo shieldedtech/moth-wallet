@@ -250,6 +250,86 @@ wherever the bytes come from, the `height <= birthday` and `createdHere` rules
 above still decide whether a given wallet may use them, and a reference that
 cannot be verified must fail closed to a genesis sync.
 
+## Archived references (one reference per height)
+
+A single live reference only ever serves wallets born *after* it. A reference is
+the chain's state at one height, not a searchable record of the blocks below it,
+so a wallet whose birthday precedes the reference must scan those blocks itself —
+and that fallback is the whole cost the pre-seed exists to avoid. Measured on
+preprod: an imported wallet with a date-derived birthday of 1,905,019 against a
+reference at 2,104,384 silently fell back to genesis and had not finished DUST
+(21%) at 2600s, where a wallet born at tip synced in 110.6s.
+
+So each successful build is also archived under the height it reached:
+
+- state: `sync/<network>/__empty_ref__@<height>/<part>` (sibling of the live slot)
+- index: `empty-ref/<network>/archive.json` — the heights that exist, newest first
+
+Selection, given a wallet's birthday: prefer the live reference when it is at or
+below the birthday, else take the newest archived reference at or below it, else
+scan from genesis. Only the live reference is memoised — an archived choice
+belongs to one birthday, not to the network. `birthdayOutlook()` runs the same
+selection ahead of an import, so the answer shown to the user is the one the sync
+will actually take.
+
+The safety rule is unchanged and still fails closed: a reference above the
+birthday is never used, and an archive entry whose parts are missing from the
+store is skipped rather than trusted.
+
+Two writes keep the archive from losing ground:
+
+- A build archives whatever the live slot held **before** advancing it. The build
+  resumes the same reference wallet forward, so the older, lower height would
+  otherwise be gone — and lower is what an earlier birthday needs.
+- The extension's bundled reference is archived at its own height, and is no
+  longer discarded when a locally built reference already holds the live slot.
+  The bundle usually sits lower than a local build, so it covers birthdays the
+  local one cannot.
+
+### Surfaces
+
+All three read the archive through core, over their own stores: `~/.moth/sync/
+<network>/__empty_ref__@<height>/<part>.dat` on the CLI and TUI, opaque keys in
+IndexedDB on the extension.
+
+Seeing and building it was the gap. `moth preseed status` lists the heights held
+and the earliest birthday that can skip the chain walk; `moth preseed build`
+builds one at tip and archives it. The TUI's Network screen reports the same
+figures read-only. Building stays off the TUI on purpose — it is a
+tens-of-minutes sync, the same reason on-device warming is off by default.
+
+### What this does not do
+
+**It cannot build a reference at a height in the past.** Archives accumulate
+going forward — a build today archives at today's tip. To serve a birthday from
+last month, a reference must have existed at or below that height, which means
+either an earlier build or the ability to stop a build at a chosen height.
+
+Stopping at a height is not currently expressible. Sync progress is reported in
+*event indices* (`appliedIndex` for shielded and DUST, `appliedId` for
+unshielded), the indexer exposes no mapping from block height to any of them, and
+the reference's height is recorded by reading the chain tip *after* the sync
+finishes — which is an over-estimate, and therefore safe, only because the sync
+ran to completion. Stopping mid-stream leaves no sound way to bound which blocks
+the state covers, and a bound that is too generous silently skips a wallet's own
+history.
+
+Closing that gap needs one of:
+
+1. an indexer query mapping a block height to the DUST event id at that height
+   (DUST is the expensive part; shielded and unshielded are seconds either way), or
+2. sync-to-height in the wallet SDK.
+
+Until then the practical answer is cadence: build references regularly so the
+archive is dense, which is why the CI cache carries `__empty_ref__*` and
+`archive.json` rather than just the live slot.
+
+**Distribution still ships one reference.** `export-preseed.mjs` and the workflow
+artifact carry the live reference only. Publishing the archive would multiply the
+artifact by the number of heights kept (~4.9 MB of DUST each) and needs a manifest
+format that names heights — deferred, and the reason the archive is currently
+useful mainly to a machine that builds its own references.
+
 ## Open
 
 - **On-device warming stays off by default.** An hour of background chain traffic

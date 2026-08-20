@@ -43,6 +43,71 @@ export function emptyRefMnemonicKey(networkId: string): string {
   return `empty-ref/${networkId}/mnemonic.txt`;
 }
 
+/**
+ * State of a reference archived at a specific height.
+ *
+ * One reference only ever exists at the height it was built to, so a wallet
+ * whose birthday precedes it cannot use it — the reference holds no record of
+ * blocks below its own height. Keeping past references lets such a wallet seed
+ * from the newest one at or below its birthday and scan only its own window,
+ * instead of walking from genesis.
+ */
+export function archivedRefStateKey(networkId: string, height: number, part: WalletPart): string {
+  return syncStateKey(networkId, `${EMPTY_REF_WALLET}@${height}`, part);
+}
+
+/** Heights for which an archived reference exists on this network. */
+export function refArchiveIndexKey(networkId: string): string {
+  return `empty-ref/${networkId}/archive.json`;
+}
+
+/** Heights with an archived reference on this network, newest first. */
+export async function readArchiveIndex(store: SyncStateStore, networkId: string): Promise<number[]> {
+  try {
+    const raw = await store.get(refArchiveIndexKey(networkId));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((h): h is number => typeof h === 'number' && h > 0).sort((a, b) => b - a);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Keep a copy of a reference under its own height.
+ *
+ * A single live reference only serves wallets born after it. Archiving each one
+ * means a wallet with an older birthday can seed from the newest archive at or
+ * below it and scan just its own window — which is the difference between
+ * replaying every DUST event on the chain and replaying its own few hundred
+ * thousand.
+ *
+ * The index is written LAST, matching the live slot's discipline: an entry whose
+ * parts are missing is skipped by the reader, so an interrupted archive costs a
+ * slow sync rather than a wallet seeded from half a reference.
+ */
+export async function archiveReference(
+  store: SyncStateStore,
+  networkId: string,
+  height: number,
+  states: {shielded: string; unshielded: string; dust: string},
+): Promise<void> {
+  try {
+    await Promise.all([
+      store.put(archivedRefStateKey(networkId, height, 'shielded'), states.shielded),
+      store.put(archivedRefStateKey(networkId, height, 'unshielded'), states.unshielded),
+      store.put(archivedRefStateKey(networkId, height, 'dust'), states.dust),
+    ]);
+    const heights = await readArchiveIndex(store, networkId);
+    if (!heights.includes(height)) heights.push(height);
+    await store.put(refArchiveIndexKey(networkId), JSON.stringify(heights.sort((a, b) => b - a)));
+  } catch {
+    // Archiving broadens which birthdays can seed; it is never load-bearing for
+    // the reference being archived, so a failure must not fail the caller.
+  }
+}
+
 /** Volatile store — used as the default outside Node when none is provided. */
 export class InMemorySyncStateStore implements SyncStateStore {
   private readonly entries = new Map<string, string>();

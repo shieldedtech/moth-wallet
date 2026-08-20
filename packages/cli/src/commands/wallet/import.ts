@@ -2,7 +2,7 @@ import { Flags } from '@oclif/core';
 import { BaseCommand } from '../../base-command.js';
 import { getPassphrase } from '../../adapters/passphrase.js';
 import type { AddressEncoding, WalletInfo, ImportOptions } from '@shieldedtech/moth-wallet';
-import { WalletError, chainTip, heightForDate } from '@shieldedtech/moth-wallet';
+import { WalletError, chainTip, heightForDate, birthdayOutlook } from '@shieldedtech/moth-wallet';
 
 export default class WalletImport extends BaseCommand {
   static override description = 'Import a wallet from an existing mnemonic or hex seed';
@@ -58,6 +58,16 @@ export default class WalletImport extends BaseCommand {
       const found = await heightForDate(network.indexerUrl, when);
       options.birthdayHeight = found.height;
       this.log_verbose(`Birthday: ${when.toISOString()} resolves to height ${found.height}`);
+    }
+
+    // A birthday earlier than the reference is refused by the pre-seed guard,
+    // so the import succeeds and the first sync still walks from genesis. Say so
+    // now rather than letting an hour-long sync be the explanation.
+    if (options.birthdayHeight !== undefined) {
+      const outlook = await birthdayOutlook(network, options.birthdayHeight).catch(() => null);
+      if (outlook && !outlook.seedable && outlook.reason) {
+        this.warn(`Pre-seed will not apply: ${outlook.reason}`);
+      }
     }
     return options;
   }

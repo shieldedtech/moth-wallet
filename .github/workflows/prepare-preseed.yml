@@ -82,13 +82,19 @@ jobs:
       - name: Build core package
         run: yarn workspace @shieldedtech/moth-wallet build
 
+      # The `*` glob picks up archived references (`__empty_ref__@<height>`)
+      # alongside the live one. Each run archives the reference at the height it
+      # reached, so successive runs accumulate references a later import can seed
+      # from — without the glob, only the newest survives and any wallet born
+      # before it falls back to a genesis scan.
       - name: Restore public preseed state
         id: restore-preseed
         uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
           path: |
-            ~/.moth/sync/${{ matrix.network }}/__empty_ref__
+            ~/.moth/sync/${{ matrix.network }}/__empty_ref__*
             ~/.moth/empty-ref/${{ matrix.network }}/height.txt
+            ~/.moth/empty-ref/${{ matrix.network }}/archive.json
           key: preseed-v1-${{ matrix.network }}-${{ github.run_id }}
           restore-keys: |
             preseed-v1-${{ matrix.network }}-
@@ -121,8 +127,9 @@ jobs:
         uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
           path: |
-            ~/.moth/sync/${{ matrix.network }}/__empty_ref__
+            ~/.moth/sync/${{ matrix.network }}/__empty_ref__*
             ~/.moth/empty-ref/${{ matrix.network }}/height.txt
+            ~/.moth/empty-ref/${{ matrix.network }}/archive.json
           key: preseed-v1-${{ matrix.network }}-${{ github.run_id }}
 
       - name: Remove reference mnemonic

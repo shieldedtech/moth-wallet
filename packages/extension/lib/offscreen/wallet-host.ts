@@ -165,7 +165,19 @@ export async function walletImport(
   network: string,
   options: {currentHeight?: number; birthdayHeight?: number} = {},
 ) {
-  return getMoth(network).wallets.import(name, mnemonic, passphrase, network, options);
+  const moth = await getMoth(network);
+  // A birthday earlier than the reference is refused by the pre-seed guard, so
+  // the import succeeds and the first sync still walks from genesis. Report it
+  // here — the panel has no other way to learn its answer was unusable, and the
+  // check lives offscreen because the service worker must not load the sync
+  // stack it needs.
+  if (options.birthdayHeight !== undefined) {
+    const outlook = await birthdayOutlook(moth.config, options.birthdayHeight).catch(() => null);
+    if (outlook && !outlook.seedable && outlook.reason) {
+      emit('os/eventSyncMessage', `Pre-seed will not apply: ${outlook.reason}`);
+    }
+  }
+  return moth.wallets.import(name, mnemonic, passphrase, network, options);
 }
 
 export async function walletRemove(name: string, network: string): Promise<void> {

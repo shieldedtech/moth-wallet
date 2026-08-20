@@ -21,6 +21,8 @@ export {
   type HeightAtTime,
 } from './network/block-time.js';
 
+export { birthdayOutlook, type BirthdayOutlook } from './sync/preseed.js';
+
 // Wallet
 export { WalletManager, type ImportOptions } from './wallet/manager.js';
 export {
@@ -88,7 +90,7 @@ export {
   type DustGenerationSlice,
   type DustRegistrationEstimate,
 } from './sync/dust-registration-estimate.js';
-export { ensureEmptyRefCache, warmEmptyRefCache, refreshEmptyRefCache, preseedReferenceStatus, preSeedNewWallet, type WarmProgress } from './sync/preseed.js';
+export { ensureEmptyRefCache, warmEmptyRefCache, refreshEmptyRefCache, preseedReferenceStatus, archivedReferenceHeights, preSeedNewWallet, type WarmProgress } from './sync/preseed.js';
 
 // Contract
 export { loadContractArtifact, type ContractArtifact } from './contract/artifact-loader.js';
