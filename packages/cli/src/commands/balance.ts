@@ -75,6 +75,8 @@ export default class Balance extends BaseCommand {
         void this.timings.record('sync', msg);
       },
       walletName,
+      false,
+      await this.syncBirthday(walletName, network.id),
     );
 
     try {

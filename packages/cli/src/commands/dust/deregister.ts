@@ -35,7 +35,7 @@ export default class DustDeregister extends BaseCommand {
     process.stderr.write('Syncing wallet before deregistration...\n');
     const syncedWallet = await startWalletSync(wallet.walletKeys, network, (msg) => {
       this.log_verbose(msg);
-    }, walletName);
+    }, walletName, false, await this.syncBirthday(walletName, network.id));
 
     try {
       const txHash = await dedesignateFromDustWithKeys(
