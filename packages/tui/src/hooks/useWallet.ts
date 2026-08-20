@@ -144,6 +144,22 @@ export function useWallet(storage: StorageAdapter) {
     return activeWallet ? newWallets.current.has(activeWallet.name) : false;
   }, [activeWallet]);
 
+  /**
+   * The active wallet's birthday for a SPECIFIC network.
+   *
+   * Not `activeWallet.birthday`: `list()` resolves that against the wallet's own
+   * `meta.network`, so on a different network it returns a height belonging to
+   * another chain, or nothing. The sync needs the birthday for the network it is
+   * about to sync, or the pre-seed gate never opens.
+   */
+  const activeWalletBirthdayOn = useCallback(
+    async (networkId: string): Promise<number | undefined> => {
+      if (!activeWallet) return undefined;
+      return manager.birthdayOn(activeWallet.name, networkId);
+    },
+    [activeWallet, manager],
+  );
+
   return {
     wallets,
     activeWallet,
@@ -152,6 +168,7 @@ export function useWallet(storage: StorageAdapter) {
     getUnlocked,
     getActiveWalletKeys,
     isActiveWalletNew,
+    activeWalletBirthdayOn,
     unlock,
     lockAll,
     lockOne,

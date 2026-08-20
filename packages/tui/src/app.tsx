@@ -71,7 +71,7 @@ export function App({ networkId: networkIdProp }: AppProps) {
   const networkConfig = useMemo(() => network.getConfig(), [network.getConfig]);
   const chain = useChainStatus(networkConfig);
   const activeWalletKeys = wallet.getActiveWalletKeys();
-  const balance = useBalance(activeWalletKeys, networkConfig, logs.info, wallet.activeWallet?.name, wallet.isActiveWalletNew());
+  const balance = useBalance(activeWalletKeys, networkConfig, logs.info, wallet.activeWallet?.name, wallet.isActiveWalletNew(), wallet.activeWalletBirthdayOn);
   const [lastWalletName, setLastWalletName] = useState<string | null>(null);
 
   // Daemon: keep a ref to the latest WalletBalances snapshot so daemon
