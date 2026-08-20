@@ -210,7 +210,7 @@ export async function ensureEmptyRefCache(
   if (inFlight) return inFlight;
 
   if (!opts?.build) {
-    onProgress?.('Pre-seed: no reference at chain tip for this network — syncing from genesis');
+    onProgress?.(`Pre-seed: no reference at or below birthday ${birthday ?? 'none'} for ${network.id} — syncing from genesis`);
     return null;
   }
 
@@ -411,7 +411,7 @@ async function buildEmptyRefCache(
     // born before the newest build has nothing to seed from.
     await archiveReference(resolved, network.id, states.height, states);
 
-    onProgress?.('Pre-seed: reference wallet ready at chain tip');
+    onProgress?.(`Pre-seed: reference wallet ready at block ${states.height}`);
     return states;
   } catch (err) {
     onProgress?.(`Pre-seed: reference sync failed — ${err}`);

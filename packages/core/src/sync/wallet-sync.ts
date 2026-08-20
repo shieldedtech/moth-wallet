@@ -480,12 +480,24 @@ export async function startWalletSync(
   const missingParts = partsToSeed(cached);
 
   if ((isNewWallet || birthday) && missingParts.length > 0) {
-    onProgress?.('Pre-seeding new wallet from reference...');
+    // Name the birthday up front. It decides whether any of this can work, and
+    // when a sync unexpectedly starts at genesis this is the first thing worth
+    // knowing — previously it was logged only on the failure path.
+    onProgress?.(
+      `Pre-seeding: birthday ${birthday ?? 'none'}, missing ${missingParts.join(' + ')}...`,
+    );
+    const preseedStartedAt = Date.now();
     try {
       // Pass the birthday so the lookup can reach an archived reference at or
       // below it. Without it only the live (newest) reference is considered,
       // which any wallet older than the last build fails the check against.
+      const refStartedAt = Date.now();
       const emptyRef = await ensureEmptyRefCache(network, onProgress, store, {birthday});
+      onProgress?.(
+        emptyRef === null
+          ? `Pre-seed: no usable reference found (${Date.now() - refStartedAt}ms)`
+          : `Pre-seed: using reference at block ${emptyRef.height} (${Date.now() - refStartedAt}ms)`,
+      );
       // SAFETY: only seed a wallet that cannot have had activity before the
       // reference's height. The reference holds the chain's state at that height,
       // so seeding an older wallet would start it past its own history and lose
@@ -524,7 +536,9 @@ export async function startWalletSync(
           }
           onProgress?.(
             seeded.length > 0
-              ? `Pre-seed complete — ${seeded.join(' + ')} at chain tip`
+              ? `Pre-seed complete — ${seeded.join(' + ')} at block ${emptyRef.height} ` +
+                `(birthday ${birthday}) in ${Date.now() - preseedStartedAt}ms. ` +
+                `Sync resumes from there, not genesis.`
               : 'Pre-seed: nothing to seed, every sub-wallet already cached',
           );
         }
