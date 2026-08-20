@@ -12,6 +12,8 @@
 // Usage:
 //   node scripts/sync-benchmark.mjs                       # preprod, birthday at tip
 //   node scripts/sync-benchmark.mjs --from-genesis         # no birthday: full scan
+//   node scripts/sync-benchmark.mjs --birthday-date 2026-08-01   # pre-seed, then catch up
+//   node scripts/sync-benchmark.mjs --birthday-height 1905019    # same, by height
 //   node scripts/sync-benchmark.mjs --network preview
 //   node scripts/sync-benchmark.mjs --timeout 3600         # seconds, default 1800
 //   node scripts/sync-benchmark.mjs --json                 # machine-readable summary
@@ -43,6 +45,10 @@ const { values } = parseArgs({
     timeout: { type: 'string', default: '1800' },
     mnemonic: { type: 'string' },
     'from-genesis': { type: 'boolean', default: false },
+    // Mirror the CLI's birthday flags so the benchmark can measure the path a
+    // real imported wallet takes, not only the two extremes.
+    'birthday-date': { type: 'string' },
+    'birthday-height': { type: 'string' },
     json: { type: 'boolean', default: false },
     quiet: { type: 'boolean', default: false },
     // A/B levers. The indexer feeds every sub-wallet, and dust streams the whole
@@ -128,6 +134,33 @@ const log = (msg) => {
 // the unseeded path while reporting itself as warmed.
 async function readBirthday() {
   if (values['from-genesis']) return undefined;
+
+  // An explicit height wins: it is what the user asserted.
+  if (values['birthday-height'] !== undefined) {
+    const height = Number(values['birthday-height']);
+    if (!Number.isFinite(height) || height <= 0) {
+      console.error(`Invalid --birthday-height "${values['birthday-height']}"`);
+      process.exit(2);
+    }
+    return height;
+  }
+
+  // A date is resolved the same way `moth wallet import --birthday-date` does:
+  // binary search over block timestamps, landing on the last block strictly
+  // before it. This is the case worth measuring — a reference older than the
+  // birthday is usable, so the run exercises the pre-seed with a real catch-up
+  // distance rather than the zero-distance tip case.
+  if (values['birthday-date'] !== undefined) {
+    const when = new Date(values['birthday-date']);
+    if (Number.isNaN(when.getTime())) {
+      console.error(`Invalid --birthday-date "${values['birthday-date']}" — use e.g. 2026-08-01`);
+      process.exit(2);
+    }
+    const { heightForDate } = await import('@shieldedtech/moth-wallet');
+    const found = await heightForDate(network.indexerUrl, when);
+    return found.height;
+  }
+
   const block = await new IndexerClient(network.indexerUrl).getBlock().catch(() => null);
   if (block?.height === undefined) {
     console.error('Could not read chain tip for the birthday; falling back to a genesis scan.');
@@ -158,7 +191,12 @@ if (values['warm-reference']) {
 // Only now: the chain has moved during any warm above, and the guard compares
 // the reference's height against this value.
 const birthday = await readBirthday();
-log(`birthday:  ${birthday === undefined ? 'none — scanning from genesis' : `${birthday} (chain tip)`}`);
+const birthdaySource =
+  values['from-genesis'] ? 'none — scanning from genesis'
+  : values['birthday-height'] !== undefined ? `${birthday} (--birthday-height)`
+  : values['birthday-date'] !== undefined ? `${birthday} (resolved from ${values['birthday-date']})`
+  : `${birthday} (chain tip)`;
+log(`birthday:  ${birthdaySource}`);
 
 // The measured wallet keeps its own in-memory store so a run never leaves wallet
 // state in ~/.moth. But the reference lives on disk, and ensureEmptyRefCache

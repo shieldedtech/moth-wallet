@@ -4,6 +4,9 @@ import { installBundledReference } from '../lib/offscreen/bundled-preseed';
 const NETWORK = 'preprod';
 const HEIGHT_KEY = `empty-ref/${NETWORK}/height.txt`;
 const stateKey = (part: string) => `sync/${NETWORK}/__empty_ref__/${part}.dat`;
+const ARCHIVE_KEY = `empty-ref/${NETWORK}/archive.json`;
+const archiveStateKey = (height: number, part: string) =>
+  `sync/${NETWORK}/__empty_ref__@${height}/${part}.dat`;
 
 /** Records the ORDER of writes: the height must land last, so an interrupted
  *  install leaves state that loadUsableRefStates ignores rather than trusts. */
@@ -69,27 +72,61 @@ describe('installBundledReference', () => {
     expect(store.entries.get(HEIGHT_KEY)).toBe('1985914');
   });
 
-  it('writes the height LAST, so an interrupted install is ignored not trusted', async () => {
+  it('writes the height after every state, so an interrupted install is ignored not trusted', async () => {
     await serveAssets();
     const store = recordingStore();
     await installBundledReference(NETWORK, store);
 
     // A reference with no recorded height is unusable by construction
-    // (loadUsableRefStates), which is what makes a partial write safe.
-    expect(store.writes[store.writes.length - 1]).toBe(HEIGHT_KEY);
-    expect(store.writes.indexOf(HEIGHT_KEY)).toBe(store.writes.length - 1);
+    // (loadUsableRefStates), which is what makes a partial write safe. The same
+    // holds for the archive: its index lands after its own parts.
+    for (const part of ['shielded', 'unshielded', 'dust']) {
+      expect(store.writes.indexOf(stateKey(part))).toBeLessThan(store.writes.indexOf(HEIGHT_KEY));
+      expect(store.writes.indexOf(archiveStateKey(1985914, part))).toBeLessThan(
+        store.writes.indexOf(ARCHIVE_KEY),
+      );
+    }
   });
 
-  it('never overwrites a reference already in the store', async () => {
+  it('archives the bundle at its own height, surviving a later local build', async () => {
     await serveAssets({ height: 1985914 });
     const store = recordingStore();
-    // A locally built reference is at least as fresh as anything shipped.
+
+    await installBundledReference(NETWORK, store);
+
+    expect(store.entries.get(ARCHIVE_KEY)).toBe('[1985914]');
+    expect(store.entries.get(archiveStateKey(1985914, 'dust'))).toBe('dust-state-blob');
+  });
+
+  it('never overwrites the live reference, but still archives the bundle', async () => {
+    await serveAssets({ height: 1985914 });
+    const store = recordingStore();
+    // A locally built reference is at least as fresh as anything shipped, so it
+    // keeps the live slot. It is also ABOVE the bundle, so it holds nothing for a
+    // wallet imported with a birthday between the two — which is what the bundle,
+    // archived at its own height, covers.
     await store.put(HEIGHT_KEY, '2045150');
+    store.writes.length = 0;
+
+    await expect(installBundledReference(NETWORK, store)).resolves.toBe(true);
+
+    expect(store.entries.get(HEIGHT_KEY)).toBe('2045150');
+    expect(store.writes).not.toContain(HEIGHT_KEY);
+    for (const part of ['shielded', 'unshielded', 'dust']) {
+      expect(store.writes).not.toContain(stateKey(part));
+    }
+    expect(store.entries.get(ARCHIVE_KEY)).toBe('[1985914]');
+  });
+
+  it('does not re-download a bundle it has already archived', async () => {
+    await serveAssets({ height: 1985914 });
+    const store = recordingStore();
+    await store.put(HEIGHT_KEY, '2045150');
+    await store.put(ARCHIVE_KEY, '[1985914]');
     store.writes.length = 0;
 
     await expect(installBundledReference(NETWORK, store)).resolves.toBe(false);
     expect(store.writes).toEqual([]);
-    expect(store.entries.get(HEIGHT_KEY)).toBe('2045150');
   });
 
   it('writes nothing when the network ships no reference', async () => {

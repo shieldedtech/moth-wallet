@@ -1,8 +1,13 @@
 // Pre-seed optimization for newly generated wallets.
 // Syncs an empty reference wallet to chain tip once per network, then
 // copies its state snapshot to new wallets with swapped keys.
-// This avoids the full genesis scan for shielded + unshielded sub-wallets.
-// Dust wallet always syncs from genesis (see comment below).
+// This avoids the full genesis scan for all three sub-wallets, DUST included:
+// the reference's dust state and offset are reused with the new wallet's public
+// key swapped in. DUST is the one that matters — its blob is 4.9 MB against
+// shielded's 3.9 KB, and it is the sub-wallet that otherwise replays ~1.4M
+// events. A DUST pre-seed failure is non-fatal and falls back to a genesis scan
+// for that part alone, which presents as "sync is oddly slow" rather than an
+// error.
 // Architecture follows mn-tui. See NOTICE for attribution.
 
 // Key derivation now flows through deriveWalletKeys (Option A); the reference
@@ -13,7 +18,7 @@ import {createKeystore, PublicKey} from '@midnightntwrk/wallet-sdk/unshielded';
 import {setNetworkId} from '@midnight-ntwrk/midnight-js/network-id';
 import type {NetworkConfig} from '../types/network.js';
 import {startWalletSync, resolveSyncStore} from './wallet-sync.js';
-import {emptyRefHeightKey, emptyRefMnemonicKey, emptyRefStateKey, EMPTY_REF_WALLET, type SyncStateStore, type WalletPart} from './sync-store.js';
+import {archiveReference, archivedRefStateKey, emptyRefHeightKey, emptyRefMnemonicKey, emptyRefStateKey, readArchiveIndex, EMPTY_REF_WALLET, type SyncStateStore, type WalletPart} from './sync-store.js';
 import {IndexerClient} from '../network/indexer-client.js';
 import {deriveWalletKeys, type WalletKeys} from './operations.js';
 
@@ -75,12 +80,33 @@ function snapshotOffset(raw: string): bigint {
   }
 }
 
+/** The newest archived reference usable for `birthday`, or null. */
+async function loadArchivedRefStates(
+  store: SyncStateStore,
+  networkId: string,
+  birthday: number,
+): Promise<EmptyRefStates | null> {
+  for (const height of await readArchiveIndex(store, networkId)) {
+    if (height > birthday) continue;
+    const [shielded, unshielded, dust] = await Promise.all([
+      store.get(archivedRefStateKey(networkId, height, 'shielded')),
+      store.get(archivedRefStateKey(networkId, height, 'unshielded')),
+      store.get(archivedRefStateKey(networkId, height, 'dust')),
+    ]);
+    if (shielded && unshielded && dust) return {shielded, unshielded, dust, height};
+  }
+  return null;
+}
+
 /**
  * Read the cached reference states, but only accept them if they actually
  * reached chain tip. Guards against the failure mode this cache had for months:
  * the reference was serialized moments after starting, so every part sat at
  * offset 0 and new wallets full-scanned anyway while being told they were
  * pre-seeded "at chain tip".
+ *
+ * This reads the LIVE reference — the most recent build, at whatever height it
+ * reached. `loadArchivedRefStates` is the counterpart for older ones.
  */
 async function loadUsableRefStates(
   store: SyncStateStore,
@@ -156,22 +182,32 @@ export async function ensureEmptyRefCache(
    * genesis in the background. Callers that mean to pay the cost use
    * warmEmptyRefCache().
    */
-  opts?: { build?: boolean; onWarmProgress?: (p: WarmProgress) => void }
+  opts?: { build?: boolean; onWarmProgress?: (p: WarmProgress) => void; birthday?: number }
 ): Promise<EmptyRefStates | null> {
+  const birthday = opts?.birthday;
   const cached = refCache.get(network.id);
-  if (cached) return cached;
-
-  const inFlight = refInFlight.get(network.id);
-  if (inFlight) return inFlight;
+  if (cached && (birthday === undefined || cached.height <= birthday)) return cached;
 
   // A reference already synced to tip by an earlier run (or another process)
   // is usable immediately, with no sync of any kind.
   const resolved = await resolveSyncStore(store);
   const warm = await loadUsableRefStates(resolved, network.id);
-  if (warm) {
+  if (warm && (birthday === undefined || warm.height <= birthday)) {
     refCache.set(network.id, warm);
     return warm;
   }
+
+  // The live reference is newer than this wallet, so it holds nothing of the
+  // wallet's own history. An archived reference at or below the birthday still
+  // does, and seeding from it turns a genesis walk into a birthday-to-tip one.
+  // Never memoised: the choice belongs to this birthday, not to the network.
+  if (birthday !== undefined) {
+    const archived = await loadArchivedRefStates(resolved, network.id, birthday);
+    if (archived) return archived;
+  }
+
+  const inFlight = refInFlight.get(network.id);
+  if (inFlight) return inFlight;
 
   if (!opts?.build) {
     onProgress?.('Pre-seed: no reference at chain tip for this network — syncing from genesis');
@@ -251,6 +287,20 @@ export function warmEmptyRefCache(
  * Lets a UI distinguish "not started" from "in progress" from "done" — a build
  * runs for an hour, so reporting it as perpetually in progress is misleading.
  */
+/**
+ * Heights of the archived references held for this network, newest first.
+ *
+ * The archive is what decides which birthdays can seed, so it has to be
+ * inspectable: "no reference below your birthday" is otherwise indistinguishable
+ * from "pre-seeding is broken" when a sync unexpectedly starts at genesis.
+ */
+export async function archivedReferenceHeights(
+  network: NetworkConfig,
+  store?: SyncStateStore,
+): Promise<number[]> {
+  return readArchiveIndex(await resolveSyncStore(store), network.id);
+}
+
 export async function preseedReferenceStatus(
   network: NetworkConfig,
   store?: SyncStateStore
@@ -267,6 +317,17 @@ async function buildEmptyRefCache(
   onWarmProgress?: (p: WarmProgress) => void
 ): Promise<EmptyRefStates | null> {
   const resolved = await resolveSyncStore(store);
+
+  // Archive whatever the live slot already holds, BEFORE this build advances it.
+  // The build resumes the same reference wallet forward, so without this the
+  // older, lower height is simply gone — and a lower reference is precisely what
+  // a wallet imported with an earlier birthday needs. Idempotent: a height
+  // already in the index is not rewritten.
+  const existing = await loadUsableRefStates(resolved, network.id);
+  if (existing && !(await readArchiveIndex(resolved, network.id)).includes(existing.height)) {
+    await archiveReference(resolved, network.id, existing.height, existing);
+    onProgress?.(`Pre-seed: archived the existing reference at height ${existing.height}`);
+  }
 
   // Generate or reuse a reference mnemonic
   // Reference wallet mnemonic — this wallet is never funded and exists only
@@ -344,6 +405,11 @@ async function buildEmptyRefCache(
       onProgress?.('Pre-seed: reference sync completed but its state carries no chain cursor');
       return null;
     }
+
+    // Keep this reference at its own height. Later builds overwrite the live
+    // slot, so without the archive every past reference is lost and a wallet
+    // born before the newest build has nothing to seed from.
+    await archiveReference(resolved, network.id, states.height, states);
 
     onProgress?.('Pre-seed: reference wallet ready at chain tip');
     return states;
@@ -433,4 +499,56 @@ export function preSeedNewWallet(
   } catch {
     return null;
   }
+}
+
+/** What a proposed birthday means for the first sync on this network. */
+export interface BirthdayOutlook {
+  /** True when a pre-seed will actually apply, so the sync starts near tip. */
+  readonly seedable: boolean;
+  /** Height of the reference available for this network, if any. */
+  readonly referenceHeight: number | null;
+  /** Human-readable reason when `seedable` is false. */
+  readonly reason?: string;
+}
+
+/**
+ * Whether a birthday will let the first sync use the reference.
+ *
+ * Worth asking *before* an import, because the answer is counter-intuitive: a
+ * birthday that is too EARLY is refused, not accepted. The reference holds the
+ * chain's state at its own height with no coins in it — it is not a record of
+ * the blocks below that height and cannot be searched — so a wallet that might
+ * have been active before it must scan those blocks itself.
+ *
+ * Without this the flags look like they worked: the birthday is stored, the
+ * import succeeds, and the cost only shows up as a sync that takes an hour.
+ */
+export async function birthdayOutlook(
+  network: NetworkConfig,
+  birthday: number | undefined,
+  store?: SyncStateStore,
+): Promise<BirthdayOutlook> {
+  const {height} = await preseedReferenceStatus(network, store);
+  if (birthday === undefined) {
+    return {seedable: false, referenceHeight: height, reason: 'no birthday — the first sync scans from genesis'};
+  }
+  if (height === null) {
+    return {seedable: false, referenceHeight: null, reason: `no pre-seed reference for ${network.id} yet`};
+  }
+  if (height > birthday) {
+    // The live reference is too new, but an archived one may sit below the
+    // birthday. Report that height instead — it is the one the sync will use.
+    const resolved = await resolveSyncStore(store);
+    const archived = await loadArchivedRefStates(resolved, network.id, birthday);
+    if (archived) return {seedable: true, referenceHeight: archived.height};
+    return {
+      seedable: false,
+      referenceHeight: height,
+      reason:
+        `the newest reference for ${network.id} is at height ${height}, later than this birthday (${birthday}), ` +
+        `and no archived reference sits at or below it. A reference holds no record of blocks below its own ` +
+        `height, so those must still be scanned — the first sync will start from genesis.`,
+    };
+  }
+  return {seedable: true, referenceHeight: height};
 }

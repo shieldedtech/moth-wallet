@@ -482,7 +482,10 @@ export async function startWalletSync(
   if ((isNewWallet || birthday) && missingParts.length > 0) {
     onProgress?.('Pre-seeding new wallet from reference...');
     try {
-      const emptyRef = await ensureEmptyRefCache(network, onProgress, store);
+      // Pass the birthday so the lookup can reach an archived reference at or
+      // below it. Without it only the live (newest) reference is considered,
+      // which any wallet older than the last build fails the check against.
+      const emptyRef = await ensureEmptyRefCache(network, onProgress, store, {birthday});
       // SAFETY: only seed a wallet that cannot have had activity before the
       // reference's height. The reference holds the chain's state at that height,
       // so seeding an older wallet would start it past its own history and lose

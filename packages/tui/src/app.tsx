@@ -15,6 +15,7 @@ import {
   type SendRequest,
   heightForDate,
   DEFAULT_NETWORKS,
+  birthdayOutlook,
 } from '@shieldedtech/moth-wallet';
 import { syncedWalletStub } from './utils/synced-wallet-stub.js';
 import type { BirthdayClaim } from './navigation/index.js';
@@ -196,20 +197,24 @@ export function App({ networkId: networkIdProp }: AppProps) {
           onComplete: onboardingCompleteStable,
           partial: { ...state, generatedMnemonic: info.mnemonic },
         });
-      } else if (state.source === 'mnemonic') {
-        // The tip is recorded as "when this account started here". It is never
-        // used as a birthday: an imported seed may hold funds from long before,
-        // so the assertion stays explicit (moth wallet import --birthday-*).
-        await wallet.importWallet(state.name, state.seedInput!, state.passphrase, state.network, {
-          currentHeight: network.blockHeight ?? undefined,
-          birthdayHeight: await resolveBirthdayClaim(state.birthday, state.network, network.blockHeight),
-        });
-        nav.reset('dashboard', undefined);
-      } else if (state.source === 'hex') {
-        await wallet.importFromSeed(state.name, state.seedInput!, state.passphrase, state.network, {
-          currentHeight: network.blockHeight ?? undefined,
-          birthdayHeight: await resolveBirthdayClaim(state.birthday, state.network, network.blockHeight),
-        });
+      } else if (state.source === 'mnemonic' || state.source === 'hex') {
+        const birthdayHeight = await resolveBirthdayClaim(state.birthday, state.network, network.blockHeight);
+        // A birthday earlier than the reference is refused by the pre-seed
+        // guard, so the sync still walks from genesis. Say so in the log rather
+        // than leaving an hour-long sync as the only explanation.
+        if (birthdayHeight !== undefined) {
+          const preset = DEFAULT_NETWORKS[state.network];
+          const outlook = preset ? await birthdayOutlook(preset, birthdayHeight).catch(() => null) : null;
+          if (outlook && !outlook.seedable && outlook.reason) {
+            logs.warn(`Pre-seed will not apply: ${outlook.reason}`);
+          }
+        }
+        const options = { currentHeight: network.blockHeight ?? undefined, birthdayHeight };
+        if (state.source === 'mnemonic') {
+          await wallet.importWallet(state.name, state.seedInput!, state.passphrase, state.network, options);
+        } else {
+          await wallet.importFromSeed(state.name, state.seedInput!, state.passphrase, state.network, options);
+        }
         nav.reset('dashboard', undefined);
       }
       await wallet.switchWallet(state.name);
