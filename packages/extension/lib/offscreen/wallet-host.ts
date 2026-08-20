@@ -22,6 +22,7 @@ import {
   clearDustSyncCache,
   warmEmptyRefCache,
   preseedReferenceStatus,
+  birthdayOutlook,
   DustRegistrationNotYetError,
   type WarmProgress,
   signMessage,

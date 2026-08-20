@@ -119,7 +119,12 @@ export const offscreen = {
     passphrase: string;
     network: string;
     currentHeight?: number;
-    birthdayHeight?: number;
+    /** Resolved offscreen: discovery derives an address from the seed. */
+    birthdayClaim?:
+      | {kind: 'tip'}
+      | {kind: 'date'; value: string}
+      | {kind: 'height'; value: number}
+      | {kind: 'discover'};
   }) {
     await ensureOffscreen();
     return offscreenSend('os/walletImport', data);
