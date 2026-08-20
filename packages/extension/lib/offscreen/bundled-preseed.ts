@@ -144,7 +144,9 @@ export async function installBundledReference(networkId: string, store: SyncStat
     const states = await fetchStates(networkId);
     if (!states) return false;
 
-    for (const part of PARTS) await store.put(emptyRefStateKey(networkId, part), states[part]);
+    for (const part of ['shielded', 'unshielded', 'dust'] as const) {
+      await store.put(emptyRefStateKey(networkId, part), states[part]);
+    }
     await store.put(emptyRefHeightKey(networkId), String(manifest.height));
     // Also keep it at its own height, so a later local build overwriting the
     // live slot does not take the bundle's coverage with it.
