@@ -62,11 +62,16 @@ export default class Balance extends BaseCommand {
     const network = await this.getNetworkConfig(flags.network, this.getNetworkOverrides(flags));
 
     process.stderr.write('Syncing wallet…\n');
+    // isNewWallet stays false — this wallet already exists. The birthday is what
+    // opens the pre-seed path; without it the gate is falsy and the sync walks
+    // from genesis however good a reference is sitting in the store.
     const synced: SyncedWallet = await startWalletSync(
       wallet.walletKeys,
       network,
       (msg) => this.log_verbose(`[sync] ${msg}`),
       walletName,
+      false,
+      await this.syncBirthday(walletName, network.id),
     );
 
     try {

@@ -86,8 +86,11 @@ export function useWallet(storage: StorageAdapter) {
     });
   }, []);
 
-  const generate = useCallback(async (name: string, passphrase: string, network: string) => {
-    const info = await manager.generate(name, passphrase, network);
+  const generate = useCallback(async (name: string, passphrase: string, network: string, birthday?: number) => {
+    // The caller supplies the tip it already knows. A generated wallet cannot
+    // predate now, so this is a sound birthday — and it is what lets the first
+    // sync pre-seed rather than walk the chain from genesis.
+    const info = await manager.generate(name, passphrase, network, birthday);
     const wallet = await manager.unlock(name, passphrase);
     sessionCache.current.set(name, { wallet, addresses: wallet.addresses });
     newWallets.current.add(name);
@@ -148,6 +151,26 @@ export function useWallet(storage: StorageAdapter) {
     return activeWallet ? newWallets.current.has(activeWallet.name) : false;
   }, [activeWallet]);
 
+  /**
+   * The active wallet's birthday for a SPECIFIC network.
+   *
+   * Not `activeWallet.birthday`: `list()` resolves that against the wallet's own
+   * `meta.network`, so on a different network it returns a height belonging to
+   * another chain, or nothing. The sync needs the birthday for the network it is
+   * about to sync, or the pre-seed gate never opens.
+   */
+  const activeWalletBirthdayOn = useCallback(
+    async (networkId: string): Promise<number | undefined> => {
+      if (!activeWallet) return undefined;
+      try {
+        return await manager.birthdayOn(activeWallet.name, networkId);
+      } catch {
+        return undefined;
+      }
+    },
+    [activeWallet, manager],
+  );
+
   return {
     wallets,
     activeWallet,
@@ -156,6 +179,7 @@ export function useWallet(storage: StorageAdapter) {
     getUnlocked,
     getActiveWalletKeys,
     isActiveWalletNew,
+    activeWalletBirthdayOn,
     unlock,
     lockAll,
     lockOne,
