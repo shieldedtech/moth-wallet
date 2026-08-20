@@ -206,6 +206,15 @@ export async function walletImport(
   // check lives offscreen because the service worker must not load the sync
   // stack it needs.
   if (birthdayHeight !== undefined) {
+    // Put the packaged reference in place BEFORE asking whether the birthday can
+    // use one. syncEnsure installs it too, but that runs later, so on a fresh
+    // profile the store is still empty here and this reported "no pre-seed
+    // reference for <network> yet" about a reference that was about to be
+    // installed — a false alarm on every first import, while the sync itself
+    // then pre-seeded correctly. Idempotent, and the download happens moments
+    // later anyway, so this only moves it earlier.
+    await installBundledReference(network, new IdbSyncStateStore());
+
     const outlook = await birthdayOutlook(moth.config, birthdayHeight).catch(() => null);
     if (outlook && !outlook.seedable && outlook.reason) {
       emit('os/eventSyncMessage', `Pre-seed will not apply: ${outlook.reason}`);
