@@ -642,6 +642,13 @@ yarn workspace @shieldedtech/moth-wallet test
 
 The project uses Turborepo for build orchestration. The `core` package always builds first since `cli`, `browser`, and `tui` depend on it.
 
+## Contributing
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Every
+non-merge, non-bot commit must include a matching DCO `Signed-off-by` trailer, and
+commits landing on protected branches must be cryptographically signed. These are
+separate requirements.
+
 ## Acknowledgements
 
 The TUI component draws on architectural patterns and screen designs from [mn-tui](https://github.com/input-output-hk/arc-mn-tui) (Apache-2.0), a terminal wallet manager for Midnight developed by Input Output Global. See [NOTICE](NOTICE) for full attribution details.

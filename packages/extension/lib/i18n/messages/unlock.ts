@@ -1,6 +1,7 @@
 export const unlock = {
   unlock_welcomeBack: 'Welcome back',
   unlock_unlockAccount: 'Unlock $1',
+  unlock_chooseAccount: 'Choose an account and enter its password',
   unlock_enterPassword: 'Enter your password to unlock Moth.',
   unlock_switchHint: 'Enter this account’s password to switch to it.',
   unlock_passwordPlaceholder: 'Password',
