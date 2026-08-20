@@ -92,11 +92,15 @@ export interface OffscreenProtocol {
     /** Chain tip at import — recorded for display, never used as a birthday. */
     currentHeight?: number;
   /**
-   * Chain height below which this seed is known to have no activity. Lets the
-   * first sync pre-seed instead of walking from genesis. Absent means unknown,
-   * which is the safe default — moth cannot infer it for an imported seed.
+   * What the user asserts about the seed's history. Resolved HERE rather than in
+   * the background, because discovery and verification derive an address from
+   * the seed, and the service worker must not load that stack.
    */
-  birthdayHeight?: number;
+  birthdayClaim?:
+    | {kind: 'tip'}
+    | {kind: 'date'; value: string}
+    | {kind: 'height'; value: number}
+    | {kind: 'discover'};
   }): WalletInfo;
   'os/walletRemove'(data: { name: string; network: string }): void;
   'os/walletSetActive'(data: { name: string; network: string }): void;

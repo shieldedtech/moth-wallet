@@ -15,11 +15,16 @@ import { SectionHeader } from '../../components/SectionHeader.js';
 import { Select, type SelectItem } from '../../components/Select.js';
 import type { Navigator, Route, BirthdayClaim } from '../../navigation/index.js';
 
-type Mode = 'unknown' | 'tip' | 'specify';
+type Mode = 'unknown' | 'tip' | 'discover' | 'specify';
 
 const MODES: SelectItem<Mode>[] = [
   { label: "I don't know", value: 'unknown', hint: 'Scan the whole chain — always correct, up to an hour' },
   { label: 'I just generated this seed', value: 'tip', hint: 'Nothing to scan; start at the current tip' },
+  {
+    label: 'Look it up for me',
+    value: 'discover',
+    hint: 'Ask the indexer for the first unshielded transaction — unshielded only',
+  },
   { label: 'Not used before…', value: 'specify', hint: 'Give a date (2026-08-01) or a block height' },
 ];
 
@@ -36,6 +41,15 @@ export function BirthdayScreen({ route, nav }: Props) {
 
   const advance = (birthday: BirthdayClaim | undefined) => {
     nav.push('onboarding-passphrase', { onComplete, partial: { ...partial, birthday } });
+  };
+
+  const choose = (next: Mode) => {
+    if (next === 'unknown') return advance(undefined);
+    if (next === 'tip') return advance({ kind: 'tip' });
+    // Discovery needs no input here — the seed is already in `partial`, and the
+    // lookup runs at import time where its result and caveat can be shown.
+    if (next === 'discover') return advance({ kind: 'discover' });
+    setMode('specify');
   };
 
   const submitValue = () => {
@@ -64,10 +78,7 @@ export function BirthdayScreen({ route, nav }: Props) {
             {error ? <Box marginTop={1}><Text color="red">{error}</Text></Box> : null}
           </>
         ) : (
-          <Select
-            items={MODES}
-            onSelect={(next) => (next === 'specify' ? setMode('specify') : advance(next === 'tip' ? { kind: 'tip' } : undefined))}
-          />
+          <Select items={MODES} onSelect={choose} />
         )}
         <Box marginTop={1}>
           <Text dimColor>Answer early rather than late: too early only costs sync time, too late hides anything received before it.</Text>

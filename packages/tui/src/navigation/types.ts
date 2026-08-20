@@ -5,14 +5,12 @@ import type { WalletInfo } from '@shieldedtech/moth-wallet';
 export type SeedSource = 'mnemonic' | 'hex' | 'random';
 
 /**
- * What the user asserts about an imported seed's history. Mirrors the CLI's
- * --birthday-tip / --birthday-date / --birthday-height. Absent means unknown,
- * which is the safe answer: the sync scans from genesis.
+ * What the user asserts about an imported seed's history. Re-exported from core
+ * so the TUI, CLI and extension cannot drift on what the options are or what
+ * each one means.
  */
-export type BirthdayClaim =
-  | { kind: 'tip' }
-  | { kind: 'date'; value: string }
-  | { kind: 'height'; value: number };
+import type { BirthdayClaim } from '@shieldedtech/moth-wallet';
+export type { BirthdayClaim };
 
 export interface OnboardingState {
   network: string;

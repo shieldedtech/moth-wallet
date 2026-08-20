@@ -23,6 +23,10 @@ export const setup = {
   setup_birthdayTip: 'I just generated it — nothing to scan',
   setup_birthdayDate: 'Not used before a date',
   setup_birthdayHeight: 'Not used before a block height',
+  setup_birthdayDiscover: 'Look it up for me — unshielded history only',
+  setup_birthdayDiscoverNote:
+    'Finds the first unshielded transaction for this phrase. Shielded funds cannot be found this way: ' +
+    'if this phrase received shielded funds earlier, they will not appear until the account is rescanned.',
   setup_birthdayHeightPlaceholder: 'Block height',
   setup_pastePhrase: 'Paste phrase',
   setup_copyPhrase: 'Copy phrase',

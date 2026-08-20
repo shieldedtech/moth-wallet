@@ -1244,6 +1244,12 @@
   "setup_birthdayHeightPlaceholder": {
     "message": "Blockhöhe"
   },
+  "setup_birthdayDiscover": {
+    "message": "Für mich nachschlagen – nur unshielded Historie"
+  },
+  "setup_birthdayDiscoverNote": {
+    "message": "Findet die erste unshielded Transaktion für diese Phrase. Shielded Guthaben lässt sich so nicht finden: Hat diese Phrase früher shielded Guthaben empfangen, erscheint es erst nach einem erneuten Scan des Kontos."
+  },
   "setup_pastePhrase": {
     "message": "Phrase einfügen"
   },

@@ -16,33 +16,52 @@ import {
   heightForDate,
   DEFAULT_NETWORKS,
   birthdayOutlook,
+  mnemonicToSeed,
+  resolveBirthdayClaim,
 } from '@shieldedtech/moth-wallet';
 import { syncedWalletStub } from './utils/synced-wallet-stub.js';
 import type { BirthdayClaim } from './navigation/index.js';
+import type { BirthdayResolution } from '@shieldedtech/moth-wallet';
 
 /**
- * Turn the user's claim about an imported seed into a block height.
+ * Turn the onboarding claim into a height, using core's shared resolver.
  *
- * A date is resolved by binary search over block timestamps and lands on the
- * last block strictly before it, because the failure modes are asymmetric: too
- * early costs sync time, too late hides anything received before it. Anything
- * unresolvable returns undefined — no birthday, the slow but safe answer.
+ * Shared so the TUI cannot drift from the CLI and extension on what a claim
+ * means or which checks run. Returns the height plus anything the user needs
+ * told — the shielded caveat, and a conflict when the chain already contradicts
+ * the claim.
  */
-async function resolveBirthdayClaim(
+async function resolveBirthday(
   claim: BirthdayClaim | undefined,
   networkId: string,
+  seedHex: string | undefined,
   tip: number | null | undefined,
-): Promise<number | undefined> {
-  if (!claim) return undefined;
-  if (claim.kind === 'height') return claim.value > 0 ? claim.value : undefined;
-  if (claim.kind === 'tip') return tip ?? undefined;
+): Promise<BirthdayResolution> {
+  if (!claim) return {notes: []};
+  const preset = DEFAULT_NETWORKS[networkId];
+  if (!preset) return {notes: []};
   try {
-    const preset = DEFAULT_NETWORKS[networkId];
-    if (!preset) return undefined;
-    return (await heightForDate(preset.indexerUrl, new Date(claim.value))).height;
-  } catch {
-    return undefined;
+    return await resolveBirthdayClaim({
+      indexerUrl: preset.indexerUrl,
+      networkId,
+      claim,
+      seedHex,
+      tipHeight: tip ?? undefined,
+    });
+  } catch (err) {
+    // An unresolvable claim means no birthday, which is slow but never wrong.
+    return {notes: [`Could not resolve the birthday (${err}); this account will scan from genesis.`]};
   }
+}
+
+/** Hex seed for the birthday checks' address derivation. */
+async function seedHexFor(source: string, seedInput: string | undefined): Promise<string | undefined> {
+  if (!seedInput) return undefined;
+  if (source === 'hex') return seedInput.trim();
+  const seed = await mnemonicToSeed(seedInput.trim());
+  const hex = Array.from(seed).map((b: number) => b.toString(16).padStart(2, '0')).join('');
+  seed.fill(0);
+  return hex;
 }
 import { parseNightAmount } from './utils/balance.js';
 import { useStackNavigator } from './navigation/index.js';
@@ -198,7 +217,19 @@ export function App({ networkId: networkIdProp }: AppProps) {
           partial: { ...state, generatedMnemonic: info.mnemonic },
         });
       } else if (state.source === 'mnemonic' || state.source === 'hex') {
-        const birthdayHeight = await resolveBirthdayClaim(state.birthday, state.network, network.blockHeight);
+        const seedHex = await seedHexFor(state.source, state.seedInput);
+        const resolved = await resolveBirthday(state.birthday, state.network, seedHex, network.blockHeight);
+        // A claim the chain already contradicts is refused, not warned about:
+        // it would start the sync above transactions the indexer can already
+        // see, and those funds would simply not appear.
+        if (resolved.conflict) {
+          throw new Error(
+            `Refusing that birthday: ${resolved.conflict.message} Choose "Look it up for me" to take ` +
+              `${resolved.conflict.firstActivityHeight}, or give an earlier date.`,
+          );
+        }
+        for (const note of resolved.notes) logs.warn(note);
+        const birthdayHeight = resolved.height;
         // A birthday earlier than the reference is refused by the pre-seed
         // guard, so the sync still walks from genesis. Say so in the log rather
         // than leaving an hour-long sync as the only explanation.

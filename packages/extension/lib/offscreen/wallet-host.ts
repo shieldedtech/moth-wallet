@@ -42,6 +42,11 @@ import {
   type SignedMessage,
 } from '@shieldedtech/moth-browser';
 import { deriveAllAddressesFromSeed } from '@shieldedtech/moth-wallet/wallet/address';
+import { mnemonicToSeed } from '@shieldedtech/moth-wallet/wallet/mnemonic';
+import {
+  resolveBirthdayClaim,
+  type BirthdayClaim,
+} from '@shieldedtech/moth-wallet/wallet/birthday-claim';
 import * as ledger from '@midnight-ntwrk/ledger-v8';
 import type { HistoryEntry } from '@midnight-ntwrk/dapp-connector-api';
 import { serializeBalances } from '../messaging/balances-json';
@@ -163,21 +168,49 @@ export async function walletImport(
   mnemonic: string,
   passphrase: string,
   network: string,
-  options: {currentHeight?: number; birthdayHeight?: number} = {},
+  options: {currentHeight?: number; birthdayClaim?: BirthdayClaim} = {},
 ) {
   const moth = await getMoth(network);
+
+  // Resolve the claim here, where the seed and the derivation stack already are.
+  // Notes carry the shielded caveat, which the panel shows like any other sync
+  // message; a conflict throws, because a birthday the chain already contradicts
+  // would start the sync above transactions the indexer can see and those funds
+  // would simply not appear.
+  let birthdayHeight: number | undefined;
+  if (options.birthdayClaim) {
+    const seed = await mnemonicToSeed(mnemonic.trim());
+    const seedHex = Array.from(seed).map((b: number) => b.toString(16).padStart(2, '0')).join('');
+    seed.fill(0);
+    const resolved = await resolveBirthdayClaim({
+      indexerUrl: moth.config.indexerUrl,
+      networkId: network,
+      claim: options.birthdayClaim,
+      seedHex,
+      tipHeight: options.currentHeight,
+    });
+    if (resolved.conflict) {
+      throw new Error(
+        `Refusing that birthday: ${resolved.conflict.message} Choose "Look it up for me" to take ` +
+          `${resolved.conflict.firstActivityHeight}, or give an earlier date.`,
+      );
+    }
+    for (const note of resolved.notes) emit('os/eventSyncMessage', note);
+    birthdayHeight = resolved.height;
+  }
+  const importOptions = {currentHeight: options.currentHeight, birthdayHeight};
   // A birthday earlier than the reference is refused by the pre-seed guard, so
   // the import succeeds and the first sync still walks from genesis. Report it
   // here — the panel has no other way to learn its answer was unusable, and the
   // check lives offscreen because the service worker must not load the sync
   // stack it needs.
-  if (options.birthdayHeight !== undefined) {
-    const outlook = await birthdayOutlook(moth.config, options.birthdayHeight).catch(() => null);
+  if (birthdayHeight !== undefined) {
+    const outlook = await birthdayOutlook(moth.config, birthdayHeight).catch(() => null);
     if (outlook && !outlook.seedable && outlook.reason) {
       emit('os/eventSyncMessage', `Pre-seed will not apply: ${outlook.reason}`);
     }
   }
-  return moth.wallets.import(name, mnemonic, passphrase, network, options);
+  return moth.wallets.import(name, mnemonic, passphrase, network, importOptions);
 }
 
 export async function walletRemove(name: string, network: string): Promise<void> {

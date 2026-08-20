@@ -41,6 +41,7 @@ import { useNetworkConfig, NetworkFields, type SupportedNetwork } from '../../co
 const BIRTHDAY_LABELS = {
   unknown: 'setup_birthdayUnknown',
   tip: 'setup_birthdayTip',
+  discover: 'setup_birthdayDiscover',
   date: 'setup_birthdayDate',
   height: 'setup_birthdayHeight',
 } as const;
@@ -75,7 +76,7 @@ export function App() {
   // Only meaningful for an import. Without a claim the first sync walks the
   // chain from genesis: correct, but up to an hour on DUST. Mirrors the CLI's
   // --birthday-tip / --birthday-date / --birthday-height.
-  const [birthdayKind, setBirthdayKind] = useState<'unknown' | 'tip' | 'date' | 'height'>('unknown');
+  const [birthdayKind, setBirthdayKind] = useState<'unknown' | 'tip' | 'discover' | 'date' | 'height'>('unknown');
   const [birthdayDate, setBirthdayDate] = useState('');
   const [birthdayHeight, setBirthdayHeight] = useState('');
   const [walletCount, setWalletCount] = useState(0);
@@ -141,6 +142,8 @@ export function App() {
           // genesis, which is correct but slow, and guessing one hides funds.
           ...(birthdayKind === 'tip'
             ? {birthday: {kind: 'tip' as const}}
+            : birthdayKind === 'discover'
+            ? {birthday: {kind: 'discover' as const}}
             : birthdayKind === 'date' && birthdayDate
               ? {birthday: {kind: 'date' as const, value: birthdayDate}}
               : birthdayKind === 'height' && Number(birthdayHeight) > 0
@@ -199,7 +202,7 @@ export function App() {
         <fieldset className="m-0 mt-5 flex max-w-[520px] flex-col gap-2 border-0 p-0">
           <legend className="p-0 text-sm font-bold">{t('setup_birthdayTitle')}</legend>
           <p className="m-0 text-[13px] text-muted-foreground">{t('setup_birthdayHint')}</p>
-          {(['unknown', 'tip', 'date', 'height'] as const).map((kind) => (
+          {(['unknown', 'tip', 'discover', 'date', 'height'] as const).map((kind) => (
             <label key={kind} className="flex cursor-pointer items-start gap-2 text-sm">
               <input
                 type="radio"
@@ -211,6 +214,9 @@ export function App() {
               <span>{t(BIRTHDAY_LABELS[kind])}</span>
             </label>
           ))}
+          {birthdayKind === 'discover' ? (
+            <p className="m-0 text-[13px] text-muted-foreground">{t('setup_birthdayDiscoverNote')}</p>
+          ) : null}
           {birthdayKind === 'date' ? (
             <Input
               type="date"
