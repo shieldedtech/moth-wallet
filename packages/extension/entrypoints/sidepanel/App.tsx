@@ -101,6 +101,10 @@ export function App() {
     return (
       <Unlock
         walletName={activeName}
+        // With more than one account the screen must ask which. Deleting the
+        // active account promotes another silently, and an unlock aimed at the
+        // wrong account looks exactly like a wrong password.
+        accounts={wallets.map((w) => ({ name: w.name, label: w.label, network: w.network }))}
         onUnlock={async (name, passphrase) => {
           await session.unlock(name, passphrase);
           setScreen('home');

@@ -1337,6 +1337,9 @@
   "unlock_unlockAccount": {
     "message": "$1 entsperren"
   },
+  "unlock_chooseAccount": {
+    "message": "Konto wählen und Passwort eingeben"
+  },
   "unlock_enterPassword": {
     "message": "Gib dein Passwort ein, um Moth zu entsperren."
   },
