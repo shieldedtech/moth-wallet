@@ -84,7 +84,15 @@ async function sessionStatus(): Promise<SessionStatus> {
  * then simply genesis-syncs).
  */
 
-async function chainTip(networkId: string): Promise<number | undefined> {
+/**
+ * Chain tip height for a network, by network id.
+ *
+ * Deliberately NOT called `chainTip`: core exports `chainTip(indexerUrl)`
+ * returning `{height, timestamp}`, and two same-named functions with different
+ * shapes is how a caller ends up storing an object where a height belongs
+ * without a type error at the call site.
+ */
+async function chainTipHeight(networkId: string): Promise<number | undefined> {
   try {
     const config = await getNetworkConfig(networkId);
     const block = await new IndexerClient(config.indexerUrl).getBlock();
@@ -193,7 +201,7 @@ export async function saveNetworkConfig(data: {
         // first-existence height there, but only on first arrival and only for
         // wallets created here — see WalletManager.setNetwork for why an
         // imported wallet must never be given one.
-        birthday: await chainTip(network),
+        birthday: await chainTipHeight(network),
       });
       nextSession = {
         ...session,
@@ -331,7 +339,7 @@ export function registerHandlers(): void {
       name: data.name,
       passphrase: data.passphrase,
       network: target,
-      birthday: data.birthday ?? (await chainTip(target)),
+      birthday: data.birthday ?? (await chainTipHeight(target)),
       mnemonic: data.mnemonic,
     });
   });
@@ -346,7 +354,7 @@ export function registerHandlers(): void {
       network: target,
       // Always recorded, for "when did this account start here". Never used as
       // a birthday — moth cannot know an imported seed's history.
-      currentHeight: await chainTip(target),
+      currentHeight: await chainTipHeight(target),
       // Forwarded, not resolved: discovery derives an address from the seed, and
       // the service worker must not load that stack (the same reason the
       // pre-seed outlook check lives offscreen).

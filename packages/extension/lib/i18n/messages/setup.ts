@@ -18,7 +18,7 @@ export const setup = {
   setup_importSubtitle: 'Type your 24-word secret phrase in order, or paste the whole thing at once.',
   setup_birthdayTitle: 'When did this phrase start being used?',
   setup_birthdayHint:
-    'Telling Moth this lets the first sync skip older blocks — seconds instead of up to an hour. Answer early rather than late: too early only costs time, while too late hides anything received before it, and shielded balances give no sign that anything is missing. Clearing the sync cache recovers it.',
+    'Telling Moth this lets the first sync skip older blocks — seconds instead of up to an hour. Answer early rather than late: too early only costs time, while too late hides shielded funds received before it, and shielded balances give no sign that anything is missing. Unshielded funds are found either way. Clearing the sync cache recovers everything.',
   setup_birthdayUnknown: "I don't know — scan the whole chain",
   setup_birthdayTip: 'I just generated it — nothing to scan',
   setup_birthdayDate: 'Not used before a date',

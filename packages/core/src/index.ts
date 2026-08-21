@@ -91,6 +91,7 @@ export {
 } from './sync/operations.js';
 export {
   InMemorySyncStateStore, syncStateKey, emptyRefStateKey, emptyRefMnemonicKey, emptyRefHeightKey,
+  archivedRefStateKey, refArchiveIndexKey, readArchiveIndex, archiveReference, EMPTY_REF_WALLET,
   type SyncStateStore, type WalletPart,
 } from './sync/sync-store.js';
 export {

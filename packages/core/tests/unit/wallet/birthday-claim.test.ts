@@ -69,7 +69,12 @@ describe('resolveBirthdayClaim', () => {
       seedHex: SEED_HEX,
     });
     expect(out.conflict?.firstActivityHeight).toBe(1_388_662);
-    expect(out.conflict?.message).toContain('would not be found');
+    // The message must not claim the unshielded funds are lost — they are not.
+    // Issue #49: the check can only prove unshielded activity, and unshielded is
+    // the one thing a late birthday cannot hide.
+    expect(out.conflict?.message).toContain('was already active at block 1388662');
+    expect(out.conflict?.message).toContain('unshielded funds would still be found');
+    expect(out.conflict?.message).toContain('SHIELDED');
   });
 
   it('accepts an asserted height at or below the first transaction', async () => {

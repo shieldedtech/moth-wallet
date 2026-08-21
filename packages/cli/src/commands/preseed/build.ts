@@ -1,6 +1,11 @@
 import { Flags } from '@oclif/core';
 import { BaseCommand } from '../../base-command.js';
-import { archivedReferenceHeights, preseedReferenceStatus, warmEmptyRefCache } from '@shieldedtech/moth-wallet';
+import {
+  archivedReferenceHeights,
+  preseedReferenceStatus,
+  refreshEmptyRefCache,
+  warmEmptyRefCache,
+} from '@shieldedtech/moth-wallet';
 
 /**
  * Build a pre-seed reference for this network, then archive it at its height.
@@ -51,7 +56,17 @@ export default class PreseedBuild extends BaseCommand {
 
     // Progress goes to stderr-style logging only in text mode: JSON consumers get
     // one object at the end, not a stream they would have to parse around.
-    const states = await warmEmptyRefCache(network, (msg) => {
+    // --force MUST take the refresh path, not the warm one. warmEmptyRefCache is
+    // ensureEmptyRefCache(build: true), which returns any reference already in the
+    // store before it ever reaches the builder — so with a live reference present
+    // this returned in seconds and reported success at the unchanged height while
+    // printing none of the sync it claimed to have done. That made the archive
+    // unreachable from the CLI, since a second height can only be gained by
+    // advancing the live one. refreshEmptyRefCache drops the memo and calls the
+    // builder directly, resuming from cached state rather than walking genesis.
+    const advance = flags.force ? refreshEmptyRefCache : warmEmptyRefCache;
+    const startedAt = Date.now();
+    const states = await advance(network, (msg) => {
       if (this.outputFormat === 'text') this.log(`  ${msg}`);
     });
 
@@ -64,10 +79,16 @@ export default class PreseedBuild extends BaseCommand {
       return;
     }
 
+    // Say so when nothing moved. Reporting built: true at an unchanged height is
+    // how this stayed invisible to anyone running the command on a schedule.
+    const advanced = (before.height ?? 0) < states.height;
     this.outputSuccess({
-      built: true,
+      built: advanced,
       referenceHeight: states.height,
+      previousHeight: before.height,
+      seconds: Math.round((Date.now() - startedAt) / 1000),
       archivedHeights: await archivedReferenceHeights(network),
+      ...(advanced ? {} : {reason: 'the reference was already at this height — nothing to advance'}),
     });
   }
 }

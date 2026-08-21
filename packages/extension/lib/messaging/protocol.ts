@@ -73,7 +73,7 @@ export interface ImportWalletRequest {
    * Resolved offscreen to a block height; the panel never deals in block numbers.
    *
    * Absent is the safe default — moth cannot infer an imported seed's history,
-   * and a claim that is too late hides funds.
+   * and a claim that is too late hides shielded funds and their DUST.
    */
   birthday?:
     | {kind: 'tip'}
