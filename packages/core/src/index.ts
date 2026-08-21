@@ -24,6 +24,11 @@ export {
 export { birthdayOutlook, type BirthdayOutlook } from './sync/preseed.js';
 export { firstUnshieldedActivity, indexerWsUrl, type FirstActivity } from './network/first-activity.js';
 export {
+  dustGenerationsFor,
+  type DustGenerationEntry,
+  type DustGenerationsResult,
+} from './network/dust-generations.js';
+export {
   resolveBirthdayClaim,
   shieldedCaveat,
   type BirthdayClaim,
