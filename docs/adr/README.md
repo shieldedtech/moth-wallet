@@ -52,5 +52,6 @@ A `Rejected` ADR is still valuable — it documents *why* we said no.
 | #    | Title                                                      | Status   | Date       |
 | ---- | ---------------------------------------------------------- | -------- | ---------- |
 | 0000 | [Template](0000-template.md)                               | n/a      | —          |
+| 0007 | [cNIGHT to DUST registration](0007-cnight-dust-registration.md) | Proposed | 2026-08-21 |
 
 Add a row to this table when you accept an ADR. Keep entries chronological.
