@@ -23,6 +23,13 @@ export {
 export { generateMnemonic24, validateMnemonic, mnemonicToSeed, hexSeedToUint8Array } from './wallet/mnemonic.js';
 export { Roles } from './wallet/address.js';
 export { encryptKeystore, decryptKeystore, type EncryptedKeystore } from './wallet/keystore.js';
+export {
+  parseNightAmount,
+  formatNightAmount,
+  InvalidAmountError,
+  STARS_PER_NIGHT,
+  NIGHT_DECIMALS,
+} from './wallet/night-amount.js';
 export { deriveAllAddressesFromSeed, deriveRawKeys, deriveShieldedPublicKeys, decodeBech32mAddress } from './wallet/address.js';
 export { signMessage, signedMessageBytes, type SignEncoding, type SignedMessage } from './wallet/sign-message.js';
 export { deriveAppSecret } from './wallet/app-secret.js';
