@@ -93,10 +93,9 @@ jobs:
         if: ${{ steps.releases.outputs.hasReleases == 'true' }}
         uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d  # v1.9.0
         with:
-          # `yarn run` so Yarn Berry runs the package scripts, not its built-in
-          # `yarn version` command (which needs a <strategy> arg and ignores the
-          # "version" script — the cause of the release failure).
-          version: yarn run version && yarn install
+          # Keep the compound command in a package script; the action does not
+          # invoke shell operators when it executes its input.
+          version: yarn run version-release
           commitMode: github-api
           github-token: ${{ github.token }}
           title: "chore: version packages"
