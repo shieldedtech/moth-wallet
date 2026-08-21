@@ -50,15 +50,19 @@ export default class DustStatus extends BaseCommand {
       wallet: walletName,
       network: network.id,
       dustAddress,
-      generating: result.entries.length > 0,
+      // A decay-time update is not new generation, but it only exists for an
+      // address that IS generating — so it counts as evidence even when no entry
+      // itself came back.
+      generating: result.entries.length > 0 || result.dtimeUpdates > 0,
       entries: result.entries.length,
+      decayUpdates: result.dtimeUpdates,
       totalValue: total.toString(),
       highestIndex: result.highestIndex,
       newestEntryAt: newest > 0 ? new Date(newest * 1000).toISOString() : null,
       // Said out loud: a time-bounded collection that stopped early is a partial
       // answer, and presenting it as complete is how "no DUST" gets misread.
       ...(result.truncated ? {truncated: true, note: 'stopped on the time budget — the list may be incomplete'} : {}),
-      ...(result.entries.length === 0
+      ...(result.entries.length === 0 && result.dtimeUpdates === 0
         ? {note: 'No DUST generation for this address. NIGHT must be designated (moth dust register), or held as cNIGHT on Cardano and registered there.'}
         : {}),
     });

@@ -37,18 +37,37 @@ export interface DustGenerationEntry {
 
 export interface DustGenerationsResult {
   readonly entries: DustGenerationEntry[];
+  /**
+   * Decay-time updates seen. Not new generation, so they are counted rather than
+   * listed — but their presence means the address IS generating, which matters
+   * when no `DustGenerationsItem` falls inside the window.
+   */
+  readonly dtimeUpdates: number;
   /** Highest generation index the indexer reports, when it said so. */
   readonly highestIndex: number | null;
   /** True when collection stopped on the time budget rather than catching up. */
   readonly truncated: boolean;
 }
 
-const QUERY = `subscription($address: DustAddress!, $from: Int!) {
-  dustGenerations(dustAddress: $address, startIndex: $from) {
+/**
+ * `endIndex` is REQUIRED and inclusive — omitting it fails the subscription, and
+ * the failure arrives as a `next` message carrying `errors`, not as the protocol
+ * `error` type. A reader that only watches for the latter records zero entries and
+ * reports "no DUST generation", which is the wrong answer stated confidently.
+ *
+ * The bound is generation-tree indices, not event ids, and nothing local maps a
+ * wallet to its highest index — so it is deliberately wide. Measured on preprod:
+ * a bound of 100,000 returned nothing for an address whose entries sit at 338,505,
+ * while `highestIndex` merely echoed the bound back, giving no hint that the
+ * window was too small.
+ */
+const QUERY = `subscription($address: DustAddress!, $from: Int!, $to: Int!) {
+  dustGenerations(dustAddress: $address, startIndex: $from, endIndex: $to) {
     __typename
     ... on DustGenerationsItem {
       generationMtIndex commitmentMtIndex value initialValue ctime backingNight transactionHash
     }
+    ... on DustGenerationDtimeUpdateItem { generationMtIndex }
     ... on DustGenerationsProgress { highestIndex }
   }
 }`;
@@ -64,12 +83,21 @@ const QUERY = `subscription($address: DustAddress!, $from: Int!) {
 export async function dustGenerationsFor(
   indexerUrl: string,
   dustAddress: string,
-  opts: {timeoutMs?: number; startIndex?: number} = {},
+  opts: {timeoutMs?: number; quietMs?: number; startIndex?: number; endIndex?: number} = {},
 ): Promise<DustGenerationsResult> {
   const timeoutMs = opts.timeoutMs ?? 15_000;
   const from = opts.startIndex ?? 0;
+  // Wide by default: see the note on QUERY. Too small a bound returns nothing and
+  // says nothing about why.
+  const to = opts.endIndex ?? 2_000_000_000;
+  // With a wide bound the indexer sends the matching entries and then simply
+  // stops — no Progress marker, no `complete`. So "done" is a quiet gap, not a
+  // signal. Without this the call always burns the whole budget and reports
+  // itself truncated even though it saw everything.
+  const quietMs = opts.quietMs ?? 2_500;
   const ws = new WebSocket(indexerWsUrl(indexerUrl), 'graphql-transport-ws');
   const entries: DustGenerationEntry[] = [];
+  let dtimeUpdates = 0;
   let highestIndex: number | null = null;
 
   return new Promise<DustGenerationsResult>((resolve, reject) => {
@@ -78,6 +106,7 @@ export async function dustGenerationsFor(
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      if (quiet) clearTimeout(quiet);
       try {
         ws.close();
       } catch {
@@ -85,7 +114,15 @@ export async function dustGenerationsFor(
       }
       fn();
     };
-    const timer = setTimeout(() => finish(() => resolve({entries, highestIndex, truncated: true})), timeoutMs);
+    const timer = setTimeout(() => finish(() => resolve({entries, dtimeUpdates, highestIndex, truncated: true})), timeoutMs);
+
+    // Reset on every event; firing means the stream went quiet after delivering
+    // something, which is as close to "caught up" as this subscription offers.
+    let quiet: ReturnType<typeof setTimeout> | undefined;
+    const nudgeQuiet = () => {
+      if (quiet) clearTimeout(quiet);
+      quiet = setTimeout(() => finish(() => resolve({entries, dtimeUpdates, highestIndex, truncated: false})), quietMs);
+    };
 
     ws.onopen = () => ws.send(JSON.stringify({type: 'connection_init'}));
     ws.onerror = () => finish(() => reject(new Error(`Could not reach ${indexerWsUrl(indexerUrl)}`)));
@@ -103,22 +140,39 @@ export async function dustGenerationsFor(
           JSON.stringify({
             id: '1',
             type: 'subscribe',
-            payload: {query: QUERY, variables: {address: dustAddress, from}},
+            payload: {query: QUERY, variables: {address: dustAddress, from, to}},
           }),
         );
         return;
       }
 
       if (msg.type === 'next') {
-        const e = (msg.payload as {data?: {dustGenerations?: Record<string, unknown>}} | undefined)?.data
-          ?.dustGenerations;
+        const payload = msg.payload as
+          | {data?: {dustGenerations?: Record<string, unknown>}; errors?: {message?: string}[]}
+          | undefined;
+
+        // GraphQL errors ride in on `next`, not on the protocol's `error` type.
+        // Ignoring them is how a missing argument became "no DUST generation".
+        if (payload?.errors?.length) {
+          const first = payload.errors[0]?.message ?? 'unknown error';
+          finish(() => reject(new Error(`Indexer rejected the dust-generations subscription: ${first}`)));
+          return;
+        }
+
+        const e = payload?.data?.dustGenerations;
         if (!e) return;
+
+        if (e.__typename === 'DustGenerationDtimeUpdateItem') {
+          dtimeUpdates += 1;
+          nudgeQuiet();
+          return;
+        }
 
         if (e.__typename === 'DustGenerationsProgress') {
           if (typeof e.highestIndex === 'number') highestIndex = e.highestIndex;
           // Caught up. Anything further would be live traffic, which a status
           // command has no business waiting for.
-          finish(() => resolve({entries, highestIndex, truncated: false}));
+          finish(() => resolve({entries, dtimeUpdates, highestIndex, truncated: false}));
           return;
         }
 
@@ -132,6 +186,7 @@ export async function dustGenerationsFor(
             backingNight: String(e.backingNight ?? ''),
             transactionHash: String(e.transactionHash ?? ''),
           });
+          nudgeQuiet();
         }
         return;
       }
@@ -140,7 +195,7 @@ export async function dustGenerationsFor(
         finish(() => reject(new Error(`Indexer rejected the subscription: ${JSON.stringify(msg.payload)}`)));
         return;
       }
-      if (msg.type === 'complete') finish(() => resolve({entries, highestIndex, truncated: false}));
+      if (msg.type === 'complete') finish(() => resolve({entries, dtimeUpdates, highestIndex, truncated: false}));
     };
   });
 }
