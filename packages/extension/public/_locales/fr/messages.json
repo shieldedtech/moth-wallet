@@ -1358,6 +1358,9 @@
   "unlock_unlockAccount": {
     "message": "Déverrouiller $1"
   },
+  "unlock_chooseAccount": {
+    "message": "Choisissez un compte et saisissez son mot de passe"
+  },
   "unlock_enterPassword": {
     "message": "Entrez votre mot de passe pour déverrouiller Moth."
   },
