@@ -9,6 +9,7 @@ import {
   chainTip,
   mnemonicToSeed,
   resolveBirthdayClaim,
+  shieldedCaveat,
 } from '@shieldedtech/moth-wallet';
 
 /**
@@ -102,12 +103,14 @@ export default class WalletImport extends BaseCommand {
         this.warn(`Birthday is later than known activity: ${resolved.conflict.message} Continuing because --birthday-force was given.`);
       }
 
-      // Notes carry the shielded caveat, which is the thing a user most needs to
-      // read, so they are logged rather than left to --verbose.
-      for (const note of resolved.notes) this.log(note);
-      if (claim.kind === 'discover' || resolved.firstActivity !== undefined) {
-        this.warn_if_shielded_risk(resolved.height);
+      // Findings go to stdout; the shielded caveat goes to stderr as a warning,
+      // once. It is filtered out of the notes here because core includes it in
+      // them for surfaces that have nowhere else to put it.
+      const caveat = resolved.height === undefined ? null : shieldedCaveat(resolved.height);
+      for (const note of resolved.notes) {
+        if (note !== caveat) this.log(note);
       }
+      if (caveat) this.warn(caveat);
       options.birthdayHeight = resolved.height;
     }
 
@@ -136,17 +139,6 @@ export default class WalletImport extends BaseCommand {
       return {kind: 'date', value: when.toISOString()};
     }
     return undefined;
-  }
-
-  /**
-   * Surface the shielded gap as a warning, not a log line.
-   *
-   * The notes already state it; this makes it land on stderr with the other
-   * warnings, because it is the one caveat that can silently cost money.
-   */
-  private warn_if_shielded_risk(height: number | undefined): void {
-    if (height === undefined) return;
-    this.warn('Shielded history cannot be discovered — see the note above about funds received before this block.');
   }
 
   async run(): Promise<void> {
