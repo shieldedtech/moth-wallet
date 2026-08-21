@@ -83,15 +83,32 @@ loses them silently. `manager.import` must keep passing nothing.
 This one change is worth making even before the rest: without a birthday, a
 reference cannot be used no matter how it arrives.
 
-### 2. A `dust preseed` command group
+### 2. A `preseed` command group
 
 ```
-moth dust preseed status    # height, staleness, whether one exists
-moth dust preseed build     # first build for this network (tens of minutes)
-moth dust preseed refresh   # catch an existing one up (9.1s measured)
-moth dust preseed import <dir>    # load a published reference
-moth dust preseed export <dir>    # write one out, in the format CI publishes
+moth preseed status         # height, staleness, whether one exists
+moth preseed import <dir>   # load a published reference (seconds)
+moth preseed refresh        # catch an existing one up (9.1s measured)
+moth preseed build          # first build for this network (tens of minutes)
+moth preseed export <dir>   # write one out, in the format CI publishes
 ```
+
+**Top-level, not under `dust`.** An earlier draft of this ADR proposed `moth dust
+preseed …`, reasoning that DUST is why the pre-seed matters — it is the 4.9 MB
+blob, the ~1.4M events, the tens of minutes, where shielded and unshielded take
+seconds. True about the motivation, wrong about the thing: the pre-seed writes
+all three sub-wallet caches, and a reference is per-network machine state in
+`~/.moth` shared by every wallet on the machine, whereas `moth dust` groups
+per-wallet token operations (`register`, `deregister`, `status`). A command tree
+should say what a thing is; the "why" belongs in its description. Discoverability
+agrees — someone whose first sync is crawling searches for "preseed", and only
+learns the DUST connection from the output.
+
+Settled while neither surface had shipped, so the accurate name cost nothing.
+
+Each action is a real oclif subcommand rather than one command taking an action
+argument, so `--timeout` belongs to `build` and `--force` to `import` instead of
+every flag hanging off the group with "(build only)" in its description.
 
 `build` and `refresh` are thin wrappers over the core functions that already
 exist. `import`/`export` make the reference a portable artifact, which is what
