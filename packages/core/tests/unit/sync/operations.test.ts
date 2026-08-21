@@ -13,6 +13,7 @@ import {
 import { deriveAllAddressesFromSeed } from '../../../src/wallet/address.js';
 import { NIGHT_TOKEN_ID } from '../../../src/types/tokens.js';
 import { VERIFIED_PREPROD_ADDRESS as PREPROD_ADDRESS, testSeedHex } from '../../helpers/seed.js';
+import { initSdk } from '../../../src/sdk/index.js';
 
 let seedHex: string;
 // Pre-derived key bundle (Option A). The seed-based ops derive this internally
@@ -20,6 +21,9 @@ let seedHex: string;
 let keys: WalletKeys;
 
 beforeAll(async () => {
+  // deriveWalletKeys and the DUST operations read both seams; initSdk brings up
+  // the matching ledger too. These fixtures are v8.
+  await initSdk('v8');
   seedHex = await testSeedHex();
   keys = deriveWalletKeys(seedHex);
 });

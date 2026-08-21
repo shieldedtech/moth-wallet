@@ -9,7 +9,7 @@
 // state persists through the async SyncStateStore (browser-safe), so v8's
 // node:fs pre-seed bridge is not used here.
 import {generateMnemonic24, mnemonicToSeed} from '../wallet/mnemonic.js';
-import {createKeystore, PublicKey} from '@midnightntwrk/wallet-sdk/unshielded';
+import {createKeystoreFor, sdk} from '../sdk/index.js';
 import {setNetworkId} from '@midnight-ntwrk/midnight-js/network-id';
 import type {NetworkConfig} from '../types/network.js';
 import {startWalletSync, resolveSyncStore} from './wallet-sync.js';
@@ -375,8 +375,8 @@ export function preSeedNewWallet(
 
     // Keys arrive pre-derived (Option A) — no seed to re-derive from.
     const shieldedSecretKeys = walletKeys.shieldedSecretKeys;
-    const ks = createKeystore(walletKeys.nightExternalKey, networkId);
-    const pk = PublicKey.fromKeyStore(ks);
+    const ks = createKeystoreFor(walletKeys.nightExternalKey, networkId, walletKeys.signatureKind);
+    const pk = sdk().unshielded.PublicKey.fromKeyStore(ks);
 
     // Parse reference states
     const refSh = JSON.parse(emptyRef.shielded) as Record<string, unknown>;

@@ -74,7 +74,7 @@ describe('preparePreseed', () => {
           throw new Error('refresh must not run');
         },
       }),
-    ).rejects.toThrow('Unknown network "mainnet". Expected preview or preprod.');
+    ).rejects.toThrow('Unknown network "mainnet". Expected one of: preview, preprod.');
   });
 
   it('fails when the reference does not reach chain tip', async () => {

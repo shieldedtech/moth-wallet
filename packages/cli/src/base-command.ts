@@ -16,7 +16,7 @@ import {
   daemonSocketPath,
   type DaemonClient,
 } from '@shieldedtech/moth-wallet';
-import { FilesystemStorageAdapter } from '@shieldedtech/moth-wallet';
+import { FilesystemStorageAdapter, initSdk, detectLedgerVersion } from '@shieldedtech/moth-wallet';
 
 /**
  * Why a daemon connect failed. Distinguishes the cases the user needs to
@@ -245,10 +245,20 @@ export abstract class BaseCommand extends Command {
         ?? persistedNode
         ?? base.nodeUrl,
       prover: proverMode === 'wasm' ? {type: 'wasm'} : serverProver(proofServerUrl),
+      // Carried from the preset: dropping these would demote a v9 network to the
+      // v8 default and lose the faucet endpoint.
+      ...(base.ledgerVersion ? {ledgerVersion: base.ledgerVersion} : {}),
+      ...(base.faucetUrl ? {faucetUrl: base.faucetUrl} : {}),
     };
 
     // CWE-918: Validate URL schemes to prevent SSRF via user-controlled URLs
     validateNetworkConfig(config);
+
+    // Ask the network which ledger it is running rather than trusting the
+    // shipped table, which goes stale the moment a network forks. Falls back to
+    // the configured value if the indexer cannot be reached.
+    const {version} = await detectLedgerVersion(config);
+    await initSdk(version);
 
     return config;
   }

@@ -1,0 +1,18 @@
+{
+  "network": "stagenet",
+  "height": 74338,
+  "parts": {
+    "shielded": {
+      "bytes": 3538,
+      "gzipBytes": 1785
+    },
+    "unshielded": {
+      "bytes": 397,
+      "gzipBytes": 297
+    },
+    "dust": {
+      "bytes": 6887,
+      "gzipBytes": 3392
+    }
+  }
+}

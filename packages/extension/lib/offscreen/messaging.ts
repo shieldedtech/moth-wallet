@@ -83,6 +83,12 @@ export interface OffscreenProtocol {
     birthday?: number;
     /** Persist this phrase instead of a fresh one (shown to the user first). */
     mnemonic?: string;
+  /**
+   * Signature algorithm for the unshielded identity. Ledger v9 only — v8 has no
+   * ECDSA. Fixed at creation: it selects the address, and DUST must be
+   * re-registered if it changes.
+   */
+  signatureKind?: 'schnorr' | 'ecdsa';
   }): { info: WalletInfo; mnemonic: string };
   'os/walletImport'(data: {
     name: string;
@@ -243,6 +249,8 @@ export interface OffscreenProtocol {
     network: NetworkConfig;
     data: string;
     encoding: SignEncoding;
+    /** Selects the signing key; the host reads the wallet's kind from it. */
+    walletName: string;
   }): SignedMessage;
 
   /** Derive a deterministic per-(origin, domain) 32-byte app secret from the

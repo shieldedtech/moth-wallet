@@ -9,8 +9,14 @@
 //   utf8(`midnight_signed_message:${byteLength}:`) ++ decodedData
 // where byteLength is the length of the decoded data in bytes.
 
-import { createKeystore } from '@midnightntwrk/wallet-sdk/unshielded';
+import {createKeystoreFor} from '../sdk/index.js';
 import { Roles, deriveRawKeys } from './address.js';
+import {
+  signatureKindOf,
+  unwrapSignatureValue,
+  type SignatureKind,
+  type TaggedOrBare,
+} from './signature-encoding.js';
 
 export type SignEncoding = 'hex' | 'base64' | 'text';
 
@@ -22,6 +28,8 @@ export interface SignedMessage {
   signature: string;
   /** Verifying (public) key in the keystore's native hex encoding. */
   verifyingKey: string;
+  /** The algorithm that produced the signature. Always `schnorr` on ledger v8. */
+  signatureKind: SignatureKind;
 }
 
 const MESSAGE_PREFIX = 'midnight_signed_message';
@@ -65,13 +73,20 @@ export function signMessage(
   networkId: string,
   data: string,
   encoding: SignEncoding,
+  // The wallet's kind. A signature made with the wrong one verifies against a
+  // key the dApp was never given, so this has to follow the wallet rather than
+  // default silently.
+  signatureKind: SignatureKind = 'schnorr',
 ): SignedMessage {
   const payload = signedMessageBytes(decodeData(data, encoding));
   const keys = deriveRawKeys(seedHex);
-  const keystore = createKeystore(keys[Roles.NightExternal], networkId);
+  const keystore = createKeystoreFor(keys[Roles.NightExternal], networkId, signatureKind);
+  const signature = keystore.signData(payload) as TaggedOrBare;
+  const verifyingKey = keystore.getPublicKey() as TaggedOrBare;
   return {
     data,
-    signature: String(keystore.signData(payload)),
-    verifyingKey: String(keystore.getPublicKey()),
+    signature: unwrapSignatureValue(signature),
+    verifyingKey: unwrapSignatureValue(verifyingKey),
+    signatureKind: signatureKindOf(signature),
   };
 }

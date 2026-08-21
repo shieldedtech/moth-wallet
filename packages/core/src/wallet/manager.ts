@@ -4,6 +4,10 @@ import { WalletError } from '../types/errors.js';
 import { generateMnemonic24, validateMnemonic, mnemonicToSeed, hexSeedToUint8Array } from './mnemonic.js';
 import { encryptKeystore, decryptKeystore, keystoreNeedsUpgrade, type EncryptedKeystore } from './keystore.js';
 import { deriveAllAddressesFromSeed, deriveRawKeys, Roles } from './address.js';
+import type { SignatureKind } from './signature-encoding.js';
+import { initSdk } from '../sdk/index.js';
+import { detectLedgerVersion } from '../ledger/protocol-version.js';
+import { DEFAULT_NETWORKS } from '../types/network.js';
 import { deriveWalletKeys, type WalletKeys } from '../sync/operations.js';
 import { removeWalletSyncArtifacts } from '../sync/wallet-sync.js';
 
@@ -42,6 +46,17 @@ interface WalletMeta {
   name: string;
   network: string;
   createdAt: string;
+  /**
+   * Which signature algorithm this wallet's unshielded identity uses. Absent
+   * means schnorr, which is what every wallet written before this field used
+   * and the only kind ledger v8 has.
+   *
+   * Fixed at creation and never rewritten: it determines the unshielded
+   * address, and DustRegistration binds the tagged night key, so changing it
+   * would strand NIGHT at the old address and silently stop DUST generation
+   * until re-registered.
+   */
+  signatureKind?: SignatureKind;
   /** Public night receive address (bech32m). Absent for wallets created before this field existed. */
   address?: string;
   /**
@@ -139,8 +154,61 @@ export class WalletManager {
     return Array.from(seed).map((b: number) => b.toString(16).padStart(2, '0')).join('');
   }
 
-  private deriveAddressesFromSeed(seedHex: string): WalletAddresses {
-    return deriveAllAddressesFromSeed(seedHex);
+  /**
+   * Bring up the ledger and SDK a network needs. Detection prefers what the
+   * network reports and falls back to the shipped table, so an unreachable
+   * indexer still unlocks the wallet.
+   */
+  /**
+   * ECDSA exists only on ledger v9, so asking for it on a v8 network cannot
+   * produce a usable wallet — it would have no unshielded address there at all.
+   * Refusing beats creating something that silently cannot receive.
+   */
+  private async assertKindUsable(networkId: string, kind: SignatureKind): Promise<void> {
+    if (kind !== 'ecdsa') return;
+    if (await this.networkSupportsKind(networkId, kind)) return;
+    throw new WalletError(
+      'INVALID_INPUT',
+      `ECDSA signing needs a ledger v9 network; ${networkId} is on v8. ` +
+        `Use schnorr there, or pick a v9 network.`,
+    );
+  }
+
+  /** Whether a network's ledger has the signing algorithm this wallet uses. */
+  private async networkSupportsKind(networkId: string, kind: SignatureKind): Promise<boolean> {
+    if (kind !== 'ecdsa') return true;
+    const preset = DEFAULT_NETWORKS[networkId];
+    const version = preset ? (await detectLedgerVersion(preset)).version : 'v8';
+    return version === 'v9';
+  }
+
+  /**
+   * Refuse to open an existing wallet on a network its signing algorithm does
+   * not exist on. An ECDSA wallet has no unshielded identity on a v8 network,
+   * so the sync would fail somewhere deep and unhelpfully; saying so here names
+   * the cause and the remedy at the moment the user chose the network.
+   */
+  private async assertWalletUsableOn(networkId: string, kind: SignatureKind): Promise<void> {
+    if (await this.networkSupportsKind(networkId, kind)) return;
+    const usable = Object.entries(DEFAULT_NETWORKS)
+      .filter(([, cfg]) => cfg.ledgerVersion === 'v9')
+      .map(([id]) => id)
+      .join(', ');
+    throw new WalletError(
+      'INVALID_INPUT',
+      `This account signs with ECDSA, which exists only on ledger v9 networks, so it has no ` +
+        `address on ${networkId}. Switch to ${usable || 'a v9 network'} to use it.`,
+    );
+  }
+
+  private async ensureRuntimeFor(networkId: string): Promise<void> {
+    const preset = DEFAULT_NETWORKS[networkId];
+    const version = preset ? (await detectLedgerVersion(preset)).version : 'v8';
+    await initSdk(version);
+  }
+
+  private deriveAddressesFromSeed(seedHex: string, kind: SignatureKind = 'schnorr'): WalletAddresses {
+    return deriveAllAddressesFromSeed(seedHex, kind);
   }
 
   /** Public night receive address, preferring the wallet's own network. */
@@ -164,6 +232,10 @@ export class WalletManager {
     // setup flow shows the words before asking for a password, then hands the
     // same phrase back here so the stored wallet matches what the user wrote down.
     mnemonic?: string,
+    // Fixed at creation: it selects the unshielded identity, and switching later
+    // strands NIGHT and de-registers DUST. Only offer it on ledger v9 networks —
+    // v8 has no ECDSA at all.
+    signatureKind: SignatureKind = 'schnorr',
   ): Promise<WalletInfo & { mnemonic: string }> {
     this.validateName(name);
     const config = await this.loadConfig();
@@ -177,8 +249,10 @@ export class WalletManager {
     }
     const phrase = mnemonic ?? generateMnemonic24();
     const seed = await mnemonicToSeed(phrase);
+    await this.ensureRuntimeFor(network);
+    await this.assertKindUsable(network, signatureKind);
     const seedHex = this.seedToHex(seed);
-    const addresses = this.deriveAddressesFromSeed(seedHex);
+    const addresses = this.deriveAddressesFromSeed(seedHex, signatureKind);
     const address = this.primaryAddress(addresses, network);
 
     const keystore = await encryptKeystore(phrase, passphrase);
@@ -190,6 +264,9 @@ export class WalletManager {
       createdAt: new Date().toISOString(),
       address,
       createdHere: true,
+      // Only recorded when it is not the default, so existing records and new
+      // schnorr wallets stay byte-identical.
+      ...(signatureKind !== 'schnorr' ? { signatureKind } : {}),
       ...(birthday !== undefined ? { birthdays: { [network]: birthday } } : {}),
     };
     await this.saveMeta(meta);
@@ -203,7 +280,13 @@ export class WalletManager {
     return { name, address, addresses, network, active: config.activeWallet === name, mnemonic: phrase, birthday };
   }
 
-  async import(name: string, mnemonic: string, passphrase: string, network = 'devnet'): Promise<WalletInfo> {
+  async import(
+    name: string,
+    mnemonic: string,
+    passphrase: string,
+    network = 'devnet',
+    signatureKind: SignatureKind = 'schnorr',
+  ): Promise<WalletInfo> {
     this.validateName(name);
 
     if (!validateMnemonic(mnemonic)) {
@@ -215,15 +298,24 @@ export class WalletManager {
       throw new WalletError('WALLET_ERROR', `Wallet "${name}" already exists`);
     }
 
+    await this.ensureRuntimeFor(network);
+    await this.assertKindUsable(network, signatureKind);
     const seed = await mnemonicToSeed(mnemonic);
     const seedHex = this.seedToHex(seed);
-    const addresses = this.deriveAddressesFromSeed(seedHex);
+    const addresses = this.deriveAddressesFromSeed(seedHex, signatureKind);
     const address = this.primaryAddress(addresses, network);
 
     const keystore = await encryptKeystore(mnemonic, passphrase);
     await this.storage.write(walletKey(name), encoder.encode(JSON.stringify(keystore)));
 
-    const meta: WalletMeta = { name, network, createdAt: new Date().toISOString(), address, createdHere: false };
+    const meta: WalletMeta = {
+      name,
+      network,
+      createdAt: new Date().toISOString(),
+      address,
+      createdHere: false,
+      ...(signatureKind !== 'schnorr' ? { signatureKind } : {}),
+    };
     await this.saveMeta(meta);
 
     config.wallets.push(name);
@@ -235,8 +327,16 @@ export class WalletManager {
     return { name, address, addresses, network, active: config.activeWallet === name };
   }
 
-  async importFromSeed(name: string, hexSeed: string, passphrase: string, network = 'devnet'): Promise<WalletInfo> {
-    const addresses = this.deriveAddressesFromSeed(hexSeed);
+  async importFromSeed(
+    name: string,
+    hexSeed: string,
+    passphrase: string,
+    network = 'devnet',
+    signatureKind: SignatureKind = 'schnorr',
+  ): Promise<WalletInfo> {
+    await this.ensureRuntimeFor(network);
+    await this.assertKindUsable(network, signatureKind);
+    const addresses = this.deriveAddressesFromSeed(hexSeed, signatureKind);
     const address = this.primaryAddress(addresses, network);
 
     const keystore = await encryptKeystore(`seed:${hexSeed}`, passphrase);
@@ -248,7 +348,14 @@ export class WalletManager {
     }
 
     await this.storage.write(walletKey(name), encoder.encode(JSON.stringify(keystore)));
-    const meta: WalletMeta = { name, network, createdAt: new Date().toISOString(), address, createdHere: false };
+    const meta: WalletMeta = {
+      name,
+      network,
+      createdAt: new Date().toISOString(),
+      address,
+      createdHere: false,
+      ...(signatureKind !== 'schnorr' ? { signatureKind } : {}),
+    };
     await this.saveMeta(meta);
 
     config.wallets.push(name);
@@ -316,9 +423,17 @@ export class WalletManager {
       seed.fill(0);
     }
 
-    const addresses = this.deriveAddressesFromSeed(seedHex);
+    // Meta first: it carries the signature kind, which selects the unshielded
+    // identity. Deriving before reading it would silently produce schnorr
+    // addresses for an ECDSA wallet.
     const meta = await this.loadMeta(name);
     const network = meta?.network ?? (await this.loadConfig()).defaultNetwork;
+    // Then the runtime, before any derivation. Schnorr derives from a direct v8
+    // import and needs nothing loaded, but ECDSA goes through the seam — so an
+    // ECDSA wallet cannot even have its address derived until the SDK is up.
+    await this.ensureRuntimeFor(network);
+    await this.assertWalletUsableOn(network, meta?.signatureKind ?? 'schnorr');
+    const addresses = this.deriveAddressesFromSeed(seedHex, meta?.signatureKind ?? 'schnorr');
     const address = this.primaryAddress(addresses, network);
     // Backfill the public address for wallets created before it was stored (or
     // re-derive it after a network change), so the account list can show it
@@ -334,7 +449,9 @@ export class WalletManager {
       zswap: rawKeys[Roles.Zswap],
       metadata: rawKeys[Roles.Metadata],
     };
-    const walletKeys: WalletKeys = deriveWalletKeys(seedHex);
+    // The stored kind must reach the bundle, or an ECDSA wallet signs and
+    // watches with the schnorr key. The runtime is already up (see above).
+    const walletKeys: WalletKeys = deriveWalletKeys(seedHex, meta?.signatureKind ?? 'schnorr');
     // Seed is no longer needed — overwrite the local variable.
     seedHex = '';
 
@@ -490,6 +607,7 @@ export class WalletManager {
         active: config.activeWallet === name,
         birthday: meta ? birthdayFor(meta, meta.network) : undefined,
         label: meta?.label,
+        signatureKind: meta?.signatureKind,
       });
     }
     return wallets;

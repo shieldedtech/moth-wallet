@@ -1,0 +1,18 @@
+{
+  "network": "devnet",
+  "height": 653335,
+  "parts": {
+    "shielded": {
+      "bytes": 3668,
+      "gzipBytes": 1853
+    },
+    "unshielded": {
+      "bytes": 393,
+      "gzipBytes": 296
+    },
+    "dust": {
+      "bytes": 7185,
+      "gzipBytes": 3527
+    }
+  }
+}

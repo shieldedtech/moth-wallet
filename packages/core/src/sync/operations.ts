@@ -2,14 +2,15 @@
 // Architecture follows mn-tui's wallet.ts pattern. See NOTICE for attribution.
 
 import * as Rx from 'rxjs';
-import * as ledger from '@midnight-ntwrk/ledger-v8';
+import type * as ledger from '@midnight-ntwrk/ledger-v8';
+import {ledger as activeLedger} from '../ledger/index.js';
 import {
   MidnightBech32m,
   ShieldedAddress,
   UnshieldedAddress,
   DustAddress,
 } from '@midnightntwrk/wallet-sdk/address-format';
-import {createKeystore} from '@midnightntwrk/wallet-sdk/unshielded';
+import {createKeystoreFor, signSegmentFor} from '../sdk/index.js';
 import type {
   WalletFacade,
   UtxoWithMeta,
@@ -88,7 +89,10 @@ import type {WalletKeys} from '../types/wallet.js';
  * immediately — the bundle holds everything the write paths need, so the seed
  * is never threaded through the daemon or the extension messaging layers.
  */
-export function deriveWalletKeys(seedHex: string): WalletKeys {
+export function deriveWalletKeys(
+  seedHex: string,
+  signatureKind: 'schnorr' | 'ecdsa' = 'schnorr',
+): WalletKeys {
   const hdWallet = HDWallet.fromSeed(Buffer.from(seedHex, 'hex'));
   if (hdWallet.type !== 'seedOk') throw new Error('Invalid seed');
   const result = hdWallet.hdWallet
@@ -99,9 +103,10 @@ export function deriveWalletKeys(seedHex: string): WalletKeys {
   hdWallet.hdWallet.clear();
 
   return {
-    shieldedSecretKeys: ledger.ZswapSecretKeys.fromSeed(result.keys[Roles.Zswap]),
-    dustSecretKey: ledger.DustSecretKey.fromSeed(result.keys[Roles.Dust]),
+    shieldedSecretKeys: activeLedger().ZswapSecretKeys.fromSeed(result.keys[Roles.Zswap]),
+    dustSecretKey: activeLedger().DustSecretKey.fromSeed(result.keys[Roles.Dust]),
     nightExternalKey: result.keys[Roles.NightExternal],
+    signatureKind,
   };
 }
 
@@ -182,7 +187,7 @@ export async function buildTransferTransaction(
   onProgress?: (stage: TxStage) => void
 ): Promise<FinalizedTransaction> {
   setNetworkId(networkId);
-  const ks = createKeystore(keys.nightExternalKey, networkId);
+  const ks = createKeystoreFor(keys.nightExternalKey, networkId, keys.signatureKind);
   const transfers = combinedTransfers(networkId, requests);
   const ttl = new Date(Date.now() + 30 * 60_000);
 
@@ -194,7 +199,7 @@ export async function buildTransferTransaction(
   );
 
   onProgress?.('proving');
-  const signed = await facade.signRecipe(recipe, (payload: Uint8Array) => ks.signData(payload));
+  const signed = await facade.signRecipe(recipe, signSegmentFor(ks) as never);
 
   return facade.finalizeRecipe(signed);
 }
@@ -275,14 +280,14 @@ export async function balanceTransaction(
   onProgress?: (stage: TxStage) => void
 ): Promise<FinalizedTransaction> {
   setNetworkId(networkId);
-  const ks = createKeystore(keys.nightExternalKey, networkId);
+  const ks = createKeystoreFor(keys.nightExternalKey, networkId, keys.signatureKind);
   const secretKeys = {shieldedSecretKeys: keys.shieldedSecretKeys, dustSecretKey: keys.dustSecretKey};
   const ttl = new Date(Date.now() + 30 * 60_000);
 
   onProgress?.('building');
   const recipe = sealed
     ? await facade.balanceFinalizedTransaction(
-        ledger.Transaction.deserialize<ledger.SignatureEnabled, ledger.Proof, ledger.Binding>(
+        activeLedger().Transaction.deserialize<ledger.SignatureEnabled, ledger.Proof, ledger.Binding>(
           'signature',
           'proof',
           'binding',
@@ -292,7 +297,7 @@ export async function balanceTransaction(
         {ttl}
       )
     : await facade.balanceUnboundTransaction(
-        ledger.Transaction.deserialize<ledger.SignatureEnabled, ledger.Proof, ledger.PreBinding>(
+        activeLedger().Transaction.deserialize<ledger.SignatureEnabled, ledger.Proof, ledger.PreBinding>(
           'signature',
           'proof',
           'pre-binding',
@@ -303,7 +308,7 @@ export async function balanceTransaction(
       );
 
   onProgress?.('proving');
-  const signed = await facade.signRecipe(recipe, (payload: Uint8Array) => ks.signData(payload));
+  const signed = await facade.signRecipe(recipe, signSegmentFor(ks) as never);
   return facade.finalizeRecipe(signed);
 }
 
@@ -420,7 +425,7 @@ export async function designateForDustWithKeys(
   selectedUtxos?: NightUtxo[],
 ): Promise<string | null> {
   setNetworkId(networkId);
-  const ks = createKeystore(keys.nightExternalKey, networkId);
+  const ks = createKeystoreFor(keys.nightExternalKey, networkId, keys.signatureKind);
 
   return designateForDustImpl(facade, ks, networkId, receiver, onProgress, selectedUtxos);
 }
@@ -440,7 +445,7 @@ export async function designateForDust(
 ): Promise<string | null> {
   setNetworkId(networkId);
   const keys = deriveKeysFromSeed(seedHex);
-  const ks = createKeystore(keys.nightExternalKey, networkId);
+  const ks = createKeystoreFor(keys.nightExternalKey, networkId, keys.signatureKind);
   return designateForDustImpl(facade, ks, networkId, receiver, onProgress, selectedUtxos);
 }
 
@@ -497,7 +502,7 @@ async function unregisteredNightUtxos(facade: WalletFacade): Promise<UtxoWithMet
 // designateForDustWithKeys(walletKeys).
 async function designateForDustImpl(
   facade: WalletFacade,
-  ks: ReturnType<typeof createKeystore>,
+  ks: ReturnType<typeof createKeystoreFor>,
   networkId: string,
   receiver: string | undefined,
   onProgress: ((stage: TxStage) => void) | undefined,
@@ -537,7 +542,7 @@ async function designateForDustImpl(
     recipe = await facade.registerNightUtxosForDustGeneration(
       utxos,
       ks.getPublicKey(),
-      (payload: Uint8Array) => ks.signData(payload),
+      signSegmentFor(ks) as never,
       dustReceiver
     );
   } catch (e) {
@@ -574,7 +579,7 @@ export async function dedesignateFromDustWithKeys(
   selectedUtxos?: NightUtxo[],
 ): Promise<string> {
   setNetworkId(networkId);
-  const ks = createKeystore(keys.nightExternalKey, networkId);
+  const ks = createKeystoreFor(keys.nightExternalKey, networkId, keys.signatureKind);
   return dedesignateFromDustImpl(facade, ks, keys, onProgress, selectedUtxos);
 }
 
@@ -592,13 +597,13 @@ export async function dedesignateFromDust(
 ): Promise<string> {
   setNetworkId(networkId);
   const keys = deriveKeysFromSeed(seedHex);
-  const ks = createKeystore(keys.nightExternalKey, networkId);
+  const ks = createKeystoreFor(keys.nightExternalKey, networkId, keys.signatureKind);
   return dedesignateFromDustImpl(facade, ks, keys, onProgress, selectedUtxos);
 }
 
 async function dedesignateFromDustImpl(
   facade: WalletFacade,
-  ks: ReturnType<typeof createKeystore>,
+  ks: ReturnType<typeof createKeystoreFor>,
   keys: WalletKeys,
   onProgress: ((stage: TxStage) => void) | undefined,
   selectedUtxos: NightUtxo[] | undefined,
@@ -620,8 +625,10 @@ async function dedesignateFromDustImpl(
   if (utxos.length === 0) throw new Error('No registered NIGHT UTXOs to deregister');
 
   onProgress?.('building');
-  const recipe = await facade.deregisterFromDustGeneration(utxos, ks.getPublicKey(), (payload: Uint8Array) =>
-    ks.signData(payload)
+  const recipe = await facade.deregisterFromDustGeneration(
+    utxos,
+    ks.getPublicKey(),
+    signSegmentFor(ks) as never,
   );
 
   const balancedRecipe = await facade.balanceUnprovenTransaction(

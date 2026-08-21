@@ -281,3 +281,47 @@ describe('sync-service snapshot ownership during teardown', () => {
     expect((await storage.get(SNAPSHOT))[SNAPSHOT]).toBe('{"dust":"1"}');
   });
 });
+
+describe('sync failures reach the panels', () => {
+  // A thrown error used to present as a hang: startSync is dispatched
+  // fire-and-forget from unlock and from a network change, and a bare
+  // `.catch(() => {})` there left the panel on its last progress line —
+  // "Deriving keys..." forever, when what actually happened was an exception.
+  beforeEach(() => {
+    vi.resetModules();
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('broadcasts an Error message to every open panel', async () => {
+    const sync = await import('../lib/background/sync-service');
+    const a = fakePort();
+    const b = fakePort();
+    sync.addPort(a.port);
+    sync.addPort(b.port);
+
+    sync.broadcastSyncFailure(new Error('No wallet SDK loaded'));
+
+    for (const port of [a.port, b.port]) {
+      expect(port.postMessage).toHaveBeenCalledWith({
+        kind: 'syncMessage',
+        message: 'Sync failed: No wallet SDK loaded',
+      });
+    }
+  });
+
+  it('reports a non-Error rejection rather than dropping it', async () => {
+    const sync = await import('../lib/background/sync-service');
+    const { port } = fakePort();
+    sync.addPort(port);
+
+    sync.broadcastSyncFailure('offscreen document went away');
+
+    expect(port.postMessage).toHaveBeenCalledWith({
+      kind: 'syncMessage',
+      message: 'Sync failed: offscreen document went away',
+    });
+  });
+});

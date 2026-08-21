@@ -26,7 +26,6 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@midnight-ntwrk/ledger-v8": "8.1.0",
     "@midnightntwrk/wallet-sdk": "^1.2.0",
     "@shieldedtech/moth-wallet": "^0.12.1",
     "ink": "^7.0.1",

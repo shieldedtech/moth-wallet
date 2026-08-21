@@ -704,6 +704,9 @@
   "network_descQanet": {
     "message": "Red de control de calidad"
   },
+  "network_descStagenet": {
+    "message": "Red de demostración en el ledger v9"
+  },
   "network_endpointUrls": {
     "message": "URLs de endpoints"
   },
@@ -1265,6 +1268,24 @@
   "setup_networkNote": {
     "message": "Puedes cambiar esto cuando quieras en Configuración, en Red."
   },
+  "setup_signingTitle": {
+    "message": "Algoritmo de firma"
+  },
+  "setup_signingSchnorr": {
+    "message": "Schnorr (recomendado)"
+  },
+  "setup_signingSchnorrDesc": {
+    "message": "Funciona en todas las redes de Midnight."
+  },
+  "setup_signingEcdsa": {
+    "message": "ECDSA"
+  },
+  "setup_signingEcdsaDesc": {
+    "message": "Para custodia de claves secp256k1, como un HSM o KMS."
+  },
+  "setup_signingEcdsaWarning": {
+    "message": "ECDSA da a esta cuenta una dirección unshielded distinta, y ninguna en las redes que aún usan el ledger anterior. No se puede cambiar después de crear la cuenta."
+  },
   "setup_phraseTitle": {
     "message": "Anota tu frase secreta"
   },
@@ -1396,6 +1417,15 @@
   },
   "welcome_gettingThingsReady": {
     "message": "Preparando todo"
+  },
+  "welcome_loadingFailedTitle": {
+    "message": "No se pudo abrir tu wallet"
+  },
+  "welcome_loadingFailedHint": {
+    "message": "Normalmente significa que la red seleccionada no está accesible, o no es la red en la que funciona esta cuenta."
+  },
+  "welcome_loadingFailedAction": {
+    "message": "Cambiar de red"
   },
   "welcome_loadingPreparingWallet": {
     "message": "Preparando tu billetera"

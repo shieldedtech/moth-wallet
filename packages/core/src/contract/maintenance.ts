@@ -4,7 +4,7 @@
 
 import {readFileSync} from 'node:fs';
 import type {TransactionResult} from '../types/transaction.js';
-import {resolveProverConfig, type NetworkConfig} from '../types/network.js';
+import {resolveProverConfig, type NetworkConfig, resolveLedgerVersion} from '../types/network.js';
 import type {DerivedKeys} from '../types/wallet.js';
 import {createProofProvider, ensureProverReady} from '../proof/provider.js';
 import {NodeZkConfigProvider} from '@midnight-ntwrk/midnight-js-node-zk-config-provider';
@@ -13,9 +13,12 @@ import {indexerPublicDataProvider} from '@midnight-ntwrk/midnight-js-indexer-pub
 import {WalletError} from '../types/errors.js';
 import {setNetworkId} from '@midnight-ntwrk/midnight-js/network-id';
 import * as Rx from 'rxjs';
-import * as ledger from '@midnight-ntwrk/ledger-v8';
+import type * as ledger from '@midnight-ntwrk/ledger-v8';
+import {ledger as activeLedger, activeLedgerVersion} from '../ledger/index.js';
+import {verifyNetworkLedger} from '../ledger/protocol-version.js';
 import {HDWallet, Roles} from '@midnightntwrk/wallet-sdk/hd';
-import {createKeystore} from '@midnightntwrk/wallet-sdk/unshielded';
+import type {SignatureKind} from '../wallet/signature-encoding.js';
+import {createKeystoreFor} from '../sdk/index.js';
 import type {SyncedWallet} from '../sync/wallet-sync.js';
 import type {WalletKeys} from '../sync/operations.js';
 
@@ -92,10 +95,14 @@ async function insertViaSDK(options: InsertVerifierKeyOptions): Promise<Transact
   let shieldedSecretKeys: ledger.ZswapSecretKeys;
   let dustSecretKey: ledger.DustSecretKey;
   let nightExternalKey: Uint8Array;
+  // A bundle knows its kind. A bare seed does not — it is the legacy path, and
+  // a caller that needs ECDSA has to pass walletKeys.
+  let signatureKind: SignatureKind = 'schnorr';
   if (walletKeys) {
     shieldedSecretKeys = walletKeys.shieldedSecretKeys;
     dustSecretKey = walletKeys.dustSecretKey;
     nightExternalKey = walletKeys.nightExternalKey;
+    signatureKind = walletKeys.signatureKind;
   } else {
     if (!seedHex) {
       throw new WalletError('WALLET_ERROR', 'insertVerifierKey requires either walletKeys or seedHex');
@@ -108,11 +115,11 @@ async function insertViaSDK(options: InsertVerifierKeyOptions): Promise<Transact
       .deriveKeysAt(0);
     if (keyResult.type !== 'keysDerived') throw new WalletError('WALLET_ERROR', 'Key derivation failed');
     hdWallet.hdWallet.clear();
-    shieldedSecretKeys = ledger.ZswapSecretKeys.fromSeed(keyResult.keys[Roles.Zswap]);
-    dustSecretKey = ledger.DustSecretKey.fromSeed(keyResult.keys[Roles.Dust]);
+    shieldedSecretKeys = activeLedger().ZswapSecretKeys.fromSeed(keyResult.keys[Roles.Zswap]);
+    dustSecretKey = activeLedger().DustSecretKey.fromSeed(keyResult.keys[Roles.Dust]);
     nightExternalKey = keyResult.keys[Roles.NightExternal];
   }
-  const keystore = createKeystore(nightExternalKey, network.id);
+  const keystore = createKeystoreFor(nightExternalKey, network.id, signatureKind);
 
   // Wait for wallet sync + dust stabilization (same as call.ts)
   const facade = syncedWallet!.facade;
@@ -212,6 +219,11 @@ async function insertViaSDK(options: InsertVerifierKeyOptions): Promise<Transact
       return (facade as any).finalizeRecipe(recipe);
     },
     submitTx: async (tx: any) => {
+      // Refuse before submitting if the wallet's ledger does not match the
+      // network's. The two ledgers reject each other's transactions with a bare
+      // header-tag error, and Merkle sync succeeds across the fork, so without
+      // this the mismatch first shows up as an unreadable failure here.
+      await verifyNetworkLedger(network, {using: activeLedgerVersion() ?? resolveLedgerVersion(network)});
       return (facade as any).submitTransaction(tx);
     },
   };
@@ -333,10 +345,14 @@ async function insertBatchViaSDK(options: InsertVerifierKeysOptions): Promise<Ba
   let shieldedSecretKeys: ledger.ZswapSecretKeys;
   let dustSecretKey: ledger.DustSecretKey;
   let nightExternalKey: Uint8Array;
+  // A bundle knows its kind. A bare seed does not — it is the legacy path, and
+  // a caller that needs ECDSA has to pass walletKeys.
+  let signatureKind: SignatureKind = 'schnorr';
   if (walletKeys) {
     shieldedSecretKeys = walletKeys.shieldedSecretKeys;
     dustSecretKey = walletKeys.dustSecretKey;
     nightExternalKey = walletKeys.nightExternalKey;
+    signatureKind = walletKeys.signatureKind;
   } else {
     if (!seedHex) {
       throw new WalletError('WALLET_ERROR', 'insertVerifierKeys requires either walletKeys or seedHex');
@@ -349,11 +365,11 @@ async function insertBatchViaSDK(options: InsertVerifierKeysOptions): Promise<Ba
       .deriveKeysAt(0);
     if (keyResult.type !== 'keysDerived') throw new WalletError('WALLET_ERROR', 'Key derivation failed');
     hdWallet.hdWallet.clear();
-    shieldedSecretKeys = ledger.ZswapSecretKeys.fromSeed(keyResult.keys[Roles.Zswap]);
-    dustSecretKey = ledger.DustSecretKey.fromSeed(keyResult.keys[Roles.Dust]);
+    shieldedSecretKeys = activeLedger().ZswapSecretKeys.fromSeed(keyResult.keys[Roles.Zswap]);
+    dustSecretKey = activeLedger().DustSecretKey.fromSeed(keyResult.keys[Roles.Dust]);
     nightExternalKey = keyResult.keys[Roles.NightExternal];
   }
-  const keystore = createKeystore(nightExternalKey, network.id);
+  const keystore = createKeystoreFor(nightExternalKey, network.id, signatureKind);
 
   const facade = syncedWallet!.facade;
   const state: any = await Rx.firstValueFrom(
@@ -444,6 +460,11 @@ async function insertBatchViaSDK(options: InsertVerifierKeysOptions): Promise<Ba
       return (facade as any).finalizeRecipe(recipe);
     },
     submitTx: async (tx: any) => {
+      // Refuse before submitting if the wallet's ledger does not match the
+      // network's. The two ledgers reject each other's transactions with a bare
+      // header-tag error, and Merkle sync succeeds across the fork, so without
+      // this the mismatch first shows up as an unreadable failure here.
+      await verifyNetworkLedger(network, {using: activeLedgerVersion() ?? resolveLedgerVersion(network)});
       return (facade as any).submitTransaction(tx);
     },
   };
@@ -571,7 +592,7 @@ function signTransactionIntents(tx: any, signFn: (p: Uint8Array) => any, proofMa
   for (const segment of tx.intents.keys()) {
     const intent = tx.intents.get(segment);
     if (!intent) continue;
-    const cloned = (ledger as any).Intent.deserialize('signature', proofMarker, 'pre-binding', intent.serialize());
+    const cloned = (activeLedger() as any).Intent.deserialize('signature', proofMarker, 'pre-binding', intent.serialize());
     const signature = signFn(cloned.signatureData(segment));
     if (cloned.fallibleUnshieldedOffer) {
       const sigs = cloned.fallibleUnshieldedOffer.inputs.map(

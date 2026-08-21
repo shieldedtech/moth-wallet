@@ -1,3 +1,11 @@
+/**
+ * Which ledger a network speaks. Midnight is hard-forking from v8 to v9, so the
+ * two coexist: `v8` covers mainnet, preprod, preview and qanet; `v9` covers the
+ * forked networks. Absent means `v8`, so configs written before the fork keep
+ * their behavior. See ADR-0006.
+ */
+export type LedgerVersion = 'v8' | 'v9';
+
 export type ProverConfig =
   | { readonly type: 'server'; readonly url: string }
   | { readonly type: 'wasm' };
@@ -6,6 +14,10 @@ export interface NetworkEndpoints {
   readonly id: string;
   readonly nodeUrl: string;
   readonly indexerUrl: string;
+  /** Faucet for test funds. Absent on networks that have none, mainnet included. */
+  readonly faucetUrl?: string;
+  /** Defaults to `v8` — see {@link resolveLedgerVersion}. */
+  readonly ledgerVersion?: LedgerVersion;
   /**
    * Optional header attached to node requests, for endpoints that gate access
    * behind one (preprod rate-limits and answers 403 without the operator's
@@ -40,6 +52,11 @@ export function serverProver(
 /** Normalize the legacy proofServerUrl shape into the current prover config. */
 export function resolveProverConfig(config: NetworkConfig): ProverConfig {
   return config.prover ?? serverProver(config.proofServerUrl);
+}
+
+/** The ledger a config speaks, defaulting to v8 for pre-fork configurations. */
+export function resolveLedgerVersion(config: NetworkEndpoints): LedgerVersion {
+  return config.ledgerVersion ?? 'v8';
 }
 
 export function isProverConfig(value: unknown): value is ProverConfig {
@@ -82,6 +99,7 @@ export function validateNetworkUrl(url: string, label: string): void {
 export function validateNetworkConfig(config: NetworkConfig): void {
   validateNetworkUrl(config.nodeUrl, 'Node URL');
   validateNetworkUrl(config.indexerUrl, 'Indexer URL');
+  if (config.faucetUrl !== undefined) validateNetworkUrl(config.faucetUrl, 'Faucet URL');
   const prover = resolveProverConfig(config);
   if (prover.type === 'server') validateNetworkUrl(prover.url, 'Proof server URL');
 }
@@ -114,10 +132,24 @@ export const DEFAULT_NETWORKS: Record<string, NetworkConfig> = {
     indexerUrl: 'https://indexer.qanet.midnight.network/api/v4/graphql',
     prover: serverProver(),
   },
+  // Forked ahead of the other midnight.network networks: its indexer reports
+  // protocolVersion 2000000, and its transactions are tagged transaction[v12],
+  // which only ledger v9 accepts.
   devnet: {
     id: 'devnet',
     nodeUrl: 'https://rpc.devnet.midnight.network',
     indexerUrl: 'https://indexer.devnet.midnight.network/api/v4/graphql',
+    ledgerVersion: 'v9',
+    prover: serverProver(),
+  },
+  // The MNF demo network, and the first stack Moth targets on ledger v9. Unlike
+  // the midnight.network networks it is operated by Shielded and carries a faucet.
+  stagenet: {
+    id: 'stagenet',
+    nodeUrl: 'https://rpc.stagenet.shielded.tools',
+    indexerUrl: 'https://indexer.stagenet.shielded.tools/api/v4/graphql',
+    faucetUrl: 'https://faucet.stagenet.shielded.tools',
+    ledgerVersion: 'v9',
     prover: serverProver(),
   },
   undeployed: {
@@ -143,4 +175,12 @@ export const DEFAULT_NETWORKS: Record<string, NetworkConfig> = {
  * Note this is a subset of `DEFAULT_NETWORKS`: `undeployed` has a preset but the
  * wallet can't derive addresses for it, so it is not offered as a choice.
  */
-export const SUPPORTED_NETWORKS = ['mainnet', 'devnet', 'preview', 'preprod', 'qanet', 'local'] as const;
+export const SUPPORTED_NETWORKS = [
+  'mainnet',
+  'devnet',
+  'preview',
+  'preprod',
+  'qanet',
+  'stagenet',
+  'local',
+] as const;

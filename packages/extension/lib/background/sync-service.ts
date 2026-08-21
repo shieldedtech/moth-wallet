@@ -5,6 +5,7 @@
 
 import { browser, type Browser } from 'wxt/browser';
 import type { NetworkConfig } from '@shieldedtech/moth-browser';
+import { SYNC_FAILURE_PREFIX } from '../messaging/protocol';
 import { type PortEvent } from '../messaging/protocol';
 import { offscreenOn, type RelayState } from '../offscreen/messaging';
 import { offscreen } from './offscreen-client';
@@ -207,6 +208,19 @@ export function broadcastTxStage(stage: PortEvent & { kind: 'txStage' }): void {
 
 export function broadcastApproval(id: string | null): void {
   broadcast({ kind: 'approval', id });
+}
+
+/**
+ * Report a failed sync start to every open panel.
+ *
+ * startSync is dispatched fire-and-forget from several places, and a bare
+ * `.catch(() => {})` there leaves the panel sitting on whatever progress line
+ * it last received — a thrown error presenting as a hang. Whatever went wrong,
+ * the user is owed the news rather than a spinner.
+ */
+export function broadcastSyncFailure(error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error);
+  broadcast({ kind: 'syncMessage', message: `${SYNC_FAILURE_PREFIX} ${message}` });
 }
 
 // Fully idle: nothing watching, nothing in flight, no decision pending. An

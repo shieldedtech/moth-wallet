@@ -375,7 +375,13 @@ async function dispatchMethod(
 
       const network = await getNetworkConfig();
       try {
-        return await offscreen.signData({ seedHex: session.seedHex, network, data, encoding });
+        return await offscreen.signData({
+          seedHex: session.seedHex,
+          network,
+          data,
+          encoding,
+          walletName: session.walletName,
+        });
       } catch (err) {
         // The realistic failure here is malformed hex/base64 input.
         throw connectorError('InvalidRequest', (err as Error).message ?? 'Failed to sign data');

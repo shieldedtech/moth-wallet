@@ -35,6 +35,13 @@ export const setup = {
   setup_networkFirstRun: 'Choose which Midnight network this wallet should use.',
   setup_networkNewAccount:
     'The new account gets its own addresses on this network. Your other accounts stay where they are.',
+  setup_signingTitle: 'Signing algorithm',
+  setup_signingSchnorr: 'Schnorr (recommended)',
+  setup_signingSchnorrDesc: 'Works on every Midnight network.',
+  setup_signingEcdsa: 'ECDSA',
+  setup_signingEcdsaDesc: 'For secp256k1 key custody, such as an HSM or KMS.',
+  setup_signingEcdsaWarning:
+    'ECDSA gives this account a different unshielded address, and no unshielded address at all on networks still using the older ledger. It cannot be changed after the account is created.',
   setup_networkNote: 'You can change these anytime in Settings, under Network.',
   setup_phraseTitle: 'Write down your secret phrase',
   setup_phraseSubtitle: 'These 24 words are the only way back into your wallet. Write them on paper, in order.',
