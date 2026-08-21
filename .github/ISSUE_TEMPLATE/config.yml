@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
+  - name: Contributing code
+    url: https://github.com/shieldedtech/moth-wallet/blob/main/CONTRIBUTING.md
+    about: Read the contribution, DCO, and commit-signing requirements before opening a pull request.
   - name: Questions and discussion
     url: https://github.com/shieldedtech/moth-wallet/blob/main/SUPPORT.md
     about: See SUPPORT.md for how to ask questions — please do not open an issue for questions.

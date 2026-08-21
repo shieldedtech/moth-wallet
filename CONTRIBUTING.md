@@ -14,15 +14,28 @@ git commit --signoff -m "<your message>"
 
 This appends a `Signed-off-by: Your Name <you@example.com>` trailer. We enforce this via the DCO GitHub App — PRs with unsigned commits will not merge.
 
-Set up automatic sign-off:
+Git does not provide a configuration option that automatically signs off ordinary
+commits. Use `--signoff` (or `-s`) on every commit and make sure the trailer name and
+email match the commit author.
+
+### Fixing a missing sign-off
+
+The DCO App allows an author to remediate their own unsigned commits with a follow-up
+commit. Follow the instructions shown by the failed `DCO` check. A contributor may not
+attest for another person's commit, and maintainers must not use the App's override as
+a substitute for the author's attestation.
+
+You can confirm the current commit before pushing:
 
 ```bash
-git config --global format.signOff true
+git log -1 --format='%an <%ae>%n%B'
 ```
 
 ## Signed commits
 
-Commits to `main` must be cryptographically signed. Branch protection enforces this server-side — unsigned commits cannot merge. If you push an unsigned commit and the PR's required check fails with "Unsigned commits", you'll need to re-sign and force-push to your fork branch.
+Commits landing on `main` must also be cryptographically signed. The repository ruleset
+enforces this server-side, separately from the `DCO` status check. If a commit is not
+verified by GitHub, re-sign it and update the contributor branch before requesting review.
 
 ### Quick setup — SSH signing (recommended)
 
@@ -83,7 +96,8 @@ git config --local tag.gpgSign true
 
 - **"error: gpg failed to sign the data"** — usually a stale gpg-agent. `gpgconf --kill gpg-agent` and retry. On macOS: `brew install pinentry-mac` and set `pinentry-program /opt/homebrew/bin/pinentry-mac` in `~/.gnupg/gpg-agent.conf`.
 - **PR shows "Unverified" badge** — your signing key is set in git but not registered on GitHub. Re-check the SSH/GPG key page.
-- **Signed but DCO check fails** — signing and sign-off are different. You also need `--signoff` (or `format.signOff = true`) to add the `Signed-off-by:` trailer.
+- **Signed but DCO check fails** — signing and sign-off are different. You also need
+  `--signoff` (or `-s`) to add a matching `Signed-off-by:` trailer.
 
 GitHub's own guide covers edge cases (Smart Cards, S/MIME, multiple identities): <https://docs.github.com/authentication/managing-commit-signature-verification>.
 
