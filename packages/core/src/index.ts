@@ -99,6 +99,9 @@ export {
 } from './sync/preseed-portable.js';
 export { chainTip } from './sync/chain-tip.js';
 export { ensureEmptyRefCache, warmEmptyRefCache, refreshEmptyRefCache, preseedReferenceStatus, preSeedNewWallet, type WarmProgress } from './sync/preseed.js';
+// Exported so a host can recognise the one sync-cache failure it cannot retry
+// its way out of: a snapshot whose cursor is ahead of its own commitment tree.
+export { InconsistentCachedStateError } from './sync/sdk-dedup.js';
 
 // Contract
 export { loadContractArtifact, type ContractArtifact } from './contract/artifact-loader.js';

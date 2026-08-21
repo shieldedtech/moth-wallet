@@ -33,8 +33,26 @@ export default class PreseedRefresh extends BaseCommand {
     }
 
     const started = Date.now();
-    await refreshEmptyRefCache(network, (msg) => this.log_verbose(msg));
+    const states = await refreshEmptyRefCache(network, (msg) => this.log_verbose(msg));
     const after = await preseedReferenceStatus(network);
+
+    // A refresh can end without a reference, and not only by timing out: the
+    // ledger may prove the reference cannot be advanced at all — its recorded
+    // cursor ahead of its own commitment tree, so resuming from it skips events —
+    // in which case the offending state is discarded. Reporting success on that
+    // path printed `heightAfter: null` and an `advancedBlocks` of minus the whole
+    // chain, while the operator still needed to be told to rebuild.
+    if (!states) {
+      this.outputError(
+        'WALLET_ERROR',
+        `Could not advance the ${network.id} reference to chain tip.`,
+        after.ready
+          ? 'The reference is unchanged — re-run with --verbose to see why.'
+          : 'The reference could not be advanced and has been discarded. Import a known-good bundle with `preseed import`, or build one with `preseed build`.',
+      );
+      this.exit(1);
+      return;
+    }
 
     this.outputSuccess({
       network: network.id,

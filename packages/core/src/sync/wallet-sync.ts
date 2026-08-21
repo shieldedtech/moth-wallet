@@ -26,7 +26,7 @@ import {NIGHT_TOKEN_ID, formatNight} from '../types/tokens.js';
 import {formatDustBalance} from '../wallet/balance-format.js';
 import {ensureEmptyRefCache, preSeedNewWallet} from './preseed.js';
 import {InMemorySyncStateStore, syncStateKey, type SyncStateStore, type WalletPart} from './sync-store.js';
-import {dedupingShieldedBuilder, dedupingDustBuilder} from './sdk-dedup.js';
+import {dedupingShieldedBuilder, dedupingDustBuilder, type InconsistentCachedStateError} from './sdk-dedup.js';
 import {overallSyncProgress, type SubWallet} from './progress.js';
 import {partsToSeed} from './preseed-parts.js';
 import type {WalletKeys} from './operations.js';
@@ -390,6 +390,19 @@ export interface WalletSyncOptions {
    * pass smaller batches so each synchronous WASM apply stays short.
    */
   batchUpdates?: BatchUpdatesOptions;
+  /**
+   * Told when the ledger proves a restored sub-wallet snapshot cannot be
+   * advanced — its cursor is ahead of its own commitment tree, so the next
+   * event on the stream can never be accepted (see sdk-dedup.ts).
+   *
+   * The cache has already been evicted by the time this runs, so an ordinary
+   * wallet needs no handler: the next start syncs that part from genesis. It
+   * matters for callers that are WAITING on this sync to finish — the pre-seed
+   * reference build waits up to two hours — because the SDK retries the sync
+   * stream for ever and the wait would otherwise run to its ceiling on a sync
+   * that cannot progress by even one event.
+   */
+  onUnusableCache?: (part: WalletPart, error: InconsistentCachedStateError) => void;
 }
 
 /**
@@ -531,13 +544,37 @@ export async function startWalletSync(
     }
   }
 
+  // --- A snapshot the ledger refuses to advance ---
+  //
+  // Restoring only proves a snapshot DECODES. Whether it can be advanced is
+  // decided later, by the first replay: if its recorded cursor is ahead of its
+  // own commitment tree, the next event on the stream carries an index the tree
+  // cannot take and the ledger rejects it — for ever, because the SDK retries
+  // the same impossible position with no ceiling.
+  //
+  // Treat that exactly like the corrupt-cache case below: drop the state and let
+  // the part sync from genesis. Slow, but it is the only correct move — the
+  // ledger accepts precisely the next index, so there is no resume point to
+  // guess at (see sdk-dedup.ts, and ADR 0003 on failing closed to genesis).
+  const unusableParts = new Set<WalletPart>();
+  const onUnusableCache = (part: WalletPart) => (error: InconsistentCachedStateError): void => {
+    if (unusableParts.has(part)) return;
+    unusableParts.add(part);
+    onProgress?.(
+      // The message ends in the ledger's own full stop, so none is added here.
+      `${part} cache cannot be advanced — ${error.message} Discarded it; ${part} will sync from genesis on the next start.`,
+    );
+    void evictCachedState(store, name, network.id, part);
+    options?.onUnusableCache?.(part, error);
+  };
+
   // --- Shielded wallet: try restore from cache ---
   // Use CustomShieldedWallet with a deduping syncCapability so that
   // re-sent boundary events from the indexer don't trip the WASM tree
   // (see sync/sdk-dedup.ts for the upstream bug context).
   onProgress?.('Starting shielded wallet...');
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const shieldedBuilder = dedupingShieldedBuilder() as any;
+  const shieldedBuilder = dedupingShieldedBuilder(onUnusableCache('shielded')) as any;
   let shieldedWallet: ShieldedWallet | undefined;
   let restoredFromCache = false;
   const savedShielded = await loadCachedState(store, name, network.id, 'shielded');
@@ -583,7 +620,7 @@ export async function startWalletSync(
     txHistoryStorage,
   } as Parameters<typeof DustWallet>[0];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const dustBuilder = dedupingDustBuilder() as any;
+  const dustBuilder = dedupingDustBuilder(onUnusableCache('dust')) as any;
   let dustWallet: DustWallet | undefined;
   const savedDust = await loadCachedState(store, name, network.id, 'dust');
   if (savedDust) {
@@ -706,12 +743,12 @@ export async function startWalletSync(
         const cacheNow = Date.now();
         if (cacheNow - lastCacheSaveTime > 60_000) {
           lastCacheSaveTime = cacheNow;
-          saveCache(store, facade, txHistoryStorage, name, network.id).catch(() => {});
+          saveCache(store, facade, txHistoryStorage, name, network.id, unusableParts).catch(() => {});
         }
 
         if (balances.synced && !hasSavedCache) {
           hasSavedCache = true;
-          saveCache(store, facade, txHistoryStorage, name, network.id).catch(() => {});
+          saveCache(store, facade, txHistoryStorage, name, network.id, unusableParts).catch(() => {});
         }
       },
       error: (err: any) => {
@@ -749,7 +786,7 @@ export async function startWalletSync(
 
   const stop = async () => {
     subscription.unsubscribe();
-    await saveCache(store, facade, txHistoryStorage, name, network.id).catch(() => {});
+    await saveCache(store, facade, txHistoryStorage, name, network.id, unusableParts).catch(() => {});
 
     try {
       await facade.stop();
@@ -803,7 +840,14 @@ async function saveCache(
   facade: WalletFacade,
   history: {serialize(): Promise<string>},
   walletName: string,
-  networkId: string
+  networkId: string,
+  /**
+   * Parts whose cache was evicted mid-run because the ledger refused to advance
+   * it. Their in-memory state is still that same un-advanceable snapshot, so
+   * writing it back — every 60s, and again from stop() — would quietly undo the
+   * eviction and the next start would fail in exactly the same place.
+   */
+  unusableParts: ReadonlySet<WalletPart> = new Set()
 ): Promise<void> {
   try {
     const [sh, un, du, hi] = await Promise.all([
@@ -821,9 +865,9 @@ async function saveCache(
         .then((s) => s?.capabilities?.serialization?.serialize?.(s.state) ?? null),
       history.serialize().catch(() => null),
     ]).catch(() => [null, null, null, null]);
-    if (sh) await saveCachedState(store, walletName, networkId, 'shielded', sh);
+    if (sh && !unusableParts.has('shielded')) await saveCachedState(store, walletName, networkId, 'shielded', sh);
     if (un) await saveCachedState(store, walletName, networkId, 'unshielded', un);
-    if (du) await saveCachedState(store, walletName, networkId, 'dust', du);
+    if (du && !unusableParts.has('dust')) await saveCachedState(store, walletName, networkId, 'dust', du);
     if (hi) await saveCachedState(store, walletName, networkId, 'history', hi);
   } catch {
     /* best effort */

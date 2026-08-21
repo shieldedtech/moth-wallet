@@ -109,6 +109,13 @@ async function loadUsableRefStates(
 function waitForTip(
   synced: { balances: { synced: boolean }; subscribe: (cb: (b: { synced: boolean }) => void) => () => void },
   timeoutMs: number,
+  /**
+   * Resolves when the sync is known to be unable to finish at all, so the wait
+   * ends there rather than running to the ceiling. Two hours spent on a stream
+   * that cannot apply even one event looks, from outside, exactly like a build
+   * that is merely slow — and the ceiling exists for the slow case.
+   */
+  abandon?: Promise<void>,
 ): Promise<boolean> {
   return new Promise((resolve) => {
     let settled = false;
@@ -116,10 +123,15 @@ function waitForTip(
     const finish = (reached: boolean) => {
       if (settled) return;
       settled = true;
+      // Clearing here as well as on the synced path: the timer is a two-hour
+      // handle, and leaving it pending keeps a CLI process alive long after the
+      // wait it belonged to was decided.
+      clearTimeout(timer);
       unsubscribe?.();
       resolve(reached);
     };
     const timer = setTimeout(() => finish(false), timeoutMs);
+    void abandon?.then(() => finish(false));
     // subscribe() replays the current balances synchronously, so an
     // already-synced wallet settles here without waiting for a fresh emission.
     const stop = synced.subscribe((b) => {
@@ -291,11 +303,34 @@ async function buildEmptyRefCache(
 
   onProgress?.('Pre-seed: syncing reference wallet to chain tip...');
   try {
+    // A reference whose own state the ledger refuses to advance. This is the
+    // failure mode of an IMPORTED reference: the bundle carries a cursor and a
+    // commitment tree that disagree, so resuming from the cursor skips the events
+    // in between. Nothing here can repair it — the ledger accepts exactly the
+    // next index — so startWalletSync discards the offending part and the build
+    // gives up instead of waiting out its two-hour ceiling on a stream that will
+    // never apply another event. The next build starts that part from genesis:
+    // slow, but correct, and the only way back to a usable reference.
+    //
+    // A holder rather than a plain `let`, because the assignment happens inside
+    // the callback below. Control-flow analysis cannot see that, so a `let`
+    // initialised to null narrows to `never` and the check after the wait would
+    // be dead code.
+    const unusable: {error: Error | null} = {error: null};
+    let abandonBuild: (() => void) | undefined;
+    const abandoned = new Promise<void>((resolve) => {
+      abandonBuild = resolve;
+    });
+
     // Sync the reference wallet under EMPTY_REF_WALLET into the shared async
     // store; startWalletSync persists each sub-wallet's state there, so
     // loadRefState reads it straight back — no separate fs promotion needed.
     const synced = await startWalletSync(referenceKeys, network, onProgress, EMPTY_REF_WALLET, undefined, undefined, {
       syncStore: resolved,
+      onUnusableCache: (part, error) => {
+        unusable.error ??= new Error(`${part}: ${error.message}`);
+        abandonBuild?.();
+      },
     });
 
     // Wait for the reference to actually reach tip before serializing it.
@@ -313,9 +348,24 @@ async function buildEmptyRefCache(
           }),
         )
       : undefined;
-    const reachedTip = await waitForTip(synced, REF_BUILD_TIMEOUT_MS);
+    const reachedTip = await waitForTip(synced, REF_BUILD_TIMEOUT_MS, abandoned);
     unsubscribeProgress?.();
     await synced.stop();
+
+    if (unusable.error) {
+      // Said plainly, because the operator has to act: the reference on this
+      // machine is gone as far as that part goes, and only a build can replace
+      // it. Reported ahead of the timeout branch below — "did not reach tip in
+      // time" would be true but would describe the wrong problem entirely.
+      onProgress?.(
+        // No full stop after the message: it carries the ledger's own sentence,
+        // which already ends in one.
+        `Pre-seed: this reference cannot be advanced — ${unusable.error.message} ` +
+          'The affected sub-wallet state has been discarded; build a fresh reference for this network ' +
+          '(the rebuild walks the chain, so budget tens of minutes).',
+      );
+      return null;
+    }
 
     if (!reachedTip) {
       // stop() persisted the partial state, so the next build resumes from it
