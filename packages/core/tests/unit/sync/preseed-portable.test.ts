@@ -80,6 +80,17 @@ describe('exportReference', () => {
     expect(await exportReference(store, 'preprod')).toBeNull();
   });
 
+  it('refuses to export a partial reference, whichever part is missing', async () => {
+    // Export previously skipped a missing part and returned a bundle of what it
+    // had, checking only dust. That bundle imports cleanly over someone else's
+    // complete reference and mixes heights, so the hole was on this side too.
+    for (const part of ['shielded', 'unshielded', 'dust'] as const) {
+      const store = storeWithReference('preprod', 100);
+      store.entries.delete(emptyRefStateKey('preprod', part));
+      await expect(exportReference(store, 'preprod')).resolves.toBeNull();
+    }
+  });
+
   it('reports both raw and compressed sizes per part', async () => {
     const bundle = (await exportReference(storeWithReference('preprod', 100), 'preprod'))!;
     expect(bundle.manifest).toMatchObject({ network: 'preprod', height: 100 });
@@ -142,6 +153,36 @@ describe('importReference writes atomically enough', () => {
     await expect(importReference(store, 'preprod', bundle)).rejects.toThrow(/not valid gzip/);
     expect(store.entries.get(emptyRefStateKey('preprod', 'shielded'))).toBe('{"shielded":true}');
     expect(store.entries.get(emptyRefHeightKey('preprod'))).toBe('500');
+  });
+
+  // Joe's finding on #11: the same mixture the gzip case guards against was
+  // reachable one step over, through a MISSING part rather than a corrupt one.
+  // Only dust was required, so a bundle without shielded imported the other two
+  // over an existing reference and moved the height key — leaving shielded at the
+  // old height while `loadUsableRefStates` reported the pair as ready, and the
+  // inflated height then feeding `emptyRef.height <= birthday`.
+  it('writes nothing when a part is missing, not just when one is corrupt', async () => {
+    const store = storeWithReference('preprod', 5_123_456);
+    const before = new Map(store.entries);
+
+    const partial = bundleFor('preprod', 9_999_999);
+    partial.files.delete('shielded.dat.gz');
+
+    await expect(importReference(store, 'preprod', partial)).rejects.toThrow(ReferenceImportError);
+    // The height key in particular: advertising 9,999,999 over height-5,123,456
+    // shielded state is what would seed wallets born between the two.
+    expect(store.entries).toEqual(before);
+  });
+
+  it('names every missing part, so the bundle can be fixed in one go', async () => {
+    const store = storeWithReference('preprod', 100);
+    const partial = bundleFor('preprod', 200);
+    partial.files.delete('shielded.dat.gz');
+    partial.files.delete('unshielded.dat.gz');
+
+    await expect(importReference(store, 'preprod', partial)).rejects.toThrow(
+      /shielded\.dat\.gz, unshielded\.dat\.gz/,
+    );
   });
 
   it('writes the height only after the state it describes', async () => {

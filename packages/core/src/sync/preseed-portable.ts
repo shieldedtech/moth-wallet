@@ -11,13 +11,66 @@
 // dropped straight into the extension, and one downloaded from a release can be
 // imported here — one format, not two that drift.
 
-import { gzipSync, gunzipSync } from 'node:zlib';
 import {
   emptyRefHeightKey,
   emptyRefStateKey,
   type SyncStateStore,
   type WalletPart,
 } from './sync-store.js';
+
+// Compression goes through the Web Streams API rather than `node:zlib`, because
+// this module lives in `core` and `core` must import no platform builtin — one
+// careless barrel import would drag Node's zlib into every DApp bundle that
+// depends on the browser package. CompressionStream is in Node 18+ and every
+// current browser, so the same code serves both. The trade is that gzip level is
+// not selectable, so bundles written here compress slightly less than
+// `scripts/export-preseed.mjs` (which is Node-only and keeps level 9); size is
+// recorded in the manifest either way, and decompression is level-agnostic.
+/**
+ * One-chunk stream over `bytes`, so no Blob is needed to feed a transform.
+ *
+ * The copy into a fresh ArrayBuffer is what makes the types line up: a
+ * `Uint8Array` may be backed by a SharedArrayBuffer, which `BufferSource` does
+ * not accept, and TypeScript cannot know which this one is. Copying is cheap
+ * relative to gzipping the same bytes, and only happens on export/import.
+ */
+function streamOf(bytes: Uint8Array): ReadableStream<BufferSource> {
+  const owned = new Uint8Array(new ArrayBuffer(bytes.byteLength));
+  owned.set(bytes);
+  return new ReadableStream<BufferSource>({
+    start(controller) {
+      controller.enqueue(owned);
+      controller.close();
+    },
+  });
+}
+
+async function collect(stream: ReadableStream<Uint8Array<ArrayBuffer>>): Promise<Uint8Array> {
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  const reader = stream.getReader();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    total += value.byteLength;
+  }
+  const out = new Uint8Array(total);
+  let at = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, at);
+    at += chunk.byteLength;
+  }
+  return out;
+}
+
+async function gzip(bytes: Uint8Array): Promise<Uint8Array> {
+  return collect(streamOf(bytes).pipeThrough(new CompressionStream('gzip')));
+}
+
+async function gunzip(bytes: Uint8Array): Promise<Uint8Array> {
+  return collect(streamOf(bytes).pipeThrough(new DecompressionStream('gzip')));
+}
 
 /** The sub-wallets a reference carries. Order is fixed for stable manifests. */
 export const REFERENCE_PARTS: readonly WalletPart[] = ['shielded', 'unshielded', 'dust'] as const;
@@ -58,18 +111,20 @@ export async function exportReference(
   const files = new Map<string, Uint8Array>();
   const parts: ReferenceManifest['parts'] = {};
 
+  const encoder = new TextEncoder();
   for (const part of REFERENCE_PARTS) {
     const value = await store.get(emptyRefStateKey(networkId, part));
-    if (value === null || value === undefined) continue;
-    const raw = Buffer.from(value, 'utf8');
-    const gz = gzipSync(raw);
-    files.set(`${part}.dat.gz`, new Uint8Array(gz));
+    // All three or nothing. Skipping a missing part used to export a bundle that
+    // importing would apply OVER an existing reference, leaving the store with
+    // two parts at the new height and one at the old — a mixture that never
+    // existed on chain, while the height key still looked consistent. Dust alone
+    // was checked, but the same hole is reachable through any part.
+    if (value === null || value === undefined) return null;
+    const raw = encoder.encode(value);
+    const gz = await gzip(raw);
+    files.set(`${part}.dat.gz`, gz);
     parts[part] = { bytes: raw.byteLength, gzipBytes: gz.byteLength };
   }
-
-  // A reference whose dust state is missing is not a reference: dust is the
-  // part that takes an hour to build and the only reason this exists.
-  if (!files.has('dust.dat.gz')) return null;
 
   return { manifest: { network: networkId, height, parts }, files };
 }
@@ -108,8 +163,17 @@ export async function importReference(
   if (!Number.isFinite(bundle.manifest.height) || bundle.manifest.height <= 0) {
     throw new ReferenceImportError(`Bundle declares an unusable height (${bundle.manifest.height}).`);
   }
-  if (!bundle.files.has('dust.dat.gz')) {
-    throw new ReferenceImportError('Bundle has no dust state — that is the part a reference exists for.');
+  // Every part, not just dust. A bundle missing one part would be applied over
+  // the reference already here, leaving the store mixing heights with a height
+  // key that still reads as consistent — and that inflated height then feeds the
+  // `emptyRef.height <= birthday` guard, seeding wallets whose birthday falls
+  // between the two.
+  const missing = REFERENCE_PARTS.filter((part) => !bundle.files.has(`${part}.dat.gz`));
+  if (missing.length > 0) {
+    throw new ReferenceImportError(
+      `Bundle is missing ${missing.map((part) => `${part}.dat.gz`).join(', ')}. ` +
+        'A reference is all three sub-wallets at one height; importing part of one would mix heights.',
+    );
   }
 
   const existingRaw = (await store.get(emptyRefHeightKey(networkId)))?.trim();
@@ -128,11 +192,12 @@ export async function importReference(
   // and that nothing downstream would flag, because the height key still looked
   // consistent.
   const decoded: Array<[WalletPart, string]> = [];
+  const decoder = new TextDecoder();
   for (const part of REFERENCE_PARTS) {
-    const gz = bundle.files.get(`${part}.dat.gz`);
-    if (!gz) continue;
+    // Present by the check above, so a miss here is a logic error, not input.
+    const gz = bundle.files.get(`${part}.dat.gz`) as Uint8Array;
     try {
-      decoded.push([part, gunzipSync(Buffer.from(gz)).toString('utf8')]);
+      decoded.push([part, decoder.decode(await gunzip(gz))]);
     } catch (err) {
       throw new ReferenceImportError(`${part}.dat.gz is not valid gzip: ${String(err)}`);
     }
