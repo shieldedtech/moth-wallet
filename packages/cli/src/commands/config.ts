@@ -1,5 +1,6 @@
 import { Args } from '@oclif/core';
 import { BaseCommand } from '../base-command.js';
+import { assertNotMainnet } from '../mainnet-guard.js';
 
 const ALLOWED_KEYS = ['default-network', 'prover', 'proof-server-url', 'node-url', 'indexer-url', 'check-matrix', 'matrix-url'];
 
@@ -44,6 +45,12 @@ export default class Config extends BaseCommand {
         this.exit(1);
         return;
       }
+      // The second way mainnet can enter: stored, not passed. WalletManager falls
+      // back to config.defaultNetwork for a wallet with no network of its own, so
+      // a stored value reaches the same code paths without --network ever being
+      // used. The flag guard cannot see this one.
+      if (args.key === 'default-network') assertNotMainnet(args.value);
+
       if (args.key === 'prover' && args.value !== 'server' && args.value !== 'wasm') {
         this.outputError('INVALID_INPUT', 'Prover must be "server" or "wasm"');
         this.exit(1);
