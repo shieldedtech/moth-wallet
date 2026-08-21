@@ -15,7 +15,7 @@ pass, so no CLI or TUI wallet could ever be pre-seeded — the difference betwee
 wallet may hold funds at any height, and seeding it past its own history would
 lose them silently.
 
-**`moth dust preseed status|refresh|build`.** Thin wrappers over core functions
+**`moth preseed status|refresh|build`.** Thin wrappers over core functions
 that already existed but had no caller outside the extension. `refresh` is the
 one worth having — 9.1s to catch a reference up, against 53.6 min to rebuild it
 from genesis, which is what someone does by hand when the command is missing.

@@ -3,7 +3,7 @@
 "@shieldedtech/moth-cli": minor
 ---
 
-Move a pre-seed reference between machines: `moth dust preseed export` / `import`.
+Move a pre-seed reference between machines: `moth preseed export` / `import`.
 
 Building a reference IS the chain walk — tens of minutes, once per network per
 machine. That cost is identical for everyone, because a reference holds public
