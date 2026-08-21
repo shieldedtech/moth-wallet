@@ -1227,7 +1227,7 @@
     "message": "Depuis quand cette phrase est-elle utilisée ?"
   },
   "setup_birthdayHint": {
-    "message": "L'indiquer à Moth permet à la première synchronisation d'ignorer les blocs antérieurs : quelques secondes au lieu d'une heure. Répondez plutôt trop tôt que trop tard : trop tôt ne coûte que du temps, trop tard masque tout ce qui a été reçu avant, et les soldes shielded ne donnent aucun signe qu'il manque quelque chose. Vider le cache de synchronisation le récupère."
+    "message": "L'indiquer à Moth permet à la première synchronisation d'ignorer les blocs plus anciens — quelques secondes au lieu d'une heure. Répondez plutôt trop tôt que trop tard : trop tôt ne coûte que du temps, trop tard masque les fonds shielded reçus avant cette date, et les soldes shielded ne signalent rien de manquant. Les fonds unshielded sont trouvés dans tous les cas. Vider le cache de synchronisation récupère tout."
   },
   "setup_birthdayUnknown": {
     "message": "Je ne sais pas — parcourir toute la chaîne"

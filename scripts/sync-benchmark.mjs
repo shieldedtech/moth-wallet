@@ -88,6 +88,8 @@ const {
   emptyRefHeightKey,
   emptyRefMnemonicKey,
   emptyRefStateKey,
+  refArchiveIndexKey,
+  EMPTY_REF_WALLET,
 } = core;
 
 const preset = DEFAULT_NETWORKS[values.network];
@@ -207,13 +209,23 @@ log(`birthday:  ${birthdaySource}`);
 const referenceKeys = new Set([
   emptyRefHeightKey(network.id),
   emptyRefMnemonicKey(network.id),
+  refArchiveIndexKey(network.id),
   ...['shielded', 'unshielded', 'dust', 'history'].map((part) => emptyRefStateKey(network.id, part)),
 ]);
+
+// Archived references are keyed by height, so they cannot be enumerated up front
+// the way the live ones can. Without this prefix test the whitelist passed only
+// the live reference through, the archive read as absent, and a birthday below
+// the live height measured the genesis path — which is precisely the path this
+// script was extended to compare against. It reported "no reference at or below
+// birthday" while the same birthday seeded correctly against the real store.
+const archivedPrefix = `sync/${network.id}/${EMPTY_REF_WALLET}@`;
+const isReferenceKey = (key) => referenceKeys.has(key) || key.startsWith(archivedPrefix);
 
 const diskStore = await resolveSyncStore();
 const memoryStore = new InMemorySyncStateStore();
 const measuredStore = {
-  get: (key) => (referenceKeys.has(key) ? diskStore.get(key) : memoryStore.get(key)),
+  get: (key) => (isReferenceKey(key) ? diskStore.get(key) : memoryStore.get(key)),
   // Writes always stay in memory, including reference keys: a measurement run
   // must never mutate the reference it is measuring against.
   put: (key, value) => memoryStore.put(key, value),

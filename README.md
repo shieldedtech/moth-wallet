@@ -378,8 +378,13 @@ moth wallet import --name w --seed-hex --birthday-tip
 Whichever you use, the birthday is checked against the chain before it is stored.
 The indexer indexes unshielded transactions by address, so if it holds one *below*
 the birthday you asserted, that assertion is provably false and the import is
-refused — naming the height it found. `--birthday-force` overrides it. This is the
-one half of "too late" that can be caught mechanically.
+refused — naming the height it found. `--birthday-force` overrides it.
+
+Read that refusal for what it is. It does not mean those unshielded funds would be
+lost; they wouldn't. It means the seed was demonstrably in use before the height
+you claimed, which makes an earlier *shielded* receive plausible — and that is the
+thing no query can check. The check proves the harmless case in order to warn
+about the harmful one it cannot see.
 
 **What it cannot catch is shielded history, and that is the risk to understand.**
 Shielded coins are located by trial-decrypting every output with your viewing key.
@@ -398,7 +403,10 @@ shielded receives before that point are possible, prefer `--birthday-date` with 
 date you are sure predates every one of them, or import with no birthday at all.
 
 The failure modes are not symmetric, so err early: **too early costs sync time,
-too late hides anything received before the birthday.** Nothing is lost — clearing
+too late hides shielded funds received before the birthday** — and the DUST they
+would have generated. Unshielded funds are not at risk either way: their sync
+cursor is keyed by address and a pre-seed never advances it, so they are found
+from the start whatever the birthday says. Nothing is lost permanently — clearing
 the account's sync cache falls back to a full scan and recovers it.
 
 The consequence differs by token type, and shielded is the one to be careful

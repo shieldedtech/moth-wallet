@@ -1227,7 +1227,7 @@
     "message": "Seit wann wird diese Phrase verwendet?"
   },
   "setup_birthdayHint": {
-    "message": "Wenn du Moth das mitteilst, überspringt die erste Synchronisierung ältere Blöcke — Sekunden statt bis zu einer Stunde. Antworte lieber zu früh als zu spät: zu früh kostet nur Zeit, zu spät verbirgt alles, was vorher empfangen wurde, und bei shielded Guthaben ist nicht erkennbar, dass etwas fehlt. Das Leeren des Sync-Caches stellt es wieder her."
+    "message": "Wenn du Moth das mitteilst, kann die erste Synchronisierung ältere Blöcke überspringen — Sekunden statt bis zu einer Stunde. Antworte lieber zu früh als zu spät: zu früh kostet nur Zeit, zu spät verbirgt shielded Guthaben, das davor empfangen wurde, und shielded Salden zeigen nicht an, dass etwas fehlt. Unshielded Guthaben wird in jedem Fall gefunden. Das Leeren des Sync-Caches stellt alles wieder her."
   },
   "setup_birthdayUnknown": {
     "message": "Ich weiß es nicht — die gesamte Chain durchsuchen"

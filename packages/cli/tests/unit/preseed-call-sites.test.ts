@@ -79,3 +79,56 @@ describe('startWalletSync call sites', () => {
     ).toEqual([]);
   });
 });
+
+// Issue #48: the same "whichever surface remembers" hazard, on the write side.
+// `manager.generate(name, passphrase, network, birthday?)` writes both
+// createdAtHeight and birthdays only when the 4th argument is present, so a
+// generate call that omits it produces an account that syncs from genesis while
+// claiming in the README to get a birthday automatically. Core cannot supply it
+// itself without doing network I/O in the keystore layer, so the guard is here
+// instead: every wallet-generate call must pass one.
+const GENERATE_BIRTHDAY_ARG_INDEX = 3;
+
+function walletGenerateCallSites(): CallSite[] {
+  const found: CallSite[] = [];
+  for (const root of ROOTS) {
+    for (const file of sourceFiles(root)) {
+      const text = readFileSync(file, 'utf-8');
+      if (!/\.generate\(/.test(text)) continue;
+      const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
+      const visit = (node: ts.Node): void => {
+        if (
+          ts.isCallExpression(node) &&
+          ts.isPropertyAccessExpression(node.expression) &&
+          node.expression.name.text === 'generate' &&
+          // walletManager.generate / manager.generate / wallet.generate — not the
+          // daemon key store's unrelated generate(label, scopes).
+          /wallet|manager/i.test(node.expression.expression.getText())
+        ) {
+          found.push({
+            file: relative(join(__dirname, '..', '..', '..', '..'), file),
+            line: source.getLineAndCharacterOfPosition(node.getStart()).line + 1,
+            argCount: node.arguments.length,
+          });
+        }
+        ts.forEachChild(node, visit);
+      };
+      visit(source);
+    }
+  }
+  return found;
+}
+
+describe('wallet generate call sites', () => {
+  it('finds them, so a rename cannot make this vacuous', () => {
+    expect(walletGenerateCallSites().length).toBeGreaterThan(1);
+  });
+
+  it('every call passes a birthday, or the account it creates syncs from genesis', () => {
+    const missing = walletGenerateCallSites().filter((site) => site.argCount <= GENERATE_BIRTHDAY_ARG_INDEX);
+    expect(
+      missing.map((site) => `${site.file}:${site.line} passes ${site.argCount} args`),
+      'these create accounts with no birthday, contradicting the documented behaviour',
+    ).toEqual([]);
+  });
+});

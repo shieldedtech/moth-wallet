@@ -44,12 +44,15 @@ export interface BirthdayResolution {
  */
 export function shieldedCaveat(height: number): string {
   return (
-    `This covers UNSHIELDED history only. If this seed received SHIELDED funds before block ${height}, ` +
-    'those coins will not be found: the sync starts above them, the balance simply looks smaller, and nothing ' +
+    `This checks UNSHIELDED history only, and unshielded funds are not what a late birthday risks: their ` +
+    'cursor is keyed by address, so they are found from the start whatever the birthday says. The risk is ' +
+    `SHIELDED funds and the DUST they generate. If this seed received shielded funds before block ${height}, ` +
+    'they will not be found: the sync resumes above them, the balance simply looks smaller, and nothing ' +
     'reports an error. Shielded coins are located by trial-decrypting outputs with your viewing key, so no ' +
-    'address-based query can rule this out. If that is possible, assert a date you are sure predates every ' +
-    "receive, or import with no birthday and take the full scan. Nothing is lost either way — clearing the " +
-    "account's sync cache rescans and recovers them."
+    'address-based query can rule this out — this check cannot see the thing that actually matters. If an ' +
+    'earlier shielded receive is possible, assert a date you are sure predates every one, or import with no ' +
+    "birthday and take the full scan. Nothing is lost either way — clearing the account's sync cache rescans " +
+    'and recovers them.'
   );
 }
 
@@ -121,8 +124,10 @@ export async function resolveBirthdayClaim(opts: {
   } else if (claim.kind === 'height') {
     height = claim.value > 0 ? claim.value : undefined;
   } else {
-    // A date lands on the last block strictly before it, because too early only
-    // costs sync time while too late hides funds.
+    // A date lands on the last block strictly before it. The asymmetry is real
+    // but narrower than it first appears: too early only costs sync time, and too
+    // late hides SHIELDED and DUST history specifically — unshielded is keyed by
+    // address and streams from the start regardless of the birthday.
     height = (await heightForDate(indexerUrl, new Date(claim.value))).height;
   }
   if (height === undefined) return {notes};
@@ -160,9 +165,12 @@ export async function resolveBirthdayClaim(opts: {
     conflict: {
       firstActivityHeight: found.height,
       message:
-        `this seed already has an unshielded transaction at block ${found.height} ` +
-        `(${isoDay(found.timestamp)}), below the birthday asserted (${height}). Syncing from ${height} would ` +
-        'start above it, so those funds would not be found.',
+        `this seed was already active at block ${found.height} (${isoDay(found.timestamp)}), below the ` +
+        `birthday asserted (${height}), so the claim "no activity before ${height}" is false. Those ` +
+        'particular unshielded funds would still be found — the unshielded cursor is keyed by address ' +
+        'and a pre-seed never advances it — but a seed active then may also have received SHIELDED ' +
+        'funds before that height, and those would not be found, with nothing to indicate they are ' +
+        'missing.',
     },
   };
 }

@@ -55,7 +55,8 @@ export function BirthdayScreen({ route, nav }: Props) {
   const submitValue = () => {
     const raw = value.trim();
     // A bare number is a height; anything else has to parse as a date. Rejecting
-    // beats guessing: a claim that is too late hides funds received before it.
+    // beats guessing: a claim that is too late hides SHIELDED funds received
+    // before it (unshielded is keyed by address and found regardless).
     if (/^\d+$/.test(raw)) {
       const height = Number(raw);
       if (height <= 0) return setError('Enter a block height above zero');
@@ -81,7 +82,7 @@ export function BirthdayScreen({ route, nav }: Props) {
           <Select items={MODES} onSelect={choose} />
         )}
         <Box marginTop={1}>
-          <Text dimColor>Answer early rather than late: too early only costs sync time, too late hides anything received before it.</Text>
+          <Text dimColor>Answer early rather than late: too early only costs sync time, too late hides shielded funds received before it.</Text>
         </Box>
         <BackHint />
       </Box>

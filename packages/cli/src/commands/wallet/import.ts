@@ -37,7 +37,7 @@ export default class WalletImport extends BaseCommand {
     'birthday-date': Flags.string({
       description:
         'Assert the seed had no activity before this date (ISO 8601, e.g. 2026-08-01). ' +
-        'Resolved to a block height. Too early only costs sync time; too late hides funds.',
+        'Resolved to a block height. Too early only costs sync time; too late hides shielded funds and their DUST.',
       exclusive: ['birthday-height', 'birthday-tip', 'birthday-discover'],
     }),
     'birthday-height': Flags.integer({
@@ -59,7 +59,7 @@ export default class WalletImport extends BaseCommand {
     'birthday-force': Flags.boolean({
       description:
         'Accept a birthday even when the indexer shows earlier unshielded activity. ' +
-        'Those earlier funds will not be found until a rescan.',
+        'The unshielded funds are still found; the risk is shielded funds received before it.',
       default: false,
     }),
     'seed-hex': Flags.boolean({ description: 'Import from hex seed instead of mnemonic', default: false }),
