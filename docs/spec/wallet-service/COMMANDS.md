@@ -89,7 +89,7 @@ Nothing else is created at generate time. Sync caches, level-db state, and the d
 | `~/.moth/sync/<network>/<name>/dust.dat` | First DUST observation | DUST coins + generation rates. |
 | `~/.moth/sync/<network>/<name>.sock` | Daemon socket bind | Unix domain socket, mode `0600`. Removed automatically on clean shutdown; can be stale after a crash. |
 | `~/.moth/level-db/<network>/<encPublicKey-prefix>/` | First `moth deploy` / `moth daemon deploy` | LevelDB store for the SDK's contract private state. Directory name is the **first 16 chars of the wallet's encryption pubkey**, not the wallet name — so re-creating a wallet with the same name but a different seed leaves the old level-db orphaned but doesn't collide. |
-| `~/.moth/empty-ref/<network>/` | First pre-seed run for that network | Shared reference wallet's sync state, used to fast-start new wallets. Not per-wallet; survives `wallet remove`. |
+| `~/.moth/empty-ref/<network>/` | First pre-seed run for that network | Shared reference wallet's recorded height, mnemonic, and `archive.json` listing the heights of archived references. Not per-wallet; survives `wallet remove`. Managed with `moth preseed status/install/build`. |
 | `~/.moth/daemon-audit.log` | First daemon write op | Append-only JSONL audit log. Every RPC's verb / summary / decision / outcome and every daemon lifecycle event lands here. Daily rotation to `daemon-audit.log.YYYY-MM-DD`. See [06](./06-audit-observability.md). |
 | `~/.moth/api-keys/<id>.key` | `moth daemon key gen` | One JSON record per API key (id, label, salt, hashedSecret, createdAt, optional revokedAt). Mode `0600` in a `0700` dir. Plaintext secret is never persisted — recovery requires regenerating. See [02](./02-authentication.md). |
 

@@ -292,8 +292,9 @@ All three read the archive through core, over their own stores: `~/.moth/sync/
 <network>/__empty_ref__@<height>/<part>.dat` on the CLI and TUI, opaque keys in
 IndexedDB on the extension.
 
-Seeing and building it was the gap. `moth preseed status` lists the heights held
-and the earliest birthday that can skip the chain walk; `moth preseed build`
+Seeing and obtaining it was the gap. `moth preseed status` lists the heights held
+and the earliest birthday that can skip the chain walk; `moth preseed install`
+loads the reference committed to this repo in seconds; `moth preseed build`
 builds one at tip and archives it. The TUI's Network screen reports the same
 figures read-only. Building stays off the TUI on purpose — it is a
 tens-of-minutes sync, the same reason on-device warming is off by default.

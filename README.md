@@ -421,9 +421,17 @@ that is the one surprise worth knowing about:
 # what this machine holds, and the earliest birthday that can skip the walk
 moth preseed status --network preprod
 
-# build one at the current tip and archive it at that height (slow: DUST)
+# load the one committed to this repo — seconds, and usually all you need
+moth preseed install --network preprod
+
+# or build your own at the current tip (slow: DUST is tens of minutes)
 moth preseed build --network preprod
 ```
+
+Reach for `install` first. The repo commits a reference per network for the
+extension to bundle, and it is the same serialized state `build` would produce,
+so importing it takes seconds where building walks the chain. `build` is for a
+network with no committed reference, or when you want one newer than the bundle.
 
 References are archived per height, so each build widens the range of birthdays
 that can seed rather than replacing the last one. Building regularly is what
@@ -477,6 +485,7 @@ extension installs a bundled reference on first unlock.
 | Command | Description |
 | --- | --- |
 | `moth preseed status` | Show references held, and the earliest birthday that can skip the chain walk |
+| `moth preseed install [--force]` | Load the reference committed to this repo — seconds, not minutes |
 | `moth preseed build [--force]` | Build a reference at chain tip and archive it at that height (resumable) |
 
 ### Utility
