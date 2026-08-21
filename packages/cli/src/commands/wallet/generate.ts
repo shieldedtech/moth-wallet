@@ -1,7 +1,7 @@
 import { Flags } from '@oclif/core';
 import { BaseCommand } from '../../base-command.js';
 import { getPassphrase } from '../../adapters/passphrase.js';
-import type { AddressEncoding } from '@shieldedtech/moth-wallet';
+import { chainTip, type AddressEncoding } from '@shieldedtech/moth-wallet';
 
 export default class WalletGenerate extends BaseCommand {
   static override description = 'Generate a new wallet from a random BIP-39 mnemonic';
@@ -23,8 +23,21 @@ export default class WalletGenerate extends BaseCommand {
     const name = flags.name ?? `wallet-${Date.now().toString(36)}`;
     const passphrase = await getPassphrase('New passphrase: ');
 
-    this.log_verbose(`Generating wallet "${name}"`);
-    const info = await this.walletManager.generate(name, passphrase, flags.network);
+    // Record the chain tip as this wallet's birthday, so its first sync can
+    // start from a pre-seed reference instead of walking from genesis. Only for
+    // wallets generated here — `wallet import` deliberately passes none, since a
+    // restored wallet may hold funds at any height (ADR 0003).
+    //
+    // Best-effort: an unreachable indexer yields undefined and the wallet is
+    // still created, it just syncs the slow way.
+    const network = await this.getNetworkConfig(flags.network, this.getNetworkOverrides(flags));
+    const birthday = await chainTip(network.indexerUrl);
+    this.log_verbose(
+      birthday === undefined
+        ? `Generating wallet "${name}" (no chain tip available — will sync from genesis)`
+        : `Generating wallet "${name}" at birthday ${birthday}`,
+    );
+    const info = await this.walletManager.generate(name, passphrase, flags.network, birthday);
 
     if (this.outputFormat === 'json') {
       const output: Record<string, unknown> = {
