@@ -1,7 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
-import { DEFAULT_NETWORKS, serverProver } from '@shieldedtech/moth-wallet';
+import {
+  archivedReferenceHeights,
+  DEFAULT_NETWORKS,
+  preseedReferenceStatus,
+  serverProver,
+} from '@shieldedtech/moth-wallet';
 import type { NetworkState } from '../types.js';
 import type { NetworkOverrides } from '../settings.js';
 import { SectionHeader } from '../components/SectionHeader.js';
@@ -27,6 +32,17 @@ type SettingRow =
   | { kind: 'url'; field: UrlField; label: string }
   | { kind: 'prover'; label: string };
 
+/**
+ * The lowest reference held, which is the earliest birthday that can seed.
+ *
+ * A reference is the chain's state at one height, not a record of the blocks
+ * below it, so a birthday under every reference has nothing to seed from.
+ */
+function earliestSeedable(preseed: {live: number | null; archived: number[]}): number | null {
+  const heights = [...preseed.archived, ...(preseed.live === null ? [] : [preseed.live])];
+  return heights.length === 0 ? null : Math.min(...heights);
+}
+
 export function Network({ network, onSwitch, onSaveOverrides, onBack }: NetworkProps) {
   const networkCount = NETWORKS.length;
   const settingRows: SettingRow[] = [
@@ -45,6 +61,31 @@ export function Network({ network, onSwitch, onSaveOverrides, onBack }: NetworkP
   const [editField, setEditField] = useState<UrlField | null>(null);
   const [editValue, setEditValue] = useState('');
   const [message, setMessage] = useState('');
+  const [preseed, setPreseed] = useState<{live: number | null; archived: number[]} | null>(null);
+
+  // Read-only: which references this machine holds decides whether an imported
+  // wallet's birthday can seed or has to walk the chain, and that is otherwise
+  // invisible — a sync that starts at genesis looks the same as one that seeded.
+  // Building a reference is a tens-of-minutes sync and stays a CLI job
+  // (`moth preseed build`); this only reports.
+  useEffect(() => {
+    let cancelled = false;
+    const config = {id: network.id, indexerUrl: network.indexerUrl} as Parameters<typeof preseedReferenceStatus>[0];
+    void (async () => {
+      try {
+        const [status, archived] = await Promise.all([
+          preseedReferenceStatus(config),
+          archivedReferenceHeights(config),
+        ]);
+        if (!cancelled) setPreseed({live: status.height, archived});
+      } catch {
+        if (!cancelled) setPreseed(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [network.id, network.indexerUrl]);
 
   const isNetworkRow = highlighted < networkCount;
   const settingRow = isNetworkRow ? null : settingRows[highlighted - networkCount] ?? null;
@@ -172,6 +213,26 @@ export function Network({ network, onSwitch, onSaveOverrides, onBack }: NetworkP
               </Box>
             );
           })}
+        </Box>
+
+        <Box marginTop={1} flexDirection="column">
+          <Text bold>Pre-seed references ({network.id})</Text>
+          {preseed === null ? (
+            <Text dimColor>  reading…</Text>
+          ) : (
+            <>
+              <Text dimColor>
+                {'  '}latest    {preseed.live === null ? 'none — every sync starts at genesis' : `block ${preseed.live}`}
+              </Text>
+              <Text dimColor>
+                {'  '}archived  {preseed.archived.length === 0 ? 'none' : preseed.archived.join(', ')}
+              </Text>
+              <Text dimColor>
+                {'  '}earliest birthday that can skip the chain walk:{' '}
+                {earliestSeedable(preseed) === null ? 'n/a' : earliestSeedable(preseed)}
+              </Text>
+            </>
+          )}
         </Box>
 
         <Box marginTop={1} flexDirection="column">

@@ -113,7 +113,19 @@ export const offscreen = {
     await ensureOffscreen();
     return offscreenSend('os/walletCreate', data);
   },
-  async walletImport(data: { name: string; mnemonic: string; passphrase: string; network: string }) {
+  async walletImport(data: {
+    name: string;
+    mnemonic: string;
+    passphrase: string;
+    network: string;
+    currentHeight?: number;
+    /** Resolved offscreen: discovery derives an address from the seed. */
+    birthdayClaim?:
+      | {kind: 'tip'}
+      | {kind: 'date'; value: string}
+      | {kind: 'height'; value: number}
+      | {kind: 'discover'};
+  }) {
     await ensureOffscreen();
     return offscreenSend('os/walletImport', data);
   },

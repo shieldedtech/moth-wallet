@@ -89,6 +89,18 @@ export interface OffscreenProtocol {
     mnemonic: string;
     passphrase: string;
     network: string;
+    /** Chain tip at import — recorded for display, never used as a birthday. */
+    currentHeight?: number;
+  /**
+   * What the user asserts about the seed's history. Resolved HERE rather than in
+   * the background, because discovery and verification derive an address from
+   * the seed, and the service worker must not load that stack.
+   */
+  birthdayClaim?:
+    | {kind: 'tip'}
+    | {kind: 'date'; value: string}
+    | {kind: 'height'; value: number}
+    | {kind: 'discover'};
   }): WalletInfo;
   'os/walletRemove'(data: { name: string; network: string }): void;
   'os/walletSetActive'(data: { name: string; network: string }): void;

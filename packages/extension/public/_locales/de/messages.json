@@ -11,6 +11,15 @@
   "accounts_networkAria": {
     "message": "Netzwerk: $1"
   },
+  "accounts_createdOn": {
+    "message": "Erstellt $1"
+  },
+  "accounts_createdAtBlock": {
+    "message": "Block $1"
+  },
+  "accounts_syncsFromGenesis": {
+    "message": "synchronisiert ab Genesis"
+  },
   "accounts_menuAria": {
     "message": "Kontomenü"
   },
@@ -1213,6 +1222,33 @@
   },
   "setup_importSubtitle": {
     "message": "Tippe deine geheime 24-Wort-Phrase der Reihe nach ein oder füge alles auf einmal ein."
+  },
+  "setup_birthdayTitle": {
+    "message": "Seit wann wird diese Phrase verwendet?"
+  },
+  "setup_birthdayHint": {
+    "message": "Wenn du Moth das mitteilst, kann die erste Synchronisierung ältere Blöcke überspringen — Sekunden statt bis zu einer Stunde. Antworte lieber zu früh als zu spät: zu früh kostet nur Zeit, zu spät verbirgt shielded Guthaben, das davor empfangen wurde, und shielded Salden zeigen nicht an, dass etwas fehlt. Unshielded Guthaben wird in jedem Fall gefunden. Das Leeren des Sync-Caches stellt alles wieder her."
+  },
+  "setup_birthdayUnknown": {
+    "message": "Ich weiß es nicht — die gesamte Chain durchsuchen"
+  },
+  "setup_birthdayTip": {
+    "message": "Gerade erst erstellt — nichts zu durchsuchen"
+  },
+  "setup_birthdayDate": {
+    "message": "Vor einem Datum nicht verwendet"
+  },
+  "setup_birthdayHeight": {
+    "message": "Vor einer Blockhöhe nicht verwendet"
+  },
+  "setup_birthdayHeightPlaceholder": {
+    "message": "Blockhöhe"
+  },
+  "setup_birthdayDiscover": {
+    "message": "Für mich nachschlagen – nur unshielded Historie"
+  },
+  "setup_birthdayDiscoverNote": {
+    "message": "Findet die erste unshielded Transaktion für diese Phrase. Shielded Guthaben lässt sich so nicht finden: Hat diese Phrase früher shielded Guthaben empfangen, erscheint es erst nach einem erneuten Scan des Kontos."
   },
   "setup_pastePhrase": {
     "message": "Phrase einfügen"

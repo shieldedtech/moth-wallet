@@ -11,6 +11,15 @@
   "accounts_networkAria": {
     "message": "Réseau : $1"
   },
+  "accounts_createdOn": {
+    "message": "Créé le $1"
+  },
+  "accounts_createdAtBlock": {
+    "message": "bloc $1"
+  },
+  "accounts_syncsFromGenesis": {
+    "message": "synchronise depuis genesis"
+  },
   "accounts_menuAria": {
     "message": "Menu du compte"
   },
@@ -1213,6 +1222,33 @@
   },
   "setup_importSubtitle": {
     "message": "Saisissez vos 24 mots secrets dans l'ordre, ou collez la phrase entière d'un coup."
+  },
+  "setup_birthdayTitle": {
+    "message": "Depuis quand cette phrase est-elle utilisée ?"
+  },
+  "setup_birthdayHint": {
+    "message": "L'indiquer à Moth permet à la première synchronisation d'ignorer les blocs plus anciens — quelques secondes au lieu d'une heure. Répondez plutôt trop tôt que trop tard : trop tôt ne coûte que du temps, trop tard masque les fonds shielded reçus avant cette date, et les soldes shielded ne signalent rien de manquant. Les fonds unshielded sont trouvés dans tous les cas. Vider le cache de synchronisation récupère tout."
+  },
+  "setup_birthdayUnknown": {
+    "message": "Je ne sais pas — parcourir toute la chaîne"
+  },
+  "setup_birthdayTip": {
+    "message": "Je viens de la générer — rien à parcourir"
+  },
+  "setup_birthdayDate": {
+    "message": "Non utilisée avant une date"
+  },
+  "setup_birthdayHeight": {
+    "message": "Non utilisée avant une hauteur de bloc"
+  },
+  "setup_birthdayHeightPlaceholder": {
+    "message": "Hauteur de bloc"
+  },
+  "setup_birthdayDiscover": {
+    "message": "Rechercher pour moi — historique unshielded uniquement"
+  },
+  "setup_birthdayDiscoverNote": {
+    "message": "Recherche la première transaction unshielded pour cette phrase. Les fonds shielded ne peuvent pas être trouvés ainsi : si cette phrase a reçu des fonds shielded auparavant, ils n'apparaîtront qu'après une nouvelle analyse du compte."
   },
   "setup_pastePhrase": {
     "message": "Coller la phrase"
