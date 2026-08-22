@@ -366,8 +366,9 @@ Every command accepts:
 |---------|-------------|
 | `moth balance` | Show NIGHT (shielded + unshielded) + DUST + non-NIGHT token balances. In-process — spins up its own sync. |
 | `moth wallet status` | Same info but via the daemon's warm snapshot (instant). Requires TUI or `moth daemon serve`. |
-| `moth transfer [<amount>] [NIGHT] [--to <addr>]` | Transfer NIGHT (prompts for missing details) |
-| `moth transfer <amount> NIGHT --to <addr> --shielded` | Shielded transfer |
+| `moth transfer [<amount>] [--to <addr>]` | Transfer NIGHT (prompts for missing details). NIGHT only — the token is not selectable |
+| `moth transfer <amount> --to <addr> --shielded` | Shielded transfer |
+| `moth daemon transfer --to <addr> --token-id <id> --amount <raw>` | Transfer any token through the daemon. `--amount` is raw smallest units; `--night <decimal>` converts at 10⁶ but only for NIGHT |
 | `moth transfer batch <file.json>` | Batch transfer from JSON file (`@stdin` for pipe). Exit: 0 all ok, 1 partial, 2 all failed |
 
 ### Contract Operations
