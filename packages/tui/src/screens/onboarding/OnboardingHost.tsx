@@ -7,6 +7,7 @@ import { SeedSourceScreen } from './SeedSourceScreen.js';
 import { NameScreen } from './NameScreen.js';
 import { SeedEntryScreen } from './SeedEntryScreen.js';
 import { PassphraseScreen } from './PassphraseScreen.js';
+import { BirthdayScreen } from './BirthdayScreen.js';
 import { MnemonicDisplayScreen } from './MnemonicDisplayScreen.js';
 import { OnboardingInitializingScreen } from './InitializingScreen.js';
 
@@ -34,6 +35,8 @@ export function OnboardingHost({ route, nav, initError }: Props): React.ReactEle
       return <NameScreen route={route as Route<'onboarding-name'>} nav={nav} />;
     case 'onboarding-seed':
       return <SeedEntryScreen route={route as Route<'onboarding-seed'>} nav={nav} />;
+    case 'onboarding-birthday':
+      return <BirthdayScreen route={route as Route<'onboarding-birthday'>} nav={nav} />;
     case 'onboarding-passphrase':
       return <PassphraseScreen route={route as Route<'onboarding-passphrase'>} nav={nav} />;
     case 'onboarding-mnemonic-display':

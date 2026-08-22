@@ -34,6 +34,9 @@ export type {
 export {
   warmEmptyRefCache,
   preseedReferenceStatus,
+  archivedReferenceHeights,
+  birthdayOutlook,
+  type BirthdayOutlook,
   type WarmProgress,
 } from '@shieldedtech/moth-wallet/sync/preseed';
 export { WalletManager } from '@shieldedtech/moth-wallet/wallet/manager';

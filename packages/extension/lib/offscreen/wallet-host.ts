@@ -22,6 +22,7 @@ import {
   clearDustSyncCache,
   warmEmptyRefCache,
   preseedReferenceStatus,
+  birthdayOutlook,
   DustRegistrationNotYetError,
   type WarmProgress,
   signMessage,
@@ -42,6 +43,11 @@ import {
   type SignedMessage,
 } from '@shieldedtech/moth-browser';
 import { deriveAllAddressesFromSeed } from '@shieldedtech/moth-wallet/wallet/address';
+import { mnemonicToSeed } from '@shieldedtech/moth-wallet/wallet/mnemonic';
+import {
+  resolveBirthdayClaim,
+  type BirthdayClaim,
+} from '@shieldedtech/moth-wallet/wallet/birthday-claim';
 import * as ledger from '@midnight-ntwrk/ledger-v8';
 import type { HistoryEntry } from '@midnight-ntwrk/dapp-connector-api';
 import { serializeBalances } from '../messaging/balances-json';
@@ -158,8 +164,78 @@ export async function walletCreate(
   return { info, mnemonic: phrase };
 }
 
-export async function walletImport(name: string, mnemonic: string, passphrase: string, network: string) {
-  return getMoth(network).wallets.import(name, mnemonic, passphrase, network);
+/**
+ * Install the packaged reference, saying so and how long it took.
+ *
+ * It decompresses and writes ~11 MB into IndexedDB, and whether it succeeded
+ * decides whether the first sync pre-seeds or walks the chain — so a silent call
+ * leaves the most consequential step of a first sync invisible in the log.
+ */
+async function installBundledReferenceLogged(networkId: string): Promise<void> {
+  const startedAt = Date.now();
+  const installed = await installBundledReference(networkId, new IdbSyncStateStore());
+  if (installed) {
+    emit('os/eventSyncMessage', `Pre-seed: installed the packaged reference for ${networkId} (${Date.now() - startedAt}ms)`);
+  }
+}
+
+export async function walletImport(
+  name: string,
+  mnemonic: string,
+  passphrase: string,
+  network: string,
+  options: {currentHeight?: number; birthdayClaim?: BirthdayClaim} = {},
+) {
+  const moth = await getMoth(network);
+
+  // Resolve the claim here, where the seed and the derivation stack already are.
+  // Notes carry the shielded caveat, which the panel shows like any other sync
+  // message; a conflict throws, because a birthday the chain already contradicts
+  // would start the sync above transactions the indexer can see and those funds
+  // would simply not appear.
+  let birthdayHeight: number | undefined;
+  if (options.birthdayClaim) {
+    const seed = await mnemonicToSeed(mnemonic.trim());
+    const seedHex = Array.from(seed).map((b: number) => b.toString(16).padStart(2, '0')).join('');
+    seed.fill(0);
+    const resolved = await resolveBirthdayClaim({
+      indexerUrl: moth.config.indexerUrl,
+      networkId: network,
+      claim: options.birthdayClaim,
+      seedHex,
+      tipHeight: options.currentHeight,
+    });
+    if (resolved.conflict) {
+      throw new Error(
+        `Refusing that birthday: ${resolved.conflict.message} Choose "Look it up for me" to take ` +
+          `${resolved.conflict.firstActivityHeight}, or give an earlier date.`,
+      );
+    }
+    for (const note of resolved.notes) emit('os/eventSyncMessage', note);
+    birthdayHeight = resolved.height;
+  }
+  const importOptions = {currentHeight: options.currentHeight, birthdayHeight};
+  // A birthday earlier than the reference is refused by the pre-seed guard, so
+  // the import succeeds and the first sync still walks from genesis. Report it
+  // here — the panel has no other way to learn its answer was unusable, and the
+  // check lives offscreen because the service worker must not load the sync
+  // stack it needs.
+  if (birthdayHeight !== undefined) {
+    // Put the packaged reference in place BEFORE asking whether the birthday can
+    // use one. syncEnsure installs it too, but that runs later, so on a fresh
+    // profile the store is still empty here and this reported "no pre-seed
+    // reference for <network> yet" about a reference that was about to be
+    // installed — a false alarm on every first import, while the sync itself
+    // then pre-seeded correctly. Idempotent, and the download happens moments
+    // later anyway, so this only moves it earlier.
+    await installBundledReferenceLogged(network);
+
+    const outlook = await birthdayOutlook(moth.config, birthdayHeight).catch(() => null);
+    if (outlook && !outlook.seedable && outlook.reason) {
+      emit('os/eventSyncMessage', `Pre-seed will not apply: ${outlook.reason}`);
+    }
+  }
+  return moth.wallets.import(name, mnemonic, passphrase, network, importOptions);
 }
 
 export async function walletRemove(name: string, network: string): Promise<void> {
@@ -285,7 +361,7 @@ export async function syncEnsure(
   // Only writes when the store has none, so a locally built reference — always
   // at least as fresh — is never overwritten. A network without a bundled
   // reference is a no-op and syncs the slow way.
-  await installBundledReference(network.id, new IdbSyncStateStore());
+  await installBundledReferenceLogged(network.id);
 
   // Wallets created by the extension store the chain tip at creation time as
   // their birthday; it lets the first sync pre-seed at tip instead of

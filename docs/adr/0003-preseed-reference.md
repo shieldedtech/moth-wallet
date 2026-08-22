@@ -151,7 +151,38 @@ destroyed by every network switch, which left the wallet with no birthday at all
 and without one the guard can never pass, so a switched wallet walked from genesis
 on every network for ever after. Recording is gated on an explicit `createdHere`
 flag: an imported wallet may hold funds on any chain at any height, so it never
-gets a birthday.
+gets a birthday *automatically*.
+
+**A user may assert one.** Moth cannot infer an imported seed's first-existence
+height, but the person importing it often knows — the seed was generated minutes
+ago, or in a month they can name, or funded by a transaction they can point at.
+`wallet import` therefore accepts `--birthday-date`, `--birthday-height` and
+`--birthday-tip`, and a date is resolved to a height by binary search over block
+timestamps (~21 lookups on a 2M-block chain, so it runs inline).
+
+This extends the rule rather than weakening it. `createdHere` still gates every
+*automatic* birthday, including on a later network switch, so an assertion never
+changes what Moth infers on its own. The failure modes stay asymmetric and the
+rounding follows them: the search returns the last block strictly *before* the
+target, because too early costs sync time and too late hides funds.
+
+**The consequence of an over-late birthday differs by token type**, which the
+height≤birthday rule alone does not convey. Unshielded coins are owned by an
+address, so holdings are in principle discoverable by asking about that address.
+Shielded coins are found only by trial-decrypting every output with the viewing
+key — there is no query — so blocks skipped are coins that cannot be discovered
+without rescanning from before them. Both cases are equally wrong; only the
+unshielded one is noticeable. That is the argument for rounding early and for
+saying so in the UI rather than only in the flag's help text.
+
+The reference makes this workable at all: it carries an *empty* wallet's
+serialised shielded, unshielded and DUST state at its height — including the
+zswap state needed to build proofs onward — so a pre-seeded wallet has the local
+information it needs rather than having to reconstruct it.
+
+`createdAtHeight` is recorded separately for display — when the account was
+created here — and is deliberately not consulted by the guard. Conflating the
+two would let an informational value become a safety assertion.
 
 **Seeding is per part.** The gate once tested the *shielded* cache alone as a
 proxy for "no state yet". A DUST rebuild evicts only the dust cache, so shielded
@@ -218,6 +249,121 @@ one. What belongs here is the constraint that survives any distribution choice:
 wherever the bytes come from, the `height <= birthday` and `createdHere` rules
 above still decide whether a given wallet may use them, and a reference that
 cannot be verified must fail closed to a genesis sync.
+
+## Archived references (one reference per height)
+
+A single live reference only ever serves wallets born *after* it. A reference is
+the chain's state at one height, not a searchable record of the blocks below it,
+so a wallet whose birthday precedes the reference must scan those blocks itself —
+and that fallback is the whole cost the pre-seed exists to avoid. Measured on
+preprod: an imported wallet with a date-derived birthday of 1,905,019 against a
+reference at 2,104,384 silently fell back to genesis and had not finished DUST
+(21%) at 2600s, where a wallet born at tip synced in 110.6s.
+
+So each successful build is also archived under the height it reached:
+
+- state: `sync/<network>/__empty_ref__@<height>/<part>` (sibling of the live slot)
+- index: `empty-ref/<network>/archive.json` — the heights that exist, newest first
+
+Selection, given a wallet's birthday: prefer the live reference when it is at or
+below the birthday, else take the newest archived reference at or below it, else
+scan from genesis. Only the live reference is memoised — an archived choice
+belongs to one birthday, not to the network. `birthdayOutlook()` runs the same
+selection ahead of an import, so the answer shown to the user is the one the sync
+will actually take.
+
+The safety rule is unchanged and still fails closed: a reference above the
+birthday is never used, and an archive entry whose parts are missing from the
+store is skipped rather than trusted.
+
+Two writes keep the archive from losing ground:
+
+- A build archives whatever the live slot held **before** advancing it. The build
+  resumes the same reference wallet forward, so the older, lower height would
+  otherwise be gone — and lower is what an earlier birthday needs.
+- The extension's bundled reference is archived at its own height, and is no
+  longer discarded when a locally built reference already holds the live slot.
+  The bundle usually sits lower than a local build, so it covers birthdays the
+  local one cannot.
+
+### Surfaces
+
+All three read the archive through core, over their own stores: `~/.moth/sync/
+<network>/__empty_ref__@<height>/<part>.dat` on the CLI and TUI, opaque keys in
+IndexedDB on the extension.
+
+Seeing and obtaining it was the gap. `moth preseed status` lists the heights held
+and the earliest birthday that can skip the chain walk; `moth preseed install`
+loads the reference committed to this repo in seconds; `moth preseed build`
+builds one at tip and archives it. The TUI's Network screen reports the same
+figures read-only. Building stays off the TUI on purpose — it is a
+tens-of-minutes sync, the same reason on-device warming is off by default.
+
+### What this does not do
+
+**It cannot build a reference at a height in the past.** Archives accumulate
+going forward — a build today archives at today's tip. To serve a birthday from
+last month, a reference must have existed at or below that height, which means
+either an earlier build or the ability to stop a build at a chosen height.
+
+Stopping at a height is not currently expressible. Sync progress is reported in
+*event indices* (`appliedIndex` for shielded and DUST, `appliedId` for
+unshielded), the indexer exposes no mapping from block height to any of them, and
+the reference's height is recorded by reading the chain tip *after* the sync
+finishes — which is an over-estimate, and therefore safe, only because the sync
+ran to completion. Stopping mid-stream leaves no sound way to bound which blocks
+the state covers, and a bound that is too generous silently skips a wallet's own
+history.
+
+Closing that gap needs one of:
+
+1. an indexer query mapping a block height to the DUST event id at that height
+   (DUST is the expensive part; shielded and unshielded are seconds either way), or
+2. sync-to-height in the wallet SDK.
+
+Until then the practical answer is cadence: build references regularly so the
+archive is dense, which is why the CI cache carries `__empty_ref__*` and
+`archive.json` rather than just the live slot.
+
+**Distribution still ships one reference.** `export-preseed.mjs` and the workflow
+artifact carry the live reference only. Publishing the archive would multiply the
+artifact by the number of heights kept (~4.9 MB of DUST each) and needs a manifest
+format that names heights — deferred, and the reason the archive is currently
+useful mainly to a machine that builds its own references.
+
+## Where a birthday comes from
+
+Asking the user for a date was the weak point: it depends on memory, and a date
+guessed too late hides funds with no symptom. The indexer indexes unshielded
+transactions by address, so the first one can be read directly —
+`unshieldedTransactions(address, transactionId: 0)`, take the first event.
+
+Two things make it usable in practice. The progress event carries the highest
+transaction id *for that address*, and it arrives first, so a value of 0 is the
+definitive "never seen" signal — necessary because the subscription stays open
+waiting for future transactions and never completes on its own. And a timeout or
+an early close is treated as a failure, never as "no history": reading it as
+empty would hand back the chain tip and skip the wallet's real history.
+
+That also makes every assertion checkable. A birthday *above* a transaction the
+indexer already holds is false by construction, so it is refused rather than
+warned about, with `--birthday-force` as the deliberate override. An unreachable
+indexer warns that the check did not run.
+
+### The shielded gap
+
+None of this covers shielded history, and the asymmetry is structural rather than
+a gap in the implementation. Shielded coins are located by trial-decrypting every
+output with a viewing key; there is no address for the indexer to index, and
+`shieldedTransactions` needs a `connect(viewingKey)` session. No query can answer
+"did this seed receive shielded funds before block N".
+
+So a discovered birthday is correct for unshielded and unverified for shielded. If
+shielded funds arrived earlier, the sync starts above them, the balance simply
+looks smaller, and nothing reports an error — DUST generated by NIGHT that is not
+visible is missing too. Clearing the sync cache rescans and recovers everything,
+so nothing is destroyed, but until then the wallet understates what it holds.
+Every surface states this where the choice is made, not only in documentation.
 
 ## Open
 

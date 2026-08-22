@@ -29,7 +29,7 @@ export function SeedEntryScreen({ route, nav }: Props) {
         setError('Invalid mnemonic. Must be 24 valid BIP-39 words (space or comma separated).');
         return;
       }
-      nav.push('onboarding-passphrase', {
+      nav.push('onboarding-birthday', {
         onComplete,
         partial: { ...partial, seedInput: normalized },
       });
@@ -38,7 +38,7 @@ export function SeedEntryScreen({ route, nav }: Props) {
         setError('Invalid hex seed. Must be exactly 64 hex characters (0-9, a-f).');
         return;
       }
-      nav.push('onboarding-passphrase', {
+      nav.push('onboarding-birthday', {
         onComplete,
         partial: { ...partial, seedInput: trimmed.toLowerCase() },
       });

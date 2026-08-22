@@ -11,6 +11,15 @@
   "accounts_networkAria": {
     "message": "Red: $1"
   },
+  "accounts_createdOn": {
+    "message": "Creada el $1"
+  },
+  "accounts_createdAtBlock": {
+    "message": "bloque $1"
+  },
+  "accounts_syncsFromGenesis": {
+    "message": "sincroniza desde génesis"
+  },
   "accounts_menuAria": {
     "message": "Menú de cuenta"
   },
@@ -1213,6 +1222,33 @@
   },
   "setup_importSubtitle": {
     "message": "Escribe tus 24 palabras secretas en orden, o pega la frase completa de una vez."
+  },
+  "setup_birthdayTitle": {
+    "message": "¿Desde cuándo se usa esta frase?"
+  },
+  "setup_birthdayHint": {
+    "message": "Indicárselo a Moth permite que la primera sincronización omita bloques antiguos: segundos en lugar de hasta una hora. Responde antes que después: demasiado pronto solo cuesta tiempo, demasiado tarde oculta los fondos shielded recibidos antes de esa fecha, y los saldos shielded no dan ninguna señal de que falte algo. Los fondos unshielded se encuentran de todos modos. Vaciar la caché de sincronización lo recupera todo."
+  },
+  "setup_birthdayUnknown": {
+    "message": "No lo sé: analizar toda la cadena"
+  },
+  "setup_birthdayTip": {
+    "message": "Acabo de generarla: no hay nada que analizar"
+  },
+  "setup_birthdayDate": {
+    "message": "Sin usar antes de una fecha"
+  },
+  "setup_birthdayHeight": {
+    "message": "Sin usar antes de una altura de bloque"
+  },
+  "setup_birthdayHeightPlaceholder": {
+    "message": "Altura de bloque"
+  },
+  "setup_birthdayDiscover": {
+    "message": "Búscalo por mí: solo historial unshielded"
+  },
+  "setup_birthdayDiscoverNote": {
+    "message": "Busca la primera transacción unshielded de esta frase. Los fondos shielded no pueden encontrarse así: si esta frase recibió fondos shielded antes, no aparecerán hasta que se vuelva a escanear la cuenta."
   },
   "setup_pastePhrase": {
     "message": "Pegar frase"
