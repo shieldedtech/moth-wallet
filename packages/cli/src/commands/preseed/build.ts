@@ -10,17 +10,23 @@ import {
 /**
  * Build a pre-seed reference for this network, then archive it at its height.
  *
- * Deliberately a command and not something a wallet does on startup: building
- * means syncing an empty wallet to chain tip, and DUST makes that a
- * tens-of-minutes job. Running it periodically is what keeps the archive dense
- * enough for a later import to seed from rather than walk the chain.
+ * The slow one, and the last resort: prefer `preseed import` when a reference
+ * exists to import, since it is the same serialized state for seconds instead of
+ * tens of minutes. Deliberately a command rather than something that happens on
+ * startup — a first build IS the chain walk, paid once per network per machine,
+ * and the wallet's own startup path must never block on it (see the comment on
+ * `ensureEmptyRefCache`, which is why that function does not build by default).
+ *
+ * Running it periodically is what keeps the archive dense enough for a later
+ * import to seed from rather than walk the chain.
  */
 export default class PreseedBuild extends BaseCommand {
-  static override description = 'Build and archive a pre-seed reference at the current chain tip';
+  static override description = 'Build and archive a pre-seed reference at the current chain tip (slow — prefer `preseed import`)';
 
   static override examples = [
-    '<%= config.bin %> preseed build --network preprod',
+    '<%= config.bin %> preseed build --network preview',
     '<%= config.bin %> preseed build --network preprod --force',
+    '<%= config.bin %> preseed build --network preprod --timeout 180',
   ];
 
   static override flags = {
@@ -28,6 +34,10 @@ export default class PreseedBuild extends BaseCommand {
     force: Flags.boolean({
       description: 'Rebuild even when a reference already exists at or near tip',
       default: false,
+    }),
+    timeout: Flags.integer({
+      description: 'Minutes to allow the build before giving up',
+      default: 120,
     }),
   };
 
@@ -49,9 +59,11 @@ export default class PreseedBuild extends BaseCommand {
       return;
     }
 
+    // Says so before starting, because an unattended command that appears to
+    // hang for an hour is indistinguishable from a broken one.
     if (this.outputFormat === 'text') {
-      this.log(`Building a pre-seed reference for ${network.id}. This syncs an empty wallet to tip`);
-      this.log('and can take tens of minutes — DUST is the slow part. Progress follows.');
+      this.log(`Building the ${network.id} reference. This syncs an empty wallet to tip —`);
+      this.log('tens of minutes, DUST is the slow part, and it resumes if interrupted.');
     }
 
     // Progress goes to stderr-style logging only in text mode: JSON consumers get
@@ -66,14 +78,37 @@ export default class PreseedBuild extends BaseCommand {
     // builder directly, resuming from cached state rather than walking genesis.
     const advance = flags.force ? refreshEmptyRefCache : warmEmptyRefCache;
     const startedAt = Date.now();
-    const states = await advance(network, (msg) => {
-      if (this.outputFormat === 'text') this.log(`  ${msg}`);
-    });
+
+    // --timeout was declared but never wired, so the flag and the two places
+    // documenting it promised something that could not happen. The builder takes
+    // no deadline of its own, so it is raced against one here. The build keeps
+    // running in this process until exit, which is harmless: state is written as
+    // it goes, so re-running resumes rather than restarts.
+    const deadline = new Promise<null>((resolve) =>
+      setTimeout(() => resolve(null), flags.timeout * 60_000).unref(),
+    );
+    const states = await Promise.race([
+      advance(
+        network,
+        (msg) => {
+          if (this.outputFormat === 'text') this.log(`  ${msg}`);
+        },
+        undefined,
+        (p) => {
+          if (this.outputFormat === 'text' && p.total > 0 && p.applied % 50_000 === 0) {
+            this.log(`  ${p.applied}/${p.total} dust events`);
+          }
+        },
+      ),
+      deadline,
+    ]);
+    const minutes = Math.round((Date.now() - startedAt) / 60_000);
 
     if (!states) {
       this.outputError(
         'TIMEOUT',
-        'Reference build did not complete. Partial progress is saved, so running this again resumes rather than restarting.',
+        `Reference build for ${network.id} did not reach chain tip after ${minutes} min.`,
+        'Partial progress is saved, so running this again resumes rather than restarting.',
       );
       this.exit(1);
       return;
@@ -83,10 +118,12 @@ export default class PreseedBuild extends BaseCommand {
     // how this stayed invisible to anyone running the command on a schedule.
     const advanced = (before.height ?? 0) < states.height;
     this.outputSuccess({
+      network: network.id,
       built: advanced,
       referenceHeight: states.height,
       previousHeight: before.height,
       seconds: Math.round((Date.now() - startedAt) / 1000),
+      minutes,
       archivedHeights: await archivedReferenceHeights(network),
       ...(advanced ? {} : {reason: 'the reference was already at this height — nothing to advance'}),
     });

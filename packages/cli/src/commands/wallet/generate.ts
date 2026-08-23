@@ -1,8 +1,7 @@
 import { Flags } from '@oclif/core';
 import { BaseCommand } from '../../base-command.js';
 import { getPassphrase } from '../../adapters/passphrase.js';
-import type { AddressEncoding } from '@shieldedtech/moth-wallet';
-import { chainTip } from '@shieldedtech/moth-wallet';
+import { chainTip, type AddressEncoding } from '@shieldedtech/moth-wallet';
 
 export default class WalletGenerate extends BaseCommand {
   static override description = 'Generate a new wallet from a random BIP-39 mnemonic';
@@ -26,9 +25,12 @@ export default class WalletGenerate extends BaseCommand {
 
     // A wallet generated here cannot have existed before now, so the current tip
     // is a sound birthday — and it is what lets the first sync pre-seed instead
-    // of walking the chain. Without it the account is indistinguishable from an
-    // imported seed of unknown age and always scans from genesis. Unreachable
-    // indexer means no birthday: slow, but never wrong.
+    // of walking the chain. Only for wallets generated here: `wallet import`
+    // takes a claim from the user instead, since a restored seed may hold funds
+    // at any height (ADR 0003).
+    //
+    // Best-effort: an unreachable indexer means no birthday and the wallet is
+    // still created, it just syncs the slow way.
     const network = await this.getNetworkConfig(flags.network, this.getNetworkOverrides(flags));
     const tip = await chainTip(network.indexerUrl).catch(() => null);
     if (!tip) this.warn('Could not read a chain tip — this wallet gets no birthday and will sync from genesis.');

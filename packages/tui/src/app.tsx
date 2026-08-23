@@ -12,6 +12,7 @@ import {
   listNightUtxos,
   clearSyncCache,
   NIGHT_TOKEN_ID,
+  DustRegistrationNotYetError,
   type SendRequest,
   heightForDate,
   DEFAULT_NETWORKS,
@@ -606,6 +607,16 @@ export function App({ networkId: networkIdProp }: AppProps) {
                 await balance.refresh();
                 return { success: true, txId: txHash };
               } catch (err) {
+                // Registration self-funds from the DUST its NIGHT would already
+                // have generated, and that amount starts at zero — so on a
+                // freshly funded wallet this is "not yet", not a failure.
+                // Nothing was built, booked or spent. The panel and the CLI both
+                // say so; without this the TUI showed the raw SDK message, which
+                // reads as a broken wallet.
+                if (err instanceof DustRegistrationNotYetError) {
+                  logs.info(`DUST registration not possible yet: ${err.message}`);
+                  return { success: false, error: err.message };
+                }
                 const msg = err instanceof Error ? err.message : String(err);
                 logs.error(`DUST register failed: ${msg}`);
                 return { success: false, error: msg };

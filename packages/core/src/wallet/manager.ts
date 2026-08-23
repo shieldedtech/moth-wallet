@@ -346,15 +346,14 @@ export class WalletManager {
    *
    * `list()` resolves against the wallet's own `meta.network`, which is wrong for
    * a sync driven by `--network`: birthdays are per-network (see `birthdays`), so
-   * asking about the wallet's default network returns a height that belongs to a
+   * asking about the wallet's default network returns a height belonging to a
    * different chain, or nothing at all. Callers about to sync must ask about the
    * network they are syncing.
+   *
+   * Never throws. A wallet with no meta, or an unreadable one, asserts nothing —
+   * and "no claim" means scan from genesis, which is slow but never wrong.
    */
   async birthdayOn(name: string, networkId: string): Promise<number | undefined> {
-    // Never throws. A wallet with no meta, or an unreadable one, asserts
-    // nothing — and "no claim" means scan from genesis, which is slow but never
-    // wrong. Throwing here would make every sync call site wrap this in a
-    // try/catch to avoid failing a sync over a missing file.
     try {
       const meta = await this.loadMeta(name);
       return meta ? birthdayFor(meta, networkId) : undefined;

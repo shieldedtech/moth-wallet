@@ -16,6 +16,9 @@ import {
   daemonSocketPath,
   type DaemonClient,
 } from '@shieldedtech/moth-wallet';
+import { createTimingRecorder, createFileTimingStore, type TimingRecorder } from '@shieldedtech/moth-wallet';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { FilesystemStorageAdapter } from '@shieldedtech/moth-wallet';
 
 /**
@@ -149,6 +152,7 @@ export abstract class BaseCommand extends Command {
 
   private _storage?: FilesystemStorageAdapter;
   private _walletManager?: WalletManager;
+  private _timings?: TimingRecorder;
 
   async init(): Promise<void> {
     await super.init();
@@ -164,20 +168,31 @@ export abstract class BaseCommand extends Command {
   }
 
   /**
+   * Phase-timings recorder, writing `~/.moth/timings.json`.
+   *
+   * Off unless `moth diagnostics timings --on` has been run, so it costs a
+   * single file read per command otherwise. The extension has had this since
+   * the phase-timings work; the CLI is where it arguably matters more, since a
+   * headless sync gives no other feedback about where the wall clock went.
+   */
+  protected get timings(): TimingRecorder {
+    if (!this._timings) {
+      this._timings = createTimingRecorder(createFileTimingStore(join(homedir(), '.moth', 'timings.json')));
+    }
+    return this._timings;
+  }
+
+  /**
    * The birthday to hand `startWalletSync`, for the network being synced.
    *
    * Every sync path needs this, and omitting it is silent: the pre-seed gate is
-   * `(isNewWallet || birthday)`, so a call that leaves it off simply never tries
-   * to pre-seed and walks the chain from genesis instead — no warning, just a
-   * slow sync. Asked per network on purpose, because birthdays are per network.
+   * `(isNewWallet || birthday)`, so a call that leaves it off never tries to
+   * pre-seed and walks the chain from genesis instead — no warning, just a slow
+   * sync with the reference sitting unused. Asked per network on purpose,
+   * because birthdays are per network.
    */
   protected async syncBirthday(walletName: string, networkId: string): Promise<number | undefined> {
-    try {
-      return await this.walletManager.birthdayOn(walletName, networkId);
-    } catch {
-      // A missing or unreadable meta means no claim, which is the safe answer.
-      return undefined;
-    }
+    return this.walletManager.birthdayOn(walletName, networkId);
   }
 
   protected get walletManager(): WalletManager {

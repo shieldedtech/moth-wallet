@@ -87,9 +87,12 @@ export function useWallet(storage: StorageAdapter) {
   }, []);
 
   const generate = useCallback(async (name: string, passphrase: string, network: string, birthday?: number) => {
-    // The caller supplies the tip it already knows. A generated wallet cannot
-    // predate now, so this is a sound birthday — and it is what lets the first
-    // sync pre-seed rather than walk the chain from genesis.
+    // The caller supplies the tip, resolved for the network the wizard CHOSE
+    // rather than the one this session happens to be connected to (#69). A
+    // generated wallet cannot predate that tip, so it is a sound birthday — and
+    // it is what lets the first sync pre-seed rather than walk from genesis.
+    // Only wallets generated here get one: importWallet takes a claim from the
+    // user instead, since a restored seed may hold funds at any height (ADR 0003).
     const info = await manager.generate(name, passphrase, network, birthday);
     const wallet = await manager.unlock(name, passphrase);
     sessionCache.current.set(name, { wallet, addresses: wallet.addresses });
@@ -162,11 +165,8 @@ export function useWallet(storage: StorageAdapter) {
   const activeWalletBirthdayOn = useCallback(
     async (networkId: string): Promise<number | undefined> => {
       if (!activeWallet) return undefined;
-      try {
-        return await manager.birthdayOn(activeWallet.name, networkId);
-      } catch {
-        return undefined;
-      }
+      // birthdayOn never throws — a missing or unreadable meta asserts nothing.
+      return manager.birthdayOn(activeWallet.name, networkId);
     },
     [activeWallet, manager],
   );
