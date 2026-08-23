@@ -10,6 +10,29 @@ The recipes assume:
 
 Each smoke runs in isolation and cleans up after itself. Run them in any order.
 
+## Automated run against a public testnet
+
+The smokes below are manual and target the local `undeployed` stack. For an
+unattended pass against **preprod, preview or qanet** with a wallet that already
+holds funds, use the harness instead:
+
+```bash
+cp scripts/e2e/e2e.config.example.json ~/moth-e2e.config.json
+chmod 600 ~/moth-e2e.config.json     # it holds a seed phrase; the script refuses looser modes
+scripts/e2e/moth-e2e.sh --config ~/moth-e2e.config.json --mode both --return-funds
+```
+
+It imports a funded wallet from its phrase, creates a throwaway wallet, funds it
+unshielded / shielded / with a non-NIGHT token, registers it for DUST, spends
+back from it, and optionally sweeps everything home — running the whole suite
+twice, once in-process and once through `daemon serve`. Every command's output,
+the throwaway wallet's phrase and passphrase, and a summary land in a per-run
+folder under an isolated `$HOME`.
+
+See [scripts/e2e/README.md](../scripts/e2e/README.md) for the step list, what it
+saves, and which steps assert a refusal. It refuses to run against mainnet.
+
+
 ## Prereqs
 
 ### Local devnet stack
