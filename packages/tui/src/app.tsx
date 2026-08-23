@@ -15,6 +15,7 @@ import {
   type SendRequest,
   heightForDate,
   DEFAULT_NETWORKS,
+  chainTip,
   birthdayOutlook,
   mnemonicToSeed,
   resolveBirthdayClaim,
@@ -52,6 +53,31 @@ async function resolveBirthday(
     // An unresolvable claim means no birthday, which is slow but never wrong.
     return {notes: [`Could not resolve the birthday (${err}); this account will scan from genesis.`]};
   }
+}
+
+/**
+ * The tip of the network the wallet is being created ON, which is not always
+ * the one this session is connected to.
+ *
+ * The wizard picks a network; the app may still be pointed somewhere else until
+ * the switch that happens after creation. Using the connected tip wrote one
+ * chain's height as another chain's birthday: an imported preprod wallet
+ * recorded createdAtHeight {network: preprod, height: 724009} while preprod was
+ * past 2.1M, and a generated one would have taken that height as its birthday —
+ * either refusing every pre-seed reference as "newer than the wallet", or, when
+ * the connected chain is ahead, skipping real history.
+ */
+async function tipFor(
+  networkId: string,
+  connectedId: string,
+  connectedTip: number | null | undefined,
+): Promise<number | undefined> {
+  if (networkId === connectedId) return connectedTip ?? undefined;
+  const preset = DEFAULT_NETWORKS[networkId];
+  if (!preset) return undefined;
+  // No tip means no birthday: slower, but never a height from the wrong chain.
+  const tip = await chainTip(preset.indexerUrl).catch(() => null);
+  return tip?.height;
 }
 
 /** Hex seed for the birthday checks' address derivation. */
@@ -210,15 +236,19 @@ export function App({ networkId: networkIdProp }: AppProps) {
   onboardingHandlerRef.current = async (state: CompletedOnboarding) => {
     setOnboardingError(undefined);
     try {
+      // The tip of the chosen network — not the connected one. Both the
+      // birthday and createdAtHeight are meaningless across chains.
+      const chosenTip = await tipFor(state.network, network.id, network.blockHeight);
+
       if (state.source === 'random') {
-        // network.blockHeight is the tip this session is already tracking. A
-        // generated wallet cannot predate it, so it is a sound birthday — and
-        // without one the first sync walks the chain from genesis.
+        // A generated wallet cannot predate the tip of the chain it is created
+        // on, so that is a sound birthday — and without one the first sync walks
+        // the chain from genesis.
         const info = await wallet.generate(
           state.name,
           state.passphrase,
           state.network,
-          network.blockHeight ?? undefined,
+          chosenTip,
         );
         nav.replace('onboarding-mnemonic-display', {
           onComplete: onboardingCompleteStable,
@@ -226,7 +256,7 @@ export function App({ networkId: networkIdProp }: AppProps) {
         });
       } else if (state.source === 'mnemonic' || state.source === 'hex') {
         const seedHex = await seedHexFor(state.source, state.seedInput);
-        const resolved = await resolveBirthday(state.birthday, state.network, seedHex, network.blockHeight);
+        const resolved = await resolveBirthday(state.birthday, state.network, seedHex, chosenTip);
         // A claim the chain already contradicts is refused, not warned about:
         // it would start the sync above transactions the indexer can already
         // see, and those funds would simply not appear.
@@ -248,7 +278,7 @@ export function App({ networkId: networkIdProp }: AppProps) {
             logs.warn(`Pre-seed will not apply: ${outlook.reason}`);
           }
         }
-        const options = { currentHeight: network.blockHeight ?? undefined, birthdayHeight };
+        const options = { currentHeight: chosenTip, birthdayHeight };
         if (state.source === 'mnemonic') {
           await wallet.importWallet(state.name, state.seedInput!, state.passphrase, state.network, options);
         } else {
