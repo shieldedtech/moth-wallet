@@ -163,6 +163,23 @@ export abstract class BaseCommand extends Command {
     return this._storage;
   }
 
+  /**
+   * The birthday to hand `startWalletSync`, for the network being synced.
+   *
+   * Every sync path needs this, and omitting it is silent: the pre-seed gate is
+   * `(isNewWallet || birthday)`, so a call that leaves it off simply never tries
+   * to pre-seed and walks the chain from genesis instead — no warning, just a
+   * slow sync. Asked per network on purpose, because birthdays are per network.
+   */
+  protected async syncBirthday(walletName: string, networkId: string): Promise<number | undefined> {
+    try {
+      return await this.walletManager.birthdayOn(walletName, networkId);
+    } catch {
+      // A missing or unreadable meta means no claim, which is the safe answer.
+      return undefined;
+    }
+  }
+
   protected get walletManager(): WalletManager {
     if (!this._walletManager) {
       this._walletManager = new WalletManager(this.storage);

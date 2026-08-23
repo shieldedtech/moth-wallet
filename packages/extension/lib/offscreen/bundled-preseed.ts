@@ -19,7 +19,7 @@
 // leak "this IP created a wallet on network X at time T" at the moment least
 // worth leaking.
 
-import { cursorWitnessKey, emptyRefStateKey, emptyRefHeightKey, EMPTY_REF_WALLET, type SyncStateStore, type WalletPart } from '@shieldedtech/moth-wallet/sync/sync-store';
+import { archiveReference, cursorWitnessKey, emptyRefStateKey, emptyRefHeightKey, readArchiveIndex, EMPTY_REF_WALLET, type SyncStateStore, type WalletPart } from '@shieldedtech/moth-wallet/sync/sync-store';
 
 const PARTS: WalletPart[] = ['shielded', 'unshielded', 'dust'];
 
@@ -120,32 +120,66 @@ export function hasBundledReference(networkId: string): Promise<boolean> {
  * that is ignored rather than trusted — the failure mode is a slow sync, never a
  * wallet seeded from half a reference.
  */
+/**
+ * Fetch all three parts, or nothing.
+ *
+ * All three or none: a partial reference is refused by the reader anyway, and
+ * writing it wastes IndexedDB quota.
+ */
+async function fetchStates(
+  networkId: string,
+): Promise<{shielded: string; unshielded: string; dust: string} | null> {
+  const states: Partial<Record<WalletPart, string>> = {};
+  for (const part of PARTS) {
+    const value = await fetchText(assetUrl(networkId, `${part}.dat.gz`), true);
+    if (!value) return null;
+    states[part] = value;
+  }
+  return states as {shielded: string; unshielded: string; dust: string};
+}
+
 export async function installBundledReference(networkId: string, store: SyncStateStore): Promise<boolean> {
   try {
-    // Already present — a locally built or previously installed reference wins,
+    // A locally built or previously installed reference wins the LIVE slot,
     // since it is at least as fresh as anything we ship.
-    if (await store.get(emptyRefHeightKey(networkId))) return false;
+    const live = await store.get(emptyRefHeightKey(networkId));
 
     const manifest = parseManifest(await fetchText(assetUrl(networkId, 'manifest.json'), false));
     if (!manifest) return false;
 
-    const states: Partial<Record<WalletPart, string>> = {};
-    for (const part of PARTS) {
-      const value = await fetchText(assetUrl(networkId, `${part}.dat.gz`), true);
-      // All three or none: a partial reference would be refused by
-      // loadUsableRefStates anyway, and writing it wastes IndexedDB quota.
-      if (!value) return false;
-      states[part] = value;
+    // …but it does not make the bundle worthless. The bundle sits at a fixed,
+    // usually older height, and an older reference is exactly what a wallet
+    // imported with an earlier birthday needs — the live one is above it and so
+    // holds none of that wallet's history. Archive the bundle in that case
+    // instead of discarding it. Skipped once archived, so this costs one install.
+    if (live) {
+      if ((await readArchiveIndex(store, networkId)).includes(manifest.height)) return false;
+      const archived = await fetchStates(networkId);
+      if (!archived) return false;
+      // No witnesses are written here: they are keyed to the live slot, and the
+      // verifier only reads that slot. An archived reference is therefore handed
+      // out unverified — the one place #50's renumbering check does not reach.
+      await archiveReference(store, networkId, manifest.height, archived);
+      return true;
     }
 
-    for (const part of PARTS) await store.put(emptyRefStateKey(networkId, part), states[part]!);
+    const states = await fetchStates(networkId);
+    if (!states) return false;
+
+    for (const part of PARTS) await store.put(emptyRefStateKey(networkId, part), states[part]);
     // Witnesses before the height, for the same reason the height goes last: the
     // height is what marks the reference usable, and a reference that reads as
     // usable without its witnesses is one that skips verification.
+    //
+    // Live slot only — witnesses are keyed to EMPTY_REF_WALLET, so the archived
+    // copy written below carries none. See the note on the archive-only path.
     for (const [part, witness] of Object.entries(manifest.witnesses ?? {})) {
       await store.put(cursorWitnessKey(networkId, EMPTY_REF_WALLET, part as WalletPart), JSON.stringify(witness));
     }
     await store.put(emptyRefHeightKey(networkId), String(manifest.height));
+    // Also keep it at its own height, so a later local build overwriting the
+    // live slot does not take the bundle's coverage with it.
+    await archiveReference(store, networkId, manifest.height, states);
     return true;
   } catch {
     // Never let a packaging problem stop a wallet from starting.

@@ -12,8 +12,31 @@ export {
   describeProver,
 } from './types/network.js';
 
+// Block time
+export {
+  findHeightBefore,
+  chainTip,
+  heightForDate,
+  type BlockAt,
+  type HeightAtTime,
+} from './network/block-time.js';
+
+export { birthdayOutlook, type BirthdayOutlook } from './sync/preseed.js';
+export { firstUnshieldedActivity, indexerWsUrl, type FirstActivity } from './network/first-activity.js';
+export {
+  dustGenerationsFor,
+  type DustGenerationEntry,
+  type DustGenerationsResult,
+} from './network/dust-generations.js';
+export {
+  resolveBirthdayClaim,
+  shieldedCaveat,
+  type BirthdayClaim,
+  type BirthdayResolution,
+} from './wallet/birthday-claim.js';
+
 // Wallet
-export { WalletManager } from './wallet/manager.js';
+export { WalletManager, type ImportOptions } from './wallet/manager.js';
 export {
   NIGHT_DENOMINATION,
   DUST_DENOMINATION,
@@ -73,6 +96,7 @@ export {
 } from './sync/operations.js';
 export {
   InMemorySyncStateStore, syncStateKey, emptyRefStateKey, emptyRefMnemonicKey, emptyRefHeightKey,
+  archivedRefStateKey, refArchiveIndexKey, readArchiveIndex, archiveReference, EMPTY_REF_WALLET,
   type SyncStateStore, type WalletPart,
 } from './sync/sync-store.js';
 export {
@@ -94,7 +118,7 @@ export {
   type WitnessStream,
   type WitnessVerdict,
 } from './sync/cursor-witness.js';
-export { ensureEmptyRefCache, warmEmptyRefCache, refreshEmptyRefCache, preseedReferenceStatus, preSeedNewWallet, type WarmProgress } from './sync/preseed.js';
+export { ensureEmptyRefCache, warmEmptyRefCache, refreshEmptyRefCache, preseedReferenceStatus, archivedReferenceHeights, preSeedNewWallet, type WarmProgress } from './sync/preseed.js';
 
 // Contract
 export { loadContractArtifact, type ContractArtifact } from './contract/artifact-loader.js';

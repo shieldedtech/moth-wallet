@@ -13,8 +13,82 @@ import {
   clearSyncCache,
   NIGHT_TOKEN_ID,
   type SendRequest,
+  heightForDate,
+  DEFAULT_NETWORKS,
+  chainTip,
+  birthdayOutlook,
+  mnemonicToSeed,
+  resolveBirthdayClaim,
 } from '@shieldedtech/moth-wallet';
 import { syncedWalletStub } from './utils/synced-wallet-stub.js';
+import type { BirthdayClaim } from './navigation/index.js';
+import type { BirthdayResolution } from '@shieldedtech/moth-wallet';
+
+/**
+ * Turn the onboarding claim into a height, using core's shared resolver.
+ *
+ * Shared so the TUI cannot drift from the CLI and extension on what a claim
+ * means or which checks run. Returns the height plus anything the user needs
+ * told — the shielded caveat, and a conflict when the chain already contradicts
+ * the claim.
+ */
+async function resolveBirthday(
+  claim: BirthdayClaim | undefined,
+  networkId: string,
+  seedHex: string | undefined,
+  tip: number | null | undefined,
+): Promise<BirthdayResolution> {
+  if (!claim) return {notes: []};
+  const preset = DEFAULT_NETWORKS[networkId];
+  if (!preset) return {notes: []};
+  try {
+    return await resolveBirthdayClaim({
+      indexerUrl: preset.indexerUrl,
+      networkId,
+      claim,
+      seedHex,
+      tipHeight: tip ?? undefined,
+    });
+  } catch (err) {
+    // An unresolvable claim means no birthday, which is slow but never wrong.
+    return {notes: [`Could not resolve the birthday (${err}); this account will scan from genesis.`]};
+  }
+}
+
+/**
+ * The tip of the network the wallet is being created ON, which is not always
+ * the one this session is connected to.
+ *
+ * The wizard picks a network; the app may still be pointed somewhere else until
+ * the switch that happens after creation. Using the connected tip wrote one
+ * chain's height as another chain's birthday: an imported preprod wallet
+ * recorded createdAtHeight {network: preprod, height: 724009} while preprod was
+ * past 2.1M, and a generated one would have taken that height as its birthday —
+ * either refusing every pre-seed reference as "newer than the wallet", or, when
+ * the connected chain is ahead, skipping real history.
+ */
+async function tipFor(
+  networkId: string,
+  connectedId: string,
+  connectedTip: number | null | undefined,
+): Promise<number | undefined> {
+  if (networkId === connectedId) return connectedTip ?? undefined;
+  const preset = DEFAULT_NETWORKS[networkId];
+  if (!preset) return undefined;
+  // No tip means no birthday: slower, but never a height from the wrong chain.
+  const tip = await chainTip(preset.indexerUrl).catch(() => null);
+  return tip?.height;
+}
+
+/** Hex seed for the birthday checks' address derivation. */
+async function seedHexFor(source: string, seedInput: string | undefined): Promise<string | undefined> {
+  if (!seedInput) return undefined;
+  if (source === 'hex') return seedInput.trim();
+  const seed = await mnemonicToSeed(seedInput.trim());
+  const hex = Array.from(seed).map((b: number) => b.toString(16).padStart(2, '0')).join('');
+  seed.fill(0);
+  return hex;
+}
 import { parseNightAmount } from './utils/balance.js';
 import { useStackNavigator } from './navigation/index.js';
 import type { CompletedOnboarding, OnComplete, OnUnlock } from './navigation/index.js';
@@ -70,7 +144,7 @@ export function App({ networkId: networkIdProp }: AppProps) {
   const networkConfig = useMemo(() => network.getConfig(), [network.getConfig]);
   const chain = useChainStatus(networkConfig);
   const activeWalletKeys = wallet.getActiveWalletKeys();
-  const balance = useBalance(activeWalletKeys, networkConfig, logs.info, wallet.activeWallet?.name, wallet.isActiveWalletNew());
+  const balance = useBalance(activeWalletKeys, networkConfig, logs.info, wallet.activeWallet?.name, wallet.isActiveWalletNew(), wallet.activeWalletBirthdayOn);
   const [lastWalletName, setLastWalletName] = useState<string | null>(null);
 
   // Daemon: keep a ref to the latest WalletBalances snapshot so daemon
@@ -162,17 +236,54 @@ export function App({ networkId: networkIdProp }: AppProps) {
   onboardingHandlerRef.current = async (state: CompletedOnboarding) => {
     setOnboardingError(undefined);
     try {
+      // The tip of the chosen network — not the connected one. Both the
+      // birthday and createdAtHeight are meaningless across chains.
+      const chosenTip = await tipFor(state.network, network.id, network.blockHeight);
+
       if (state.source === 'random') {
-        const info = await wallet.generate(state.name, state.passphrase, state.network);
+        // A generated wallet cannot predate the tip of the chain it is created
+        // on, so that is a sound birthday — and without one the first sync walks
+        // the chain from genesis.
+        const info = await wallet.generate(
+          state.name,
+          state.passphrase,
+          state.network,
+          chosenTip,
+        );
         nav.replace('onboarding-mnemonic-display', {
           onComplete: onboardingCompleteStable,
           partial: { ...state, generatedMnemonic: info.mnemonic },
         });
-      } else if (state.source === 'mnemonic') {
-        await wallet.importWallet(state.name, state.seedInput!, state.passphrase, state.network);
-        nav.reset('dashboard', undefined);
-      } else if (state.source === 'hex') {
-        await wallet.importFromSeed(state.name, state.seedInput!, state.passphrase, state.network);
+      } else if (state.source === 'mnemonic' || state.source === 'hex') {
+        const seedHex = await seedHexFor(state.source, state.seedInput);
+        const resolved = await resolveBirthday(state.birthday, state.network, seedHex, chosenTip);
+        // A claim the chain already contradicts is refused, not warned about:
+        // it would start the sync above transactions the indexer can already
+        // see, and those funds would simply not appear.
+        if (resolved.conflict) {
+          throw new Error(
+            `Refusing that birthday: ${resolved.conflict.message} Choose "Look it up for me" to take ` +
+              `${resolved.conflict.firstActivityHeight}, or give an earlier date.`,
+          );
+        }
+        for (const note of resolved.notes) logs.warn(note);
+        const birthdayHeight = resolved.height;
+        // A birthday earlier than the reference is refused by the pre-seed
+        // guard, so the sync still walks from genesis. Say so in the log rather
+        // than leaving an hour-long sync as the only explanation.
+        if (birthdayHeight !== undefined) {
+          const preset = DEFAULT_NETWORKS[state.network];
+          const outlook = preset ? await birthdayOutlook(preset, birthdayHeight).catch(() => null) : null;
+          if (outlook && !outlook.seedable && outlook.reason) {
+            logs.warn(`Pre-seed will not apply: ${outlook.reason}`);
+          }
+        }
+        const options = { currentHeight: chosenTip, birthdayHeight };
+        if (state.source === 'mnemonic') {
+          await wallet.importWallet(state.name, state.seedInput!, state.passphrase, state.network, options);
+        } else {
+          await wallet.importFromSeed(state.name, state.seedInput!, state.passphrase, state.network, options);
+        }
         nav.reset('dashboard', undefined);
       }
       await wallet.switchWallet(state.name);

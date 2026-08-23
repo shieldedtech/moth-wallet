@@ -60,20 +60,37 @@ loses them silently. `manager.import` must keep passing nothing.
 This one change is worth making even before the rest: without a birthday, a
 reference cannot be used no matter how it arrives.
 
-### 2. A `dust preseed` command group
+### 2. A `preseed` command group
 
 ```
-moth dust preseed status    # height, staleness, whether one exists
-moth dust preseed build     # first build for this network (tens of minutes)
-moth dust preseed refresh   # catch an existing one up (9.1s measured)
-moth dust preseed import <file>   # load a published reference
-moth dust preseed export <dir>    # write one out, as scripts/export-preseed.mjs does
+moth preseed status         # heights held, and the earliest birthday that can seed
+moth preseed install        # load the reference committed to this repo
+moth preseed refresh        # catch an existing one up (9.1s measured)
+moth preseed build          # build from scratch (tens of minutes)
+moth preseed import <dir>   # load a reference exported elsewhere
+moth preseed export <dir>   # write one out, as scripts/export-preseed.mjs does
 ```
+
+**Top-level, not under `dust`.** An earlier draft of this ADR proposed `moth dust
+preseed …`, on the reasoning that DUST is why the pre-seed matters — it is the
+4.9 MB blob, the ~1.4M events, the tens of minutes, where shielded and unshielded
+take seconds. That is true about the motivation and wrong about the thing: the
+pre-seed writes all three sub-wallet caches, and a reference is per-network
+machine state in `~/.moth` shared by every wallet on the machine, whereas `moth
+dust` groups per-wallet token operations (`register`, `deregister`, `status`).
+A command tree should say what a thing is; the "why" belongs in its description.
+Discoverability points the same way — someone whose first sync is crawling
+searches for "preseed", and only learns the DUST connection from the output.
+
+Decided while neither surface had shipped, so the correct name cost nothing. It
+would not have stayed free for long.
 
 `build` and `refresh` are thin wrappers over the core functions that already
-exist. `import`/`export` make the reference a portable artifact, which is what
-lets one machine's hour become every other machine's seconds — including CI,
-where a persistent per-network cache plus `refresh` costs seconds per run.
+exist. `install` needs no argument and reads the reference committed to the repo
+for the extension to bundle; `import`/`export` handle arbitrary directories,
+which is what lets one machine's hour become every other machine's seconds —
+including CI, where a persistent per-network cache plus `refresh` costs seconds
+per run.
 
 This also promotes `scripts/export-preseed.mjs` from a loose script into a
 supported command, which is where the benchmark tooling should have been.

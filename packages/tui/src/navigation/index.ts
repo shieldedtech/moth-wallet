@@ -5,6 +5,7 @@ export type {
   Route,
   Navigator,
   OnboardingState,
+  BirthdayClaim,
   CompletedOnboarding,
   SeedSource,
   OnComplete,

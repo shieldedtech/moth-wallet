@@ -144,6 +144,8 @@ export default class DaemonServe extends BaseCommand {
       network,
       (msg) => this.log_verbose(`[sync] ${msg}`),
       walletName,
+      false,
+      await this.syncBirthday(walletName, network.id),
     );
 
     if (flags['wait-for-sync']) {

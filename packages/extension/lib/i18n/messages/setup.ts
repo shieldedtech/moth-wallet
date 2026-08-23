@@ -16,6 +16,18 @@ export const setup = {
   setup_stepProgress: '$1 of $2',
   setup_importTitle: 'Bring your wallet back',
   setup_importSubtitle: 'Type your 24-word secret phrase in order, or paste the whole thing at once.',
+  setup_birthdayTitle: 'When did this phrase start being used?',
+  setup_birthdayHint:
+    'Telling Moth this lets the first sync skip older blocks — seconds instead of up to an hour. Answer early rather than late: too early only costs time, while too late hides shielded funds received before it, and shielded balances give no sign that anything is missing. Unshielded funds are found either way. Clearing the sync cache recovers everything.',
+  setup_birthdayUnknown: "I don't know — scan the whole chain",
+  setup_birthdayTip: 'I just generated it — nothing to scan',
+  setup_birthdayDate: 'Not used before a date',
+  setup_birthdayHeight: 'Not used before a block height',
+  setup_birthdayDiscover: 'Look it up for me — unshielded history only',
+  setup_birthdayDiscoverNote:
+    'Finds the first unshielded transaction for this phrase. Shielded funds cannot be found this way: ' +
+    'if this phrase received shielded funds earlier, they will not appear until the account is rescanned.',
+  setup_birthdayHeightPlaceholder: 'Block height',
   setup_pastePhrase: 'Paste phrase',
   setup_copyPhrase: 'Copy phrase',
   setup_copyPhraseDone: 'Copied',

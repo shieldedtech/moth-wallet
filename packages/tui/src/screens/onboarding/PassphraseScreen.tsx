@@ -4,6 +4,7 @@ import TextInput from 'ink-text-input';
 import { BackHint } from '../../components/BackHint.js';
 import { SectionHeader } from '../../components/SectionHeader.js';
 import type { Navigator, Route, CompletedOnboarding } from '../../navigation/index.js';
+import { completeOnboarding } from './complete.js';
 
 interface Props {
   route: Route<'onboarding-passphrase'>;
@@ -40,14 +41,17 @@ export function PassphraseScreen({ route, nav }: Props) {
     // Random source needs a mnemonic-display step after wallet creation.
     // We route through `initializing` first — the host will fire the
     // appropriate next route once generate() returns the mnemonic.
-    const finished: CompletedOnboarding = {
-      network: next.network!,
-      source: next.source!,
-      name: next.name!,
-      passphrase: next.passphrase!,
-      seedInput: next.seedInput,
-      generatedMnemonic: undefined,
-    };
+    //
+    // completeOnboarding spreads `next` rather than restating its fields. The
+    // hand-written version omitted `birthday`, so the claim collected two steps
+    // earlier never reached app.tsx and every import synced from genesis.
+    let finished: CompletedOnboarding;
+    try {
+      finished = completeOnboarding(next);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      return;
+    }
 
     // Bridge: app.tsx subscribes to onComplete to run the actual side effects.
     // It then redirects to mnemonic-display (random) or dashboard (import).

@@ -59,8 +59,8 @@ Every command accepts these. Defaults shown.
 | Command | Purpose |
 |---|---|
 | `moth wallet generate [--name <n>]` | Generate a new wallet from a random BIP-39 mnemonic. Prompts (or reads `MOTH_PASSPHRASE`) for the passphrase that encrypts the keystore at rest. |
-| `moth wallet import [--name <n>]` | Import from a recovery phrase (stdin or interactive) or `--seed-hex`. |
-| `moth wallet list` | List all configured wallets in `~/.moth/wallets/`. |
+| `moth wallet import [--name <n>]` | Import from a recovery phrase (stdin or interactive) or `--seed-hex`. `--birthday-date`, `--birthday-height`, `--birthday-tip` or `--birthday-discover` assert the seed had no activity before that point, which lets the first sync pre-seed instead of walking from genesis. `--birthday-discover` reads the height from the seed's first unshielded transaction; every assertion is checked against that same query and refused if the chain holds an earlier transaction (`--birthday-force` overrides). Unshielded only — shielded history cannot be discovered, so a birthday after an earlier shielded receive hides it silently. Err early: too early costs sync time, too late hides funds. See [ADR-0003](../../adr/0003-preseed-reference.md). |
+| `moth wallet list` | List all configured wallets in `~/.moth/wallets/`, with each one's creation date and the height its sync starts from (`genesis` when no birthday is known). |
 | `moth wallet address --name <n>` | Print a wallet's receive addresses — NIGHT external, DUST, and shielded (zswap) — for every network. Unlocks the keystore but runs fully offline (no sync). |
 | `moth wallet use [<name>]` | Switch the active wallet. |
 | `moth wallet remove [<name>] [--yes]` | Delete a wallet. Requires `--yes` for non-interactive use. See [Wallet lifecycle](#wallet-lifecycle) below for what this touches on disk. |
@@ -89,7 +89,7 @@ Nothing else is created at generate time. Sync caches, level-db state, and the d
 | `~/.moth/sync/<network>/<name>/dust.dat` | First DUST observation | DUST coins + generation rates. |
 | `~/.moth/sync/<network>/<name>.sock` | Daemon socket bind | Unix domain socket, mode `0600`. Removed automatically on clean shutdown; can be stale after a crash. |
 | `~/.moth/level-db/<network>/<encPublicKey-prefix>/` | First `moth deploy` / `moth daemon deploy` | LevelDB store for the SDK's contract private state. Directory name is the **first 16 chars of the wallet's encryption pubkey**, not the wallet name — so re-creating a wallet with the same name but a different seed leaves the old level-db orphaned but doesn't collide. |
-| `~/.moth/empty-ref/<network>/` | First pre-seed run for that network | Shared reference wallet's sync state, used to fast-start new wallets. Not per-wallet; survives `wallet remove`. |
+| `~/.moth/empty-ref/<network>/` | First pre-seed run for that network | Shared reference wallet's recorded height, mnemonic, and `archive.json` listing the heights of archived references. Not per-wallet; survives `wallet remove`. Managed with `moth preseed status/install/build`. |
 | `~/.moth/daemon-audit.log` | First daemon write op | Append-only JSONL audit log. Every RPC's verb / summary / decision / outcome and every daemon lifecycle event lands here. Daily rotation to `daemon-audit.log.YYYY-MM-DD`. See [06](./06-audit-observability.md). |
 | `~/.moth/api-keys/<id>.key` | `moth daemon key gen` | One JSON record per API key (id, label, salt, hashedSecret, createdAt, optional revokedAt). Mode `0600` in a `0700` dir. Plaintext secret is never persisted — recovery requires regenerating. See [02](./02-authentication.md). |
 

@@ -49,6 +49,10 @@ export interface WalletInfo {
   readonly birthday?: number;
   /** User-chosen display label; `name` remains the immutable storage key. */
   readonly label?: string;
+  /** When this account was created here (ISO 8601). */
+  readonly createdAt?: string;
+  /** Chain tip when it was created here, and the network that height came from. */
+  readonly createdAtHeight?: {readonly network: string; readonly height: number};
 }
 
 export interface UnlockedWallet {

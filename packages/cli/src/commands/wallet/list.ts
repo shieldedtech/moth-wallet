@@ -19,12 +19,28 @@ export default class WalletList extends BaseCommand {
     }
 
     this.outputSuccess(
-      wallets.map((w: { name: string; address: string; network: string; active: boolean }) => ({
-        name: w.name,
-        address: w.address,
-        network: w.network,
-        active: w.active ? '→' : '',
-      })),
+      wallets.map(
+        (w: {
+          name: string;
+          address: string;
+          network: string;
+          active: boolean;
+          createdAt?: string;
+          createdAtHeight?: { network: string; height: number };
+          birthday?: number;
+        }) => ({
+          name: w.name,
+          address: w.address,
+          network: w.network,
+          // Date only: the table is already wide, and the time of day is never
+          // the thing anyone is looking for here.
+          created: w.createdAt ? w.createdAt.slice(0, 10) : '',
+          // The height a sync can start from. Blank means "from genesis", which
+          // is the difference between seconds and an hour on DUST.
+          from: w.birthday !== undefined ? String(w.birthday) : 'genesis',
+          active: w.active ? '→' : '',
+        }),
+      ),
     );
   }
 }

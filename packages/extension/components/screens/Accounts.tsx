@@ -102,6 +102,7 @@ export function Accounts({
                   <span className="block font-mono text-xs text-muted-foreground">
                     {truncateAddress(wallet.address)}
                   </span>
+                  <AccountOrigin wallet={wallet} />
                 </span>
               </button>
               {wallet.name === activeName && (
@@ -166,6 +167,35 @@ export function Accounts({
         {t('accounts_removeBody')}
       </DialogShell>
     </PanelScreen>
+  );
+}
+
+/**
+ * When the account started, and where its sync begins.
+ *
+ * The second half is the one that saves a support conversation: an account with
+ * no birthday scans from genesis, which on DUST is the difference between
+ * seconds and the better part of an hour. Saying so where the account lives
+ * beats leaving the user to infer it from a slow progress bar.
+ */
+function AccountOrigin({
+  wallet,
+}: {
+  wallet: { createdAt?: string; createdAtHeight?: { network: string; height: number }; birthday?: number };
+}) {
+  if (!wallet.createdAt && wallet.birthday === undefined) return null;
+  const created = wallet.createdAt
+    ? new Date(wallet.createdAt).toLocaleDateString(undefined, {year: 'numeric', month: 'short', day: 'numeric'})
+    : null;
+  const height = wallet.createdAtHeight?.height;
+  return (
+    <span className="mt-0.5 block text-[11px] text-muted-foreground">
+      {created ? t('accounts_createdOn', [created]) : ''}
+      {created && height !== undefined ? ' · ' : ''}
+      {height !== undefined ? t('accounts_createdAtBlock', [String(height)]) : ''}
+      {(created || height !== undefined) && wallet.birthday === undefined ? ' · ' : ''}
+      {wallet.birthday === undefined ? t('accounts_syncsFromGenesis') : ''}
+    </span>
   );
 }
 
