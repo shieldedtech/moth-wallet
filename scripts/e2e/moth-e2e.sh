@@ -28,6 +28,7 @@ RETURN_FUNDS=0
 KEEP_WALLET=0
 RUNS_DIR="$SELF_DIR/runs"
 NO_ISOLATE=0
+VERBOSE=1
 MOTH_BIN="${MOTH_BIN:-$REPO_DIR/packages/cli/bin/moth}"
 
 usage() {
@@ -43,6 +44,9 @@ usage: moth-e2e.sh --config <file> [options]
   --no-isolate        Use your real \$HOME instead of a per-run one. The
                       throwaway wallet then lands in ~/.moth alongside your
                       own wallets. Off by default.
+  --quiet             Drop --verbose from the moth commands. On by default,
+                      because the sync and pre-seed decisions are logged at
+                      verbose level and nothing else reports them.
   -h, --help          This text.
 
 Environment:
@@ -59,6 +63,7 @@ while [ $# -gt 0 ]; do
     --keep-wallet) KEEP_WALLET=1; shift ;;
     --runs-dir)    RUNS_DIR="${2:?--runs-dir needs a path}"; shift 2 ;;
     --no-isolate)  NO_ISOLATE=1; shift ;;
+    --quiet)       VERBOSE=0; shift ;;
     -h|--help)     usage; exit 0 ;;
     *) printf 'unknown option: %s\n\n' "$1" >&2; usage >&2; exit 2 ;;
   esac
@@ -80,7 +85,8 @@ if [ "$MODE" = "both" ]; then
     "$0" --config "$CONFIG" --mode "$m" --runs-dir "$RUNS_DIR" \
       $([ "$RETURN_FUNDS" -eq 1 ] && echo --return-funds) \
       $([ "$KEEP_WALLET" -eq 1 ] && echo --keep-wallet) \
-      $([ "$NO_ISOLATE" -eq 1 ] && echo --no-isolate) || rc=1
+      $([ "$NO_ISOLATE" -eq 1 ] && echo --no-isolate) \
+      $([ "$VERBOSE" -eq 0 ] && echo --quiet) || rc=1
   done
   exit "$rc"
 fi
@@ -191,6 +197,12 @@ TEMP_PASS="$(node -e 'process.stdout.write(require("crypto").randomBytes(18).toS
 
 # ─── moth wrapper + network flags ────────────────────────────────────────────
 NETFLAGS=""
+# On by default. The sync narration — including every `Pre-seed:` decision, which
+# is the whole reason a first sync is fast or slow — goes through log_verbose, so
+# without this the per-step .err files are nearly empty and the one thing worth
+# reading is the one thing missing. base-command redacts seeds, mnemonics and
+# passphrases from verbose output, and the run folder is 0700 regardless.
+[ "$VERBOSE" -eq 1 ]   && NETFLAGS="$NETFLAGS --verbose"
 [ -n "$PROVER" ]       && NETFLAGS="$NETFLAGS --prover $PROVER"
 [ -n "$PROOF_SERVER" ] && NETFLAGS="$NETFLAGS --proof-server $PROOF_SERVER"
 [ -n "$INDEXER_URL" ]  && NETFLAGS="$NETFLAGS --indexer $INDEXER_URL"
@@ -459,6 +471,7 @@ finish() {
     printf '| throwaway wallet | %s |\n' "$TEMP_WALLET"
     printf '| return funds | %s |\n' "$([ "$RETURN_FUNDS" -eq 1 ] && echo yes || echo no)"
     printf '| isolated HOME | %s |\n' "$([ "$NO_ISOLATE" -eq 0 ] && echo "$RUN/home" || echo 'no — real $HOME')"
+    printf '| verbose | %s |\n' "$([ "$VERBOSE" -eq 1 ] && echo yes || echo 'no (--quiet)')"
     printf '| steps run | %s |\n' "$STEP"
     printf '| failures | %s |\n' "$FAILED"
     printf '| moth | %s |\n' "$MOTH_BIN"
