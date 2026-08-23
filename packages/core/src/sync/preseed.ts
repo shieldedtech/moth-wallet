@@ -13,7 +13,13 @@ import {createKeystore, PublicKey} from '@midnightntwrk/wallet-sdk/unshielded';
 import {setNetworkId} from '@midnight-ntwrk/midnight-js/network-id';
 import type {NetworkConfig} from '../types/network.js';
 import {startWalletSync, resolveSyncStore} from './wallet-sync.js';
-import {emptyRefHeightKey, emptyRefMnemonicKey, emptyRefStateKey, EMPTY_REF_WALLET, type SyncStateStore, type WalletPart} from './sync-store.js';
+import {cursorWitnessKey, emptyRefHeightKey, emptyRefMnemonicKey, emptyRefStateKey, EMPTY_REF_WALLET, type SyncStateStore, type WalletPart} from './sync-store.js';
+import {
+  compareWitness,
+  readEventWitness,
+  type CursorWitness,
+  type WitnessStream,
+} from './cursor-witness.js';
 import {IndexerClient} from '../network/indexer-client.js';
 import {deriveWalletKeys, type WalletKeys} from './operations.js';
 
@@ -66,6 +72,100 @@ function loadRefState(store: SyncStateStore, networkId: string, part: WalletPart
  * genesis. So a reference whose offset is 0 seeds nothing, however complete the
  * rest of the snapshot looks.
  */
+/**
+ * Which event stream a part's cursor indexes into.
+ *
+ * Only shielded and dust ride the indexer's global ledger-event numbering, and
+ * they are the two the preprod renumbering moved. Unshielded is keyed by address
+ * and its cursor is a transaction id, so it is not witnessed here.
+ */
+function witnessStreamFor(part: WalletPart): WitnessStream | null {
+  if (part === 'dust') return 'dustLedgerEvents';
+  if (part === 'shielded') return 'zswapLedgerEvents';
+  return null;
+}
+
+/**
+ * Record what the reference's cursors pointed at, so a later renumbering is
+ * detectable.
+ *
+ * Best-effort: a reference without witnesses is treated as unverifiable rather
+ * than invalid, because refusing every pre-existing reference on upgrade would
+ * force a chain walk on everyone at once. New references get witnesses, so the
+ * population converges.
+ */
+async function recordReferenceWitnesses(
+  store: SyncStateStore,
+  network: NetworkConfig,
+  states: {shielded: string; dust: string},
+  onProgress?: (msg: string) => void,
+): Promise<void> {
+  for (const part of ['shielded', 'dust'] as const) {
+    const stream = witnessStreamFor(part);
+    if (!stream) continue;
+    const id = Number(snapshotOffset(states[part]));
+    if (!Number.isFinite(id) || id <= 0) continue;
+    try {
+      const witness = await readEventWitness(network.indexerUrl, stream, id);
+      if (!witness) continue;
+      await store.put(cursorWitnessKey(network.id, EMPTY_REF_WALLET, part), JSON.stringify(witness));
+    } catch (err) {
+      onProgress?.(`Pre-seed: could not witness the ${part} cursor (${err}) — this reference will be unverifiable`);
+    }
+  }
+}
+
+/**
+ * Refuse a reference whose cursors no longer mean what they did.
+ *
+ * The failure this prevents is silent: cursors are indexer-assigned event
+ * numbers, so when the same URL serves a differently-numbered stream a stored
+ * cursor names a different event and the sync resumes at the wrong place without
+ * erroring. Preprod did exactly that — the shipped reference's dust cursor
+ * (1431375) sits 22 events beyond the state it describes under the current
+ * numbering.
+ *
+ * Returns true when the reference is safe to use. A missing witness returns true
+ * with a warning: see recordReferenceWitnesses on why upgrades are not punished.
+ */
+async function referenceCursorsStillValid(
+  store: SyncStateStore,
+  network: NetworkConfig,
+  onProgress?: (msg: string) => void,
+): Promise<boolean> {
+  for (const part of ['shielded', 'dust'] as const) {
+    const raw = await store.get(cursorWitnessKey(network.id, EMPTY_REF_WALLET, part));
+    if (!raw) {
+      onProgress?.(`Pre-seed: reference has no ${part} witness — cannot prove its cursor is still valid`);
+      continue;
+    }
+    let stored: CursorWitness;
+    try {
+      stored = JSON.parse(raw) as CursorWitness;
+    } catch {
+      continue;
+    }
+    let observed: CursorWitness | null = null;
+    try {
+      observed = await readEventWitness(network.indexerUrl, stored.stream, stored.id);
+    } catch (err) {
+      onProgress?.(`Pre-seed: could not re-check the ${part} cursor (${err}) — refusing the reference`);
+      return false;
+    }
+    const verdict = compareWitness(stored, observed);
+    if (verdict.kind === 'valid') continue;
+    onProgress?.(
+      verdict.kind === 'renumbered'
+        ? `Pre-seed: the indexer has renumbered its ${part} events — the reference's cursor now names a ` +
+          `different event (expected ${verdict.expected}, found ${verdict.actual}). Refusing it and syncing ` +
+          'from genesis, which is always correct.'
+        : `Pre-seed: cannot verify the reference's ${part} cursor (${verdict.reason}) — refusing it.`,
+    );
+    return false;
+  }
+  return true;
+}
+
 function snapshotOffset(raw: string): bigint {
   try {
     const parsed = JSON.parse(raw) as { offset?: string | number };
@@ -169,6 +269,15 @@ export async function ensureEmptyRefCache(
   const resolved = await resolveSyncStore(store);
   const warm = await loadUsableRefStates(resolved, network.id);
   if (warm) {
+    // Verified before it is handed out, not after. This reference is what every
+    // new wallet on this machine inherits, so using it across a renumbering
+    // spreads the skew instead of containing it.
+    if (!(await referenceCursorsStillValid(resolved, network, onProgress))) return null;
+    // Memoised after verification, so the check costs one subscription per
+    // process rather than one per wallet. The trade is that a renumbering that
+    // lands mid-process is not re-detected until the next start; the alternative
+    // is a network round trip on every pre-seed, which is the path this whole
+    // feature exists to keep cheap.
     refCache.set(network.id, warm);
     return warm;
   }
@@ -221,6 +330,22 @@ export async function refreshEmptyRefCache(
 ): Promise<EmptyRefStates | null> {
   // Drop the in-process memo so the refreshed state is what later callers see.
   refCache.delete(network.id);
+
+  // Refuse to resume across a renumbering. A refresh continues from the stored
+  // cursor, so doing it after the ids underneath moved would launder the skew
+  // into a reference that then looks freshly built — the worst outcome available,
+  // because it destroys the evidence. Only a genesis rebuild is correct here, so
+  // the caller is told to clear the reference rather than being quietly served a
+  // wrong one.
+  const resolvedStore = await resolveSyncStore(store);
+  const existing = await loadUsableRefStates(resolvedStore, network.id);
+  if (existing && !(await referenceCursorsStillValid(resolvedStore, network, onProgress))) {
+    onProgress?.(
+      'Pre-seed: refusing to refresh across an indexer renumbering — resuming would carry the old ' +
+        'numbering forward. Delete this network\'s reference and build again from genesis.',
+    );
+    return null;
+  }
 
   // Share an in-flight build rather than starting a second chain walk beside it.
   const inFlight = refInFlight.get(network.id);
@@ -344,6 +469,10 @@ async function buildEmptyRefCache(
       onProgress?.('Pre-seed: reference sync completed but its state carries no chain cursor');
       return null;
     }
+
+    // Record what these cursors point at now, so the next renumbering is
+    // detectable rather than silent.
+    await recordReferenceWitnesses(resolved, network, states, onProgress);
 
     onProgress?.('Pre-seed: reference wallet ready at chain tip');
     return states;
