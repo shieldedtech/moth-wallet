@@ -138,6 +138,15 @@ async function fetchStates(
   return states as {shielded: string; unshielded: string; dust: string};
 }
 
+/** Manifest witnesses in the form the store keeps them: serialized per part. */
+function serializedWitnesses(manifest: Manifest): Partial<Record<WalletPart, string>> {
+  const out: Partial<Record<WalletPart, string>> = {};
+  for (const [part, witness] of Object.entries(manifest.witnesses ?? {})) {
+    out[part as WalletPart] = JSON.stringify(witness);
+  }
+  return out;
+}
+
 export async function installBundledReference(networkId: string, store: SyncStateStore): Promise<boolean> {
   try {
     // A locally built or previously installed reference wins the LIVE slot,
@@ -156,10 +165,11 @@ export async function installBundledReference(networkId: string, store: SyncStat
       if ((await readArchiveIndex(store, networkId)).includes(manifest.height)) return false;
       const archived = await fetchStates(networkId);
       if (!archived) return false;
-      // No witnesses are written here: they are keyed to the live slot, and the
-      // verifier only reads that slot. An archived reference is therefore handed
-      // out unverified — the one place #50's renumbering check does not reach.
-      await archiveReference(store, networkId, manifest.height, archived);
+      // With the bundle's own witnesses, so the archived copy verifies like the
+      // live one. They belong to the bundle's height, which is why they are not
+      // copied from the live slot — that reference is at a different height and
+      // its cursors describe different events.
+      await archiveReference(store, networkId, manifest.height, archived, serializedWitnesses(manifest));
       return true;
     }
 
@@ -170,16 +180,14 @@ export async function installBundledReference(networkId: string, store: SyncStat
     // Witnesses before the height, for the same reason the height goes last: the
     // height is what marks the reference usable, and a reference that reads as
     // usable without its witnesses is one that skips verification.
-    //
-    // Live slot only — witnesses are keyed to EMPTY_REF_WALLET, so the archived
-    // copy written below carries none. See the note on the archive-only path.
     for (const [part, witness] of Object.entries(manifest.witnesses ?? {})) {
       await store.put(cursorWitnessKey(networkId, EMPTY_REF_WALLET, part as WalletPart), JSON.stringify(witness));
     }
     await store.put(emptyRefHeightKey(networkId), String(manifest.height));
-    // Also keep it at its own height, so a later local build overwriting the
-    // live slot does not take the bundle's coverage with it.
-    await archiveReference(store, networkId, manifest.height, states);
+    // Also keep it at its own height, witnesses included, so a later local build
+    // overwriting the live slot does not take the bundle's coverage with it — or
+    // leave the copy that remains unverifiable.
+    await archiveReference(store, networkId, manifest.height, states, serializedWitnesses(manifest));
     return true;
   } catch {
     // Never let a packaging problem stop a wallet from starting.

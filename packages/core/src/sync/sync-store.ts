@@ -67,7 +67,19 @@ export function emptyRefMnemonicKey(networkId: string): string {
  * instead of walking from genesis.
  */
 export function archivedRefStateKey(networkId: string, height: number, part: WalletPart): string {
-  return syncStateKey(networkId, `${EMPTY_REF_WALLET}@${height}`, part);
+  return syncStateKey(networkId, archivedRefSlot(height), part);
+}
+
+/**
+ * The wallet-slot name a reference archived at `height` is stored under.
+ *
+ * Named rather than inlined because two things key off it — the cached states
+ * and their cursor witnesses — and they have to agree. When they did not, an
+ * archived reference had no witnesses of its own and was handed out without the
+ * renumbering check the live reference gets.
+ */
+export function archivedRefSlot(height: number): string {
+  return `${EMPTY_REF_WALLET}@${height}`;
 }
 
 /** Heights for which an archived reference exists on this network. */
@@ -106,6 +118,16 @@ export async function archiveReference(
   networkId: string,
   height: number,
   states: {shielded: string; unshielded: string; dust: string},
+  /**
+   * Serialized `CursorWitness` per part, for the archived copy's own slot.
+   *
+   * Without these an archived reference cannot be verified, and the verifier
+   * reads witnesses by slot — so it would fall back to the live reference's
+   * witnesses, which belong to a different height and describe different
+   * cursors. Passed in rather than copied from the live slot for that reason:
+   * the caller knows which height these witnesses go with.
+   */
+  witnesses?: Partial<Record<WalletPart, string>>,
 ): Promise<void> {
   try {
     await Promise.all([
@@ -113,6 +135,14 @@ export async function archiveReference(
       store.put(archivedRefStateKey(networkId, height, 'unshielded'), states.unshielded),
       store.put(archivedRefStateKey(networkId, height, 'dust'), states.dust),
     ]);
+    // Witnesses before the index, for the same reason the index goes last: the
+    // index is what makes the archive readable, and an entry that reads as
+    // usable without its witnesses is one that skips verification.
+    for (const [part, witness] of Object.entries(witnesses ?? {})) {
+      if (witness) {
+        await store.put(cursorWitnessKey(networkId, archivedRefSlot(height), part as WalletPart), witness);
+      }
+    }
     const heights = await readArchiveIndex(store, networkId);
     if (!heights.includes(height)) heights.push(height);
     await store.put(refArchiveIndexKey(networkId), JSON.stringify(heights.sort((a, b) => b - a)));

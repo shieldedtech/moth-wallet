@@ -18,7 +18,7 @@ import {createKeystore, PublicKey} from '@midnightntwrk/wallet-sdk/unshielded';
 import {setNetworkId} from '@midnight-ntwrk/midnight-js/network-id';
 import type {NetworkConfig} from '../types/network.js';
 import {startWalletSync, resolveSyncStore} from './wallet-sync.js';
-import {archiveReference, archivedRefStateKey, cursorWitnessKey, emptyRefHeightKey, emptyRefMnemonicKey, emptyRefStateKey, readArchiveIndex, EMPTY_REF_WALLET, type SyncStateStore, type WalletPart} from './sync-store.js';
+import {archiveReference, archivedRefSlot, archivedRefStateKey, cursorWitnessKey, emptyRefHeightKey, emptyRefMnemonicKey, emptyRefStateKey, readArchiveIndex, EMPTY_REF_WALLET, type SyncStateStore, type WalletPart} from './sync-store.js';
 import {
   compareWitness,
   readEventWitness,
@@ -104,7 +104,8 @@ async function recordReferenceWitnesses(
   network: NetworkConfig,
   states: {shielded: string; dust: string},
   onProgress?: (msg: string) => void,
-): Promise<void> {
+): Promise<Partial<Record<WalletPart, string>>> {
+  const written: Partial<Record<WalletPart, string>> = {};
   for (const part of ['shielded', 'dust'] as const) {
     const stream = witnessStreamFor(part);
     if (!stream) continue;
@@ -113,11 +114,17 @@ async function recordReferenceWitnesses(
     try {
       const witness = await readEventWitness(network.indexerUrl, stream, id);
       if (!witness) continue;
-      await store.put(cursorWitnessKey(network.id, EMPTY_REF_WALLET, part), JSON.stringify(witness));
+      const serialized = JSON.stringify(witness);
+      await store.put(cursorWitnessKey(network.id, EMPTY_REF_WALLET, part), serialized);
+      // Returned so the archived copy gets the same witnesses under its own
+      // slot. Re-reading them from the indexer per archive would be a second
+      // round trip for an answer already in hand.
+      written[part] = serialized;
     } catch (err) {
       onProgress?.(`Pre-seed: could not witness the ${part} cursor (${err}) — this reference will be unverifiable`);
     }
   }
+  return written;
 }
 
 /**
@@ -136,12 +143,20 @@ async function recordReferenceWitnesses(
 async function referenceCursorsStillValid(
   store: SyncStateStore,
   network: NetworkConfig,
+  /**
+   * Which reference to check: the live slot, or an archived one's
+   * `archivedRefSlot(height)`. Archived references carry indexer-assigned
+   * cursors exactly as the live one does, so they need the same check — and
+   * before this took a slot they silently got none.
+   */
+  slot: string,
   onProgress?: (msg: string) => void,
 ): Promise<boolean> {
+  const label = slot === EMPTY_REF_WALLET ? 'reference' : `archived reference ${slot.split('@')[1]}`;
   for (const part of ['shielded', 'dust'] as const) {
-    const raw = await store.get(cursorWitnessKey(network.id, EMPTY_REF_WALLET, part));
+    const raw = await store.get(cursorWitnessKey(network.id, slot, part));
     if (!raw) {
-      onProgress?.(`Pre-seed: reference has no ${part} witness — cannot prove its cursor is still valid`);
+      onProgress?.(`Pre-seed: ${label} has no ${part} witness — cannot prove its cursor is still valid`);
       continue;
     }
     let stored: CursorWitness;
@@ -154,17 +169,17 @@ async function referenceCursorsStillValid(
     try {
       observed = await readEventWitness(network.indexerUrl, stored.stream, stored.id);
     } catch (err) {
-      onProgress?.(`Pre-seed: could not re-check the ${part} cursor (${err}) — refusing the reference`);
+      onProgress?.(`Pre-seed: could not re-check the ${label}'s ${part} cursor (${err}) — refusing it`);
       return false;
     }
     const verdict = compareWitness(stored, observed);
     if (verdict.kind === 'valid') continue;
     onProgress?.(
       verdict.kind === 'renumbered'
-        ? `Pre-seed: the indexer has renumbered its ${part} events — the reference's cursor now names a ` +
+        ? `Pre-seed: the indexer has renumbered its ${part} events — the ${label}'s cursor now names a ` +
           `different event (expected ${verdict.expected}, found ${verdict.actual}). Refusing it and syncing ` +
           'from genesis, which is always correct.'
-        : `Pre-seed: cannot verify the reference's ${part} cursor (${verdict.reason}) — refusing it.`,
+        : `Pre-seed: cannot verify the ${label}'s ${part} cursor (${verdict.reason}) — refusing it.`,
     );
     return false;
   }
@@ -296,7 +311,7 @@ export async function ensureEmptyRefCache(
     // Verified before it is handed out, not after. This reference is what every
     // new wallet on this machine inherits, so using it across a renumbering
     // spreads the skew instead of containing it.
-    if (!(await referenceCursorsStillValid(resolved, network, onProgress))) return null;
+    if (!(await referenceCursorsStillValid(resolved, network, EMPTY_REF_WALLET, onProgress))) return null;
     // Memoised after verification, so the check costs one subscription per
     // process rather than one per wallet. The trade is that a renumbering that
     // lands mid-process is not re-detected until the next start; the alternative
@@ -312,7 +327,19 @@ export async function ensureEmptyRefCache(
   // Never memoised: the choice belongs to this birthday, not to the network.
   if (birthday !== undefined) {
     const archived = await loadArchivedRefStates(resolved, network.id, birthday);
-    if (archived) return archived;
+    if (archived) {
+      // Verified against its OWN slot. Before this, an archived reference was the
+      // one path that skipped the renumbering check entirely — which is the path
+      // an older wallet takes, so the check was missing exactly where a stale
+      // cursor is most likely.
+      if (await referenceCursorsStillValid(resolved, network, archivedRefSlot(archived.height), onProgress)) {
+        return archived;
+      }
+      onProgress?.(
+        `Pre-seed: refusing the archived reference at ${archived.height} — syncing from genesis, which is always correct.`,
+      );
+      return null;
+    }
   }
 
   const inFlight = refInFlight.get(network.id);
@@ -375,7 +402,7 @@ export async function refreshEmptyRefCache(
   // wrong one.
   const resolvedStore = await resolveSyncStore(store);
   const existing = await loadUsableRefStates(resolvedStore, network.id);
-  if (existing && !(await referenceCursorsStillValid(resolvedStore, network, onProgress))) {
+  if (existing && !(await referenceCursorsStillValid(resolvedStore, network, EMPTY_REF_WALLET, onProgress))) {
     onProgress?.(
       'Pre-seed: refusing to refresh across an indexer renumbering — resuming would carry the old ' +
         'numbering forward. Delete this network\'s reference and build again from genesis.',
@@ -533,12 +560,13 @@ async function buildEmptyRefCache(
 
     // Record what these cursors point at now, so the next renumbering is
     // detectable rather than silent.
-    await recordReferenceWitnesses(resolved, network, states, onProgress);
+    const witnesses = await recordReferenceWitnesses(resolved, network, states, onProgress);
 
-    // Keep this reference at its own height. Later builds overwrite the live
-    // slot, so without the archive every past reference is lost and a wallet
-    // born before the newest build has nothing to seed from.
-    await archiveReference(resolved, network.id, states.height, states);
+    // Keep this reference at its own height, witnesses included. Later builds
+    // overwrite the live slot, so without the archive every past reference is
+    // lost and a wallet born before the newest build has nothing to seed from —
+    // and without the witnesses the archived copy could not be verified.
+    await archiveReference(resolved, network.id, states.height, states, witnesses);
 
     onProgress?.(`Pre-seed: reference wallet ready at block ${states.height}`);
     return states;
