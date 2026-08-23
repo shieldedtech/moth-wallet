@@ -1,0 +1,6 @@
+# Run folders hold the throwaway wallet's seed phrase and passphrase, an
+# isolated $HOME with keystores in it, and every command's raw output.
+# None of that belongs in the repository.
+runs/
+*.config.json
+!e2e.config.example.json

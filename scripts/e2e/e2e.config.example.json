@@ -1,0 +1,32 @@
+{
+  "network": "preprod",
+
+  "funding": {
+    "mnemonic": "PUT THE TWENTY-FOUR WORDS OF THE FUNDED WALLET HERE",
+    "passphrase": "passphrase for the keystore this run creates for it",
+    "birthdayHeight": null
+  },
+
+  "amounts": {
+    "fundUnshieldedNight": "10",
+    "fundShieldedNight": "2",
+    "returnNight": "1",
+    "batchNight": "0.5"
+  },
+
+  "token": {
+    "id": null,
+    "amount": null
+  },
+
+  "prover": "wasm",
+  "proofServerUrl": null,
+  "indexerUrl": null,
+  "nodeUrl": null,
+
+  "timeouts": {
+    "syncSeconds": 900,
+    "dustSeconds": 2400,
+    "pollSeconds": 30
+  }
+}
