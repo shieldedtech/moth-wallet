@@ -5,6 +5,15 @@ export interface Block {
   height: number;
   timestamp: number;
   protocolVersion: number;
+  /**
+   * Per-block ends of the dust commitment and generation sequences, and of the
+   * zswap one. Requested only by `getBlockCursors` — they are the closest thing
+   * the indexer exposes to "where in the event streams does this block sit",
+   * which is what building a reference at a chosen height needs.
+   */
+  dustCommitmentEndIndex?: number;
+  dustGenerationEndIndex?: number;
+  zswapEndIndex?: number;
 }
 
 export interface ContractAction {
@@ -51,6 +60,24 @@ export class IndexerClient {
       }
     `;
     const result = await this.query<{ block: Block | null }>(query, { offset: offset ?? null });
+    return result.block;
+  }
+
+  /**
+   * A block with its stream-position counters. Separate from `getBlock` so the
+   * common path keeps its small selection set — these fields are only wanted
+   * when locating a height within the dust event stream.
+   */
+  async getBlockCursors(height: number): Promise<Block | null> {
+    const query = `
+      query ($offset: BlockOffset) {
+        block(offset: $offset) {
+          hash height timestamp protocolVersion
+          dustCommitmentEndIndex dustGenerationEndIndex zswapEndIndex
+        }
+      }
+    `;
+    const result = await this.query<{ block: Block | null }>(query, { offset: { height } });
     return result.block;
   }
 

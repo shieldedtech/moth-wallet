@@ -2,6 +2,8 @@ import { Flags } from '@oclif/core';
 import { BaseCommand } from '../../base-command.js';
 import {
   archivedReferenceHeights,
+  buildDustReferenceAtHeight,
+  dustReferenceHeights,
   preseedReferenceStatus,
   refreshEmptyRefCache,
   warmEmptyRefCache,
@@ -39,6 +41,15 @@ export default class PreseedBuild extends BaseCommand {
       description: 'Minutes to allow the build before giving up',
       default: 120,
     }),
+    height: Flags.integer({
+      description:
+        'Build a DUST-ONLY reference that stops at this block instead of the current tip. ' +
+        'This is what makes an OLDER account fast: every published reference is at tip, so an ' +
+        'account whose history starts below them replays the whole dust stream. Pick a height at ' +
+        'or below the account\'s first dust generation — `moth dust status` reports it. Shielded ' +
+        'and unshielded are not included: they reach tip in seconds, and a reference claiming a ' +
+        'height it does not hold is the one shape that loses funds.',
+    }),
   };
 
   async run(): Promise<void> {
@@ -47,6 +58,60 @@ export default class PreseedBuild extends BaseCommand {
     this.verbose = flags.verbose;
 
     const network = await this.getNetworkConfig(flags.network, this.getNetworkOverrides(flags));
+
+    // --height is a different build with a different product: one part, one
+    // height, and no interaction with the live reference at tip.
+    if (flags.height !== undefined) {
+      if (flags.height <= 0) {
+        this.outputError('INVALID_INPUT', `--height must be a positive block height, got ${flags.height}`);
+        this.exit(1);
+        return;
+      }
+      if (this.outputFormat === 'text') {
+        this.log(`Building a DUST-only reference for ${network.id} at block ${flags.height}.`);
+        this.log('This walks the dust stream from genesis to that point — tens of minutes, and it resumes if interrupted.');
+      }
+      const startedAt = Date.now();
+      const built = await buildDustReferenceAtHeight(
+        network,
+        flags.height,
+        (msg) => {
+          if (this.outputFormat === 'text') this.log(`  ${msg}`);
+        },
+        undefined,
+        {
+          timeoutMs: flags.timeout * 60_000,
+          onWarmProgress: (p) => {
+            if (this.outputFormat === 'text' && p.total > 0 && p.applied % 50_000 === 0) {
+              this.log(`  ${p.applied}/${p.total} dust events`);
+            }
+          },
+        },
+      );
+      if (!built) {
+        this.outputError(
+          'WALLET_ERROR',
+          `Could not build a dust reference for ${network.id} at block ${flags.height}.`,
+          'Progress is saved — re-run to resume, or try a lower --height.',
+        );
+        this.exit(1);
+        return;
+      }
+      this.outputSuccess({
+        network: network.id,
+        built: true,
+        kind: 'dust-only',
+        referenceHeight: built.height,
+        dustCursor: built.cursor,
+        seconds: Math.round((Date.now() - startedAt) / 1000),
+        dustReferenceHeights: await dustReferenceHeights(network),
+        note:
+          `Accounts whose first dust generation is at or above ${built.height} can now seed their ` +
+          'dust from this instead of replaying the stream.',
+      });
+      return;
+    }
+
     const before = await preseedReferenceStatus(network);
 
     if (before.ready && !flags.force) {

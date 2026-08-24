@@ -152,6 +152,72 @@ export async function archiveReference(
   }
 }
 
+/**
+ * Slot for a DUST-ONLY reference built to a chosen height.
+ *
+ * Distinct from `archivedRefSlot` on purpose. A full reference claims a height
+ * for all three sub-wallets; this one claims it for dust alone, because that is
+ * the only part a build can stop at a chosen point without lying about the
+ * others — shielded and unshielded race to tip in seconds and would then contain
+ * more than the height says.
+ *
+ * It doubles as the sync wallet name, so `startWalletSync` persists the state
+ * straight into the slot the reader looks in. No copy, and an interrupted build
+ * resumes rather than restarting.
+ */
+export function dustRefSlot(height: number): string {
+  return `${EMPTY_REF_WALLET}dust@${height}`;
+}
+
+export function dustRefStateKey(networkId: string, height: number): string {
+  return syncStateKey(networkId, dustRefSlot(height), 'dust');
+}
+
+/** Heights with a dust-only reference on this network. */
+export function dustRefIndexKey(networkId: string): string {
+  return `empty-ref/${networkId}/dust-archive.json`;
+}
+
+/** Dust-only reference heights, newest first. */
+export async function readDustRefIndex(store: SyncStateStore, networkId: string): Promise<number[]> {
+  try {
+    const raw = await store.get(dustRefIndexKey(networkId));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((h): h is number => typeof h === 'number' && h > 0).sort((a, b) => b - a);
+  } catch {
+    return [];
+  }
+}
+
+/** Add a height to the dust-only index. Written last, as everywhere else here:
+ *  an indexed height whose state is missing is skipped by the reader. */
+export async function recordDustRef(store: SyncStateStore, networkId: string, height: number): Promise<void> {
+  const heights = await readDustRefIndex(store, networkId);
+  if (!heights.includes(height)) heights.push(height);
+  await store.put(dustRefIndexKey(networkId), JSON.stringify(heights.sort((a, b) => b - a)));
+}
+
+/**
+ * The newest dust-only reference at or below `floor`, with its height.
+ *
+ * `floor` is the earliest height at which the wallet could hold dust — its first
+ * generation, not its birthday. See `firstDustGenerationHeight`.
+ */
+export async function loadDustRefAtOrBelow(
+  store: SyncStateStore,
+  networkId: string,
+  floor: number,
+): Promise<{dust: string; height: number} | null> {
+  for (const height of await readDustRefIndex(store, networkId)) {
+    if (height > floor) continue;
+    const dust = await store.get(dustRefStateKey(networkId, height));
+    if (dust) return {dust, height};
+  }
+  return null;
+}
+
 /** Volatile store — used as the default outside Node when none is provided. */
 export class InMemorySyncStateStore implements SyncStateStore {
   private readonly entries = new Map<string, string>();

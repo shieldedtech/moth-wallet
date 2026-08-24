@@ -18,7 +18,8 @@ import {createKeystore, PublicKey} from '@midnightntwrk/wallet-sdk/unshielded';
 import {setNetworkId} from '@midnight-ntwrk/midnight-js/network-id';
 import type {NetworkConfig} from '../types/network.js';
 import {startWalletSync, resolveSyncStore} from './wallet-sync.js';
-import {archiveReference, archivedRefSlot, archivedRefStateKey, cursorWitnessKey, emptyRefHeightKey, emptyRefMnemonicKey, emptyRefStateKey, readArchiveIndex, EMPTY_REF_WALLET, type SyncStateStore, type WalletPart} from './sync-store.js';
+import {archiveReference, archivedRefSlot, archivedRefStateKey, cursorWitnessKey, dustRefSlot, dustRefStateKey, loadDustRefAtOrBelow, recordDustRef, emptyRefHeightKey, emptyRefMnemonicKey, emptyRefStateKey, readArchiveIndex, EMPTY_REF_WALLET, type SyncStateStore, type WalletPart} from './sync-store.js';
+import {dustCursorAtHeight} from '../network/dust-cursor.js';
 import {
   compareWitness,
   readEventWitness,
@@ -574,6 +575,186 @@ async function buildEmptyRefCache(
     onProgress?.(`Pre-seed: reference sync failed — ${err}`);
     return null;
   }
+}
+
+/**
+ * Build a DUST-ONLY reference that stops at a chosen height.
+ *
+ * The reason this exists: a reference only helps a wallet whose birthday is at
+ * or above it, and every reference we publish is built at the current tip. An
+ * account whose history starts below every published reference therefore replays
+ * the whole dust stream — 99.2% of a preprod first sync — with no way to opt out.
+ * `preseed build` could not help, because it too only builds at tip. This walks
+ * to a chosen point instead and keeps the result.
+ *
+ * Dust only, deliberately. Shielded and unshielded reach tip in seconds, so a
+ * build stopped early would hold them at a height far above the one it claims —
+ * and a reference that contains more than it claims is the one shape that loses
+ * funds. They are left out entirely rather than claimed inaccurately; walking
+ * them from genesis costs about 38s.
+ *
+ * The stop point comes from `dustCursorAtHeight`, which biases low, so the state
+ * is at or before `targetHeight` and claiming that height overstates it — the
+ * safe direction (see the note on recording the height in buildEmptyRefCache).
+ */
+export async function buildDustReferenceAtHeight(
+  network: NetworkConfig,
+  targetHeight: number,
+  onProgress?: (msg: string) => void,
+  store?: SyncStateStore,
+  opts?: {onWarmProgress?: (p: WarmProgress) => void; timeoutMs?: number},
+): Promise<{height: number; cursor: number} | null> {
+  const resolved = await resolveSyncStore(store);
+
+  const estimate = await dustCursorAtHeight(network.indexerUrl, targetHeight);
+  if (!estimate) {
+    onProgress?.(
+      `Pre-seed: cannot locate block ${targetHeight} in the dust event stream — ` +
+        'the indexer returned no counters for it, so there is no cursor to stop at.',
+    );
+    return null;
+  }
+  onProgress?.(
+    `Pre-seed: block ${targetHeight} sits near dust event ${estimate.approxCursor}; ` +
+      `stopping at ${estimate.stopAt} (${estimate.margin} events of slack, biased low on purpose)`,
+  );
+
+  // Its own slot, so this build neither reads nor advances the live reference —
+  // which is at tip, far past the target, and would otherwise be resumed from.
+  const slot = dustRefSlot(targetHeight);
+
+  const mnemonicKey = emptyRefMnemonicKey(network.id);
+  let mnemonic = (await resolved.get(mnemonicKey))?.trim();
+  if (!mnemonic) {
+    mnemonic = generateMnemonic24();
+    await resolved.put(mnemonicKey, mnemonic);
+  }
+  const seed = await mnemonicToSeed(mnemonic);
+  const seedHex = Array.from(seed).map((b: number) => b.toString(16).padStart(2, '0')).join('');
+  const referenceKeys = deriveWalletKeys(seedHex);
+  seed.fill(0);
+
+  onProgress?.(`Pre-seed: walking dust to event ${estimate.stopAt} for a reference at block ${targetHeight}...`);
+  try {
+    const synced = await startWalletSync(referenceKeys, network, onProgress, slot, undefined, undefined, {
+      syncStore: resolved,
+    });
+
+    // Stop as soon as dust crosses the target. The other parts run to tip in
+    // this same sync and are simply not kept.
+    const reached = await new Promise<boolean>((resolve) => {
+      let settled = false;
+      const finish = (ok: boolean) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        try { unsub(); } catch { /* idempotent */ }
+        resolve(ok);
+      };
+      const unsub = synced.subscribe((b) => {
+        const applied = b.subProgress.dust.applied;
+        opts?.onWarmProgress?.({applied, total: estimate.stopAt, synced: false});
+        if (applied >= estimate.stopAt) finish(true);
+        // Reaching tip below the target means the chain has fewer events than
+        // the estimate implied — take it, it is still at or below the height.
+        else if (b.synced) finish(true);
+      });
+      const timer = setTimeout(() => finish(false), opts?.timeoutMs ?? REF_BUILD_TIMEOUT_MS);
+    });
+
+    await synced.stop();
+
+    if (!reached) {
+      onProgress?.('Pre-seed: dust reference build timed out — partial progress is saved, re-run to resume');
+      return null;
+    }
+
+    const dust = await resolved.get(dustRefStateKey(network.id, targetHeight));
+    const cursor = dust ? Number(snapshotOffset(dust)) : 0;
+    if (!dust || !Number.isFinite(cursor) || cursor <= 0) {
+      onProgress?.('Pre-seed: dust reference stopped but its state carries no cursor');
+      return null;
+    }
+    if (cursor > estimate.approxCursor) {
+      // Refuse rather than archive something that may contain blocks above the
+      // height it claims. Overshooting is the only outcome here that is unsafe.
+      onProgress?.(
+        `Pre-seed: dust reference overshot (cursor ${cursor} > ${estimate.approxCursor} for block ` +
+          `${targetHeight}) — refusing to archive it. Try a lower --height.`,
+      );
+      return null;
+    }
+
+    // A witness for the archived slot, so the same renumbering check that
+    // guards every other reference guards this one too (#70).
+    const witness = await readEventWitness(network.indexerUrl, 'dustLedgerEvents', cursor).catch(() => null);
+    if (witness) {
+      await resolved.put(cursorWitnessKey(network.id, slot, 'dust'), JSON.stringify(witness));
+    } else {
+      onProgress?.('Pre-seed: could not witness the dust cursor — this reference will be unverifiable');
+    }
+
+    await recordDustRef(resolved, network.id, targetHeight);
+    onProgress?.(`Pre-seed: dust reference ready for block ${targetHeight} at event ${cursor}`);
+    return {height: targetHeight, cursor};
+  } catch (err) {
+    onProgress?.(`Pre-seed: dust reference build failed — ${err}`);
+    return null;
+  }
+}
+
+/**
+ * Build a dust cache from a dust-only reference.
+ *
+ * Same swap `preSeedNewWallet` does for the dust part, without the shielded and
+ * unshielded halves — a dust-only reference has none, by design. Returns null
+ * rather than throwing: a wallet that cannot be dust-seeded simply walks the
+ * stream, which is slow and correct.
+ */
+export function preSeedDustOnly(
+  walletKeys: WalletKeys,
+  referenceDust: string,
+  networkId: string,
+): string | null {
+  try {
+    const refDust = JSON.parse(referenceDust) as Record<string, unknown>;
+    if (refDust.state === undefined || refDust.offset === undefined) return null;
+    return JSON.stringify({
+      publicKey: {publicKey: walletKeys.dustSecretKey.publicKey.toString()},
+      state: refDust.state,
+      protocolVersion: refDust.protocolVersion,
+      networkId,
+      offset: refDust.offset,
+    });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Public wrapper over the renumbering check, for callers holding a slot name.
+ *
+ * `wallet-sync` needs to verify a dust-only reference before seeding from it
+ * (#70), and the checker itself stays private so the witness key layout does
+ * not become part of the API.
+ */
+export async function verifyReferenceSlot(
+  store: SyncStateStore,
+  network: NetworkConfig,
+  slot: string,
+  onProgress?: (msg: string) => void,
+): Promise<boolean> {
+  return referenceCursorsStillValid(store, network, slot, onProgress);
+}
+
+/** Heights for which a dust-only reference exists on this network. */
+export async function dustReferenceHeights(
+  network: NetworkConfig,
+  store?: SyncStateStore,
+): Promise<number[]> {
+  const resolved = await resolveSyncStore(store);
+  const {readDustRefIndex} = await import('./sync-store.js');
+  return readDustRefIndex(resolved, network.id);
 }
 
 /**
