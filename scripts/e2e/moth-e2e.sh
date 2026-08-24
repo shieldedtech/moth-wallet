@@ -109,7 +109,10 @@ PROVER="$(cfg .prover)"
 PROOF_SERVER="$(cfg .proofServerUrl)"
 INDEXER_URL="$(cfg .indexerUrl)"
 NODE_URL="$(cfg .nodeUrl)"
-T_SYNC="$(cfg .timeouts.syncSeconds)";   T_SYNC="${T_SYNC:-900}"
+# 90 minutes, not 15. A funding wallet whose birthday sits below every stored
+# reference replays the dust stream from genesis — measured at 78 min on preprod —
+# and the first balance read has to outlast that or the run stops before it starts.
+T_SYNC="$(cfg .timeouts.syncSeconds)";   T_SYNC="${T_SYNC:-5400}"
 T_DUST="$(cfg .timeouts.dustSeconds)";   T_DUST="${T_DUST:-2400}"
 T_POLL="$(cfg .timeouts.pollSeconds)";   T_POLL="${T_POLL:-30}"
 
@@ -393,8 +396,12 @@ read_balance() { # read_balance <wallet> <pass> <tag> → prints path to json
     # every reference scans from genesis, which is far longer than that, and an
     # unsynced snapshot reports zero balances rather than an error.
     # shellcheck disable=SC2086
+    # A polling read waits briefly and takes what it finds; the up-front reads
+    # wait for synced=true, because everything downstream is built from them.
+    local wait_ms=$((T_SYNC * 1000))
+    [ "${POLL_TIMEOUT:-0}" = "1" ] && wait_ms=$((T_POLL * 1000))
     MOTH_PASSPHRASE="$p" node "$MOTH_BIN" balance --wallet "$w" --network "$NETWORK" \
-      --output json --wait-timeout-ms "$((T_SYNC * 1000))" $NETFLAGS >"$f" 2>>"$RUN/run.log"
+      --output json --wait-timeout-ms "$wait_ms" $NETFLAGS >"$f" 2>>"$RUN/run.log"
   fi
   printf '%s' "$f"
 }
@@ -403,11 +410,18 @@ bal_field() { jq -r "$2" "$1"; }
 
 wait_for_gain() { # wait_for_gain <wallet> <pass> <jq-path> <baseline> <timeout> <label>
   local w="$1" p="$2" path="$3" base="$4" tmo="$5" label="$6"
-  local waited=0 f cur
+  local waited=0 f cur started
+  started=$SECONDS
   log "▶ waiting for $label to rise above $base (timeout ${tmo}s)"
-  while [ "$waited" -lt "$tmo" ]; do
-    sleep "$T_POLL"; waited=$((waited + T_POLL))
-    f="$(read_balance "$w" "$p" "wait-$waited")"
+  # Wall clock, not accumulated sleeps. Each poll is a full balance read, which
+  # can itself block for the whole sync timeout — so counting only the sleeps
+  # reported "still 0 after 120s" an hour into the wait, and the timeout never
+  # arrived. POLL_TIMEOUT keeps a poll cheap: this is a "has it landed yet"
+  # question, not a "sync to tip" one.
+  while [ $((SECONDS - started)) -lt "$tmo" ]; do
+    sleep "$T_POLL"
+    waited=$((SECONDS - started))
+    f="$(POLL_TIMEOUT=1 read_balance "$w" "$p" "wait-$waited")"
     cur="$(bal_field "$f" "$path")"
     [ -z "$cur" ] && cur=0
     if [ "$(bigcmp "$cur" "$base")" = "1" ]; then
@@ -415,7 +429,7 @@ wait_for_gain() { # wait_for_gain <wallet> <pass> <jq-path> <baseline> <timeout>
       record "wait:$label" 0 "$waited" "" "" 0
       return 0
     fi
-    [ $((waited % 120)) -eq 0 ] && log "  … still $cur after ${waited}s"
+    [ $((waited / 120)) -ne $(((waited - T_POLL) / 120)) ] && log "  … still $cur after ${waited}s"
   done
   log "  ✗ $label never rose above $base within ${tmo}s"
   FAILED=$((FAILED + 1)); FAIL_NAMES="$FAIL_NAMES${NL}wait:$label"
@@ -531,13 +545,26 @@ fi
 # ─── phase 1: the funding wallet ────────────────────────────────────────────
 BIRTHDAY_FLAGS="--birthday-discover"
 [ -n "$FUND_BIRTHDAY" ] && BIRTHDAY_FLAGS="--birthday-height $FUND_BIRTHDAY"
-log "▶ importing funding wallet (birthday: $BIRTHDAY_FLAGS)"
 use_pass "$FUND_WALLET" "$FUND_PASS"
-# `wallet import` reads the phrase from stdin — never a flag or an env var.
-STDIN_TEXT="$FUND_MNEMONIC"
-# shellcheck disable=SC2086
-run_step import-funding 1 -- \
-  moth wallet import --name "$FUND_WALLET" $BIRTHDAY_FLAGS --output json
+
+# With --no-isolate the store is your real ~/.moth, so the wallet may already be
+# there — from an earlier run, or from the other half of --mode both. Importing
+# over it fails with "already exists" and took the whole daemon pass down with it.
+# Reusing it is also the point of --no-isolate: the sync cache comes with it, and
+# for a wallet that cannot pre-seed that cache is an hour of DUST replay.
+if node "$MOTH_BIN" wallet list --output json 2>/dev/null \
+     | jq -e --arg n "$FUND_WALLET" 'any(.[]; .name == $n)' >/dev/null 2>&1; then
+  log "▶ funding wallet \"$FUND_WALLET\" already exists — reusing it and its sync cache"
+  record "import-funding" 0 0 "" "" 0
+  STEP=$((STEP + 1))
+else
+  log "▶ importing funding wallet (birthday: $BIRTHDAY_FLAGS)"
+  # `wallet import` reads the phrase from stdin — never a flag or an env var.
+  STDIN_TEXT="$FUND_MNEMONIC"
+  # shellcheck disable=SC2086
+  run_step import-funding 1 -- \
+    moth wallet import --name "$FUND_WALLET" $BIRTHDAY_FLAGS --output json
+fi
 
 run_step wallet-list       0 -- moth wallet list --output json
 run_step preseed-status    0 -- moth preseed status
@@ -579,17 +606,33 @@ if [ -z "$FUND_NIGHT_0" ] || [ "$FUND_NIGHT_0" = "null" ]; then
   FAILED=$((FAILED + 1)); FAIL_NAMES="$FAIL_NAMES${NL}read-funding-balance"
   finish 1
 fi
+# Fatal, not a warning. Every step after this one spends, and a transfer is
+# built against the snapshot: an unsynced dust sub-wallet means no DUST to pay
+# the fee, which surfaces 300s later as "could not balance dust" and reads like a
+# wallet problem rather than a sync that had not finished.
 if [ "$(bal_field "$BAL_FUND_BEFORE" '.synced')" != "true" ]; then
-  log "  ! funding wallet is NOT synced after ${T_SYNC}s — balances below are a partial snapshot."
-  log "    A wallet whose birthday predates every stored reference scans from genesis;"
-  log "    raise timeouts.syncSeconds, or check 'Pre-seed' lines in ~/.moth/moth.log."
+  log "  ✗ funding wallet is NOT synced after ${T_SYNC}s — this snapshot is partial and nothing can be spent from it."
+  log "    Most likely its birthday predates every stored reference, so DUST replays from genesis."
+  log "    Check: grep -E 'Pre-seed|dust [0-9]+%' $RUN/artifacts/*.err"
+  log "    Fixes: use a funding wallet whose birthday is at or above the packaged"
+  log "           reference height, raise timeouts.syncSeconds, or keep --no-isolate"
+  log "           so the sync cache survives between runs."
+  FAILED=$((FAILED + 1)); FAIL_NAMES="$FAIL_NAMES${NL}funding-wallet-not-synced"
+  finish 1
 fi
 log "  funding: unshielded=$FUND_NIGHT_0 STARS shielded=$FUND_SH_0 dust=$FUND_DUST_0 SPECK"
 
 assert "funding wallet holds unshielded NIGHT" "> 0" \
   "$([ "$(bigcmp "${FUND_NIGHT_0:-0}" 0)" = "1" ] && echo 1 || echo 0)"
-assert "funding wallet holds DUST to pay fees" "> 0" \
-  "$([ "$(bigcmp "${FUND_DUST_0:-0}" 0)" = "1" ] && echo 1 || echo 0)"
+# Also fatal: fees are paid in DUST, so with none the very first transfer fails.
+if [ "$(bigcmp "${FUND_DUST_0:-0}" 0)" != "1" ]; then
+  log "  ✗ funding wallet holds no DUST — transfers cannot be built, fees are paid in DUST."
+  log "    It is synced, so this is a registration question rather than a sync one:"
+  log "    run 'moth dust register --wallet $FUND_WALLET --network $NETWORK --wait'."
+  FAILED=$((FAILED + 1)); FAIL_NAMES="$FAIL_NAMES${NL}funding-wallet-no-dust"
+  finish 1
+fi
+log "  ✓ assert: funding wallet holds DUST to pay fees"
 
 NEED="$(night_to_stars "$AMT_UNSHIELDED")"
 if [ "$(bigcmp "${FUND_NIGHT_0:-0}" "$NEED")" = "-1" ]; then

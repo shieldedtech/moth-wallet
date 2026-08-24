@@ -25,7 +25,7 @@
   "nodeUrl": null,
 
   "timeouts": {
-    "syncSeconds": 900,
+    "syncSeconds": 5400,
     "dustSeconds": 2400,
     "pollSeconds": 30
   }

@@ -39,7 +39,18 @@ scripts/e2e/moth-e2e.sh --config ~/moth-e2e.config.json --mode daemon --return-f
 scripts/e2e/moth-e2e.sh --config ~/moth-e2e.config.json --mode both --return-funds
 ```
 
-Expect **30–60 minutes** per mode. Most of it is two unavoidable waits: the
+`timeouts.syncSeconds` defaults to 5400 (90 minutes) because a funding wallet
+whose birthday sits below every stored reference replays the dust stream from
+genesis — 78 minutes on preprod. Check what you are in for before starting:
+
+```bash
+node scripts/e2e/probe-dust-floor.mjs preprod <the wallet's dust address>
+```
+
+If it reports no reference at or below the floor, the first phase is a genesis
+walk. `--no-isolate` then pays it once instead of once per run.
+
+Expect **30–60 minutes** per mode once the funding wallet is synced. Most of it is two unavoidable waits: the
 funding wallet's first sync, and the DUST the throwaway wallet has to generate
 before it can pay for its own designation.
 
