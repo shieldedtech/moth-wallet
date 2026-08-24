@@ -51,6 +51,12 @@ A `Rejected` ADR is still valuable — it documents *why* we said no.
 
 | #    | Title                                                      | Status   | Date       |
 | ---- | ---------------------------------------------------------- | -------- | ---------- |
-| 0000 | [Template](0000-template.md)                               | n/a      | —          |
+| 0000 | [Template](0000-template.md) | n/a | — |
+| 0001 | [Deterministic per-app secret derivation](0001-deterministic-per-app-secret-derivation.md) | Accepted | 2026-07-24 |
+| 0002 | [Send-to-name (`.shielded` name resolution)](0002-send-to-name.md) | Accepted | 2026-07-24 |
+| 0003 | [Pre-seed reference wallet](0003-preseed-reference.md) | Accepted | 2026-08-07 |
+| 0004 | [Distributing pre-seed references](0004-preseed-distribution.md) | Proposed | 2026-08-10 |
+| 0005 | [Surface parity: pre-seeding, timings and DUST UX](0005-preseed-for-cli-tui.md) | Accepted | 2026-08-12 |
+| 0006 | [A birthday authorises a reference; it is not a start height](0006-birthday-authorises-a-reference.md) | Accepted | 2026-08-23 |
 
 Add a row to this table when you accept an ADR. Keep entries chronological.

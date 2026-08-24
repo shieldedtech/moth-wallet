@@ -112,6 +112,15 @@ birthday guard refuses a reference newer than the account, permanently, for that
 account. That is the guard protecting history, not a failure. Accounts made while
 waiting are throwaway.
 
+This is also why a long-lived funded wallet is the wrong instrument for measuring
+first-sync speed. Its birthday sits below every reference you hold, so it walks
+from genesis no matter what is installed, and no amount of installing changes it —
+a birthday authorises a reference rather than acting as a start height
+([ADR 0006](adr/0006-birthday-authorises-a-reference.md)).
+Benchmark with an account created **after** the reference it is meant to seed
+from, and read `earliestSeedableBirthday` from `moth preseed status` to know what
+the references you hold can actually serve.
+
 Reference for preprod, no reference available: **78.6 min**, of which 99.2% is
 dust. With a **fresh** reference: **29.3s** (11 Aug, reference 26 blocks stale).
 An older reference is slower in proportion — see the staleness figures below. The

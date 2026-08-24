@@ -389,8 +389,37 @@ Every command accepts:
 ### Account birthdays
 
 A wallet's *birthday* is the height below which it is known to have no activity.
-With one, a first sync starts from a bundled reference; without one it walks the
-chain from genesis — on preprod that is 1.4M DUST events, roughly 78 minutes.
+
+**A birthday authorises a reference; it is not a start height.** The sync can only
+begin above genesis by restoring state that was already synced to some height —
+that state is what a pre-seed reference *is*. So the fast path needs both halves,
+and the rule is:
+
+```
+reference at height H  +  birthday B  →  usable iff H <= B
+```
+
+With both, a first sync restores the reference and scans only from H to tip. With
+a birthday but no reference at or below it, there is nothing to restore and the
+sync walks the chain from genesis — on preprod that is 1.4M DUST events, roughly
+78 minutes.
+
+Two things follow that surprise people:
+
+- **A birthday alone buys nothing.** `moth preseed status` prints
+  `earliestSeedableBirthday`, the lowest birthday the references you hold can
+  serve. A birthday below that number gains nothing from them.
+- **An older account cannot use a newer bundle.** A seed first used at 1,696,806
+  gains nothing from a bundle built at 2,203,416: the bundle holds no record of
+  the blocks between, and those must still be scanned. Installing more recent
+  references does not help.
+
+Unshielded funds are found regardless of the birthday — their cursor is keyed by
+address — so a wallet holding only unshielded NIGHT can look like the birthday
+worked when it did not. DUST is where the difference shows.
+
+See [ADR 0006](docs/adr/0006-birthday-authorises-a-reference.md) for why a start
+height cannot exist.
 
 Accounts created by Moth get one automatically. **Imported accounts do not**, and
 that is deliberate: an imported seed may hold funds on any chain at any height,
