@@ -24,8 +24,10 @@ import {resolveProverConfig, type NetworkConfig} from '../types/network.js';
 import {createWalletProvingService} from '../proof/provider.js';
 import {NIGHT_TOKEN_ID, formatNight} from '../types/tokens.js';
 import {formatDustBalance} from '../wallet/balance-format.js';
-import {ensureEmptyRefCache, preSeedNewWallet} from './preseed.js';
-import {InMemorySyncStateStore, syncStateKey, type SyncStateStore, type WalletPart} from './sync-store.js';
+import {ensureEmptyRefCache, preSeedNewWallet, preSeedDustOnly, verifyReferenceSlot} from './preseed.js';
+import {firstDustGenerationHeight} from '../network/dust-floor.js';
+import {DustAddress} from '@midnightntwrk/wallet-sdk/address-format';
+import {InMemorySyncStateStore, syncStateKey, dustRefSlot, loadDustRefAtOrBelow, type SyncStateStore, type WalletPart} from './sync-store.js';
 import {dedupingShieldedBuilder, dedupingDustBuilder} from './sdk-dedup.js';
 import {overallSyncProgress, type SubWallet} from './progress.js';
 import {partsToSeed} from './preseed-parts.js';
@@ -548,6 +550,55 @@ export async function startWalletSync(
     }
   }
 
+  // --- DUST can reach further back than the birthday allows ---
+  //
+  // The birthday is the right bound for shielded: coins are found by
+  // trial-decrypting outputs, so an earlier receive can never be ruled out. It is
+  // needlessly strict for dust. DUST is non-transferable, so generation is the
+  // only way a wallet comes to hold any, and generation requires a registration —
+  // which means the wallet's first generation entry is a HARD floor, and unlike a
+  // birthday it is address-keyed and therefore provable.
+  //
+  // For a seed whose history is old but whose registration is recent, that floor
+  // sits far above the birthday, and dust — 99.2% of a preprod first sync — can
+  // seed from a reference the birthday would have refused.
+  //
+  // Runs only when dust is still unseeded after the pass above, so a full
+  // reference always wins when one applies.
+  if (!(await loadCachedState(store, name, network.id, 'dust'))) {
+    try {
+      const dustAddress = DustAddress.encodePublicKey(network.id, keys.dustSecretKey.publicKey);
+      const floor = await firstDustGenerationHeight(network, dustAddress);
+      if (floor.kind === 'unknown') {
+        onProgress?.(`Pre-seed: dust floor unknown (${floor.reason}) — keeping the birthday bound`);
+      } else {
+        const floorHeight = floor.kind === 'never' ? Number.MAX_SAFE_INTEGER : floor.height;
+        onProgress?.(
+          floor.kind === 'never'
+            ? 'Pre-seed: this wallet has never generated DUST, so any dust reference is safe for it'
+            : `Pre-seed: dust floor ${floor.height} (first generation) — above the birthday ${birthday ?? 'none'}`,
+        );
+        const dustRef = await loadDustRefAtOrBelow(store, network.id, floorHeight);
+        if (!dustRef) {
+          onProgress?.('Pre-seed: no dust reference at or below that floor — dust syncs from genesis');
+        } else if (!(await verifyReferenceSlot(store, network, dustRefSlot(dustRef.height), onProgress))) {
+          onProgress?.(`Pre-seed: refusing the dust reference at ${dustRef.height} — dust syncs from genesis`);
+        } else {
+          const seededDust = preSeedDustOnly(keys, dustRef.dust, network.id);
+          if (seededDust) {
+            await saveCachedState(store, name, network.id, 'dust', seededDust);
+            onProgress?.(
+              `Pre-seed complete — dust at block ${dustRef.height} (floor ${floorHeight === Number.MAX_SAFE_INTEGER ? 'none' : floorHeight}). ` +
+                'Dust resumes from there, not genesis.',
+            );
+          }
+        }
+      }
+    } catch (err) {
+      onProgress?.(`Pre-seed: dust floor check failed (${err}) — dust syncs from genesis`);
+    }
+  }
+
   // --- Shielded wallet: try restore from cache ---
   // Use CustomShieldedWallet with a deduping syncCapability so that
   // re-sent boundary events from the indexer don't trip the WASM tree
@@ -667,6 +718,7 @@ export async function startWalletSync(
   const subscribers: Array<(b: WalletBalances) => void> = [];
   const syncStartTime = Date.now();
   let lastProgressPct = 0;
+  const progressBaseline: ProgressBaseline = {value: null};
 
   let hasSavedCache = false;
   let lastCacheSaveTime = 0;
@@ -676,7 +728,7 @@ export async function startWalletSync(
     .subscribe({
       next: (s: FacadeState) => {
         emissionCount++;
-        const balances = extractBalancesPartial(s, syncStartTime, lastProgressPct);
+        const balances = extractBalancesPartial(s, syncStartTime, lastProgressPct, progressBaseline);
         latestBalances = balances;
         lastProgressPct = balances.syncProgress.percentage;
 
@@ -847,7 +899,25 @@ async function saveCache(
   }
 }
 
-function extractBalancesPartial(state: FacadeState, syncStartTime = 0, prevPct = 0): WalletBalances {
+/**
+ * Where a sync session started, for the ETA.
+ *
+ * A resumed sync begins part-way through — dust restores from cache constantly —
+ * and an estimate built from cumulative percentage over session elapsed reads
+ * that as an impossibly fast rate. Held per session rather than per module: the
+ * daemon and TUI sync several wallets in one process, and a shared baseline
+ * would give each of them the others' starting point.
+ */
+export interface ProgressBaseline {
+  value: {fraction: number; elapsedMs: number} | null;
+}
+
+function extractBalancesPartial(
+  state: FacadeState,
+  syncStartTime = 0,
+  prevPct = 0,
+  baseline?: ProgressBaseline,
+): WalletBalances {
   let shielded: Record<string, bigint> = {};
   let unshielded: Record<string, bigint> = {};
   let dust = 0n;
@@ -998,6 +1068,7 @@ function extractBalancesPartial(state: FacadeState, syncStartTime = 0, prevPct =
     dustSynced,
     synced,
     elapsedMs: syncStartTime > 0 ? Date.now() - syncStartTime : 0,
+    baseline: baseline?.value ?? undefined,
   });
 
   // percentage/etaSeconds already account for `synced` (see overallSyncProgress);
@@ -1070,6 +1141,13 @@ function extractBalancesPartial(state: FacadeState, syncStartTime = 0, prevPct =
     }
   } catch {
     /* dust generation info not available */
+  }
+
+  // First usable sample is the session's starting point. Captured after the
+  // fraction is known and only once, so the rate below is measured over work
+  // this session actually did.
+  if (baseline && baseline.value === null && !synced && percentage > 0 && percentage < 0.995) {
+    baseline.value = {fraction: percentage, elapsedMs: syncStartTime > 0 ? Date.now() - syncStartTime : 0};
   }
 
   const syncProgress: SyncProgress = {percentage, etaSeconds, slowest, shieldedSynced, unshieldedSynced, dustSynced};
