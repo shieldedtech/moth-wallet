@@ -198,3 +198,10 @@ export {
   type AuditDecision, type AuditLogOptions,
   type ApiKeyRecord, type ApiKeyGenerated, type ApiKeyAuthResult,
 } from './daemon/index.js';
+export { dustCursorAtHeight, DUST_CURSOR_MARGIN, type DustCursorEstimate } from './network/dust-cursor.js';
+export { buildDustReferenceAtHeight, dustReferenceHeights } from './sync/preseed.js';
+export { dustRefSlot, dustRefStateKey, readDustRefIndex, recordDustRef, loadDustRefAtOrBelow } from './sync/sync-store.js';
+export { firstDustGenerationHeight, type DustFloor } from './network/dust-floor.js';
+export { preSeedDustOnly, verifyReferenceSlot } from './sync/preseed.js';
+export { NodeSyncStateStore } from './sync/node-sync-store.js';
+export { unshieldedSplit, describeReservation, type SpendableSplit } from './wallet/spendable.js';
