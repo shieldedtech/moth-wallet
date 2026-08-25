@@ -4,6 +4,9 @@ Five branches were integrated and tested together on `feat/v.next`. They go to
 `main` as separate PRs, in a specific order, and two of the conflict resolutions
 were judgement calls you should look at rather than re-derive.
 
+Four further fixes bypass all of that and go straight to `main` — they address
+bugs already present there. They are listed first below.
+
 | | |
 |---|---|
 | Integration tip | `8a06557` |
@@ -30,6 +33,34 @@ the balance is quietly wrong.
 ---
 
 ## Merge order
+
+### First: five fixes that go straight to `main`
+
+These fix bugs present on `main` today, independently of every open PR. Their
+file sets are disjoint, they merge in any order with zero conflicts, and the
+combination builds 6/6 with 762 tests. They add no new conflicts to the queue
+below — `core/src/index.ts` was already contested between #51 and #11.
+
+| PR | branch | fixes |
+|---|---|---|
+| #74 | `fix/batch-amounts` | #66, #67 |
+| #82 | `fix/sync-progress-reporting` | #81 |
+| #83 | `fix/spendable-balance` | #72 |
+| #84 | `fix/tui-quit-race` | #80 |
+| #75 | `feat/v.next-tui-display-fix` | unbounded coin lists corrupt the TUI frame |
+
+**#75 needs retargeting before it can be merged.** It currently points at
+`feat/v.next`, so it has no route to `main` and would be lost when that branch is
+deleted. Its single commit cherry-picks onto `main` with zero conflicts (742
+tests standalone), and nothing in the feature queue touches the three files it
+changes — but the head branch is based on `v.next`, so switching the base alone
+would drag `v.next` into the diff. It needs a rebase onto `main` first. See the
+comment on that PR.
+
+Merging them first means the feature branches absorb them once, when they pull
+`main`, instead of being rebased around them later.
+
+### Then: the feature queue
 
 Order is load-bearing. The counts are measured, not estimated — each branch was
 test-merged onto the tree the previous step produces.
@@ -78,18 +109,7 @@ cannot merge before them — and should not merge long after.
 > opening the PR, or reviewers will be reading a shell script inside a pre-seed
 > fix.
 
-### 6. Batch transfer amounts — issues #66, #67 · commit `a794c27`
-
-**Needs a branch.** Stranded on `fix/cli-usability`, whose PR already merged.
-Give it a fresh branch off `main`. Independent of everything above, so it can go
-any time.
-
-```bash
-git branch fix/batch-amounts a794c27
-git push -u origin fix/batch-amounts
-```
-
-### 7. Test harness and docs — commits `2dcc6e7`, `8a06557`
+### 6. Test harness and docs — commits `2dcc6e7`, `8a06557`
 
 **Needs branches.** The end-to-end harness under `scripts/e2e/` and the
 `docs/TESTING.md` pointer to it. Both additive, neither pushed. Last, or
