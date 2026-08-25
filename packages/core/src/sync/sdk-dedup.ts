@@ -91,7 +91,14 @@ function makeDedupingApplyUpdate<S extends {progress: {appliedIndex: bigint; [k:
       // shape so downstream observers see the same "still-connected,
       // bumped highest-relevant-index" signal.
       const tail = wrapped.updates[wrapped.updates.length - 1];
-      const highestRelevantWalletIndex = BigInt(tail.maxId);
+      // Never let the target move backwards. Assigning tail.maxId outright
+      // regressed it below appliedIndex on a re-sent batch, and the surfaces
+      // then reported applied/total pairs like 567046/567016 — a wallet 30
+      // events "past" a total that had itself gone stale. The denominator was
+      // wrong, not the progress.
+      const seen = BigInt(tail.maxId);
+      const floor = state.progress.appliedIndex;
+      const highestRelevantWalletIndex = seen > floor ? seen : floor;
       return [
         updateProgress(state, {highestRelevantWalletIndex, isConnected: true}),
         {changes: [], protocolVersion: Number(state.protocolVersion)},

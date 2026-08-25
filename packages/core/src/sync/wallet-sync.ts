@@ -729,6 +729,13 @@ export async function startWalletSync(
   const syncStartTime = Date.now();
   let lastProgressPct = 0;
   const progressBaseline: ProgressBaseline = {value: null};
+  // Stall detection. A sub-wallet that stops advancing while still short of its
+  // target produces no output at all otherwise: the percentage is unchanged, so
+  // the throttled logger below stays silent and the surfaces show a spinner
+  // forever. Observed on dust at 1,447,298/1,453,699 — 6,401 events short and
+  // identical across 72 seconds, with nothing said.
+  const lastApplied: Record<string, {value: number; since: number}> = {};
+  let stallReported = false;
 
   let hasSavedCache = false;
   let lastCacheSaveTime = 0;
@@ -748,6 +755,37 @@ export async function startWalletSync(
         const etaStr = eta !== null ? formatEta(eta) : '';
         const slowest = balances.syncProgress.slowest;
         const slowestLabel = slowest ? ` (${slowest})` : '';
+
+        // Say so when a part stops moving. Reported once per session, because
+        // the point is to name the condition, not to fill the log with it.
+        if (!balances.synced && !stallReported) {
+          const now = Date.now();
+          const STALL_MS = 60_000;
+          for (const part of ['shielded', 'unshielded', 'dust'] as const) {
+            const sub = balances.subProgress[part];
+            const done = part === 'shielded' ? balances.syncProgress.shieldedSynced
+              : part === 'unshielded' ? balances.syncProgress.unshieldedSynced
+              : balances.syncProgress.dustSynced;
+            if (done || sub.total <= 0 || sub.applied >= sub.total) {
+              delete lastApplied[part];
+              continue;
+            }
+            const seen = lastApplied[part];
+            if (!seen || seen.value !== sub.applied) {
+              lastApplied[part] = {value: sub.applied, since: now};
+            } else if (now - seen.since >= STALL_MS) {
+              stallReported = true;
+              onProgress?.(
+                `Sync stalled: ${part} has not advanced past ${sub.applied}/${sub.total} for ` +
+                  `${Math.round((now - seen.since) / 1000)}s — ${sub.total - sub.applied} events short. ` +
+                  'Two causes look identical from here: no events are arriving, or events are ' +
+                  'arriving and failing to apply. Check the console for "Error while applying sync ' +
+                  'update" — a repeating one means a batch the wallet cannot accept, and clearing ' +
+                  "this account's sync cache is the way out.",
+              );
+            }
+          }
+        }
 
         if (
           emissionCount % 50 === 0 ||
