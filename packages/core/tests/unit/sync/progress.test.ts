@@ -162,3 +162,59 @@ describe('which sub-wallet is binding', () => {
     expect(Math.round(r.percentage * 100)).toBe(42);
   });
 });
+
+describe('ETA on a resumed sync', () => {
+  const at = (fraction: number, elapsedMs: number, baseline?: {fraction: number; elapsedMs: number}) =>
+    overallSyncProgress({
+      shielded: {applied: 1, total: 1},
+      unshielded: {applied: 1, total: 1},
+      dust: {applied: Math.round(fraction * 1_000_000), total: 1_000_000},
+      shieldedSynced: true, unshieldedSynced: true, dustSynced: false,
+      synced: false, elapsedMs, baseline,
+    });
+
+  // The bug, in the numbers it produced on preprod. A run that restored dust at
+  // ~65% and then ran 152s was read as "67% in 152s" — 15x the real rate — so it
+  // promised 1m15s against a true ~10m, and the estimate CLIMBED as elapsed time
+  // corrected the fiction: 2m23s by the time it reached 81%.
+  it('no longer reads resumed progress as this session\'s work', () => {
+    const baseline = {fraction: 0.65, elapsedMs: 0};
+    const early = at(0.67, 152_000, baseline);
+    const later = at(0.81, 622_000, baseline);
+    // 2 points in 152s → 33 points remaining ≈ 2500s. Nothing like 75s.
+    expect(early.etaSeconds).toBeGreaterThan(1_000);
+    // An honest estimate FALLS as the run proceeds; the broken one rose.
+    expect(later.etaSeconds!).toBeLessThan(early.etaSeconds!);
+  });
+
+  it('measures the rate over this session only', () => {
+    // 10 points in 100s → 0.1 points/s → 50 points left → 500s.
+    const eta = at(0.5, 100_000, {fraction: 0.4, elapsedMs: 0}).etaSeconds;
+    expect(eta).toBe(500);
+  });
+
+  it('accounts for a baseline captured after the clock started', () => {
+    // Baseline at 20s/40%, now 120s/60%: 20 points in 100s → 40 left → 200s.
+    expect(at(0.6, 120_000, {fraction: 0.4, elapsedMs: 20_000}).etaSeconds).toBe(200);
+  });
+
+  it('says nothing rather than guessing before there is movement to measure', () => {
+    expect(at(0.4001, 1_500, {fraction: 0.4, elapsedMs: 0}).etaSeconds).toBeNull();
+    expect(at(0.4, 60_000, {fraction: 0.4, elapsedMs: 0}).etaSeconds).toBeNull();
+  });
+
+  it('keeps the whole-run estimate when there is no baseline yet', () => {
+    // A sync that genuinely starts at zero has nothing to measure from on its
+    // first sample, so the old assumption is still the best available.
+    expect(at(0.5, 100_000).etaSeconds).toBe(100);
+  });
+
+  it('is 0 once synced, baseline or not', () => {
+    const r = overallSyncProgress({
+      shielded: {applied: 1, total: 1}, unshielded: {applied: 1, total: 1}, dust: {applied: 1, total: 1},
+      shieldedSynced: true, unshieldedSynced: true, dustSynced: true,
+      synced: true, elapsedMs: 5_000, baseline: {fraction: 0.9, elapsedMs: 0},
+    });
+    expect(r.etaSeconds).toBe(0);
+  });
+});
