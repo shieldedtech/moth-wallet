@@ -23,6 +23,7 @@ import type {TransactionResult} from '../types/transaction.js';
 import {resolveProverConfig, type NetworkConfig, resolveLedgerVersion} from '../types/network.js';
 import {createProofProvider, ensureProverReady} from '../proof/provider.js';
 import type {ContractArtifact} from './artifact-loader.js';
+import {loadProjectStack, bridgeTx} from './project-stack.js';
 import {WalletError, TimeoutError} from '../types/errors.js';
 import type {SyncedWallet} from '../sync/wallet-sync.js';
 import type {WalletKeys} from '../sync/operations.js';
@@ -212,19 +213,19 @@ export async function deployContract(options: DeployOptions): Promise<Transactio
     // Project doesn't have onchain-runtime-v3 — no patching needed
   }
 
-  let CompiledContract: any;
-  let sdkDeployContract: any;
-  try {
-    CompiledContract = projRequire('@midnight-ntwrk/compact-js').CompiledContract;
-    sdkDeployContract = projRequire('@midnight-ntwrk/midnight-js/contracts').deployContract;
-  } catch {
-    const cjs = await import('@midnight-ntwrk/compact-js');
-    const contracts = await import('@midnight-ntwrk/midnight-js/contracts');
-    CompiledContract = cjs.CompiledContract;
-    sdkDeployContract = contracts.deployContract;
-  }
+  // The project's own stack, wherever it ships one: its artifact was compiled
+  // against that generation, and its tree is the only place the generation's
+  // instances agree with one another.
+  const project = await loadProjectStack(projRoot);
+  const CompiledContract: any =
+    project.compactJs?.CompiledContract ?? (await import('@midnight-ntwrk/compact-js')).CompiledContract;
+  const sdkDeployContract: any =
+    project.contracts?.deployContract ?? (await import('@midnight-ntwrk/midnight-js/contracts')).deployContract;
 
+  // The network id is a per-tree global in midnight-js. Set it wherever the
+  // transaction is built, and in moth's tree for moth's own providers.
   setNetworkId(network.id);
+  project.networkId?.setNetworkId(network.id);
 
   // Resolve typed key bundle: prefer pre-derived walletKeys (daemon
   // path), fall back to deriving from seedHex (existing in-process
@@ -322,7 +323,7 @@ export async function deployContract(options: DeployOptions): Promise<Transactio
     getEncryptionPublicKey: () => encPublicKey,
     async balanceTx(tx: any, ttl?: Date) {
       const recipe = await (facade as any).balanceUnboundTransaction(
-        tx,
+        bridgeTx(tx, activeLedger(), 'pre-binding'),
         {shieldedSecretKeys, dustSecretKey},
         {ttl: ttl ?? new Date(Date.now() + 30 * 60_000)}
       );
@@ -332,7 +333,7 @@ export async function deployContract(options: DeployOptions): Promise<Transactio
       if (recipe.balancingTransaction) {
         signTransactionIntents(recipe.balancingTransaction, signFn, 'pre-proof');
       }
-      return (facade as any).finalizeRecipe(recipe);
+      return bridgeTx(await (facade as any).finalizeRecipe(recipe), project.ledger, 'binding');
     },
     submitTx: async (tx: any) => {
       // Refuse before submitting if the wallet's ledger does not match the
@@ -340,7 +341,7 @@ export async function deployContract(options: DeployOptions): Promise<Transactio
       // header-tag error, and Merkle sync succeeds across the fork, so without
       // this the mismatch first shows up as an unreadable failure here.
       await verifyNetworkLedger(network, {using: activeLedgerVersion() ?? resolveLedgerVersion(network)});
-      return (facade as any).submitTransaction(tx);
+      return (facade as any).submitTransaction(bridgeTx(tx, activeLedger(), 'binding'));
     },
   };
 
@@ -349,19 +350,30 @@ export async function deployContract(options: DeployOptions): Promise<Transactio
   const contractName = basename(managedDir);
   const indexerHttpUrl = network.indexerUrl;
   const indexerWsUrl = toWsUrl(indexerHttpUrl) + '/ws';
-  const zkCfgProvider = new NodeZkConfigProvider(managedDir);
+  const ZkConfigProvider = project.nodeZkConfigProvider ?? NodeZkConfigProvider;
+  const zkCfgProvider: any = new ZkConfigProvider(managedDir);
   const levelDbDir = join(homedir(), '.moth', 'level-db', network.id, encPublicKey.slice(0, 16));
 
+  const levelProvider = project.levelPrivateStateProvider ?? levelPrivateStateProvider;
+  const indexerProvider = project.indexerPublicDataProvider ?? indexerPublicDataProvider;
+
   const providers: any = {
-    privateStateProvider: (levelPrivateStateProvider as any)({
+    privateStateProvider: (levelProvider as any)({
       midnightDbName: levelDbDir,
       privateStateStoreName: contractName + '-state',
       privateStoragePasswordProvider: () => unshieldedAddr,
       accountId: unshieldedAddr,
     }),
-    publicDataProvider: indexerPublicDataProvider(indexerHttpUrl, indexerWsUrl),
+    publicDataProvider: indexerProvider(indexerHttpUrl, indexerWsUrl),
     zkConfigProvider: zkCfgProvider,
-    proofProvider: createProofProvider(prover, zkCfgProvider.asKeyMaterialProvider()),
+    // The proof provider hands the transaction to the ledger to prove, so it
+    // has to come from the tree that built it. moth's own is the fallback for
+    // projects that ship no SDK; its ZKConfigProvider seam differs, hence the
+    // key-material adapter on that path only.
+    proofProvider:
+      prover.type === 'server' && project.httpClientProofProvider
+        ? project.httpClientProofProvider(prover.url, zkCfgProvider)
+        : createProofProvider(prover, zkCfgProvider.asKeyMaterialProvider()),
     walletProvider,
     midnightProvider: walletProvider,
   };

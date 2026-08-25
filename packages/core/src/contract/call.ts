@@ -21,6 +21,7 @@ import type {SignatureKind} from '../wallet/signature-encoding.js';
 import {createKeystoreFor, sdk} from '../sdk/index.js';
 import type {WitnessProvider} from './witness-loader.js';
 import type {SyncedWallet} from '../sync/wallet-sync.js';
+import {loadProjectStack, bridgeTx} from './project-stack.js';
 
 export interface CallOptions {
   contractAddress: string;
@@ -74,7 +75,6 @@ async function callViaSDK(options: CallOptions): Promise<TransactionResult> {
     options;
   const {resolve: resolvePath, join, basename} = await import('node:path');
   const {pathToFileURL} = await import('node:url');
-  const {createRequire} = await import('node:module');
   const {existsSync} = await import('node:fs');
   const {homedir} = await import('node:os');
   const {levelPrivateStateProvider} = await import('@midnight-ntwrk/midnight-js-level-private-state-provider');
@@ -144,26 +144,24 @@ async function callViaSDK(options: CallOptions): Promise<TransactionResult> {
 
   // Resolve SDK packages from the project's node_modules
   const projRoot = projectDir?.trim() || resolvePath(artifactPath, '..', '..');
-  const projRequire = createRequire(resolvePath(projRoot, 'node_modules', '_virtual.js'));
 
-  let CompiledContract: any;
-  let findDeployedContract: any;
-  try {
-    CompiledContract = projRequire('@midnight-ntwrk/compact-js').CompiledContract;
-    // findDeployedContract instead of submitCallTx — fixes a bug where
-    // calling a contract moth did not itself deploy throws "No private
-    // state found at private state ID '<contractName>State'".
-    // submitCallTx uses an older code path that doesn't honor
-    // initialPrivateState. findDeployedContract DOES write
-    // initialPrivateState before returning a callTx handle, so the
-    // private state exists by the time the inner submitCallTx runs.
-    findDeployedContract = projRequire('@midnight-ntwrk/midnight-js/contracts').findDeployedContract;
-  } catch {
-    const cjs = await import('@midnight-ntwrk/compact-js');
-    const contracts = await import('@midnight-ntwrk/midnight-js/contracts');
-    CompiledContract = cjs.CompiledContract;
-    findDeployedContract = (contracts as any).findDeployedContract;
-  }
+  // The project's own stack, wherever it ships one — see project-stack.ts.
+  const project = await loadProjectStack(projRoot);
+  // The network id is a per-tree global in midnight-js. callCircuit already set
+  // it in moth's tree; set it in whichever tree builds the transaction too.
+  project.networkId?.setNetworkId(network.id);
+  const CompiledContract: any =
+    project.compactJs?.CompiledContract ?? (await import('@midnight-ntwrk/compact-js')).CompiledContract;
+  // findDeployedContract instead of submitCallTx — fixes a bug where
+  // calling a contract moth did not itself deploy throws "No private
+  // state found at private state ID '<contractName>State'".
+  // submitCallTx uses an older code path that doesn't honor
+  // initialPrivateState. findDeployedContract DOES write
+  // initialPrivateState before returning a callTx handle, so the
+  // private state exists by the time the inner submitCallTx runs.
+  const findDeployedContract: any =
+    project.contracts?.findDeployedContract ??
+    ((await import('@midnight-ntwrk/midnight-js/contracts')) as any).findDeployedContract;
 
   // Load the contract module
   const managedDir = artifactPath;
@@ -189,11 +187,13 @@ async function callViaSDK(options: CallOptions): Promise<TransactionResult> {
   }
 
   // Providers — same pattern as deploy.ts
-  const zkConfigProvider = new NodeZkConfigProvider(artifactPath);
+  const ZkConfigProvider = project.nodeZkConfigProvider ?? NodeZkConfigProvider;
+  const zkConfigProvider: any = new ZkConfigProvider(artifactPath);
   const midnightProvider = createMidnightProvider(network);
   const indexerHttpUrl = network.indexerUrl;
   const indexerWsUrl = indexerHttpUrl.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:') + '/ws';
-  const publicDataProvider = indexerPublicDataProvider(indexerHttpUrl, indexerWsUrl);
+  const indexerProvider = project.indexerPublicDataProvider ?? indexerPublicDataProvider;
+  const publicDataProvider = indexerProvider(indexerHttpUrl, indexerWsUrl);
 
   // Selectable prover (reconcile decision #1: keep EITHER WASM or server).
   // createProofProvider picks per resolveProverConfig(network). For server mode
@@ -204,10 +204,14 @@ async function callViaSDK(options: CallOptions): Promise<TransactionResult> {
   // NOT hit the unversioned "expected proof-preimage-versioned" failure that a
   // hand-rolled bare-preimage POST would (the fix/tui-circuit-call-proof bug):
   // the versioning happens inside ledger.prove, not in the provider.
-  const proofProvider = createProofProvider(
-    resolveProverConfig(network),
-    zkConfigProvider.asKeyMaterialProvider(),
-  );
+  // The proof provider hands the transaction to the ledger to prove, so it has
+  // to come from the tree that built it. moth's own is the fallback for
+  // projects that ship no SDK of their own.
+  const prover = resolveProverConfig(network);
+  const proofProvider =
+    prover.type === 'server' && project.httpClientProofProvider
+      ? project.httpClientProofProvider(prover.url, zkConfigProvider)
+      : createProofProvider(prover, zkConfigProvider.asKeyMaterialProvider());
 
   // Wallet provider with real transaction balancing + signing (same as deploy.ts)
   const walletProvider: any = {
@@ -215,7 +219,7 @@ async function callViaSDK(options: CallOptions): Promise<TransactionResult> {
     getEncryptionPublicKey: () => encPublicKey,
     async balanceTx(tx: any, ttl?: Date) {
       const recipe = await (facade as any).balanceUnboundTransaction(
-        tx,
+        bridgeTx(tx, activeLedger(), 'pre-binding'),
         {shieldedSecretKeys, dustSecretKey},
         {ttl: ttl ?? new Date(Date.now() + 30 * 60_000)}
       );
@@ -224,7 +228,7 @@ async function callViaSDK(options: CallOptions): Promise<TransactionResult> {
       if (recipe.balancingTransaction) {
         signTransactionIntents(recipe.balancingTransaction, signFn, 'pre-proof');
       }
-      return (facade as any).finalizeRecipe(recipe);
+      return bridgeTx(await (facade as any).finalizeRecipe(recipe), project.ledger, 'binding');
     },
     submitTx: async (tx: any) => {
       // Refuse before submitting if the wallet's ledger does not match the
@@ -232,7 +236,7 @@ async function callViaSDK(options: CallOptions): Promise<TransactionResult> {
       // header-tag error, and Merkle sync succeeds across the fork, so without
       // this the mismatch first shows up as an unreadable failure here.
       await verifyNetworkLedger(network, {using: activeLedgerVersion() ?? resolveLedgerVersion(network)});
-      return (facade as any).submitTransaction(tx);
+      return (facade as any).submitTransaction(bridgeTx(tx, activeLedger(), 'binding'));
     },
   };
 
@@ -244,7 +248,7 @@ async function callViaSDK(options: CallOptions): Promise<TransactionResult> {
     walletProvider: walletProvider as any,
     midnightProvider: walletProvider as any,
     publicDataProvider: publicDataProvider as any,
-    privateStateProvider: (levelPrivateStateProvider as any)({
+    privateStateProvider: ((project.levelPrivateStateProvider ?? levelPrivateStateProvider) as any)({
       midnightDbName: levelDbDir,
       privateStateStoreName: contractName + '-state',
       privateStoragePasswordProvider: () => unshieldedAddr,

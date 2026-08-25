@@ -42,6 +42,7 @@ const NODE_BUILTIN_ALLOWLIST = new Set([
   'contract/fungible-token.ts',
   'contract/initial-private-state.ts',
   'contract/maintenance.ts',
+  'contract/project-stack.ts',
   'contract/witness-loader.ts',
   // The daemon is a unix-socket RPC server. It cannot be anything but Node-only.
   'daemon/api-keys.ts',
