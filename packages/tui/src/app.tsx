@@ -114,6 +114,8 @@ export function App({ networkId: networkIdProp }: AppProps) {
 
   useEffect(() => {
     loadSettings(storage).then(settings => {
+      // loadSettings resolves renamed network ids on both the selection and the
+      // override keys, so nothing here has to know about them.
       const targetNetwork = networkIdProp ?? settings.lastNetwork ?? 'devnet';
       setInitialNetwork(targetNetwork);
       network.connect(targetNetwork, settings.networkOverrides?.[targetNetwork]);

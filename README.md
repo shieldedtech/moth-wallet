@@ -545,10 +545,15 @@ const prover = new ProofClient('http://localhost:6300');
 
 | Network | Node | Indexer | Proof Server |
 |---------|------|--------|--------------|
-| devnet | `ws://localhost:9944` | `http://localhost:8088` | `http://localhost:6300` |
+| devnet | `https://rpc.devnet.midnight.network` | `https://indexer.devnet.midnight.network/api/v4/graphql` | `http://localhost:6300` |
 | preview | `https://rpc.preview.midnight.network` | `https://indexer.preview.midnight.network/api/v4/graphql` | `http://localhost:6300` |
 | preprod | `https://rpc.preprod.midnight.network` | `https://indexer.preprod.midnight.network/api/v4/graphql` | `http://localhost:6300` |
-| qanet | `https://rpc.qanet.dev.midnight.network` | `https://indexer.qanet.dev.midnight.network/api/v4/graphql` | `http://localhost:6300` |
+| qanet | `https://rpc.qanet.midnight.network` | `https://indexer.qanet.midnight.network/api/v4/graphql` | `http://localhost:6300` |
+| undeployed | `ws://localhost:9944` | `http://localhost:8088/api/v4/graphql` | `http://localhost:6300` |
+
+`undeployed` is the local devnet stack — see [§2. Fund the Wallet](#2-fund-the-wallet-local-devnet-only) for bringing one up.
+
+Mainnet is deliberately absent. Moth is an unaudited reference wallet for development and testing, so it is not a network to use it on: the CLI refuses to run against mainnet, and the extension keeps it out of the picker.
 
 Default network is `devnet`. Endpoints can be overridden at multiple levels (highest precedence first):
 

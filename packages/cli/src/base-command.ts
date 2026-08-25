@@ -6,6 +6,7 @@ import {
   WalletError,
   type WalletErrorCategory,
   WalletManager,
+  canonicalNetworkId,
   DEFAULT_NETWORKS,
   type NetworkConfig,
   resolveProverConfig,
@@ -104,7 +105,10 @@ export abstract class BaseCommand extends Command {
     network: Flags.string({
       char: 'n',
       default: 'devnet',
-      description: 'Target network',
+      // Deliberately not an `options` list: endpoints are overridable, so a
+      // network this build has never heard of is a legitimate target and must
+      // not be rejected by the flag parser.
+      description: 'Target network: devnet, preview, preprod, qanet, undeployed (local stack), or a custom id',
     }),
     wallet: Flags.string({
       char: 'w',
@@ -182,6 +186,10 @@ export abstract class BaseCommand extends Command {
       nodeUrl?: string;
     },
   ): Promise<NetworkConfig> {
+    // A renamed network may still be in someone's script or shell history, so the
+    // flag value is resolved before anything reads a preset from it.
+    networkId = canonicalNetworkId(networkId);
+
     // Block mainnet usage — this is a reference wallet
     if (networkId === 'mainnet') {
       process.stderr.write(
@@ -202,7 +210,9 @@ export abstract class BaseCommand extends Command {
     const base = DEFAULT_NETWORKS[networkId] ?? {
       id: networkId,
       nodeUrl: 'ws://localhost:9944',
-      indexerUrl: 'http://localhost:8088',
+      // The GraphQL path is part of the endpoint, not decoration: the indexer
+      // client posts queries to it, and the bare origin is not a GraphQL endpoint.
+      indexerUrl: 'http://localhost:8088/api/v4/graphql',
       prover: serverProver(),
     };
 
