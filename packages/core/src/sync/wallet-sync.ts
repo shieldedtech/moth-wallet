@@ -728,7 +728,7 @@ export async function startWalletSync(
     .subscribe({
       next: (s: FacadeState) => {
         emissionCount++;
-        const balances = extractBalancesPartial(s, syncStartTime, lastProgressPct, progressBaseline);
+        const balances = extractBalancesPartial(s, syncStartTime, lastProgressPct, progressBaseline, latestBalances);
         latestBalances = balances;
         lastProgressPct = balances.syncProgress.percentage;
 
@@ -917,6 +917,16 @@ function extractBalancesPartial(
   syncStartTime = 0,
   prevPct = 0,
   baseline?: ProgressBaseline,
+  /**
+   * The last snapshot, carried forward where this emission says nothing.
+   *
+   * A facade emission is not always a complete picture: a sub-wallet's slice can
+   * be absent or throw mid-read, and treating that as "zero of everything" made
+   * the TUI alternate about once a second between the real figures and
+   * `synced · 0 / 0` with no balance. Progress does not go backwards inside a
+   * session, so the previous value is a better answer than a default.
+   */
+  previous?: WalletBalances,
 ): WalletBalances {
   let shielded: Record<string, bigint> = {};
   let unshielded: Record<string, bigint> = {};
@@ -949,16 +959,24 @@ function extractBalancesPartial(
     /* */
   }
 
+  // Coins and progress read separately: they come from different parts of the
+  // emission, and a throw in the coin loop used to skip the progress assignment
+  // below it, leaving {applied: 0, total: 0} — which `fraction()` reads as
+  // COMPLETE, so a mid-sync wallet rendered as "synced · 0 / 0".
   try {
     const sb = state.shielded?.balances;
     if (sb && typeof sb === 'object') shielded = sb as Record<string, bigint>;
-    // Per-coin breakdown
-    for (const c of state.shielded.availableCoins) {
+    for (const c of state.shielded?.availableCoins ?? []) {
       coins.shielded.available.push({value: c.coin?.value ?? 0n, type: c.coin?.type ?? ''});
     }
-    for (const c of state.shielded.pendingCoins) {
+    for (const c of state.shielded?.pendingCoins ?? []) {
       coins.shielded.pending.push({value: c.coin?.value ?? 0n, type: c.coin?.type ?? ''});
     }
+  } catch {
+    /* shielded coins not ready */
+  }
+
+  try {
     // Sub-progress — v4 SDK exposes a SyncProgress on `progress`. The abstractions package
     // defines: appliedIndex, highestRelevantWalletIndex, highestIndex, highestRelevantIndex.
     const sp = state.shielded?.progress;
@@ -980,14 +998,14 @@ function extractBalancesPartial(
     // and must not mutate the SDK's own state object.
     if (ub && typeof ub === 'object') unshielded = { ...(ub as Record<string, bigint>) };
     // Per-coin breakdown
-    for (const c of state.unshielded.availableCoins) {
+    for (const c of state.unshielded?.availableCoins ?? []) {
       coins.unshielded.available.push({
         value: c.utxo?.value ?? 0n,
         type: c.utxo?.type ?? '',
         registeredForDustGeneration: c.meta?.registeredForDustGeneration === true,
       });
     }
-    for (const c of state.unshielded.pendingCoins) {
+    for (const c of state.unshielded?.pendingCoins ?? []) {
       const value = c.utxo?.value ?? 0n;
       const type = c.utxo?.type ?? '';
       coins.unshielded.pending.push({
@@ -1025,7 +1043,7 @@ function extractBalancesPartial(
     // Dust sub-wallet synced check
     if (synced) dustSynced = true;
     // Per-coin breakdown — dust coins carry max-cap + dtime
-    for (const c of state.dust.availableCoins) {
+    for (const c of state.dust?.availableCoins ?? []) {
       coins.dust.available.push({
         generatedNow: c.generatedNow ?? 0n,
         maxCap: c.maxCap ?? 0n,
@@ -1033,7 +1051,7 @@ function extractBalancesPartial(
         dtime: c.dtime ? (c.dtime instanceof Date ? c.dtime : new Date(c.dtime)) : null,
       });
     }
-    for (const c of state.dust.pendingCoins) {
+    for (const c of state.dust?.pendingCoins ?? []) {
       coins.dust.pending.push({
         generatedNow: c.generatedNow ?? 0n,
         maxCap: c.maxCap ?? 0n,
@@ -1141,6 +1159,33 @@ function extractBalancesPartial(
     }
   } catch {
     /* dust generation info not available */
+  }
+
+  // Carry forward anything this emission did not report. Progress within a
+  // session only moves forward, so a part that reported 498,519/498,519 a second
+  // ago has not become 0/0 — the emission simply said nothing about it. Applied
+  // per part, because emissions are routinely partial in exactly this way.
+  if (previous) {
+    for (const part of ['shielded', 'unshielded', 'dust'] as const) {
+      const now = subProgress[part];
+      const before = previous.subProgress[part];
+      if (now.total === 0 && before.total > 0) subProgress[part] = before;
+      else if (now.applied === 0 && before.applied > now.applied && now.total === before.total) {
+        subProgress[part] = {applied: before.applied, total: now.total};
+      }
+    }
+    // Same reasoning for the balances themselves: an empty map here means this
+    // emission carried none, not that the wallet was emptied.
+    if (Object.keys(shielded).length === 0 && Object.keys(previous.shielded).length > 0) shielded = previous.shielded;
+    if (Object.keys(unshielded).length === 0 && Object.keys(previous.unshielded).length > 0) unshielded = previous.unshielded;
+    if (dust === 0n && previous.dust > 0n) dust = previous.dust;
+    if (coins.shielded.available.length === 0 && previous.coins.shielded.available.length > 0) coins.shielded = previous.coins.shielded;
+    if (coins.unshielded.available.length === 0 && previous.coins.unshielded.available.length > 0) coins.unshielded = previous.coins.unshielded;
+    if (coins.dust.available.length === 0 && previous.coins.dust.available.length > 0) coins.dust = previous.coins.dust;
+    // A sub-wallet that was strictly complete does not stop being complete.
+    shieldedSynced = shieldedSynced || previous.syncProgress.shieldedSynced;
+    unshieldedSynced = unshieldedSynced || previous.syncProgress.unshieldedSynced;
+    dustSynced = dustSynced || previous.syncProgress.dustSynced;
   }
 
   // First usable sample is the session's starting point. Captured after the
