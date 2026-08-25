@@ -228,8 +228,33 @@ export function App({ networkId: networkIdProp }: AppProps) {
   useEffect(() => { persistSettings(); }, [persistSettings]);
 
   useEffect(() => {
-    return () => { wallet.lockAll(); };
+    // Unmount that did not come through `quit` — Ctrl-C, a crash, the process
+    // ending. Ask the sync to stop before freeing the keys. It cannot be awaited
+    // in a cleanup, so this narrows the window rather than closing it: a batch
+    // already inside the WASM call can still find the key gone. The explicit
+    // quit path awaits properly.
+    return () => {
+      void balance.stop().catch(() => {});
+      wallet.lockAll();
+    };
   }, [wallet.lockAll]);
+
+  // Quitting frees key material, and the sync must be stopped first: lockAll()
+  // zeroes the dust secret key in WASM, and a dust batch still in flight then
+  // throws `Dust secret key was cleared` from replayEventsWithChanges — once per
+  // live facade, printed over the exiting terminal. Bounded so a sync that will
+  // not settle cannot keep the TUI open.
+  const quit = useCallback(() => {
+    void (async () => {
+      try {
+        await balance.stop();
+      } catch {
+        /* stopping is best-effort; exiting is not optional */
+      }
+      wallet.lockAll();
+      exit();
+    })();
+  }, [balance, wallet, exit]);
 
   // Onboarding handler — fired by the wizard's final step. Uses a ref so
   // route params can hold a stable callback while we still see latest state.
@@ -383,7 +408,7 @@ export function App({ networkId: networkIdProp }: AppProps) {
       return;
     }
     if (!key.meta) return;
-    if (input === 'q') { wallet.lockAll(); exit(); return; }
+    if (input === 'q') { quit(); return; }
     if (input === 'p') { setPaused(p => !p); logs.info(paused ? 'Resumed' : 'Paused'); return; }
   });
 
@@ -430,7 +455,7 @@ export function App({ networkId: networkIdProp }: AppProps) {
         coins={balance.coins}
         subProgress={balance.subProgress}
         unreadLogs={unreadLogs}
-        onQuit={() => { wallet.lockAll(); exit(); }}
+        onQuit={quit}
         onViewLogs={() => setLastLogsSeen(logs.count)}
         renderSend={(onBack) => (
           <Send wallet={walletState}
