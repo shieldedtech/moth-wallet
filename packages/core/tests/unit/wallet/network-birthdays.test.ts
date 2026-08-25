@@ -22,6 +22,9 @@ async function seedLegacyMeta(storage: MemoryStorage, meta: Record<string, unkno
     `wallets/${meta.name}.meta`,
     new TextEncoder().encode(JSON.stringify(meta)),
   );
+  // An account is its keystore; list() skips a config entry without one, so a
+  // meta-only fixture would not appear at all.
+  await storage.write(`wallets/${meta.name}.keystore`, new TextEncoder().encode('{"ciphertext":"…"}'));
   await storage.write(
     'config.json',
     new TextEncoder().encode(
