@@ -404,7 +404,17 @@ export interface WalletSyncOptions {
  *  counters: a sub-wallet with nothing to apply is complete, not stalled. */
 function subPct(sub: {applied: number; total: number}, done: boolean): string {
   if (done) return '100%';
-  return sub.total > 0 ? `${Math.round(Math.min(1, sub.applied / sub.total) * 100)}%` : '100%';
+  if (sub.total <= 0) return '100%';
+  const raw = Math.min(1, sub.applied / sub.total);
+  // Never round up to 100% while the part is not complete — the same rule
+  // overallSyncProgress applies to the total (progress.ts). Without it the two
+  // disagreed inside a single sentence: "syncing 99% (dust) — dust 100%", with
+  // the surfaces then showing a spinner beside a figure that said it was done.
+  // The remaining indices are printed because at this point the percentage has
+  // stopped being informative and the gap is what the reader needs.
+  const pct = Math.round(raw * 100);
+  if (pct >= 100) return `99%+ (${sub.applied}/${sub.total})`;
+  return `${pct}%`;
 }
 
 export async function startWalletSync(
