@@ -32,7 +32,7 @@ import type {SignatureKind} from './signature-encoding.js';
 import {createKeystoreFor} from '../sdk/index.js';
 import {DEFAULT_NETWORKS, resolveLedgerVersion} from '../types/network.js';
 
-const ALL_NETWORKS = ['mainnet', 'devnet', 'preview', 'preprod', 'qanet', 'stagenet', 'local', 'undeployed'] as const;
+const ALL_NETWORKS = ['mainnet', 'devnet', 'preview', 'preprod', 'qanet', 'stagenet', 'undeployed'] as const;
 
 export {Roles};
 

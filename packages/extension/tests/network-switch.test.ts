@@ -189,7 +189,8 @@ describe('saveNetworkConfig', () => {
 
   it('requires an unlocked wallet and a supported network', async () => {
     await expect(
-      saveNetworkConfig({ network: 'undeployed', endpoints: endpoints('undeployed'), resyncApproved: true }),
+      // `stagenet` has no preset and is absent from SUPPORTED_NETWORKS.
+      saveNetworkConfig({ network: 'stagenet', endpoints: endpoints('preview'), resyncApproved: true }),
     ).rejects.toThrow('Unsupported network');
     await fakeBrowser.storage.session.clear();
     await expect(

@@ -32,7 +32,7 @@ export const NETWORK_LABELS: Record<SupportedNetwork, string> = {
   preprod: 'Preprod',
   qanet: 'QA net',
   stagenet: 'Stagenet',
-  local: 'Local',
+  undeployed: 'Local',
 };
 
 export const NETWORK_DESCRIPTIONS: Record<SupportedNetwork, MessageKey> = {
@@ -42,7 +42,7 @@ export const NETWORK_DESCRIPTIONS: Record<SupportedNetwork, MessageKey> = {
   preprod: 'network_descPreprod',
   qanet: 'network_descQanet',
   stagenet: 'network_descStagenet',
-  local: 'network_descLocal',
+  undeployed: 'network_descUndeployed',
 };
 
 const isSupported = (id: string): id is SupportedNetwork =>

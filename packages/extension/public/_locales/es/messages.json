@@ -1502,7 +1502,7 @@
   "network_authHeaderValue": {
     "message": "Valor de la cabecera"
   },
-  "network_descLocal": {
+  "network_descUndeployed": {
     "message": "Nodo en este equipo"
   },
   "settings_preseedWarmingIncluded": {

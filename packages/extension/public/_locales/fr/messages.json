@@ -1502,7 +1502,7 @@
   "network_authHeaderValue": {
     "message": "Valeur de l’en-tête"
   },
-  "network_descLocal": {
+  "network_descUndeployed": {
     "message": "Nœud sur cette machine"
   },
   "settings_preseedWarmingIncluded": {

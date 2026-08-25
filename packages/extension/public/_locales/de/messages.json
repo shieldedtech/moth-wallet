@@ -1502,7 +1502,7 @@
   "network_authHeaderValue": {
     "message": "Header-Wert"
   },
-  "network_descLocal": {
+  "network_descUndeployed": {
     "message": "Node auf diesem Rechner"
   },
   "settings_preseedWarmingIncluded": {

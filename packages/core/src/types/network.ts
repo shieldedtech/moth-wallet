@@ -152,17 +152,15 @@ export const DEFAULT_NETWORKS: Record<string, NetworkConfig> = {
     ledgerVersion: 'v9',
     prover: serverProver(),
   },
+  // The local devnet stack. `id` is the wire network id, not just a preset key:
+  // it sets the bech32m HRP the indexer validates addresses against, so a
+  // moth-invented name here makes every address the indexer sees unparseable.
   undeployed: {
     id: 'undeployed',
-    nodeUrl: 'ws://localhost:9944',
-    indexerUrl: 'http://localhost:8088/api/v4/graphql',
-    prover: serverProver(),
-  },
-  local: {
-    id: 'local',
-    nodeUrl: 'ws://localhost:9933',
-    indexerUrl: 'http://localhost:8088/api/v4/graphql',
-    prover: serverProver(),
+    nodeUrl: 'ws://localhost:9954',
+    indexerUrl: 'http://localhost:8098/api/v4/graphql',
+    ledgerVersion: 'v9',
+    prover: serverProver('http://localhost:6310'),
   },
 };
 
@@ -171,9 +169,6 @@ export const DEFAULT_NETWORKS: Record<string, NetworkConfig> = {
  * build and submit transactions on them. Mirrors `ALL_NETWORKS` in
  * wallet/address.ts; keep the two in sync. Mainnet is first because it is the
  * default network.
- *
- * Note this is a subset of `DEFAULT_NETWORKS`: `undeployed` has a preset but the
- * wallet can't derive addresses for it, so it is not offered as a choice.
  */
 export const SUPPORTED_NETWORKS = [
   'mainnet',
@@ -182,5 +177,5 @@ export const SUPPORTED_NETWORKS = [
   'preprod',
   'qanet',
   'stagenet',
-  'local',
+  'undeployed',
 ] as const;
