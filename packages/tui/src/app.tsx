@@ -242,6 +242,17 @@ export function App({ networkId: networkIdProp }: AppProps) {
       const chosenTip = await tipFor(state.network, network.id, network.blockHeight);
 
       if (state.source === 'random') {
+        // Same rule the CLI enforces (#79): a wallet created without a tip gets
+        // no birthday, can never pre-seed, and cannot be repaired afterwards.
+        // Surfacing it as an onboarding error beats creating one silently — the
+        // wizard has nowhere to put a warning the user would actually read.
+        if (chosenTip === undefined) {
+          throw new Error(
+            `Could not read a chain tip for ${state.network}. A wallet created now would get no ` +
+              'birthday and could never pre-seed — every sync would replay the chain from genesis, ' +
+              'and a birthday cannot be added afterwards. Check the network is reachable and try again.',
+          );
+        }
         // A generated wallet cannot predate the tip of the chain it is created
         // on, so that is a sound birthday — and without one the first sync walks
         // the chain from genesis.

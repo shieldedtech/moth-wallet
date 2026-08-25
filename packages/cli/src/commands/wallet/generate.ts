@@ -9,6 +9,14 @@ export default class WalletGenerate extends BaseCommand {
   static override flags = {
     ...BaseCommand.baseFlags,
     name: Flags.string({ description: 'Wallet name (auto-generated if omitted)' }),
+    'no-birthday': Flags.boolean({
+      description:
+        'Create the wallet even though no chain tip can be read. It then gets no birthday and can ' +
+        'never pre-seed: every sync replays the whole chain, and the birthday cannot be added later ' +
+        'because it is an assertion about history made at creation. Legitimate offline, deliberate ' +
+        'otherwise.',
+      default: false,
+    }),
     'show-mnemonic': Flags.boolean({
       description: 'Include mnemonic in JSON output (use with caution)',
       default: false,
@@ -33,7 +41,23 @@ export default class WalletGenerate extends BaseCommand {
     // still created, it just syncs the slow way.
     const network = await this.getNetworkConfig(flags.network, this.getNetworkOverrides(flags));
     const tip = await chainTip(network.indexerUrl).catch(() => null);
-    if (!tip) this.warn('Could not read a chain tip — this wallet gets no birthday and will sync from genesis.');
+    // A warning was not enough. It printed above six lines of addresses, the
+    // command exited 0, and the wallet was permanently unable to pre-seed —
+    // roughly 78 minutes of DUST replay on preprod, every time its cache is
+    // cleared, with deletion the only repair (#79). Creating one is now a
+    // decision rather than a consequence of an unreachable indexer.
+    if (!tip && !flags['no-birthday']) {
+      this.outputError(
+        'WALLET_ERROR',
+        `Could not read a chain tip from ${network.indexerUrl}, so this wallet would get no birthday ` +
+          'and could never pre-seed — every sync would replay the chain from genesis, and a birthday ' +
+          'cannot be added afterwards.',
+        'Check the indexer is reachable and that no stale override is in force (`moth config list`), ' +
+          'or pass --no-birthday if you meant to create it offline.',
+      );
+      this.exit(1);
+      return;
+    }
     this.log_verbose(`Generating wallet "${name}"${tip ? ` with birthday ${tip.height}` : ''}`);
     const info = await this.walletManager.generate(name, passphrase, flags.network, tip?.height);
 
