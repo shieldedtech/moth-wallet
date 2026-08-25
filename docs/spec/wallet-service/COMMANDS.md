@@ -102,7 +102,7 @@ As of `feat/tui-daemon`'s `removeWalletSyncArtifacts` integration:
 | `~/.moth/wallets/<name>.keystore` | ✓ | Keys are unrecoverable from this point. |
 | `~/.moth/wallets/<name>.meta` | ✓ | |
 | `~/.moth/config.json` entry | ✓ | If this was the active wallet, active flips to another wallet (or `null`). |
-| `~/.moth/sync/<network>/<name>/` (recursive) | ✓ | All three `.dat` files + the directory itself. |
+| `~/.moth/sync/<network>/<name>/` (recursive) | ✓ | All three `.dat` files + the directory itself. For **every** network the wallet has been on (`meta.network` plus every key in `meta.birthdays`), not just the current one — `wallet set-network` deliberately keeps the previous network's cache for a cheap return trip, so removal has to collect them all. |
 | `~/.moth/sync/<network>/<name>.sock` | ✓ | Best-effort; ignored if already cleaned by the daemon's shutdown. |
 | `~/.moth/level-db/<network>/<encPub>/` | ✗ | Cannot be derived without the keystore (chicken-and-egg). Lingers as orphaned bytes — safe because the directory is keyed by encryption pubkey, so a re-create with the same name won't collide. |
 | `~/.moth/empty-ref/<network>/` | ✗ | Shared across all wallets on that network; surviving is correct. |
@@ -113,6 +113,8 @@ As of `feat/tui-daemon`'s `removeWalletSyncArtifacts` integration:
 - **Regenerating with the same name is now safe.** The old sync cache is removed, so the new wallet will sync from scratch (or from the empty-ref pre-seed). Pre-fix, this was a real source of confusing test failures during 2026-06-22 integration bring-up.
 - **A crashed daemon may leave a `.sock` file behind.** Run `wallet remove` (which best-effort cleans it) or just remove the file manually before re-launching the daemon.
 - **`level-db/` will accumulate orphans over many wallet generations.** Not a security issue, just disk usage. A separate `moth maintenance prune-level-db` command would address this if it becomes a real footprint problem.
+- **Removal is ordered so an interruption cannot strand the account.** The config entry goes first; the keystore, meta and sync artifacts are deleted after it, cache cleanup last and best-effort. The reverse order leaves an account listed with no keystore — unopenable by any passphrase, and with a single account, a wallet with no way back in, since onboarding only appears for an empty list. A config entry whose keystore is missing is therefore ignored: `list()` omits it and it does not reserve the name.
+- **The extension does the equivalent, and needs more than core to do it.** Its state lives in IndexedDB, not `~/.moth`, so `WalletManager` is constructed with that store (`createMothBrowser`) — without one, core resolved a volatile in-memory store in the browser and removal cleaned nothing durable, which made a re-added account resume the removed one's sync instead of pre-seeding (#90). The offscreen host also stops the sync engine before removing (a running engine flushes its state on stop, and would write it back after the delete) and clears the two keys core knows nothing about: the local submission notes and the dust-repair stamp.
 - **Audit log persists past wallet removal.** Operationally desirable (you can still answer "what did wallet X do before it was removed?") but worth noting if that's a privacy concern in a particular deployment.
 
 ### In-process operations

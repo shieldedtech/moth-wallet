@@ -103,6 +103,7 @@ import {
 import { IndexerClient } from '@shieldedtech/moth-wallet/network/indexer-client';
 import { WalletManager } from '@shieldedtech/moth-wallet/wallet/manager';
 import { IndexedDbStorageAdapter } from './adapters/idb-storage.js';
+import { IdbSyncStateStore } from './adapters/idb-sync-store.js';
 
 export interface MothBrowserConfig {
   /** Indexer GraphQL URL. Overrides the network default. */
@@ -149,7 +150,10 @@ export function createMothBrowser(config: MothBrowserConfig = {}) {
   };
 
   const storage = new IndexedDbStorageAdapter();
-  const wallets = new WalletManager(storage);
+  // The sync store is handed over so wallets.remove() can clean the sync state
+  // where the browser actually keeps it. Left out, core resolves a volatile
+  // in-memory store and removal wipes nothing durable (#90).
+  const wallets = new WalletManager(storage, new IdbSyncStateStore(storage));
   const indexer = new IndexerClient(resolvedConfig.indexerUrl);
 
   return {

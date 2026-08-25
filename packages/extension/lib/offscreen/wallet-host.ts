@@ -162,8 +162,48 @@ export async function walletImport(name: string, mnemonic: string, passphrase: s
   return getMoth(network).wallets.import(name, mnemonic, passphrase, network);
 }
 
+/**
+ * Remove an account and everything this profile keys to it.
+ *
+ * core's `remove()` deletes the keystore, the meta record and the serialized
+ * sync state — the last of those only because `createMothBrowser` now hands the
+ * manager this profile's IndexedDB sync store; without it core resolved a
+ * volatile in-memory store and the removal cleaned nothing durable. Two things
+ * it cannot do from in there, and both are why a re-added account used to
+ * resume the removed one's sync instead of starting fresh (#90):
+ *
+ *  - Stop the engine first. A running sync writes its final state when it
+ *    stops, so a removal racing that flush deletes the state and has it written
+ *    straight back — the removed account's dust cursor reappearing to the
+ *    event. `lockNow()` fires teardown without awaiting it, so that flush is
+ *    genuinely in flight by the time this runs.
+ *  - Delete the per-account keys core knows nothing about: the local submission
+ *    notes and the dust-repair stamp.
+ */
 export async function walletRemove(name: string, network: string): Promise<void> {
-  await getMoth(network).wallets.remove(name);
+  const moth = getMoth(network);
+  // `network` is the ACTIVE network, which is not necessarily the one this
+  // account is recorded against — the accounts list shows every account in the
+  // profile. Read the account's own network before the removal takes the record
+  // with it, so the per-account keys below are the ones it actually wrote.
+  const recorded = (await moth.wallets.list().catch(() => [])).find((w) => w.name === name)?.network;
+
+  // Stop this account's engine, or — when `current` is already null because a
+  // teardown cleared it before its slow stop — wait for that flush to land.
+  // Another account's sync is left running: it cannot write this account's keys.
+  if (!current || current.key === `${network}/${name}`) await syncStop();
+
+  await moth.wallets.remove(name);
+
+  // Extension-only per-account state, in the same store as the sync state.
+  // core covers the sync state on every network the account has been on; these
+  // two keys are ours, so clear them on both the recorded network and the one
+  // the removal was issued from.
+  const store = new IdbSyncStateStore();
+  for (const networkId of new Set([network, ...(recorded ? [recorded] : [])])) {
+    await store.delete(submissionsKey(networkId, name)).catch(() => {});
+    await store.delete(dustHealKey(networkId, name)).catch(() => {});
+  }
 }
 
 export async function walletSetActive(name: string, network: string): Promise<void> {

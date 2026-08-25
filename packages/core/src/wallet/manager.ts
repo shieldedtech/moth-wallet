@@ -6,6 +6,7 @@ import { encryptKeystore, decryptKeystore, keystoreNeedsUpgrade, type EncryptedK
 import { deriveAllAddressesFromSeed, deriveRawKeys, Roles } from './address.js';
 import { deriveWalletKeys, type WalletKeys } from '../sync/operations.js';
 import { removeWalletSyncArtifacts } from '../sync/wallet-sync.js';
+import type { SyncStateStore } from '../sync/sync-store.js';
 
 const CONFIG_KEY = 'config.json';
 
@@ -100,9 +101,19 @@ function birthdayFor(meta: WalletMeta, network: string): number | undefined {
 
 export class WalletManager {
   private readonly storage: StorageAdapter;
+  private readonly syncStore?: SyncStateStore;
 
-  constructor(storage: StorageAdapter) {
+  /**
+   * `syncStore` is the store this surface keeps its serialized sync state in,
+   * and is only used by `remove()` to clean it up. Optional because on node the
+   * default resolution (the fs-backed `~/.moth/sync` store) is already the
+   * right one — but in the browser it resolves to a volatile in-memory store,
+   * so a surface backed by IndexedDB MUST pass its own or removal silently
+   * cleans nothing. See `remove()`.
+   */
+  constructor(storage: StorageAdapter, syncStore?: SyncStateStore) {
     this.storage = storage;
+    this.syncStore = syncStore;
   }
 
   private async loadConfig(): Promise<WalletConfig> {
@@ -127,6 +138,36 @@ export class WalletManager {
     const data = await this.storage.read(metaKey(name));
     if (!data) return null;
     return JSON.parse(decoder.decode(data)) as WalletMeta;
+  }
+
+  /**
+   * Config entries whose keystore is actually present.
+   *
+   * The config is an index of accounts; the keystore is the account. An entry
+   * without one cannot be unlocked, renamed or exported — every operation on it
+   * fails — yet it still occupies the name and still counts towards "does this
+   * profile have any accounts?". A single such entry is a wallet with no way
+   * back in: the panel offers Unlock for a keystore that no passphrase can
+   * match, and never the "no accounts yet" screen, which needs an EMPTY list.
+   *
+   * Removal now writes the index before deleting what it points at, so this
+   * state is no longer produced. It reads through here rather than being
+   * repaired in place because profiles that already reached it are stranded, and
+   * a read that skips the entry lets them recover on their own: the account list
+   * goes empty, onboarding returns, and creating an account under the same name
+   * succeeds instead of colliding with a ghost.
+   */
+  private async presentWallets(config: WalletConfig): Promise<string[]> {
+    const present: string[] = [];
+    for (const name of config.wallets) {
+      if (await this.storage.exists(walletKey(name))) present.push(name);
+    }
+    return present;
+  }
+
+  /** Whether `name` is taken by an account that actually exists. */
+  private async nameTaken(config: WalletConfig, name: string): Promise<boolean> {
+    return config.wallets.includes(name) && (await this.storage.exists(walletKey(name)));
   }
 
   private validateName(name: string): void {
@@ -168,7 +209,7 @@ export class WalletManager {
     this.validateName(name);
     const config = await this.loadConfig();
 
-    if (config.wallets.includes(name)) {
+    if (await this.nameTaken(config, name)) {
       throw new WalletError('WALLET_ERROR', `Wallet "${name}" already exists`);
     }
 
@@ -194,7 +235,7 @@ export class WalletManager {
     };
     await this.saveMeta(meta);
 
-    config.wallets.push(name);
+    if (!config.wallets.includes(name)) config.wallets.push(name);
     if (!config.activeWallet) config.activeWallet = name;
     await this.saveConfig(config);
 
@@ -211,7 +252,7 @@ export class WalletManager {
     }
 
     const config = await this.loadConfig();
-    if (config.wallets.includes(name)) {
+    if (await this.nameTaken(config, name)) {
       throw new WalletError('WALLET_ERROR', `Wallet "${name}" already exists`);
     }
 
@@ -226,7 +267,7 @@ export class WalletManager {
     const meta: WalletMeta = { name, network, createdAt: new Date().toISOString(), address, createdHere: false };
     await this.saveMeta(meta);
 
-    config.wallets.push(name);
+    if (!config.wallets.includes(name)) config.wallets.push(name);
     if (!config.activeWallet) config.activeWallet = name;
     await this.saveConfig(config);
 
@@ -243,7 +284,7 @@ export class WalletManager {
 
     this.validateName(name);
     const config = await this.loadConfig();
-    if (config.wallets.includes(name)) {
+    if (await this.nameTaken(config, name)) {
       throw new WalletError('WALLET_ERROR', `Wallet "${name}" already exists`);
     }
 
@@ -251,7 +292,7 @@ export class WalletManager {
     const meta: WalletMeta = { name, network, createdAt: new Date().toISOString(), address, createdHere: false };
     await this.saveMeta(meta);
 
-    config.wallets.push(name);
+    if (!config.wallets.includes(name)) config.wallets.push(name);
     if (!config.activeWallet) config.activeWallet = name;
     await this.saveConfig(config);
 
@@ -432,38 +473,66 @@ export class WalletManager {
       throw new WalletError('WALLET_ERROR', `Wallet "${name}" not found`);
     }
 
-    // Read meta BEFORE deleting it so we know which network's sync
-    // artifacts to clean. A wallet records exactly one network at
-    // generation; subsequent unlocks always run on that same id.
-    let networkId: string | null = null;
+    // Read meta BEFORE deleting it so we know which networks' sync artifacts to
+    // clean. `meta.network` is where the wallet is now; `birthdays` records every
+    // network it has arrived on, and setNetwork deliberately leaves the previous
+    // network's cache in place for a cheap return trip — so a removal that only
+    // cleaned the current one would leave the earlier ones behind.
+    const networkIds = new Set<string>();
     try {
       const metaBuf = await this.storage.read(metaKey(name));
       if (metaBuf) {
         const meta = JSON.parse(new TextDecoder().decode(metaBuf)) as WalletMeta;
-        networkId = meta.network ?? null;
+        if (meta.network) networkIds.add(meta.network);
+        for (const id of Object.keys(meta.birthdays ?? {})) networkIds.add(id);
       }
     } catch {
       /* meta unreadable — proceed; cache cleanup is best-effort anyway */
     }
 
-    await this.storage.delete(walletKey(name));
-    await this.storage.delete(metaKey(name));
-
-    // Clean per-wallet sync artifacts (~/.moth/sync/<network>/<name>/
-    // and the matching .sock). Without this, regenerating a wallet
-    // under the same name would silently inherit stale sync state
-    // belonging to the prior seed — a real footgun observed during
-    // 2026-06-22 debugging. See docs/spec/wallet-service/COMMANDS.md
-    // §"Wallet lifecycle" for the full list of what remove touches.
-    if (networkId) {
-      await removeWalletSyncArtifacts(name, networkId);
-    }
-
+    // Update the index FIRST, before deleting anything it points at.
+    //
+    // The two failure modes are not symmetric. An entry left in the config whose
+    // keystore is already gone is an account the wallet lists but no passphrase
+    // can open — and when it is the only account, that is a wallet you cannot
+    // get back into, since the "no accounts yet" path never runs. An orphaned
+    // keystore with no entry is invisible, costs a few encrypted bytes, and is
+    // overwritten by the next wallet created under that name. So the index goes
+    // first and everything below it is cleanup.
     config.wallets = config.wallets.filter(w => w !== name);
     if (config.activeWallet === name) {
       config.activeWallet = config.wallets[0] ?? null;
     }
     await this.saveConfig(config);
+
+    await this.storage.delete(walletKey(name));
+    await this.storage.delete(metaKey(name));
+
+    // Clean per-wallet sync artifacts: the serialized sub-wallet state in the
+    // sync store, plus (on node) ~/.moth/sync/<network>/<name>/ and the matching
+    // .sock. Without this, regenerating a wallet under the same name would
+    // silently inherit stale sync state belonging to the prior seed — a real
+    // footgun observed during 2026-06-22 debugging. See
+    // docs/spec/wallet-service/COMMANDS.md §"Wallet lifecycle" for the full list
+    // of what remove touches.
+    //
+    // `this.syncStore` matters here: with no store the resolution falls back to
+    // the fs-backed one on node — correct for the CLI/TUI/daemon — but to a
+    // volatile in-memory store in the browser, where it cleaned nothing at all
+    // and a re-added account resumed the removed one's sync (#90).
+    //
+    // Best-effort by construction: this is the slowest part of the removal and
+    // the one reaching outside this manager, so a store that rejects must not
+    // take the removal down with it. The account is already gone from the index
+    // by this point; a cache left behind is a stale-state risk on re-create,
+    // which is bad, but a half-removed account is worse.
+    for (const networkId of networkIds) {
+      try {
+        await removeWalletSyncArtifacts(name, networkId, this.syncStore);
+      } catch {
+        /* cache cleanup is best-effort — never fail a removal over it */
+      }
+    }
   }
 
   /**
@@ -480,7 +549,7 @@ export class WalletManager {
       dust: emptyAddr, zswap: emptyAddr, metadata: emptyAddr,
     };
 
-    for (const name of config.wallets) {
+    for (const name of await this.presentWallets(config)) {
       const meta = await this.loadMeta(name);
       wallets.push({
         name,
