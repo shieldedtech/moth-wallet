@@ -27,6 +27,10 @@ describe('WalletManager.setLabel', () => {
         }),
       ),
     );
+    // The keystore is what makes an account an account: list() skips a config
+    // entry without one, since nothing can be done with it and a profile left
+    // holding only such entries could not reach onboarding.
+    await storage.write('wallets/alice.keystore', encoder.encode('{"ciphertext":"…"}'));
     return storage;
   }
 

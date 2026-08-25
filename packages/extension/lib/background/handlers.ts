@@ -107,6 +107,35 @@ export async function lockNow(): Promise<void> {
 }
 
 /**
+ * Remove an account, then lock if it was the one unlocked.
+ *
+ * The order matters and used to be the other way round. `lockNow()` starts a
+ * teardown it deliberately does not await, and teardown CLOSES the offscreen
+ * document — so the removal that followed it was racing a shutdown of the very
+ * process doing the work. An interrupted removal left the account listed with
+ * its keystore already deleted, and with one account that is a wallet nobody can
+ * open again: the panel shows Unlock rather than the "no accounts yet" screen,
+ * and no passphrase can match a keystore that is gone.
+ *
+ * So: remove first, holding the document open with an op guard for the same
+ * reason a send holds it, and lock afterwards. The session still holds key
+ * material while the removal runs, for the seconds it takes; it is cleared
+ * immediately after, and core's remove() no longer depends on finishing to
+ * leave a consistent account list either.
+ */
+export async function removeWallet(name: string): Promise<void> {
+  const { network } = await getSettings();
+  const session = await getSession();
+  beginOp();
+  try {
+    await offscreen.walletRemove(name, network);
+  } finally {
+    endOp();
+  }
+  if (session?.walletName === name) await lockNow();
+}
+
+/**
  * Auto-lock tick, invoked by the alarm. Locks the wallet once the configured
  * inactivity window has elapsed. Skips demo mode and defers whenever a
  * transaction op or pending approval is in flight — locking drops the seed and
@@ -345,12 +374,7 @@ export function registerHandlers(): void {
     });
   });
 
-  onMessage('walletRemove', async ({ data }) => {
-    const { network } = await getSettings();
-    const session = await getSession();
-    if (session?.walletName === data.name) await lockNow();
-    await offscreen.walletRemove(data.name, network);
-  });
+  onMessage('walletRemove', ({ data }) => removeWallet(data.name));
 
   onMessage('walletSetActive', async ({ data }) => {
     const { network } = await getSettings();
