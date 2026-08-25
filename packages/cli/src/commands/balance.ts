@@ -10,6 +10,7 @@ import {Flags} from '@oclif/core';
 import {BaseCommand} from '../base-command.js';
 import {getPassphrase} from '../adapters/passphrase.js';
 import {
+  unshieldedSplit,
   startWalletSync,
   NIGHT_TOKEN_ID,
   NIGHT_DENOMINATION,
@@ -28,6 +29,14 @@ interface BalanceResult {
       readonly shielded: string; // raw STARS
       readonly total: string; // raw STARS
       readonly totalDecimal: string; // major units, formatted
+      /**
+       * What a transfer can actually use. The figures above count coins
+       * reserved by transactions in flight, because dropping them would flash
+       * the balance to zero mid-send — but the SDK spends from available coins
+       * alone, so a wallet can report a balance it cannot spend (#72).
+       */
+      readonly unshieldedAvailable: string; // raw STARS
+      readonly unshieldedReserved: string; // raw STARS
     };
     readonly dust: string; // raw SPECK
     readonly otherTokens: ReadonlyArray<{
@@ -98,6 +107,8 @@ export default class Balance extends BaseCommand {
         otherTokens.push({tokenId, type: 'shielded', amount: amount.toString()});
       }
 
+      const split = unshieldedSplit(b.coins, NIGHT_TOKEN_ID);
+
       const result: BalanceResult = {
         wallet: walletName,
         network: network.id,
@@ -108,6 +119,8 @@ export default class Balance extends BaseCommand {
             shielded: shNight.toString(),
             total: totalNight.toString(),
             totalDecimal: formatBalance(totalNight, NIGHT_DENOMINATION),
+            unshieldedAvailable: split.available.toString(),
+            unshieldedReserved: split.reserved.toString(),
           },
           dust: b.dust.toString(),
           otherTokens,
@@ -125,6 +138,12 @@ export default class Balance extends BaseCommand {
       this.log('');
       this.log('NIGHT:');
       this.log(`  unshielded: ${formatBalance(unshNight, NIGHT_DENOMINATION)}  (${unshNight.toString()} STARS)`);
+      // Only when it matters. On a wallet with nothing reserved this line is
+      // noise; on one that cannot spend what it shows, it is the whole story.
+      if (split.reserved > 0n) {
+        this.log(`    available:  ${formatBalance(split.available, NIGHT_DENOMINATION)}  ← what a transfer can use`);
+        this.log(`    reserved:   ${formatBalance(split.reserved, NIGHT_DENOMINATION)}  (a transaction in flight holds these)`);
+      }
       this.log(`  shielded:   ${formatBalance(shNight, NIGHT_DENOMINATION)}  (${shNight.toString()} STARS)`);
       this.log(`  total:      ${formatBalance(totalNight, NIGHT_DENOMINATION)}  (${totalNight.toString()} STARS)`);
       this.log('');

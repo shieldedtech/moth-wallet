@@ -26,6 +26,18 @@ export interface OverallProgressInput {
   synced: boolean;
   /** Time since this sync started, for the ETA. 0 disables the estimate. */
   elapsedMs: number;
+  /**
+   * Where this session actually began: the fraction already complete when it
+   * started, and the elapsed reading at that moment.
+   *
+   * Without it the ETA assumes the sync began at 0% when the process began,
+   * which is false for every resumed sync — and dust resumes constantly. A run
+   * that restored a cache at 65% and then ran for 152s was read as "67% in 152s",
+   * a rate 15x too fast, so the estimate came out 4-5x short and CLIMBED as
+   * elapsed time slowly corrected the fiction. Measured on preprod: 1m15s
+   * predicted at 67%, 2m23s at 81%, against a true ~10m.
+   */
+  baseline?: {readonly fraction: number; readonly elapsedMs: number};
 }
 
 /**
@@ -80,8 +92,23 @@ export function overallSyncProgress(input: OverallProgressInput): {
 
   // ETA against the same fraction, so it reflects whichever sub-wallet is behind
   // rather than one that finished a minute in.
+  //
+  // Rate comes from progress made THIS session, not from cumulative percentage
+  // over session elapsed — see the note on `baseline`. Both forms are kept
+  // because a sync that genuinely starts at zero has no baseline to measure
+  // from until its second sample.
   let etaSeconds: number | null = null;
-  if (input.elapsedMs > 0 && percentage > 0.01) {
+  const b = input.baseline;
+  if (b && input.elapsedMs > b.elapsedMs && percentage > b.fraction) {
+    // Enough movement to divide by. Below that the rate is noise and a number
+    // derived from it is worse than admitting the estimate is not ready.
+    const advanced = percentage - b.fraction;
+    const overMs = input.elapsedMs - b.elapsedMs;
+    if (advanced >= 0.002 && overMs >= 1_000) {
+      const remaining = Math.max(0, 1 - percentage);
+      etaSeconds = Math.max(0, Math.round((remaining * overMs) / advanced / 1000));
+    }
+  } else if (!b && input.elapsedMs > 0 && percentage > 0.01) {
     const totalEstMs = input.elapsedMs / percentage;
     etaSeconds = Math.max(0, Math.round((totalEstMs - input.elapsedMs) / 1000));
   }
