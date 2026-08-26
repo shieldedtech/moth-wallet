@@ -255,14 +255,21 @@ export async function sendTokensWithKeys(
   return submitFinalizedTransaction(facade, finalized);
 }
 
+/** Input stage of a dApp-supplied transaction handed to {@link balanceTransaction}. */
+export type BalanceTransactionStage = 'sealed' | 'unsealed' | 'unproven';
+
 /**
  * Balance a dApp-supplied transaction (connector `balanceSealedTransaction` /
- * `balanceUnsealedTransaction`): pay fees and add wallet inputs/outputs to
- * remove imbalances, then prove + bind into a submit-ready FinalizedTransaction.
+ * `balanceUnsealedTransaction`, plus the unproven variant): pay fees and add
+ * wallet inputs/outputs to remove imbalances, then prove + bind into a
+ * submit-ready FinalizedTransaction.
  *
- * `sealed` selects the input stage:
- * - sealed   → Transaction<SignatureEnabled, Proof, Binding>    (FinalizedTransaction)
- * - unsealed → Transaction<SignatureEnabled, Proof, PreBinding> (UnboundTransaction)
+ * `stage` selects the input stage:
+ * - sealed   → Transaction<SignatureEnabled, Proof, Binding>       (FinalizedTransaction)
+ * - unsealed → Transaction<SignatureEnabled, Proof, PreBinding>    (UnboundTransaction)
+ * - unproven → Transaction<SignatureEnabled, PreProof, PreBinding> (UnprovenTransaction) —
+ *   the common dApp shape: dApps cannot prove, so the wallet's finalize
+ *   step generates the proofs via its proof server.
  *
  * The prove/finalize tail is the same as {@link buildTransferTransaction}.
  */
@@ -271,7 +278,7 @@ export async function balanceTransaction(
   keys: WalletKeys,
   networkId: string,
   txBytes: Uint8Array,
-  sealed: boolean,
+  stage: BalanceTransactionStage,
   onProgress?: (stage: TxStage) => void
 ): Promise<FinalizedTransaction> {
   setNetworkId(networkId);
@@ -280,27 +287,39 @@ export async function balanceTransaction(
   const ttl = new Date(Date.now() + 30 * 60_000);
 
   onProgress?.('building');
-  const recipe = sealed
-    ? await facade.balanceFinalizedTransaction(
-        ledger.Transaction.deserialize<ledger.SignatureEnabled, ledger.Proof, ledger.Binding>(
-          'signature',
-          'proof',
-          'binding',
-          txBytes
-        ),
-        secretKeys,
-        {ttl}
-      )
-    : await facade.balanceUnboundTransaction(
-        ledger.Transaction.deserialize<ledger.SignatureEnabled, ledger.Proof, ledger.PreBinding>(
-          'signature',
-          'proof',
-          'pre-binding',
-          txBytes
-        ),
-        secretKeys,
-        {ttl}
-      );
+  const recipe =
+    stage === 'sealed'
+      ? await facade.balanceFinalizedTransaction(
+          ledger.Transaction.deserialize<ledger.SignatureEnabled, ledger.Proof, ledger.Binding>(
+            'signature',
+            'proof',
+            'binding',
+            txBytes
+          ),
+          secretKeys,
+          {ttl}
+        )
+      : stage === 'unsealed'
+        ? await facade.balanceUnboundTransaction(
+            ledger.Transaction.deserialize<ledger.SignatureEnabled, ledger.Proof, ledger.PreBinding>(
+              'signature',
+              'proof',
+              'pre-binding',
+              txBytes
+            ),
+            secretKeys,
+            {ttl}
+          )
+        : await facade.balanceUnprovenTransaction(
+            ledger.Transaction.deserialize<ledger.SignatureEnabled, ledger.PreProof, ledger.PreBinding>(
+              'signature',
+              'pre-proof',
+              'pre-binding',
+              txBytes
+            ),
+            secretKeys,
+            {ttl}
+          );
 
   onProgress?.('proving');
   const signed = await facade.signRecipe(recipe, (payload: Uint8Array) => ks.signData(payload));

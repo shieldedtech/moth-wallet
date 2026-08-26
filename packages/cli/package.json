@@ -31,11 +31,13 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@oclif/core": "^4.2.0",
     "@shieldedtech/moth-tui": "^0.12.1",
     "@shieldedtech/moth-wallet": "^0.12.1",
     "dotenv": "17.4.2",
-    "ink": "^7.0.1"
+    "ink": "^7.0.1",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/node": "^25.6.0",

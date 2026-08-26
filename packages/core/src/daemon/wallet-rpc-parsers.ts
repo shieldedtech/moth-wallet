@@ -10,6 +10,7 @@
 
 import {DaemonProtocolError} from './protocol.js';
 import type {
+  DaemonBalanceTransactionParams,
   DaemonCallCircuitParams,
   DaemonDeployContractParams,
   DaemonDustDeregisterParams,
@@ -78,6 +79,32 @@ export function parseSubmitTransactionParams(raw: unknown): DaemonSubmitTransact
   const summary = typeof p.summary === 'string' ? p.summary : undefined;
   const details = parseOptionalStringArray(p.details, 'submitTransaction.details');
   return {hex: p.hex, summary, details};
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// balanceTransaction
+// ─────────────────────────────────────────────────────────────────────
+
+export function parseBalanceTransactionParams(raw: unknown): DaemonBalanceTransactionParams {
+  if (!raw || typeof raw !== 'object') {
+    throw new DaemonProtocolError('INVALID_PARAMS', 'balanceTransaction params must be an object');
+  }
+  const p = raw as Record<string, unknown>;
+  if (typeof p.hex !== 'string' || p.hex.length === 0) {
+    throw new DaemonProtocolError('INVALID_PARAMS', 'balanceTransaction.hex must be a non-empty hex string');
+  }
+  if (!/^[0-9a-fA-F]*$/.test(p.hex) || p.hex.length % 2 !== 0) {
+    throw new DaemonProtocolError('INVALID_PARAMS', 'balanceTransaction.hex must be even-length hex');
+  }
+  if (p.stage !== 'sealed' && p.stage !== 'unsealed' && p.stage !== 'unproven') {
+    throw new DaemonProtocolError('INVALID_PARAMS', "balanceTransaction.stage must be 'sealed', 'unsealed', or 'unproven'");
+  }
+  if (p.submit !== undefined && typeof p.submit !== 'boolean') {
+    throw new DaemonProtocolError('INVALID_PARAMS', 'balanceTransaction.submit must be a boolean when present');
+  }
+  const summary = typeof p.summary === 'string' ? p.summary : undefined;
+  const details = parseOptionalStringArray(p.details, 'balanceTransaction.details');
+  return {hex: p.hex, stage: p.stage, submit: p.submit, summary, details};
 }
 
 // ─────────────────────────────────────────────────────────────────────

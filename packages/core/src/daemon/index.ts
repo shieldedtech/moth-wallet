@@ -40,6 +40,7 @@ export type {
   AuditLogOptions,
 } from './audit-log.js';
 export {
+  parseBalanceTransactionParams,
   parseSubmitTransactionParams,
   parseTransferTokensParams,
   parseCallCircuitParams,
@@ -53,6 +54,7 @@ export {
 } from './wallet-rpc-parsers.js';
 export type {
   DaemonGetStateResult,
+  DaemonBalanceTransactionParams, DaemonBalanceTransactionResult,
   DaemonSubmitTransactionParams, DaemonSubmitTransactionResult,
   DaemonTransferTokensParams, DaemonTransferTokensResult,
   DaemonCallCircuitParams, DaemonCallCircuitResult,
