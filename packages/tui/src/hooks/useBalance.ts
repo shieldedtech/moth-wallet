@@ -158,5 +158,28 @@ export function useBalance(
 
   const getFacade = useCallback(() => syncRef.current?.facade ?? null, []);
 
-  return { ...state, refresh, getFacade };
+  /**
+   * Stop syncing and wait for it, before anything frees the keys.
+   *
+   * Quitting called `lockAll()` and `exit()` immediately, which zeroed the dust
+   * secret key in WASM while the dust sync was still mid-batch. The next
+   * `replayEventsWithChanges` then threw `Dust secret key was cleared`, once per
+   * live facade, over the top of the exiting terminal.
+   *
+   * Bounded, because quitting must not hang on a sync that will not settle: after
+   * the deadline it gives up and lets the caller proceed. A key freed under a
+   * still-running sync is noisy; a TUI that will not close is worse.
+   */
+  const stop = useCallback(async (timeoutMs = 3_000): Promise<void> => {
+    if (unsubRef.current) { unsubRef.current(); unsubRef.current = null; }
+    const synced = syncRef.current;
+    syncRef.current = null;
+    if (!synced) return;
+    await Promise.race([
+      synced.stop().catch(() => {}),
+      new Promise<void>((resolve) => setTimeout(resolve, timeoutMs).unref?.()),
+    ]);
+  }, []);
+
+  return { ...state, refresh, getFacade, stop };
 }

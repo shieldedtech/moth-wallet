@@ -6,6 +6,7 @@ import { encryptKeystore, decryptKeystore, keystoreNeedsUpgrade, type EncryptedK
 import { deriveAllAddressesFromSeed, deriveRawKeys, Roles } from './address.js';
 import { deriveWalletKeys, type WalletKeys } from '../sync/operations.js';
 import { removeWalletSyncArtifacts } from '../sync/wallet-sync.js';
+import { canonicalNetworkId } from '../types/network.js';
 
 const CONFIG_KEY = 'config.json';
 
@@ -92,6 +93,55 @@ interface WalletMeta {
  * was written, which is `meta.network` — it was discarded on any switch, so a
  * stored one cannot refer to anywhere else.
  */
+/**
+ * Re-key per-network birthdays onto the ids in use today.
+ *
+ * Colliding keys keep the LOWER height. Both `local` and `undeployed` were
+ * offered at once, so a wallet can hold a birthday under each — created on one
+ * name, switched to the other — and letting insertion order decide would pick
+ * either. Lower is the safe direction: a birthday below the wallet's true
+ * first-existence height only costs scanning, while one above it lets the
+ * pre-seed guard (`reference.height <= birthday`) accept a reference newer than
+ * the wallet's own history, skipping transactions it needs to see.
+ */
+function canonicalBirthdays(birthdays: Record<string, number>): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [id, height] of Object.entries(birthdays)) {
+    const key = canonicalNetworkId(id);
+    const existing = out[key];
+    out[key] = existing === undefined ? height : Math.min(existing, height);
+  }
+  return out;
+}
+
+/**
+ * Resolve every network id a meta record carries to the id in use today.
+ *
+ * `birthdays` is re-keyed whatever the wallet's own network is, NOT only when
+ * that network was the renamed one. A wallet that has since moved elsewhere
+ * still holds the old key, and leaving it there means the next return trip looks
+ * like a first arrival to `setNetwork` and gets stamped with the current tip —
+ * a birthday far above the truth, with the consequence described above.
+ */
+function canonicalMeta(meta: WalletMeta): WalletMeta {
+  const network = canonicalNetworkId(meta.network);
+  const birthdays = meta.birthdays ? canonicalBirthdays(meta.birthdays) : undefined;
+  const birthdaysChanged =
+    birthdays !== undefined &&
+    (Object.keys(birthdays).length !== Object.keys(meta.birthdays!).length ||
+      Object.entries(birthdays).some(([id, height]) => meta.birthdays![id] !== height));
+  if (network === meta.network && !birthdaysChanged) return meta;
+
+  const migrated: WalletMeta = { ...meta, network, ...(birthdays ? { birthdays } : {}) };
+  // The stored address was derived for the OLD id, so its bech32m prefix names a
+  // network this wallet is no longer reported on — shown in an account list, it
+  // invites a receive on the wrong encoding. Dropped rather than re-derived,
+  // which would need the seed: `list()` renders "(locked)", an already-handled
+  // state, and the next unlock backfills the right address.
+  if (network !== meta.network) delete migrated.address;
+  return migrated;
+}
+
 function birthdayFor(meta: WalletMeta, network: string): number | undefined {
   if (meta.birthdays && meta.birthdays[network] !== undefined) return meta.birthdays[network];
   if (meta.birthday !== undefined && meta.network === network) return meta.birthday;
@@ -112,7 +162,8 @@ export class WalletManager {
     // on empty storage would push into DEFAULT_CONFIG itself and every later
     // fresh manager would then see that wallet as already existing.
     if (!data) return { ...DEFAULT_CONFIG, wallets: [...DEFAULT_CONFIG.wallets] };
-    return JSON.parse(decoder.decode(data)) as WalletConfig;
+    const config = JSON.parse(decoder.decode(data)) as WalletConfig;
+    return { ...config, defaultNetwork: canonicalNetworkId(config.defaultNetwork) };
   }
 
   private async saveConfig(config: WalletConfig): Promise<void> {
@@ -123,10 +174,19 @@ export class WalletManager {
     await this.storage.write(metaKey(meta.name), encoder.encode(JSON.stringify(meta)));
   }
 
+  /**
+   * Every read of a wallet's network goes through here, so a renamed network is
+   * canonicalised once rather than at each call site. It matters most on unlock:
+   * the meta record's network becomes the wallet-wide selection, so a stale id
+   * here would reassert itself over a migrated selection on every unlock.
+   *
+   * The stored bytes are left alone — the record is rewritten only when
+   * something else is already saving it.
+   */
   private async loadMeta(name: string): Promise<WalletMeta | null> {
     const data = await this.storage.read(metaKey(name));
     if (!data) return null;
-    return JSON.parse(decoder.decode(data)) as WalletMeta;
+    return canonicalMeta(JSON.parse(decoder.decode(data)) as WalletMeta);
   }
 
   private validateName(name: string): void {
@@ -165,6 +225,9 @@ export class WalletManager {
     // same phrase back here so the stored wallet matches what the user wrote down.
     mnemonic?: string,
   ): Promise<WalletInfo & { mnemonic: string }> {
+    // A caller-supplied id (a --network flag, a picker selection) is about to be
+    // persisted, so a retired name is resolved here rather than written back out.
+    network = canonicalNetworkId(network);
     this.validateName(name);
     const config = await this.loadConfig();
 
@@ -204,6 +267,9 @@ export class WalletManager {
   }
 
   async import(name: string, mnemonic: string, passphrase: string, network = 'devnet'): Promise<WalletInfo> {
+    // A caller-supplied id (a --network flag, a picker selection) is about to be
+    // persisted, so a retired name is resolved here rather than written back out.
+    network = canonicalNetworkId(network);
     this.validateName(name);
 
     if (!validateMnemonic(mnemonic)) {
@@ -236,6 +302,9 @@ export class WalletManager {
   }
 
   async importFromSeed(name: string, hexSeed: string, passphrase: string, network = 'devnet'): Promise<WalletInfo> {
+    // A caller-supplied id (a --network flag, a picker selection) is about to be
+    // persisted, so a retired name is resolved here rather than written back out.
+    network = canonicalNetworkId(network);
     const addresses = this.deriveAddressesFromSeed(hexSeed);
     const address = this.primaryAddress(addresses, network);
 
@@ -554,6 +623,9 @@ export class WalletManager {
    * address to keep the locked account list immediately useful.
    */
   async setNetwork(name: string, network: string, address?: string, birthday?: number): Promise<void> {
+    // A caller-supplied id (a --network flag, a picker selection) is about to be
+    // persisted, so a retired name is resolved here rather than written back out.
+    network = canonicalNetworkId(network);
     const meta = await this.loadMeta(name);
     if (!meta) {
       throw new WalletError('WALLET_ERROR', `Wallet "${name}" not found`);
