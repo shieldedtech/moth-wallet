@@ -27,7 +27,15 @@ import {formatDustBalance} from '../wallet/balance-format.js';
 import {ensureEmptyRefCache, preSeedNewWallet} from './preseed.js';
 import {InMemorySyncStateStore, syncStateKey, type SyncStateStore, type WalletPart} from './sync-store.js';
 import {dedupingShieldedBuilder, dedupingDustBuilder} from './sdk-dedup.js';
-import {overallSyncProgress, type SubWallet} from './progress.js';
+import {
+  overallSyncProgress,
+  allStreamsComplete,
+  partState,
+  type SubWallet,
+  type PartHistory,
+  type PartState,
+} from './progress.js';
+import {foldBookedInputs, utxoId, type BookableUtxo} from './unshielded-fold.js';
 import {partsToSeed} from './preseed-parts.js';
 import type {WalletKeys} from './operations.js';
 
@@ -228,6 +236,15 @@ export interface SyncProgress {
 export interface SubWalletSyncProgress {
   applied: number;
   total: number;
+  /**
+   * What these counters mean, resolved once where the cache is known.
+   *
+   * `{0, 0}` alone cannot say whether a part is empty or merely silent, and every
+   * consumer used to guess "complete". Carrying the verdict means the CLI, TUI
+   * and extension all render — and gate on — the same reading. Absent on
+   * snapshots built before this existed; treat as unknown, not complete.
+   */
+  state?: PartState;
 }
 
 export interface ShieldedCoinInfo {
@@ -323,6 +340,26 @@ export async function resolveSyncStore(explicit?: SyncStateStore): Promise<SyncS
   return store;
 }
 
+/**
+ * Did this part restore a real cursor from cache?
+ *
+ * Used to read `{applied: 0, total: 0}` correctly: a part with a cached cursor
+ * has history and simply has not reported yet, while a part with none may
+ * genuinely have nothing to apply. A cached state at offset 0 counts as no
+ * history — it describes a wallet that has applied nothing.
+ */
+function restoredCursor(raw: string | null): boolean {
+  if (!raw) return false;
+  try {
+    const parsed = JSON.parse(raw) as {offset?: string | number};
+    return parsed.offset !== undefined && BigInt(parsed.offset) > 0n;
+  } catch {
+    // Unparseable but present: it restored something, so treat it as history
+    // rather than asserting the part is empty.
+    return true;
+  }
+}
+
 function loadCachedState(
   store: SyncStateStore,
   walletName: string,
@@ -398,9 +435,64 @@ export interface WalletSyncOptions {
  * raw seed is never threaded here). Pre-seed of brand-new wallets derives the
  * bundle up front (see preseed.ts) and calls this directly.
  */
-/** A sub-wallet's own fraction, for the progress line. `done` wins over the
- *  counters: a sub-wallet with nothing to apply is complete, not stalled. */
-function subPct(sub: {applied: number; total: number}, done: boolean): string {
+/**
+ * Whether this snapshot is as complete as it will get: the facade's own verdict,
+ * or every stream having nothing left to apply.
+ *
+ * The second half matters for a wallet with an empty stream — one that has never
+ * held a shielded coin, say. `synced` is built from `isStrictlyComplete()`, which
+ * is false for an empty stream forever, so a caller waiting on `synced` alone
+ * waits out its entire timeout while holding correct numbers. Every gate that
+ * blocks on sync should use this instead: `moth balance` and `moth transfer`
+ * (5-minute waits), the daemon's initial wait (no timeout at all), and the
+ * extension's `waitForSyncedBalances` (which rejects).
+ *
+ * See `allStreamsComplete` for why an empty stream counts as finished and how
+ * start-up is told apart from it.
+ */
+export function balancesSettled(b: WalletBalances): boolean {
+  if (b?.synced) return true;
+  // A facade emission is not always a complete picture — a sub-wallet's slice can
+  // be absent mid-sync, which is why extractBalancesPartial carries the previous
+  // snapshot forward. A snapshot with no progress in it says nothing about
+  // completion, and this runs on every emission, so it must not throw: keep
+  // waiting instead.
+  const sub = b?.subProgress;
+  const progress = b?.syncProgress;
+  if (!sub || !progress) return false;
+  // A part whose classification says it has not reported blocks completion, no
+  // matter what its counters read — see PartState.
+  if (
+    sub.shielded?.state === 'unreported' ||
+    sub.unshielded?.state === 'unreported' ||
+    sub.dust?.state === 'unreported'
+  ) {
+    return false;
+  }
+  return allStreamsComplete({
+    shielded: sub.shielded,
+    unshielded: sub.unshielded,
+    dust: sub.dust,
+    shieldedSynced: progress.shieldedSynced,
+    unshieldedSynced: progress.unshieldedSynced,
+    dustSynced: progress.dustSynced,
+  });
+}
+
+/**
+ * A sub-wallet's own fraction, for the progress line.
+ *
+ * `done` wins over the counters: a sub-wallet with nothing to apply is complete,
+ * not stalled — the same reading as `balancesSettled`/`allStreamsComplete`, so
+ * the display and the gate cannot disagree (they used to: this said 100% while
+ * the gate said "not yet, forever").
+ *
+ * A part that has restored cached state and not yet reported renders as `—`.
+ * It used to render `100%`, which is how a dust cache 76,031 events behind was
+ * displayed as finished.
+ */
+function subPct(sub: SubWalletSyncProgress, done: boolean): string {
+  if (sub.state === 'unreported') return '—';
   if (done) return '100%';
   return sub.total > 0 ? `${Math.round(Math.min(1, sub.applied / sub.total) * 100)}%` : '100%';
 }
@@ -654,13 +746,46 @@ export async function startWalletSync(
 
   let hasSavedCache = false;
   let lastCacheSaveTime = 0;
+
+  // Which parts came back from cache. Fixed for the session: it describes what
+  // was on disk at start, which is exactly what makes a later `{0, 0}` readable.
+  const partHistory: PartHistory = {
+    shielded: restoredCursor(savedShielded),
+    unshielded: restoredCursor(savedUnshielded),
+    dust: restoredCursor(savedDust),
+  };
+
+  // Balances emit about once a second, so a UTXO reported in both the available
+  // and booked lists would otherwise say so every second for the life of the
+  // sync. Once per id is enough to explain a doubled balance, which is the only
+  // other symptom.
+  const warnedDuplicates = new Set<string>();
+  const reportDuplicateUtxos = (ids: ReadonlyArray<string>): void => {
+    const fresh = ids.filter((id) => !warnedDuplicates.has(id));
+    if (fresh.length === 0) return;
+    for (const id of fresh) warnedDuplicates.add(id);
+    onProgress?.(
+      `Stale booking: ${fresh.join(', ')} ${fresh.length === 1 ? 'is' : 'are'} listed as both ` +
+        `spendable and reserved. A transaction that reserved it never confirmed, so the wallet ` +
+        `cannot spend it. Counting it once; run "moth wallet resync" to clear the cached state.`,
+    );
+  };
+
   const subscription = facade
     .state()
     .pipe(Rx.auditTime(1000))
     .subscribe({
       next: (s: FacadeState) => {
         emissionCount++;
-        const balances = extractBalancesPartial(s, syncStartTime, lastProgressPct, progressBaseline, latestBalances);
+        const balances = extractBalancesPartial(
+          s,
+          syncStartTime,
+          lastProgressPct,
+          progressBaseline,
+          latestBalances,
+          reportDuplicateUtxos,
+          partHistory,
+        );
         latestBalances = balances;
         lastProgressPct = balances.syncProgress.percentage;
 
@@ -859,6 +984,16 @@ function extractBalancesPartial(
    * session, so the previous value is a better answer than a default.
    */
   previous?: WalletBalances,
+  /**
+   * Called with the ids of UTXOs the SDK reports as available AND booked at once
+   * — an impossible pair, and the signature of a booking whose transaction never
+   * landed. Surfaced rather than silently corrected because the wallet cannot
+   * spend such a coin until the cached state is rebuilt, and the only visible
+   * symptom otherwise was a doubled balance.
+   */
+  onAnomaly?: (duplicatedUtxoIds: ReadonlyArray<string>) => void,
+  /** Parts that restored a cursor from cache — see {@link PartState}. */
+  history: PartHistory = {},
 ): WalletBalances {
   let shielded: Record<string, bigint> = {};
   let unshielded: Record<string, bigint> = {};
@@ -926,33 +1061,45 @@ function extractBalancesPartial(
 
   try {
     const ub = state.unshielded?.balances;
-    // Clone: we fold booked (pending) inputs into the displayed balance below
-    // and must not mutate the SDK's own state object.
-    if (ub && typeof ub === 'object') unshielded = { ...(ub as Record<string, bigint>) };
-    // Per-coin breakdown
+    // The SDK's map covers its `availableUtxos` only; booked inputs are folded in
+    // below (see unshielded-fold.ts for why, and for the duplicate hazard).
+    const availableBalances = ub && typeof ub === 'object' ? (ub as Record<string, bigint>) : {};
+
+    const availableUtxos: BookableUtxo[] = [];
     for (const c of state.unshielded?.availableCoins ?? []) {
-      coins.unshielded.available.push({
-        value: c.utxo?.value ?? 0n,
-        type: c.utxo?.type ?? '',
-        registeredForDustGeneration: c.meta?.registeredForDustGeneration === true,
-      });
-    }
-    for (const c of state.unshielded?.pendingCoins ?? []) {
       const value = c.utxo?.value ?? 0n;
       const type = c.utxo?.type ?? '';
-      coins.unshielded.pending.push({
+      availableUtxos.push({id: utxoId(c.utxo), type, value});
+      coins.unshielded.available.push({
         value,
         type,
         registeredForDustGeneration: c.meta?.registeredForDustGeneration === true,
       });
-      // Count booked inputs toward the displayed balance. A send or DUST
-      // registration reserves its own NIGHT UTxOs (moved available→pending)
-      // while the transaction is in flight, then they settle back to the
-      // wallet on apply — so leaving them out flashes the balance down to zero
-      // mid-registration. Unshielded pending holds ONLY these booked inputs,
-      // never incoming coins, so this can't over-count receipts.
-      unshielded[type] = (unshielded[type] ?? 0n) + value;
     }
+
+    const pendingUtxos: BookableUtxo[] = [];
+    const pendingRows = new Map<string, UnshieldedCoinInfo>();
+    for (const c of state.unshielded?.pendingCoins ?? []) {
+      const value = c.utxo?.value ?? 0n;
+      const type = c.utxo?.type ?? '';
+      const id = utxoId(c.utxo);
+      pendingUtxos.push({id, type, value});
+      pendingRows.set(id, {
+        value,
+        type,
+        registeredForDustGeneration: c.meta?.registeredForDustGeneration === true,
+      });
+    }
+
+    const folded = foldBookedInputs(availableUtxos, pendingUtxos, availableBalances);
+    unshielded = folded.balances;
+    // A duplicated UTXO is reported as available, never also as booked: listing
+    // it in both places would hand the same double-count to any consumer that
+    // sums the two lists (the panels do).
+    for (const [id, row] of pendingRows) {
+      if (!folded.duplicated.includes(id)) coins.unshielded.pending.push(row);
+    }
+    if (folded.duplicated.length > 0) onAnomaly?.(folded.duplicated);
     // v4 SDK unshielded SyncProgress: { appliedId, highestTransactionId, isConnected }
     const up = state.unshielded?.progress;
     const unApplied = up?.appliedId ?? 0n;
@@ -1019,7 +1166,14 @@ function extractBalancesPartial(
     synced,
     elapsedMs: syncStartTime > 0 ? Date.now() - syncStartTime : 0,
     baseline: baseline?.value ?? undefined,
+    history,
   });
+
+  // Stamp each part's reading onto the snapshot, so every surface renders and
+  // gates on the same verdict instead of re-deriving it from ambiguous counters.
+  subProgress.shielded.state = partState(subProgress.shielded, shieldedSynced, history.shielded);
+  subProgress.unshielded.state = partState(subProgress.unshielded, unshieldedSynced, history.unshielded);
+  subProgress.dust.state = partState(subProgress.dust, dustSynced, history.dust);
 
   // percentage/etaSeconds already account for `synced` (see overallSyncProgress);
   // this only reconciles the per-sub-wallet flags with the facade's own verdict.

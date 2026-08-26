@@ -1,4 +1,4 @@
-import type { WalletBalances } from '@shieldedtech/moth-browser';
+import { balancesSettled, type WalletBalances } from '@shieldedtech/moth-browser';
 
 export interface BalanceSource {
   balances: WalletBalances;
@@ -6,16 +6,21 @@ export interface BalanceSource {
 }
 
 /**
- * Wait for a synced balance snapshot without assuming subscribe() is lazy.
+ * Wait for a settled balance snapshot without assuming subscribe() is lazy.
  * The wallet SDK can invoke the listener synchronously, before subscribe()
  * returns its cleanup function, when a cached snapshot becomes ready between
  * the initial read and listener registration.
+ *
+ * Settled, not `balances.synced`: that flag is built from `isStrictlyComplete()`,
+ * which is false forever for an EMPTY stream — so an account that has never held
+ * a shielded coin never sets it, and this rejected with "did not complete in
+ * time" while holding correct balances. See `balancesSettled` in core.
  */
 export function waitForSyncedBalances(
   source: BalanceSource,
   timeoutMs: number,
 ): Promise<WalletBalances> {
-  if (source.balances.synced) return Promise.resolve(source.balances);
+  if (balancesSettled(source.balances)) return Promise.resolve(source.balances);
 
   return new Promise<WalletBalances>((resolve, reject) => {
     let settled = false;
@@ -29,7 +34,7 @@ export function waitForSyncedBalances(
 
     try {
       const stop = source.subscribe((balances) => {
-        if (!balances.synced || settled) return;
+        if (!balancesSettled(balances) || settled) return;
         settled = true;
         clearTimeout(timer);
         // When subscribe() emits synchronously, `stop` has not been returned

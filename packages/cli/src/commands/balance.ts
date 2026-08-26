@@ -12,6 +12,7 @@ import {getPassphrase} from '../adapters/passphrase.js';
 import {
   unshieldedSplit,
   startWalletSync,
+  balancesSettled,
   NIGHT_TOKEN_ID,
   NIGHT_DENOMINATION,
   formatBalance,
@@ -154,14 +155,18 @@ export default class Balance extends BaseCommand {
 }
 
 /**
- * Resolve once `balances.synced` flips to true, or once `timeoutMs`
- * elapses (whichever comes first). On timeout the latest snapshot is
- * returned — the caller can read `b.synced` to know whether the
- * answer is authoritative or pending.
+ * Resolve once the snapshot has settled, or once `timeoutMs` elapses (whichever
+ * comes first). On timeout the latest snapshot is returned — the caller can read
+ * `b.synced` to know whether the answer is authoritative or pending.
+ *
+ * "Settled" is not `balances.synced`: a wallet with an empty stream (no shielded
+ * coin, ever) never sets that flag, so gating on it alone waited out the full
+ * 5-minute timeout on a wallet whose numbers were right in ~2s, and then printed
+ * them with `synced: false`. See `balancesSettled`.
  */
 function waitForSynced(synced: SyncedWallet, timeoutMs: number): Promise<void> {
   return new Promise<void>((resolveOuter) => {
-    if (synced.balances.synced) return resolveOuter();
+    if (balancesSettled(synced.balances)) return resolveOuter();
     let settled = false;
     const finish = () => {
       if (settled) return;
@@ -175,7 +180,7 @@ function waitForSynced(synced: SyncedWallet, timeoutMs: number): Promise<void> {
       resolveOuter();
     };
     const unsub = synced.subscribe((b: WalletBalances) => {
-      if (b.synced) finish();
+      if (balancesSettled(b)) finish();
     });
     const timer = setTimeout(finish, timeoutMs).unref();
   });

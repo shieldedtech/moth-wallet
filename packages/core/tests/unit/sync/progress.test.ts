@@ -6,7 +6,7 @@
 // slowest sub-wallet — it is not; dust is, by two orders of magnitude.
 
 import {describe, expect, it} from 'vitest';
-import {overallSyncProgress} from '../../../src/sync/progress.js';
+import {overallSyncProgress, partState} from '../../../src/sync/progress.js';
 
 const complete = {applied: 1_395_558, total: 1_395_558};
 
@@ -216,5 +216,99 @@ describe('ETA on a resumed sync', () => {
       synced: true, elapsedMs: 5_000, baseline: {fraction: 0.9, elapsedMs: 0},
     });
     expect(r.etaSeconds).toBe(0);
+  });
+});
+
+// Observed on preprod, wallet with a warm dust cache: `moth balance` printed
+//
+//   ○ syncing 99% (shielded) — shielded 100%, unshielded 100%, dust 100%
+//
+// three times over 80 seconds without moving, while the TUI (and dust.dat's own
+// offset) showed dust at 1,378,733 / 1,454,764 — 76,031 events behind. Two
+// separate faults produced one impossible line: dust reported `{0, 0}` and every
+// consumer read that as complete, and with all three fractions then equal to 1
+// the "never round up" clamp pinned the total at 99% and the tie-break blamed
+// shielded — a constraint that did not exist and could never advance.
+describe('a part with cached history that has not reported', () => {
+  const DUST_TOTAL = 1_454_764;
+
+  it('is named as the constraint instead of blaming a tie-break winner', () => {
+    const r = overallSyncProgress({
+      shielded: {applied: 1_454_490, total: 1_454_490},
+      unshielded: {applied: 566_723, total: 566_723},
+      dust: {applied: 0, total: 0}, // restored 11 MB of state, silent so far
+      shieldedSynced: true,
+      unshieldedSynced: true,
+      dustSynced: false,
+      synced: false,
+      elapsedMs: 80_000,
+      history: {shielded: true, unshielded: true, dust: true},
+    });
+
+    expect(r.slowest).toBe('dust');
+    expect(r.percentage).toBe(0.99);
+  });
+
+  it('reports the real fraction once that part finally speaks', () => {
+    const r = overallSyncProgress({
+      shielded: {applied: 1_454_490, total: 1_454_490},
+      unshielded: {applied: 566_723, total: 566_723},
+      dust: {applied: 1_378_733, total: DUST_TOTAL},
+      shieldedSynced: true,
+      unshieldedSynced: true,
+      dustSynced: false,
+      synced: false,
+      elapsedMs: 80_000,
+      history: {shielded: true, unshielded: true, dust: true},
+    });
+
+    expect(r.slowest).toBe('dust');
+    expect(r.percentage).toBeCloseTo(1_378_733 / DUST_TOTAL, 5);
+  });
+
+  it('stops pinning a genuine 100% at 99% when every part is complete', () => {
+    // All complete, facade aggregate not yet agreeing (it never does for an
+    // empty stream). Previously the clamp forced 0.99 and invented a slowest.
+    const r = overallSyncProgress({
+      shielded: {applied: 0, total: 0}, // never held a shielded coin, no cache
+      unshielded: {applied: 566_723, total: 566_723},
+      dust: {applied: DUST_TOTAL, total: DUST_TOTAL},
+      shieldedSynced: false,
+      unshieldedSynced: true,
+      dustSynced: true,
+      synced: false,
+      elapsedMs: 5_000,
+      history: {unshielded: true, dust: true},
+    });
+
+    expect(r.percentage).toBe(1);
+    expect(r.slowest).toBeNull();
+  });
+
+  it('still refuses to round a near-complete fraction up to 100%', () => {
+    // The behaviour the clamp exists for, unchanged: dust genuinely behind.
+    const r = overallSyncProgress({
+      shielded: {applied: 10, total: 10},
+      unshielded: {applied: 10, total: 10},
+      dust: {applied: 1_449_000, total: DUST_TOTAL},
+      shieldedSynced: true,
+      unshieldedSynced: true,
+      dustSynced: false,
+      synced: false,
+      elapsedMs: 5_000,
+      history: {dust: true},
+    });
+
+    expect(r.percentage).toBe(0.99);
+    expect(r.slowest).toBe('dust');
+  });
+
+  it('treats an empty stream with no cache as complete, not silent', () => {
+    expect(partState({applied: 0, total: 0}, false, false)).toBe('complete');
+    expect(partState({applied: 0, total: 0}, false, true)).toBe('unreported');
+    expect(partState({applied: 1, total: 10}, false, true)).toBe('behind');
+    expect(partState({applied: 10, total: 10}, false, true)).toBe('complete');
+    // The SDK's own verdict always wins over the counters.
+    expect(partState({applied: 1, total: 10}, true, true)).toBe('complete');
   });
 });

@@ -63,6 +63,7 @@ export {
 } from '@shieldedtech/moth-wallet/proof/provider';
 export {
   startWalletSync,
+  balancesSettled,
   clearSyncCache,
   clearDustSyncCache,
   EMPTY_COINS,

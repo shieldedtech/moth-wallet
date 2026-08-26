@@ -64,6 +64,7 @@ Every command accepts these. Defaults shown.
 | `moth wallet address --name <n>` | Print a wallet's receive addresses — NIGHT external, DUST, and shielded (zswap) — for every network. Unlocks the keystore but runs fully offline (no sync). |
 | `moth wallet use [<name>]` | Switch the active wallet. |
 | `moth wallet remove [<name>] [--yes]` | Delete a wallet. Requires `--yes` for non-interactive use. See [Wallet lifecycle](#wallet-lifecycle) below for what this touches on disk. |
+| `moth wallet resync [--dust-only] [--yes]` | Discard the wallet's cached sync state so the next command rebuilds it from the chain. For a cache that has gone wrong in a way a restart cannot fix — a doubled balance, or a coin the wallet refuses to spend. Costs a full rescan; `--dust-only` keeps the larger shielded and unshielded caches. |
 | `moth wallet status` | Daemon-mode read verb. Returns sync progress + balances from the running TUI / `daemon serve`. Fast — no resync. Errors out if no daemon is hosting the named wallet. |
 
 ### Wallet lifecycle

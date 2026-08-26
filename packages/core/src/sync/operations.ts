@@ -193,10 +193,25 @@ export async function buildTransferTransaction(
     {ttl}
   );
 
-  onProgress?.('proving');
-  const signed = await facade.signRecipe(recipe, (payload: Uint8Array) => ks.signData(payload));
-
-  return facade.finalizeRecipe(signed);
+  // From here the recipe's inputs are BOOKED — the SDK moved them from its
+  // available list to its pending one when it balanced the transaction. Nothing
+  // releases that booking on its own unless the transaction reaches submission:
+  // the facade reverts inside submitTransaction's catch, and its pending-tx
+  // watcher only sees transactions that got that far. So a failure here — proving
+  // against a proof server on the wrong ledger version is the one we hit — leaves
+  // the inputs booked forever, unspendable, and (once a resync re-adds them to
+  // the available list) double-counted. Release it explicitly, the way
+  // estimateTransferFee already does for its throwaway transaction.
+  try {
+    onProgress?.('proving');
+    const signed = await facade.signRecipe(recipe, (payload: Uint8Array) => ks.signData(payload));
+    return await facade.finalizeRecipe(signed);
+  } catch (e) {
+    await facade.revert(recipe).catch(() => {
+      /* best-effort: the original failure is what the caller needs to see */
+    });
+    throw e;
+  }
 }
 
 /**
@@ -555,8 +570,20 @@ async function designateForDustImpl(
     throw e;
   }
 
-  onProgress?.('proving');
-  const finalized = await facade.finalizeRecipe(recipe);
+  // Booked from `registerNightUtxosForDustGeneration` onwards — see the note in
+  // buildTransferTransaction. Only the pre-submission steps are wrapped: once
+  // submitTransaction has been called the facade owns the outcome, and reverting
+  // a transaction that IS in flight would un-book coins it is about to spend.
+  let finalized;
+  try {
+    onProgress?.('proving');
+    finalized = await facade.finalizeRecipe(recipe);
+  } catch (e) {
+    await facade.revert(recipe).catch(() => {
+      /* best-effort */
+    });
+    throw e;
+  }
 
   onProgress?.('submitting');
   return submitWithRetry(facade, finalized);
@@ -624,13 +651,23 @@ async function dedesignateFromDustImpl(
     ks.signData(payload)
   );
 
-  const balancedRecipe = await facade.balanceUnprovenTransaction(
-    recipe.transaction,
-    {shieldedSecretKeys: keys.shieldedSecretKeys, dustSecretKey: keys.dustSecretKey},
-    {ttl: new Date(Date.now() + 30 * 60_000)}
-  );
-
-  onProgress?.('submitting');
-  const finalized = await facade.finalizeRecipe(balancedRecipe);
+  // Booked from `deregisterFromDustGeneration` onwards, and balancing books more
+  // — release both if anything before submission fails. See the note in
+  // buildTransferTransaction for why nothing else does.
+  let finalized;
+  try {
+    const balancedRecipe = await facade.balanceUnprovenTransaction(
+      recipe.transaction,
+      {shieldedSecretKeys: keys.shieldedSecretKeys, dustSecretKey: keys.dustSecretKey},
+      {ttl: new Date(Date.now() + 30 * 60_000)}
+    );
+    onProgress?.('submitting');
+    finalized = await facade.finalizeRecipe(balancedRecipe);
+  } catch (e) {
+    await facade.revert(recipe).catch(() => {
+      /* best-effort */
+    });
+    throw e;
+  }
   return submitWithRetry(facade, finalized);
 }

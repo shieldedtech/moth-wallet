@@ -14,6 +14,7 @@ import {
   type SendRequest,
   type SyncedWallet,
   type WalletBalances,
+  balancesSettled,
 } from '@shieldedtech/moth-wallet';
 
 export default class Transfer extends BaseCommand {
@@ -193,14 +194,18 @@ export default class Transfer extends BaseCommand {
 }
 
 /**
- * Resolve once `balances.synced` flips to true, or once `timeoutMs` elapses
- * (whichever comes first). Mirrors balance.ts — on timeout the caller proceeds
- * with whatever the latest snapshot showed and can read `balances.synced` to
- * know whether it was authoritative.
+ * Resolve once the snapshot has settled, or once `timeoutMs` elapses (whichever
+ * comes first). Mirrors balance.ts — on timeout the caller proceeds with whatever
+ * the latest snapshot showed and can read `balances.synced` to know whether it
+ * was authoritative.
+ *
+ * `balancesSettled`, not `balances.synced`: a wallet with an empty stream never
+ * sets that flag, so a send from a wallet that has never held a shielded coin sat
+ * out the whole timeout before building.
  */
 function waitForSynced(synced: SyncedWallet, timeoutMs: number): Promise<void> {
   return new Promise<void>((resolveOuter) => {
-    if (synced.balances.synced) return resolveOuter();
+    if (balancesSettled(synced.balances)) return resolveOuter();
     let settled = false;
     const finish = () => {
       if (settled) return;
@@ -214,7 +219,7 @@ function waitForSynced(synced: SyncedWallet, timeoutMs: number): Promise<void> {
       resolveOuter();
     };
     const unsub = synced.subscribe((b: WalletBalances) => {
-      if (b.synced) finish();
+      if (balancesSettled(b)) finish();
     });
     const timer = setTimeout(finish, timeoutMs).unref();
   });

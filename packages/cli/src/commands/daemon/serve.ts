@@ -26,6 +26,7 @@ import {
   type SyncedWallet,
   type WalletBalances,
   type AuthHandler,
+  balancesSettled,
 } from '@shieldedtech/moth-wallet';
 import {BaseCommand} from '../../base-command.js';
 import {getPassphrase} from '../../adapters/passphrase.js';
@@ -343,11 +344,18 @@ function parseNightToRaw(input: string): bigint | null {
   return BigInt(m[1]) * 1_000_000n + BigInt(frac);
 }
 
+/**
+ * Wait for the first settled snapshot before serving.
+ *
+ * `balancesSettled`, not `balances.synced`: this wait has no timeout, so on a
+ * wallet with an empty stream — one that has never held a shielded coin — the
+ * daemon never finished starting at all.
+ */
 async function waitForSynced(synced: SyncedWallet): Promise<void> {
   return new Promise<void>((resolveOuter) => {
-    if (synced.balances.synced) return resolveOuter();
+    if (balancesSettled(synced.balances)) return resolveOuter();
     const unsub = synced.subscribe((b: WalletBalances) => {
-      if (b.synced) {
+      if (balancesSettled(b)) {
         unsub();
         resolveOuter();
       }
