@@ -7,9 +7,11 @@ import {
   type PortableReference,
 } from '../../../src/sync/preseed-portable.js';
 import {
+  cursorWitnessKey,
   emptyRefHeightKey,
   emptyRefStateKey,
   emptyRefMnemonicKey,
+  EMPTY_REF_WALLET,
   type SyncStateStore,
 } from '../../../src/sync/sync-store.js';
 
@@ -218,5 +220,82 @@ describe('round trip', () => {
       );
     }
     expect(target.entries.get(emptyRefHeightKey('preprod'))).toBe('4242');
+  });
+});
+
+// A reference's cursors are indexer-assigned event numbers, and a witness is the
+// evidence that a cursor still names the event it named when the reference was
+// built. That evidence has to be taken where the reference was BUILT, so a bundle
+// must carry it — and a bundle is exactly where it matters, since crossing
+// machines is how a reference meets a differently-numbered indexer.
+//
+// The verification treats a MISSING witness as "allow, with a warning", so that
+// an upgrading wallet is not punished. That leniency makes a stale witness far
+// worse than none: it passes the check on behalf of state it was never taken
+// from, and the sync then resumes at the wrong event with a quietly wrong balance.
+
+describe('cursor witnesses travel with a bundle', () => {
+  const NET = 'preprod';
+  const WITNESS_SHIELDED = '{"stream":"shielded","id":1431375,"hash":"aa"}';
+  const WITNESS_DUST = '{"stream":"dust","id":1449958,"hash":"bb"}';
+
+  function withWitnesses(store: MemoryStore): MemoryStore {
+    store.entries.set(cursorWitnessKey(NET, EMPTY_REF_WALLET, 'shielded'), WITNESS_SHIELDED);
+    store.entries.set(cursorWitnessKey(NET, EMPTY_REF_WALLET, 'dust'), WITNESS_DUST);
+    return store;
+  }
+
+  it('exports the witnesses it has, and names them in the manifest', async () => {
+    const bundle = await exportReference(withWitnesses(storeWithReference(NET, 2_203_416)), NET);
+
+    expect(bundle).not.toBeNull();
+    expect(bundle!.manifest.witnesses).toEqual(['shielded', 'dust']);
+    expect(new TextDecoder().decode(bundle!.files.get('witness-shielded.json')!)).toBe(WITNESS_SHIELDED);
+    expect(new TextDecoder().decode(bundle!.files.get('witness-dust.json')!)).toBe(WITNESS_DUST);
+  });
+
+  it('omits the manifest key entirely when there is nothing to witness', async () => {
+    const bundle = await exportReference(storeWithReference(NET, 2_203_416), NET);
+
+    expect(bundle!.manifest.witnesses).toBeUndefined();
+    expect(bundle!.files.has('witness-shielded.json')).toBe(false);
+  });
+
+  it('round-trips the witnesses onto the importing machine', async () => {
+    const source = await exportReference(withWitnesses(storeWithReference(NET, 2_203_416)), NET);
+    const target = new MemoryStore();
+
+    await importReference(target, NET, source!);
+
+    expect(target.entries.get(cursorWitnessKey(NET, EMPTY_REF_WALLET, 'shielded'))).toBe(WITNESS_SHIELDED);
+    expect(target.entries.get(cursorWitnessKey(NET, EMPTY_REF_WALLET, 'dust'))).toBe(WITNESS_DUST);
+  });
+
+  it('clears a witness the incoming bundle does not carry', async () => {
+    // The dangerous case: this machine had its own witnessed reference. Left in
+    // place, those witnesses would be checked against the imported state and
+    // pass, certifying cursors they were never taken from.
+    const target = withWitnesses(storeWithReference(NET, 2_100_000));
+    const unwitnessed = await exportReference(storeWithReference(NET, 2_203_416), NET);
+
+    await importReference(target, NET, unwitnessed!);
+
+    expect(target.entries.has(cursorWitnessKey(NET, EMPTY_REF_WALLET, 'shielded'))).toBe(false);
+    expect(target.entries.has(cursorWitnessKey(NET, EMPTY_REF_WALLET, 'dust'))).toBe(false);
+  });
+
+  it('replaces a stale witness rather than keeping the older one', async () => {
+    const target = withWitnesses(storeWithReference(NET, 2_100_000));
+    const source = storeWithReference(NET, 2_203_416);
+    source.entries.set(cursorWitnessKey(NET, EMPTY_REF_WALLET, 'dust'), '{"stream":"dust","id":1500000,"hash":"cc"}');
+    const bundle = await exportReference(source, NET);
+
+    await importReference(target, NET, bundle!);
+
+    expect(target.entries.get(cursorWitnessKey(NET, EMPTY_REF_WALLET, 'dust'))).toBe(
+      '{"stream":"dust","id":1500000,"hash":"cc"}',
+    );
+    // shielded had no witness in the bundle, so the old one must be gone, not kept.
+    expect(target.entries.has(cursorWitnessKey(NET, EMPTY_REF_WALLET, 'shielded'))).toBe(false);
   });
 });

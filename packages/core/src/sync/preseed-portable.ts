@@ -12,8 +12,10 @@
 // imported here — one format, not two that drift.
 
 import {
+  cursorWitnessKey,
   emptyRefHeightKey,
   emptyRefStateKey,
+  EMPTY_REF_WALLET,
   type SyncStateStore,
   type WalletPart,
 } from './sync-store.js';
@@ -75,10 +77,32 @@ async function gunzip(bytes: Uint8Array): Promise<Uint8Array> {
 /** The sub-wallets a reference carries. Order is fixed for stable manifests. */
 export const REFERENCE_PARTS: readonly WalletPart[] = ['shielded', 'unshielded', 'dust'] as const;
 
+/**
+ * The parts a cursor witness exists for — the two whose streams are
+ * indexer-numbered, matching what preseed.ts records and re-checks. Unshielded
+ * cursors are transaction ids, which renumbering does not move.
+ */
+const WITNESSED_PARTS: readonly WalletPart[] = ['shielded', 'dust'] as const;
+
+const witnessFileName = (part: WalletPart): string => `witness-${part}.json`;
+
 export interface ReferenceManifest {
   network: string;
   height: number;
   parts: Record<string, { bytes: number; gzipBytes: number }>;
+  /**
+   * Parts whose cursor witness travels with the bundle, as `witness-<part>.json`.
+   *
+   * A witness proves that the event a cursor names is still the same event. That
+   * question is only answerable with the witness recorded where the reference was
+   * BUILT: comparing it against the importing machine's indexer is the whole
+   * check. So a bundle without witnesses describes a reference whose cursors
+   * cannot be verified here — which matters most for a bundle, since crossing
+   * machines is exactly how a reference meets a differently-numbered indexer.
+   *
+   * Optional: bundles cut before witnesses existed do not have it.
+   */
+  witnesses?: readonly string[];
 }
 
 /** A reference in transit: the manifest plus each part's gzipped bytes. */
@@ -126,7 +150,24 @@ export async function exportReference(
     parts[part] = { bytes: raw.byteLength, gzipBytes: gz.byteLength };
   }
 
-  return { manifest: { network: networkId, height, parts }, files };
+  // Carry the cursor witnesses. Without them an imported reference is
+  // unverifiable on the importing machine, and `referenceCursorsStillValid`
+  // treats a missing witness as "allow, with a warning" — deliberately, so an
+  // upgrading wallet is not punished. That leniency is right for a local
+  // reference and wrong for one that crossed machines, so the bundle brings the
+  // evidence with it rather than relying on that path.
+  const witnesses: string[] = [];
+  for (const part of WITNESSED_PARTS) {
+    const witness = await store.get(cursorWitnessKey(networkId, EMPTY_REF_WALLET, part));
+    if (!witness) continue;
+    files.set(witnessFileName(part), encoder.encode(witness));
+    witnesses.push(part);
+  }
+
+  return {
+    manifest: {network: networkId, height, parts, ...(witnesses.length > 0 ? {witnesses} : {})},
+    files,
+  };
 }
 
 export class ReferenceImportError extends Error {
@@ -210,6 +251,22 @@ export async function importReference(
   for (const [part, json] of decoded) {
     await store.put(emptyRefStateKey(networkId, part), json);
   }
+
+  // Witnesses belong to the state they were taken against, so they are replaced
+  // with the parts and NEVER left behind. A machine that had its own witnessed
+  // reference would otherwise keep those witnesses next to the imported state:
+  // the verification would then check the OLD reference's cursor, pass, and
+  // declare the newly imported one valid — a stale witness vouching for state it
+  // was never taken from. Absent witnesses leave the reference unverifiable,
+  // which the pre-seed guard reports and allows; a wrong one it silently trusts.
+  const decoder2 = new TextDecoder();
+  for (const part of WITNESSED_PARTS) {
+    const key = cursorWitnessKey(networkId, EMPTY_REF_WALLET, part);
+    const carried = bundle.files.get(witnessFileName(part));
+    if (carried) await store.put(key, decoder2.decode(carried));
+    else await store.delete(key);
+  }
+
   await store.put(emptyRefHeightKey(networkId), String(bundle.manifest.height));
 
   return { height: bundle.manifest.height, replacedHeight };

@@ -89,6 +89,14 @@ export {
   type DustRegistrationEstimate,
 } from './sync/dust-registration-estimate.js';
 export {
+  readEventWitness,
+  compareWitness,
+  verifyCursorWitness,
+  type CursorWitness,
+  type WitnessStream,
+  type WitnessVerdict,
+} from './sync/cursor-witness.js';
+export {
   createTimingRecorder,
   createMemoryTimingStore,
   DEFAULT_MAX_ENTRIES,
