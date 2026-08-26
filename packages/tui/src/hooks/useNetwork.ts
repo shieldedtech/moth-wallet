@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   JsonRpcNodeClient,
+  canonicalNetworkId,
   DEFAULT_NETWORKS,
   resolveProverConfig,
   serverProver,
@@ -37,10 +38,17 @@ export function useNetwork(initialNetworkId: string = 'devnet') {
     // Stop existing polling
     stopPolling();
 
+    // The id reaches here from persisted TUI settings and from --network, so a
+    // renamed one is resolved before it is used to look up a preset or to key
+    // the per-network overrides.
+    id = canonicalNetworkId(id);
+
     const preset = DEFAULT_NETWORKS[id] ?? {
       id,
       nodeUrl: 'ws://localhost:9944',
-      indexerUrl: 'http://localhost:8088',
+      // The GraphQL path is part of the endpoint, not decoration: the indexer
+      // client posts queries to it, and the bare origin is not a GraphQL endpoint.
+      indexerUrl: 'http://localhost:8088/api/v4/graphql',
       prover: serverProver(),
     };
     const presetProver = resolveProverConfig(preset);

@@ -70,6 +70,8 @@ if (!Number.isFinite(TIMEOUT_MS) || TIMEOUT_MS <= 0) {
 const core = await import('@shieldedtech/moth-wallet');
 const {
   DEFAULT_NETWORKS,
+  initSdk,
+  resolveLedgerVersion,
   generateMnemonic24,
   validateMnemonic,
   mnemonicToSeed,
@@ -94,6 +96,12 @@ const network = {
   ...(values.indexer ? { indexerUrl: values.indexer } : {}),
   ...(values.node ? { nodeUrl: values.node } : {}),
 };
+
+// The sync path derives typed keys through the selected ledger and constructs
+// facades through the matching SDK. Both seams are explicit after Ledger 9, so
+// initialize them before the first derivation rather than relying on an eager
+// v8 import as older builds did.
+await initSdk(resolveLedgerVersion(network));
 
 // Omitted keys fall through to core's defaults (size 500, timeout 500, spacing 50).
 const batchUpdates = {};

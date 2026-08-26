@@ -2,8 +2,10 @@
 export * from './types/index.js';
 export type { NetworkConfig, NetworkEndpoints, ProverConfig, LedgerVersion } from './types/network.js';
 export {
+  canonicalNetworkId,
   DEFAULT_NETWORKS,
   resolveLedgerVersion,
+  SUPPORTED_NETWORKS,
   validateNetworkUrl,
   validateNetworkConfig,
   serverProver,
@@ -55,6 +57,13 @@ export {
 export { generateMnemonic24, validateMnemonic, mnemonicToSeed, hexSeedToUint8Array } from './wallet/mnemonic.js';
 export { Roles } from './wallet/address.js';
 export { encryptKeystore, decryptKeystore, type EncryptedKeystore } from './wallet/keystore.js';
+export {
+  parseNightAmount,
+  formatNightAmount,
+  InvalidAmountError,
+  STARS_PER_NIGHT,
+  NIGHT_DECIMALS,
+} from './wallet/night-amount.js';
 export { deriveAllAddressesFromSeed, deriveRawKeys, deriveShieldedPublicKeys, decodeBech32mAddress } from './wallet/address.js';
 export { signMessage, signedMessageBytes, type SignEncoding, type SignedMessage } from './wallet/sign-message.js';
 export {
@@ -117,6 +126,14 @@ export {
   type DustGenerationSlice,
   type DustRegistrationEstimate,
 } from './sync/dust-registration-estimate.js';
+export {
+  readEventWitness,
+  compareWitness,
+  verifyCursorWitness,
+  type CursorWitness,
+  type WitnessStream,
+  type WitnessVerdict,
+} from './sync/cursor-witness.js';
 export { ensureEmptyRefCache, warmEmptyRefCache, refreshEmptyRefCache, preseedReferenceStatus, preSeedNewWallet, type WarmProgress } from './sync/preseed.js';
 
 // Contract
@@ -179,3 +196,4 @@ export {
   type AuditDecision, type AuditLogOptions,
   type ApiKeyRecord, type ApiKeyGenerated, type ApiKeyAuthResult,
 } from './daemon/index.js';
+export { unshieldedSplit, describeReservation, type SpendableSplit } from './wallet/spendable.js';

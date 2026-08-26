@@ -188,8 +188,10 @@ describe('saveNetworkConfig', () => {
   });
 
   it('requires an unlocked wallet and a supported network', async () => {
+    // `local` is retained as an address prefix for old wallets, but it was
+    // renamed to `undeployed` and must not remain selectable as a network.
     await expect(
-      saveNetworkConfig({ network: 'undeployed', endpoints: endpoints('undeployed'), resyncApproved: true }),
+      saveNetworkConfig({ network: 'local', endpoints: endpoints('undeployed'), resyncApproved: true }),
     ).rejects.toThrow('Unsupported network');
     await fakeBrowser.storage.session.clear();
     await expect(

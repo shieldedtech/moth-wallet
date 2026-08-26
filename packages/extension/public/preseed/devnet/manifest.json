@@ -1,18 +1,30 @@
 {
   "network": "devnet",
-  "height": 653335,
+  "height": 764339,
   "parts": {
     "shielded": {
       "bytes": 3668,
-      "gzipBytes": 1853
+      "gzipBytes": 1962
     },
     "unshielded": {
       "bytes": 393,
-      "gzipBytes": 296
+      "gzipBytes": 294
     },
     "dust": {
-      "bytes": 7185,
-      "gzipBytes": 3527
+      "bytes": 6905,
+      "gzipBytes": 3662
+    }
+  },
+  "witnesses": {
+    "shielded": {
+      "stream": "zswapLedgerEvents",
+      "id": 3449,
+      "digest": "169ae5ae636d0d3d"
+    },
+    "dust": {
+      "stream": "dustLedgerEvents",
+      "id": 4661,
+      "digest": "531a55904eed1a47"
     }
   }
 }

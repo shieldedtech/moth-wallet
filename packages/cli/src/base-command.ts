@@ -6,6 +6,7 @@ import {
   WalletError,
   type WalletErrorCategory,
   WalletManager,
+  canonicalNetworkId,
   DEFAULT_NETWORKS,
   type NetworkConfig,
   resolveProverConfig,
@@ -75,6 +76,7 @@ export const daemonClientFlags = {
 
 // Load .env file if present (won't override existing env vars)
 import 'dotenv/config';
+import { assertNotMainnet } from './mainnet-guard.js';
 
 // Patterns that indicate sensitive data — never log these
 const SENSITIVE_PATTERNS = [
@@ -104,7 +106,16 @@ export abstract class BaseCommand extends Command {
     network: Flags.string({
       char: 'n',
       default: 'devnet',
-      description: 'Target network',
+      // Deliberately not an `options` list: endpoints are overridable, so a
+      // network this build has never heard of is a legitimate target. Mainnet is
+      // the one id that is not, and `parse` below is what refuses it.
+      description: 'Target network: devnet, stagenet, preview, preprod, qanet, undeployed (local stack), or a custom id',
+      // Refused here, not in getNetworkConfig: twelve commands never resolve a
+      // network config, including the two that create wallets, so a guard there
+      // is bypassed by exactly the commands where it matters most (#25).
+      // `parse` runs only for values the user supplied, which is all we need —
+      // the default is devnet.
+      parse: async (input: string) => assertNotMainnet(input),
     }),
     wallet: Flags.string({
       char: 'w',
@@ -182,27 +193,22 @@ export abstract class BaseCommand extends Command {
       nodeUrl?: string;
     },
   ): Promise<NetworkConfig> {
-    // Block mainnet usage — this is a reference wallet
-    if (networkId === 'mainnet') {
-      process.stderr.write(
-        '\n' +
-        '  ╔══════════════════════════════════════════════════════════════╗\n' +
-        '  ║                         WARNING                            ║\n' +
-        '  ║                                                            ║\n' +
-        '  ║  Moth is a reference wallet for development and testing.   ║\n' +
-        '  ║  It should NOT be used with real funds on mainnet.         ║\n' +
-        '  ║                                                            ║\n' +
-        '  ║  Use Lace or another commercial wallet for mainnet.        ║\n' +
-        '  ╚══════════════════════════════════════════════════════════════╝\n' +
-        '\n',
-      );
-      this.exit(1);
-    }
+    // A renamed network may still be in someone's script or shell history, so the
+    // flag value is resolved before anything reads a preset from it — and before
+    // the refusal below, so the id being checked is the id about to be used.
+    networkId = canonicalNetworkId(networkId);
+
+    // Kept as defence in depth. The flag catches user input; this catches a
+    // network id arriving any other way — from stored config, or from a caller
+    // that builds flags itself.
+    assertNotMainnet(networkId);
 
     const base = DEFAULT_NETWORKS[networkId] ?? {
       id: networkId,
       nodeUrl: 'ws://localhost:9944',
-      indexerUrl: 'http://localhost:8088',
+      // The GraphQL path is part of the endpoint, not decoration: the indexer
+      // client posts queries to it, and the bare origin is not a GraphQL endpoint.
+      indexerUrl: 'http://localhost:8088/api/v4/graphql',
       prover: serverProver(),
     };
 

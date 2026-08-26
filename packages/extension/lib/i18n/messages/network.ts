@@ -8,7 +8,7 @@ export const network = {
   network_descPreprod: 'Pre-production testing',
   network_descQanet: 'Quality assurance network',
   network_descStagenet: 'Demo network on the v9 ledger',
-  network_descLocal: 'Node running on this machine',
+  network_descUndeployed: 'Local devnet stack on this machine',
   network_endpointUrls: 'Endpoint URLs',
   network_useDefaults: 'Use defaults',
   network_nodeUrl: 'Node URL',

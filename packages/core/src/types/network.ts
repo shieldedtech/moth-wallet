@@ -158,22 +158,20 @@ export const DEFAULT_NETWORKS: Record<string, NetworkConfig> = {
     indexerUrl: 'http://localhost:8088/api/v4/graphql',
     prover: serverProver(),
   },
-  local: {
-    id: 'local',
-    nodeUrl: 'ws://localhost:9933',
-    indexerUrl: 'http://localhost:8088/api/v4/graphql',
-    prover: serverProver(),
-  },
 };
 
 /**
- * Networks the wallet fully supports — it derives addresses for these and can
- * build and submit transactions on them. Mirrors `ALL_NETWORKS` in
- * wallet/address.ts; keep the two in sync. Mainnet is first because it is the
+ * Networks the wallet offers as a choice — it derives addresses for these, and
+ * can build and submit transactions on them. Mainnet is first because it is the
  * default network.
  *
- * Note this is a subset of `DEFAULT_NETWORKS`: `undeployed` has a preset but the
- * wallet can't derive addresses for it, so it is not offered as a choice.
+ * This list and the keys of `DEFAULT_NETWORKS` are the same set, and a test
+ * holds them equal: a preset with no entry here is a network the UI cannot
+ * reach, and an entry here with no preset falls through to a localhost guess.
+ *
+ * `ALL_NETWORKS` in wallet/address.ts is deliberately WIDER — it is the set of
+ * bech32m prefixes a wallet may hold an address for, which includes retired and
+ * unoffered ids. Do not narrow it to match this list.
  */
 export const SUPPORTED_NETWORKS = [
   'mainnet',
@@ -182,5 +180,33 @@ export const SUPPORTED_NETWORKS = [
   'preprod',
   'qanet',
   'stagenet',
-  'local',
+  'undeployed',
 ] as const;
+
+/**
+ * Network ids that were renamed, mapped to what they are now called.
+ *
+ * `local` was a second preset for the same local devnet stack as `undeployed`,
+ * pointing at a node port nothing in that stack listens on. It reached storage
+ * as a wallet's network and as the extension's selected network, so read paths
+ * canonicalise rather than leaving a stored `local` to miss every preset and
+ * fall through to a localhost guess.
+ */
+const RENAMED_NETWORK_IDS = new Map<string, string>([['local', 'undeployed']]);
+
+/**
+ * Resolve a stored or user-supplied network id to the id in use today.
+ *
+ * Apply this wherever a network id is READ from persistence or from a flag —
+ * never when writing one, so the mapping stays a migration rather than a
+ * permanent alias.
+ *
+ * A Map rather than an object literal because the input is arbitrary: network
+ * ids are not restricted to a known list (endpoints are overridable, so a custom
+ * id is a legitimate target), and an object lookup answers `toString` and
+ * `constructor` from `Object.prototype` — returning a function where a string is
+ * declared, which would then reach setNetworkId(), socket paths and JSON output.
+ */
+export function canonicalNetworkId(id: string): string {
+  return RENAMED_NETWORK_IDS.get(id) ?? id;
+}

@@ -1502,8 +1502,8 @@
   "network_authHeaderValue": {
     "message": "Valor de la cabecera"
   },
-  "network_descLocal": {
-    "message": "Nodo en este equipo"
+  "network_descUndeployed": {
+    "message": "Stack devnet local en este equipo"
   },
   "settings_preseedWarmingIncluded": {
     "message": "Incluido"

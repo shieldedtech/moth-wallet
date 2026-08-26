@@ -408,8 +408,9 @@ export function PasswordStep({
 
 // Choose a network (design template setup-network), rendered in the full-tab
 // setup Shell like every other step. The named network list is shared with
-// Settings → Network (see NetworkConfig); only SUPPORTED_NETWORKS are offered
-// (mainnet is the default; undeployed isn't address-derivable). The choice
+// Settings → Network (see NetworkConfig); only SUPPORTED_NETWORKS are offered,
+// and mainnet among those only with developer mode on. This step defaults to
+// preprod, the network with a bundled pre-seed reference. The choice
 // becomes the NEW account's network — existing accounts keep theirs. It is
 // also saved as the default selection for the new account flow.
 
