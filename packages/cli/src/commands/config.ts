@@ -1,13 +1,19 @@
 import { Args } from '@oclif/core';
 import { BaseCommand } from '../base-command.js';
+import { assertNotMainnet } from '../mainnet-guard.js';
 
 const ALLOWED_KEYS = ['default-network', 'prover', 'proof-server-url', 'node-url', 'indexer-url', 'check-matrix', 'matrix-url'];
 
 export default class Config extends BaseCommand {
   static override description = 'Get or set configuration values';
 
+  // `action` is required. It was optional, declared ahead of a required `key`,
+  // which @oclif/core rejects outright — with `action` absent a single argument
+  // is ambiguous between an action and a key — so every invocation of this
+  // command failed at spec validation and the body never ran (#53). Requiring it
+  // changes no working behaviour, because nothing worked.
   static override args = {
-    action: Args.string({ description: 'Action: get or set', required: false, options: ['get', 'set'] }),
+    action: Args.string({ description: 'Action: get or set', required: true, options: ['get', 'set'] }),
     key: Args.string({ description: 'Configuration key', required: true }),
     value: Args.string({ description: 'Value to set (required for set)' }),
   };
@@ -44,6 +50,12 @@ export default class Config extends BaseCommand {
         this.exit(1);
         return;
       }
+      // The second way mainnet can enter: stored, not passed. WalletManager falls
+      // back to config.defaultNetwork for a wallet with no network of its own, so
+      // a stored value reaches the same code paths without --network ever being
+      // used. The flag guard cannot see this one.
+      if (args.key === 'default-network') assertNotMainnet(args.value);
+
       if (args.key === 'prover' && args.value !== 'server' && args.value !== 'wasm') {
         this.outputError('INVALID_INPUT', 'Prover must be "server" or "wasm"');
         this.exit(1);

@@ -150,3 +150,4 @@ export {
   type AuditDecision, type AuditLogOptions,
   type ApiKeyRecord, type ApiKeyGenerated, type ApiKeyAuthResult,
 } from './daemon/index.js';
+export { unshieldedSplit, describeReservation, type SpendableSplit } from './wallet/spendable.js';
