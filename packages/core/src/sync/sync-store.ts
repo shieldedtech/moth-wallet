@@ -39,6 +39,20 @@ export function emptyRefHeightKey(networkId: string): string {
   return `empty-ref/${networkId}/height.txt`;
 }
 
+/**
+ * Where a cursor's witness lives: beside the cache it validates.
+ *
+ * One per (wallet, part), so a renumbering invalidates only the caches that
+ * actually depend on the moved ids. `EMPTY_REF_WALLET` routes through the same
+ * function deliberately — the pre-seed reference carries indexer-assigned
+ * cursors exactly as a wallet cache does, and it is the one every new wallet
+ * inherits, so a reference with a stale cursor spreads the skew rather than
+ * containing it.
+ */
+export function cursorWitnessKey(networkId: string, walletName: string, part: WalletPart): string {
+  return `witness/${networkId}/${walletName}/${part}.json`;
+}
+
 export function emptyRefMnemonicKey(networkId: string): string {
   return `empty-ref/${networkId}/mnemonic.txt`;
 }
