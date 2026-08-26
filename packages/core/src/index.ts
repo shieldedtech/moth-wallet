@@ -88,6 +88,14 @@ export {
   type DustGenerationSlice,
   type DustRegistrationEstimate,
 } from './sync/dust-registration-estimate.js';
+export {
+  readEventWitness,
+  compareWitness,
+  verifyCursorWitness,
+  type CursorWitness,
+  type WitnessStream,
+  type WitnessVerdict,
+} from './sync/cursor-witness.js';
 export { ensureEmptyRefCache, warmEmptyRefCache, refreshEmptyRefCache, preseedReferenceStatus, preSeedNewWallet, type WarmProgress } from './sync/preseed.js';
 
 // Contract
