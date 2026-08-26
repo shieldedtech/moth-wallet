@@ -403,8 +403,9 @@ Every command accepts:
 |---------|-------------|
 | `moth balance` | Show NIGHT (shielded + unshielded) + DUST + non-NIGHT token balances. In-process — spins up its own sync. |
 | `moth wallet status` | Same info but via the daemon's warm snapshot (instant). Requires TUI or `moth daemon serve`. |
-| `moth transfer [<amount>] [NIGHT] [--to <addr>]` | Transfer NIGHT (prompts for missing details) |
-| `moth transfer <amount> NIGHT --to <addr> --shielded` | Shielded transfer |
+| `moth transfer [<amount>] [--to <addr>]` | Transfer NIGHT (prompts for missing details). NIGHT only — the token is not selectable |
+| `moth transfer <amount> --to <addr> --shielded` | Shielded transfer |
+| `moth daemon transfer --to <addr> --token-id <id> --amount <raw>` | Transfer any token through the daemon. `--amount` is raw smallest units; `--night <decimal>` converts at 10⁶ but only for NIGHT |
 | `moth transfer batch <file.json>` | Batch transfer from JSON file (`@stdin` for pipe). Exit: 0 all ok, 1 partial, 2 all failed |
 
 ### Contract Operations
@@ -581,10 +582,15 @@ const prover = new ProofClient('http://localhost:6300');
 
 | Network | Node | Indexer | Proof Server |
 |---------|------|--------|--------------|
-| devnet | `ws://localhost:9944` | `http://localhost:8088` | `http://localhost:6300` |
+| devnet | `https://rpc.devnet.midnight.network` | `https://indexer.devnet.midnight.network/api/v4/graphql` | `http://localhost:6300` |
 | preview | `https://rpc.preview.midnight.network` | `https://indexer.preview.midnight.network/api/v4/graphql` | `http://localhost:6300` |
 | preprod | `https://rpc.preprod.midnight.network` | `https://indexer.preprod.midnight.network/api/v4/graphql` | `http://localhost:6300` |
-| qanet | `https://rpc.qanet.dev.midnight.network` | `https://indexer.qanet.dev.midnight.network/api/v4/graphql` | `http://localhost:6300` |
+| qanet | `https://rpc.qanet.midnight.network` | `https://indexer.qanet.midnight.network/api/v4/graphql` | `http://localhost:6300` |
+| undeployed | `ws://localhost:9944` | `http://localhost:8088/api/v4/graphql` | `http://localhost:6300` |
+
+`undeployed` is the local devnet stack — see [§2. Fund the Wallet](#2-fund-the-wallet-local-devnet-only) for bringing one up.
+
+Mainnet is deliberately absent. Moth is an unaudited reference wallet for development and testing, so it is not a network to use it on: the CLI refuses to run against mainnet, and the extension keeps it out of the picker.
 
 Default network is `devnet`. Endpoints can be overridden at multiple levels (highest precedence first):
 

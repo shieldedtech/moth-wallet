@@ -186,8 +186,14 @@ describe('saveNetworkConfig', () => {
   });
 
   it('requires an unlocked wallet and a supported network', async () => {
+    // `stagenet` has bech32m addresses but no preset and is not offered, so it
+    // exercises the guard the way `undeployed` used to before it became a real
+    // network choice.
     await expect(
-      saveNetworkConfig({ network: 'undeployed', endpoints: endpoints('undeployed'), resyncApproved: true }),
+      saveNetworkConfig({ network: 'stagenet', endpoints: endpoints('devnet'), resyncApproved: true }),
+    ).rejects.toThrow('Unsupported network');
+    await expect(
+      saveNetworkConfig({ network: 'local', endpoints: endpoints('undeployed'), resyncApproved: true }),
     ).rejects.toThrow('Unsupported network');
     await fakeBrowser.storage.session.clear();
     await expect(

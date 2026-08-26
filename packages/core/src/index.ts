@@ -2,7 +2,9 @@
 export * from './types/index.js';
 export type { NetworkConfig, NetworkEndpoints, ProverConfig } from './types/network.js';
 export {
+  canonicalNetworkId,
   DEFAULT_NETWORKS,
+  SUPPORTED_NETWORKS,
   validateNetworkUrl,
   validateNetworkConfig,
   serverProver,
@@ -23,6 +25,13 @@ export {
 export { generateMnemonic24, validateMnemonic, mnemonicToSeed, hexSeedToUint8Array } from './wallet/mnemonic.js';
 export { Roles } from './wallet/address.js';
 export { encryptKeystore, decryptKeystore, type EncryptedKeystore } from './wallet/keystore.js';
+export {
+  parseNightAmount,
+  formatNightAmount,
+  InvalidAmountError,
+  STARS_PER_NIGHT,
+  NIGHT_DECIMALS,
+} from './wallet/night-amount.js';
 export { deriveAllAddressesFromSeed, deriveRawKeys, deriveShieldedPublicKeys, decodeBech32mAddress } from './wallet/address.js';
 export { signMessage, signedMessageBytes, type SignEncoding, type SignedMessage } from './wallet/sign-message.js';
 export { deriveAppSecret } from './wallet/app-secret.js';
@@ -149,3 +158,4 @@ export {
   type AuditDecision, type AuditLogOptions,
   type ApiKeyRecord, type ApiKeyGenerated, type ApiKeyAuthResult,
 } from './daemon/index.js';
+export { unshieldedSplit, describeReservation, type SpendableSplit } from './wallet/spendable.js';
