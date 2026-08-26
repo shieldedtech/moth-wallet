@@ -16,6 +16,8 @@
 
 import {execFileSync} from 'node:child_process';
 import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {mkdtempSync} from 'node:fs';
 import {afterAll, beforeAll, describe, expect, it} from 'vitest';
 import {Client} from '@modelcontextprotocol/sdk/client/index.js';
 import {StdioClientTransport} from '@modelcontextprotocol/sdk/client/stdio.js';
@@ -247,6 +249,111 @@ describe('moth mcp (no devnet required)', () => {
       const s = structured(res);
       expect(typeof s.everSynced).toBe('boolean');
       expect(typeof s.elapsedMs).toBe('number');
+    });
+  });
+
+  describe('socket transport (kernel-enforced access control)', () => {
+    it('requires --bind', () => {
+      const r = runMcpExpectExit(
+        ['--wallet', walletName, '--network', NETWORK, '--transport', 'socket'],
+        {...process.env, MOTH_PASSPHRASE: PASSPHRASE},
+      );
+      expect(r.exitCode).toBe(2);
+      expect(r.stderr).toContain('--bind');
+    });
+
+    it('refuses a path whose directory does not exist, instead of a bare ENOENT', () => {
+      const r = runMcpExpectExit(
+        [
+          '--wallet', walletName, '--network', NETWORK,
+          '--transport', 'socket', '--bind', join(tmpdir(), 'moth-mcp-absent-dir', 'x.sock'),
+        ],
+        {...process.env, MOTH_PASSPHRASE: PASSPHRASE},
+      );
+      expect(r.exitCode).toBe(2);
+      expect(r.stderr).toContain('does not exist');
+    });
+
+    it('serves MCP over the socket, owner-only, and exits cleanly on SIGTERM', async () => {
+      const {spawn} = await import('node:child_process');
+      const {statSync} = await import('node:fs');
+      const {request} = await import('node:http');
+      const socketPath = join(mkdtempSync(join(tmpdir(), 'moth-mcp-sock-')), 'mcp.sock');
+
+      const child = spawn(
+        MOTH_BIN,
+        ['mcp', '--wallet', walletName, '--network', NETWORK, '--transport', 'socket', '--bind', socketPath],
+        {env: {...process.env, MOTH_PASSPHRASE: PASSPHRASE}, stdio: ['ignore', 'pipe', 'pipe']},
+      );
+      let stderrBuf = '';
+      child.stderr.on('data', (c: Buffer) => (stderrBuf += c.toString()));
+      const exited = new Promise<number | null>((resolve) => child.on('exit', resolve));
+
+      try {
+        const deadline = Date.now() + 60_000;
+        let listening = false;
+        while (!listening && Date.now() < deadline) {
+          listening = /listening at unix:/.test(stderrBuf);
+          if (!listening) await new Promise((r) => setTimeout(r, 200));
+        }
+        expect(listening, `server never announced the socket; stderr: ${stderrBuf.slice(-500)}`).toBe(true);
+
+        // The whole point of this transport: only the owner can reach it. A
+        // group- or world-readable socket would be no better than the loopback
+        // port it exists to replace.
+        expect(statSync(socketPath).mode & 0o777).toBe(0o600);
+
+        // The MCP SDK's client speaks URLs, not socket paths, so drive the
+        // protocol directly: an initialize POST must be answered with a session.
+        const sessionId = await new Promise<string | undefined>((resolveOuter, rejectOuter) => {
+          const req = request(
+            {
+              socketPath,
+              path: '/mcp',
+              method: 'POST',
+              headers: {'Content-Type': 'application/json', Accept: 'application/json, text/event-stream'},
+            },
+            (res) => {
+              res.resume();
+              res.on('end', () => resolveOuter(res.headers['mcp-session-id'] as string | undefined));
+            },
+          );
+          req.on('error', rejectOuter);
+          req.end(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              id: 1,
+              method: 'initialize',
+              params: {
+                protocolVersion: '2024-11-05',
+                capabilities: {},
+                clientInfo: {name: 'socket-probe', version: '0'},
+              },
+            }),
+          );
+        });
+        expect(sessionId, 'initialize over the socket did not open a session').toBeTruthy();
+
+        child.kill('SIGTERM');
+        expect(await exited).toBe(0);
+      } finally {
+        if (child.exitCode === null) child.kill('SIGKILL');
+      }
+    }, 90_000);
+
+    it('is the listener spend tools are allowed on, unlike http', () => {
+      // http + spend is refused outright: that listener has no authentication,
+      // so anything on the host could move funds.
+      const refused = runMcpExpectExit(
+        [
+          '--wallet', walletName, '--network', NETWORK,
+          '--transport', 'http', '--bind', '127.0.0.1:0',
+          '--auto-approve', '--max-spend', '10',
+        ],
+        {...process.env, MOTH_PASSPHRASE: PASSPHRASE, MOTH_DAEMON_AUTO_APPROVE: '1'},
+      );
+      expect(refused.exitCode).toBe(2);
+      expect(refused.stderr).toContain('--transport socket');
     });
   });
 
