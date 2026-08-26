@@ -21,7 +21,7 @@ describe('nativeAssetLabelsForNetwork', () => {
   });
 
   it('uses testnet names everywhere else', () => {
-    for (const id of ['preprod', 'preview', 'devnet', 'qanet', 'local']) {
+    for (const id of ['preprod', 'preview', 'devnet', 'qanet', 'undeployed']) {
       expect(nativeAssetLabelsForNetwork(id)).toEqual(TESTNET_NATIVE_ASSET_LABELS);
     }
   });

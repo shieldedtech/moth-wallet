@@ -1472,8 +1472,8 @@
   "network_authHeaderValue": {
     "message": "Valeur de l’en-tête"
   },
-  "network_descLocal": {
-    "message": "Nœud sur cette machine"
+  "network_descUndeployed": {
+    "message": "Stack devnet local sur cette machine"
   },
   "settings_preseedWarmingIncluded": {
     "message": "Inclus"

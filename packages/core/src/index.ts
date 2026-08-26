@@ -2,7 +2,9 @@
 export * from './types/index.js';
 export type { NetworkConfig, NetworkEndpoints, ProverConfig } from './types/network.js';
 export {
+  canonicalNetworkId,
   DEFAULT_NETWORKS,
+  SUPPORTED_NETWORKS,
   validateNetworkUrl,
   validateNetworkConfig,
   serverProver,
