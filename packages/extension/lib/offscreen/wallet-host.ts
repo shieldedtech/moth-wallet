@@ -42,9 +42,10 @@ import {
   type SwapInput,
   type SignEncoding,
   type SignedMessage,
+  ledger as activeLedger,
 } from '@shieldedtech/moth-browser';
 import { deriveAllAddressesFromSeed } from '@shieldedtech/moth-wallet/wallet/address';
-import * as ledger from '@midnight-ntwrk/ledger-v8';
+import type * as ledger from '@midnight-ntwrk/ledger-v8';
 import type { HistoryEntry } from '@midnight-ntwrk/dapp-connector-api';
 import { serializeBalances } from '../messaging/balances-json';
 import { serializeActivity } from '../messaging/activity-json';
@@ -785,7 +786,11 @@ export async function transferSubmit(
   await initSdk((await detectLedgerVersion(network)).version);
   return trackOp(async () => {
     const wallet = await syncEnsure(seedHex, walletName, network);
-    const transaction = ledger.Transaction.deserialize<ledger.SignatureEnabled, ledger.Proof, ledger.Binding>(
+    const transaction = activeLedger().Transaction.deserialize<
+      ledger.SignatureEnabled,
+      ledger.Proof,
+      ledger.Binding
+    >(
       'signature',
       'proof',
       'binding',
