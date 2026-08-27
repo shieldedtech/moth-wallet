@@ -33,7 +33,9 @@ import {BaseCommand} from '../base-command.js';
 import {guardStdout} from '../mcp/stdout-guard.js';
 import {createWalletRuntime} from '../mcp/runtime.js';
 import {buildMcpServer} from '../mcp/server.js';
-import {startMcpHttpServer} from '../mcp/http-transport.js';
+import {existsSync} from 'node:fs';
+import {dirname, resolve as resolvePath} from 'node:path';
+import {startMcpHttpServer, type McpBind} from '../mcp/http-transport.js';
 
 const AUTO_APPROVE_ENV = 'MOTH_DAEMON_AUTO_APPROVE';
 
@@ -44,8 +46,11 @@ const LOOPBACK_HOSTS = new Set(['127.0.0.1', '::1', 'localhost', '::ffff:127.0.0
 export default class Mcp extends BaseCommand {
   static override description =
     'Start an MCP (Model Context Protocol) server exposing this wallet to AI agents. ' +
-    'Default transport is stdio (the MCP client spawns this command); --transport http binds a loopback URL instead, ' +
-    'so you run the server yourself and any number of clients connect to http://<bind>/mcp. ' +
+    'Default transport is stdio (the MCP client spawns this command). --transport socket serves the same protocol over a ' +
+    'Unix socket you name, chmod 0600, so any number of clients share one unlocked wallet with the kernel deciding who may ' +
+    'connect — the mode to prefer when the client is not spawning the server, and the only listener spend tools are ' +
+    'allowed on. --transport http binds a loopback URL instead, for clients that can only take a URL; it is unencrypted ' +
+    'and unauthenticated, so it serves read tools only. ' +
     'Read tools (status, balances, addresses, activity, wallet list, wait_for_sync) are always served. ' +
     `Spend tools (transfer, fee estimate, dust register/deregister) require --auto-approve plus ${AUTO_APPROVE_ENV}=1 plus --max-spend. ` +
     'Requires the wallet passphrase via MOTH_PASSPHRASE (stdin is the protocol channel in stdio mode, so no prompt is possible). ' +
@@ -57,12 +62,12 @@ export default class Mcp extends BaseCommand {
     transport: Flags.string({
       description:
         'Transport to serve MCP on. `stdio` (default) speaks JSON-RPC over this process\'s stdin/stdout — the MCP client owns the process. `http` binds the MCP Streamable HTTP endpoint at http://<bind>/mcp — you own the process and clients connect by URL; combine with --bind.',
-      options: ['stdio', 'http'],
+      options: ['stdio', 'http', 'socket'],
       default: 'stdio',
     }),
     bind: Flags.string({
       description:
-        'HTTP bind address as <host>:<port> (e.g. 127.0.0.1:8765), required with --transport http. Loopback only — the transport is unencrypted and unauthenticated, so a non-loopback host is refused. Port 0 picks a free port (printed on stderr).',
+        'Where to listen. With --transport socket, a filesystem path for the Unix socket (e.g. /tmp/moth-mcp.sock): access control is the kernel\'s, the socket is chmod 0600, and it is the only listener spend tools are allowed on. With --transport http, <host>:<port> (e.g. 127.0.0.1:8765) — loopback only, unencrypted and unauthenticated, so read-only. Port 0 picks a free port (printed on stderr).',
     }),
     'auto-approve': Flags.boolean({
       description:
@@ -140,10 +145,45 @@ export default class Mcp extends BaseCommand {
     }
 
     // ── HTTP bind validation (fail fast, before unlock) ──────────────
-    const transportKind = flags.transport as 'stdio' | 'http';
-    let bindHost = '';
-    let bindPort = 0;
-    if (transportKind === 'http') {
+    const transportKind = flags.transport as 'stdio' | 'http' | 'socket';
+
+    // Spend on an unauthenticated listener would let any process or user on the
+    // host move funds. stdio is owned by the spawning client and the Unix socket
+    // is owned by its file mode; a loopback TCP port is owned by nobody, which is
+    // why the daemon refuses to start a TCP bind without API keys at all.
+    if (flags['auto-approve'] && transportKind === 'http') {
+      this.outputError(
+        'INVALID_INPUT',
+        'Spend tools are refused on --transport http: that listener is unauthenticated, so anything on this host could drive them. Use --transport socket (chmod 0600, kernel-enforced) or --transport stdio (the client owns the process).',
+      );
+      this.exit(2);
+      return;
+    }
+
+    let mcpBind: McpBind | null = null;
+    if (transportKind === 'socket') {
+      if (!flags.bind) {
+        this.outputError(
+          'INVALID_INPUT',
+          '--bind <path> is required when --transport socket (e.g. --bind /tmp/moth-mcp.sock)',
+        );
+        this.exit(2);
+        return;
+      }
+      const socketPath = resolvePath(flags.bind);
+      // The directory has to exist; bind() will not create it, and the failure
+      // it produces otherwise (ENOENT on a path that looks fine) is confusing.
+      const parent = dirname(socketPath);
+      if (!existsSync(parent)) {
+        this.outputError(
+          'INVALID_INPUT',
+          `Cannot bind ${socketPath}: the directory ${parent} does not exist.`,
+        );
+        this.exit(2);
+        return;
+      }
+      mcpBind = {kind: 'unix', socketPath};
+    } else if (transportKind === 'http') {
       if (!flags.bind) {
         this.outputError('INVALID_INPUT', '--bind <host>:<port> is required when --transport http');
         this.exit(2);
@@ -155,8 +195,8 @@ export default class Mcp extends BaseCommand {
         this.exit(2);
         return;
       }
-      bindHost = flags.bind.slice(0, sep);
-      bindPort = Number.parseInt(flags.bind.slice(sep + 1), 10);
+      const bindHost = flags.bind.slice(0, sep);
+      const bindPort = Number.parseInt(flags.bind.slice(sep + 1), 10);
       if (!Number.isInteger(bindPort) || bindPort < 0 || bindPort > 65535) {
         this.outputError(
           'INVALID_INPUT',
@@ -168,11 +208,12 @@ export default class Mcp extends BaseCommand {
       if (!LOOPBACK_HOSTS.has(bindHost)) {
         this.outputError(
           'INVALID_INPUT',
-          `Refusing to bind "${bindHost}": the MCP HTTP transport binds loopback only (127.0.0.1, ::1, localhost). It is unencrypted and unauthenticated — for remote access, front a loopback bind with a TLS-terminating reverse proxy that adds authentication.`,
+          `Refusing to bind "${bindHost}": the MCP HTTP transport binds loopback only (127.0.0.1, ::1, localhost). It is unencrypted and unauthenticated — for remote access, front a loopback bind with a TLS-terminating reverse proxy that adds authentication, or use --transport socket, whose access control is the kernel's.`,
         );
         this.exit(2);
         return;
       }
+      mcpBind = {kind: 'tcp', host: bindHost, port: bindPort};
     }
 
     const walletName = await this.resolveWalletName(flags);
@@ -254,18 +295,52 @@ export default class Mcp extends BaseCommand {
       if (shuttingDown) return;
       shuttingDown = true;
       process.stderr.write(`\n[mcp] ${reason}, shutting down\n`);
+
+      // Last resort. The two awaits below are bounded individually, but a
+      // shutdown that cannot finish is a wallet left unlocked in memory, so the
+      // guarantee should not depend on having predicted where it sticks. Unref'd:
+      // it fires only while something else is still holding the loop open, which
+      // is exactly the case it exists for.
+      const watchdog = setTimeout(() => {
+        process.stderr.write('[mcp] shutdown watchdog fired — exiting now\n');
+        process.exit(0);
+      }, 15_000);
+      watchdog.unref();
       auditLog.recordLifecycle({
         wallet: walletName,
         network: network.id,
         event: 'shutdown-signal',
         message: `mcp-${transportKind} ${reason}`,
       });
-      await closeFrontend().catch((err) => {
-        process.stderr.write(`[mcp] transport close error: ${err}\n`);
-      });
-      await synced?.stop().catch((err) => {
-        process.stderr.write(`[mcp] synced.stop error: ${err}\n`);
-      });
+      // Bounded, because neither step is guaranteed to return. The wallet SDK's
+      // node client waits indefinitely on a node it cannot reach — the same
+      // failure the extension bounded in #86 — and the sync engine's stop() waits
+      // on it. Whether that bites is a race: if SIGTERM lands before the
+      // background sync attaches, `synced` is still null and stop() is a no-op,
+      // which is why this passed locally and hung on CI, where the engine won.
+      //
+      // A shutdown must not depend on a network call: past the deadline we say so
+      // and exit anyway. Dropping the wallet's keys and stopping the process are
+      // the parts that matter, and process.exit takes the socket with it.
+      const bounded = async (label: string, work: Promise<unknown>, ms = 5_000): Promise<void> => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const timedOut = Symbol('timeout');
+        const outcome = await Promise.race([
+          work.catch((err) => {
+            process.stderr.write(`[mcp] ${label} error: ${err}\n`);
+          }),
+          new Promise<typeof timedOut>((resolveOuter) => {
+            timer = setTimeout(() => resolveOuter(timedOut), ms);
+          }),
+        ]);
+        if (timer) clearTimeout(timer);
+        if (outcome === timedOut) {
+          process.stderr.write(`[mcp] ${label} did not finish within ${ms}ms — exiting anyway\n`);
+        }
+      };
+
+      await bounded('transport close', closeFrontend());
+      if (synced) await bounded('sync stop', synced.stop());
       try {
         unlocked.lock();
       } catch (err) {
@@ -278,13 +353,12 @@ export default class Mcp extends BaseCommand {
       process.exit(0);
     };
 
-    if (transportKind === 'http') {
+    if (mcpBind) {
       // Operator-run mode: any number of MCP clients connect by URL;
       // the process lives until SIGINT/SIGTERM. One McpServer per
       // session, all sharing this runtime and its handlers.
       const httpHandle = await startMcpHttpServer({
-        host: bindHost,
-        port: bindPort,
+        bind: mcpBind,
         createMcpServer: () => buildMcpServer(serverDeps),
         log: (msg) => process.stderr.write(`[mcp http] ${msg}\n`),
       });
