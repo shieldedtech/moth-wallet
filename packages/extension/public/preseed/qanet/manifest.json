@@ -1,0 +1,30 @@
+{
+  "network": "qanet",
+  "height": 2314786,
+  "parts": {
+    "shielded": {
+      "bytes": 3695,
+      "gzipBytes": 1871
+    },
+    "unshielded": {
+      "bytes": 365,
+      "gzipBytes": 278
+    },
+    "dust": {
+      "bytes": 187296,
+      "gzipBytes": 88516
+    }
+  },
+  "witnesses": {
+    "shielded": {
+      "stream": "zswapLedgerEvents",
+      "id": 346690,
+      "digest": "de4e721499f796a0"
+    },
+    "dust": {
+      "stream": "dustLedgerEvents",
+      "id": 346693,
+      "digest": "239f8eb8638e1abd"
+    }
+  }
+}

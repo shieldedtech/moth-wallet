@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
-import { DEFAULT_NETWORKS, serverProver } from '@shieldedtech/moth-wallet';
+import { serverProver, SUPPORTED_NETWORKS } from '@shieldedtech/moth-wallet';
 import type { NetworkState } from '../types.js';
 import type { NetworkOverrides } from '../settings.js';
 import { SectionHeader } from '../components/SectionHeader.js';
@@ -14,7 +14,7 @@ interface NetworkProps {
   onBack: () => void;
 }
 
-const NETWORKS = Object.keys(DEFAULT_NETWORKS);
+const NETWORKS: readonly string[] = SUPPORTED_NETWORKS;
 
 type UrlField = 'nodeUrl' | 'indexerUrl' | 'proofServerUrl';
 

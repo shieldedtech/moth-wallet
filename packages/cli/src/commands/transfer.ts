@@ -2,6 +2,10 @@ import { Args, Flags } from '@oclif/core';
 import { BaseCommand } from '../base-command.js';
 import { getPassphrase } from '../adapters/passphrase.js';
 import {
+  describeReservation,
+  unshieldedSplit,
+  formatBalance,
+  NIGHT_DENOMINATION,
   sendTokensWithKeys,
   startWalletSync,
   NIGHT_TOKEN_ID,
@@ -145,9 +149,30 @@ export default class Transfer extends BaseCommand {
         to,
       };
 
-      const txHash = await sendTokensWithKeys(syncedWallet.facade, wallet.walletKeys, network.id, [req], (stage) => {
-        process.stderr.write(`Transfer: ${stage}\n`);
-      });
+      let txHash: string;
+      try {
+        txHash = await sendTokensWithKeys(syncedWallet.facade, wallet.walletKeys, network.id, [req], (stage) => {
+          process.stderr.write(`Transfer: ${stage}\n`);
+        });
+      } catch (err) {
+        // "Insufficient funds" on a wallet that just reported a sufficient
+        // balance is not a contradiction: the balance counts coins reserved by
+        // transactions in flight, and only available coins can be spent (#72).
+        // Say which number blocked it rather than leaving the two irreconcilable.
+        const message = err instanceof Error ? err.message : String(err);
+        if (/insufficient funds/i.test(message)) {
+          const split = unshieldedSplit(syncedWallet.balances.coins, tokenId);
+          const detail = describeReservation(split, amount, (raw) =>
+            isNight ? `${formatBalance(raw, NIGHT_DENOMINATION)} NIGHT` : `${raw} base units`,
+          );
+          if (detail) {
+            this.outputError('WALLET_ERROR', `Insufficient available funds. ${detail}`);
+            this.exit(1);
+            return;
+          }
+        }
+        throw err;
+      }
 
       this.outputSuccess({
         txHash,

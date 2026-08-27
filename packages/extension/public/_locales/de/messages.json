@@ -1472,8 +1472,8 @@
   "network_authHeaderValue": {
     "message": "Header-Wert"
   },
-  "network_descLocal": {
-    "message": "Node auf diesem Rechner"
+  "network_descUndeployed": {
+    "message": "Lokaler Devnet-Stack auf diesem Rechner"
   },
   "settings_preseedWarmingIncluded": {
     "message": "Enthalten"

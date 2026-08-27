@@ -2,7 +2,9 @@
 export * from './types/index.js';
 export type { NetworkConfig, NetworkEndpoints, ProverConfig } from './types/network.js';
 export {
+  canonicalNetworkId,
   DEFAULT_NETWORKS,
+  SUPPORTED_NETWORKS,
   validateNetworkUrl,
   validateNetworkConfig,
   serverProver,
@@ -86,6 +88,14 @@ export {
   type DustGenerationSlice,
   type DustRegistrationEstimate,
 } from './sync/dust-registration-estimate.js';
+export {
+  readEventWitness,
+  compareWitness,
+  verifyCursorWitness,
+  type CursorWitness,
+  type WitnessStream,
+  type WitnessVerdict,
+} from './sync/cursor-witness.js';
 export { ensureEmptyRefCache, warmEmptyRefCache, refreshEmptyRefCache, preseedReferenceStatus, preSeedNewWallet, type WarmProgress } from './sync/preseed.js';
 
 // Contract
@@ -148,3 +158,4 @@ export {
   type AuditDecision, type AuditLogOptions,
   type ApiKeyRecord, type ApiKeyGenerated, type ApiKeyAuthResult,
 } from './daemon/index.js';
+export { unshieldedSplit, describeReservation, type SpendableSplit } from './wallet/spendable.js';
