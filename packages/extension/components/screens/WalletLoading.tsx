@@ -21,10 +21,24 @@ function loadingDetail(syncMessage: string): string {
  * rebuilds its shielded, unshielded, and DUST state. */
 export function WalletLoading({
   syncMessage,
+  slow = false,
   onOpenNetwork,
 }: {
   syncMessage: string;
-  /** Present so a failure is not a dead end — the panel has no other chrome here. */
+  /**
+   * True once this interstitial has been up long enough that "still
+   * starting up" no longer explains it — see useSlowSync in lib/ui/client.ts,
+   * which is what actually times this. A sync that never connects (wrong
+   * network selected, an unreachable endpoint, or a subsystem that reports
+   * progress but never finishes) does not throw, so `failure` below never
+   * fires — without this, that case has no error and no route out: the
+   * panel's router shows only WalletLoading until a balance snapshot
+   * arrives, so a genuinely stuck sync traps the user with a spinner and no
+   * way to reach Settings → Network to fix it.
+   */
+  slow?: boolean;
+  /** Present so a failure (or a slow sync, see `slow`) is not a dead end —
+   *  the panel has no other chrome here. */
   onOpenNetwork?: () => void;
 }) {
   // A failure is not a slow step. Without this it falls through loadingDetail's
@@ -68,6 +82,17 @@ export function WalletLoading({
           <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary [animation-delay:-200ms]" />
           <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
         </div>
+
+        {slow && (
+          <>
+            <p className="mb-0 mt-4 text-[12.5px] text-muted-foreground">{t('welcome_loadingFailedHint')}</p>
+            {onOpenNetwork ? (
+              <Button variant="secondary" size="lg" className="mt-4" onClick={onOpenNetwork}>
+                {t('welcome_loadingFailedAction')}
+              </Button>
+            ) : null}
+          </>
+        )}
       </div>
     </PanelScreen>
   );
