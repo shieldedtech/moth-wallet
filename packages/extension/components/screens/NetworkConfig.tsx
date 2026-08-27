@@ -31,7 +31,7 @@ export const NETWORK_LABELS: Record<SupportedNetwork, string> = {
   preview: 'Preview',
   preprod: 'Preprod',
   qanet: 'QA net',
-  local: 'Local',
+  undeployed: 'Undeployed',
 };
 
 export const NETWORK_DESCRIPTIONS: Record<SupportedNetwork, MessageKey> = {
@@ -40,7 +40,7 @@ export const NETWORK_DESCRIPTIONS: Record<SupportedNetwork, MessageKey> = {
   preview: 'network_descPreview',
   preprod: 'network_descPreprod',
   qanet: 'network_descQanet',
-  local: 'network_descLocal',
+  undeployed: 'network_descUndeployed',
 };
 
 const isSupported = (id: string): id is SupportedNetwork =>
@@ -114,6 +114,24 @@ export function networkLabel(id: string): string {
   return isSupported(id) ? NETWORK_LABELS[id] : id;
 }
 
+/**
+ * Which network the panel opens on, given the saved settings.
+ *
+ * A saved id the build no longer offers cannot be shown as selected — there is
+ * no radio for it — so the panel falls back. That fallback is `mainnet` for the
+ * side panel, which is why a stored id has to be resolved to a current one
+ * BEFORE it arrives here (see `canonicalNetworkId` in core): reaching this
+ * fallback would present a value-bearing network as the account's own, and
+ * `selectableNetworks` would then offer mainnet even with developer mode off,
+ * because it never strands a wallet on the network it is already using.
+ *
+ * Extracted so the load path can be tested against real stored settings rather
+ * than a copy of this decision.
+ */
+export function loadedNetwork(saved: string, fallback: SupportedNetwork): SupportedNetwork {
+  return isSupported(saved) ? saved : fallback;
+}
+
 export interface NetworkConfigState {
   network: SupportedNetwork;
   current: SupportedNetwork;
@@ -151,7 +169,7 @@ export function useNetworkConfig(fallback: SupportedNetwork = 'mainnet'): Networ
 
   useEffect(() => {
     void sendMessage('settingsGet', undefined).then((settings) => {
-      const named = isSupported(settings.network) ? settings.network : fallback;
+      const named = loadedNetwork(settings.network, fallback);
       const loadedUrls = settings.customEndpoints ?? presetFor(named);
       setCurrent(named);
       setNetwork(named);

@@ -70,7 +70,11 @@ common dApp shape: dApps cannot prove; `stage: 'sealed' | 'unsealed' |
 'unproven'` selects the input), signs, and by default submits it, so an agent
 can pay for access and use the token the site returns. `submit_transaction`
 covers the remaining case of a fully-built FinalizedTransaction that only
-needs sending. This required a new core daemon verb, `balanceTransaction`
+needs sending. Both tools take the transaction inline as hex (`txHex`) or as
+a file path read on the server host (`txFile`, holding hex text or the raw
+bytes) — serialized transactions with proofs run to hundreds of KB, too
+large to shuttle through an agent's context as a tool argument when a dApp
+writes them to disk. This required a new core daemon verb, `balanceTransaction`
 (the existing connector operation, extended with the unproven stage via the
 facade's `balanceUnprovenTransaction`), which the TUI and `daemon serve`
 hosts now also serve with the usual L3 modal. Both tools are separately armed

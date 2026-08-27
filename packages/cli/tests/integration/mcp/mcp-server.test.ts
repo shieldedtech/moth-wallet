@@ -15,6 +15,7 @@
 //     max-spend refusal.
 
 import {execFileSync} from 'node:child_process';
+import {rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {mkdtempSync} from 'node:fs';
@@ -501,17 +502,69 @@ describe('moth mcp (no devnet required)', () => {
     }
   }, 120_000);
 
-  it('registers balance_transaction and submit_transaction only under --allow-balancing', async () => {
-    const mcp = await connectMcp(walletName, {spend: true, balancing: true});
-    try {
+  describe('balancing server (--allow-balancing)', () => {
+    let mcp: McpHandle;
+
+    beforeAll(async () => {
+      mcp = await connectMcp(walletName, {spend: true, balancing: true});
+    }, 120_000);
+
+    afterAll(async () => {
+      await mcp?.close();
+    });
+
+    const toolText = (res: {content?: unknown}): string =>
+      ((res.content ?? []) as Array<{type: string; text?: string}>)
+        .map((c) => c.text ?? '')
+        .join(' ');
+
+    it('registers balance_transaction and submit_transaction only under --allow-balancing', async () => {
       const {tools} = await mcp.client.listTools();
       const names = tools.map((t) => t.name);
       expect(names).toContain('balance_transaction');
       expect(names).toContain('submit_transaction');
-    } finally {
-      await mcp.close();
-    }
-  }, 120_000);
+    });
+
+    it('rejects txHex and txFile together without touching the wallet', async () => {
+      const res = await mcp.client.callTool({
+        name: 'submit_transaction',
+        arguments: {txHex: 'deadbeef', txFile: '/tmp/tx.hex'},
+      });
+      expect(res.isError).toBe(true);
+      expect(toolText(res)).toContain('exactly one of txHex or txFile');
+    });
+
+    it('reports a missing txFile as INVALID_PARAMS', async () => {
+      const res = await mcp.client.callTool({
+        name: 'submit_transaction',
+        arguments: {txFile: join(tmpdir(), `moth-mcp-missing-${Date.now()}.hex`)},
+      });
+      expect(res.isError).toBe(true);
+      const text = toolText(res);
+      expect(text).toContain('INVALID_PARAMS');
+      expect(text).toContain('not found');
+    });
+
+    it('resolves a txFile through the schema before the sync gate', async () => {
+      // Offline the wallet never syncs, so a successfully-read file
+      // reaches the deterministic chain-tip refusal — proving the file
+      // path works end-to-end without needing a devnet.
+      const path = join(tmpdir(), `moth-mcp-tx-${Date.now()}.hex`);
+      await writeFile(path, 'deadbeef\n');
+      try {
+        const res = await mcp.client.callTool({
+          name: 'balance_transaction',
+          arguments: {txFile: path, stage: 'unproven', syncWaitMs: 0},
+        });
+        expect(res.isError).toBe(true);
+        const text = toolText(res);
+        expect(text).not.toContain('INVALID_PARAMS');
+        expect(text).toContain('chain tip');
+      } finally {
+        await rm(path, {force: true});
+      }
+    });
+  });
 });
 
 describe.skipIf(!DEVNET_URL)('moth mcp (devnet spend path)', () => {

@@ -50,7 +50,7 @@ Every command accepts these. Defaults shown.
 | Flag | Short | Default | Purpose |
 |---|---|---|---|
 | `--output` | `-o` | `text` | `text` or `json` |
-| `--network` | `-n` | `devnet` | One of `mainnet`, `devnet`, `preview`, `preprod`, `qanet`, `local`. (`undeployed` also has a built-in preset for the local dev stack, but the wallet can't derive addresses for it, so it isn't a first-class network choice.) See [01-architecture.md §5](./01-architecture.md). |
+| `--network` | `-n` | `devnet` | One of `devnet`, `preview`, `preprod`, `qanet`, `undeployed`. `undeployed` is the local devnet stack (node on `9944`, indexer on `8088`). Not restricted to that list — endpoints are overridable, so a custom id is a valid target and gets the localhost defaults. `local` was an earlier name for `undeployed` and still resolves to it. `mainnet` parses but every command refuses it: Moth is unaudited and not for real funds. |
 | `--wallet` | `-w` | active | Wallet name from `~/.moth/wallets/` |
 | `--verbose` | `-v` | off | Debug output to stderr |
 | `--timeout` | `-t` | varies | Per-op timeout (seconds) |
@@ -240,8 +240,8 @@ All amounts cross the interface as decimal strings in smallest units (STARS for 
 | `wait_for_sync` | read | Barrier: resolve once the wallet has reached the tip at least once (`everSynced` latches — raw `synced` flip-flops as blocks arrive). | sync subscription |
 | `transfer_tokens` | spend | Send NIGHT or another token, unshielded or shielded; refuses NIGHT above `--max-spend`. The recipient's address kind must match the transfer type and its network tag must match the wallet's network. | daemon `transferTokens` |
 | `estimate_transfer_fee` | spend* | DUST fee estimate for a transfer, without sending. | core `estimateTransferFee` |
-| `balance_transaction` | spend (extra gate) | Balance, prove (for `stage: unproven` input — the common dApp shape), sign, and optionally submit an externally-built transaction (site/dApp paywall flow). Registered only under `--allow-balancing`; **not covered by `--max-spend`**. | daemon `balanceTransaction` |
-| `submit_transaction` | spend (extra gate) | Submit a pre-built, fully-balanced FinalizedTransaction hex and return its txId. Registered only under `--allow-balancing`; **not covered by `--max-spend`**. | daemon `submitTransaction` |
+| `balance_transaction` | spend (extra gate) | Balance, prove (for `stage: unproven` input — the common dApp shape), sign, and optionally submit an externally-built transaction (site/dApp paywall flow). Input as inline hex (`txHex`) or a server-host file path (`txFile`, hex text or raw binary) — exactly one. Registered only under `--allow-balancing`; **not covered by `--max-spend`**. | daemon `balanceTransaction` |
+| `submit_transaction` | spend (extra gate) | Submit a pre-built, fully-balanced FinalizedTransaction and return its txId. Input as inline hex (`txHex`) or a server-host file path (`txFile`) — exactly one. Registered only under `--allow-balancing`; **not covered by `--max-spend`**. | daemon `submitTransaction` |
 | `dust_register` | spend | Register NIGHT UTXOs for DUST generation. | daemon `dustRegister` |
 | `dust_deregister` | spend | Deregister NIGHT UTXOs from DUST generation. | daemon `dustDeregister` |
 
