@@ -240,8 +240,8 @@ All amounts cross the interface as decimal strings in smallest units (STARS for 
 | `wait_for_sync` | read | Barrier: resolve once the wallet has reached the tip at least once (`everSynced` latches — raw `synced` flip-flops as blocks arrive). | sync subscription |
 | `transfer_tokens` | spend | Send NIGHT or another token, unshielded or shielded; refuses NIGHT above `--max-spend`. The recipient's address kind must match the transfer type and its network tag must match the wallet's network. | daemon `transferTokens` |
 | `estimate_transfer_fee` | spend* | DUST fee estimate for a transfer, without sending. | core `estimateTransferFee` |
-| `balance_transaction` | spend (extra gate) | Balance, prove (for `stage: unproven` input — the common dApp shape), sign, and optionally submit an externally-built transaction (site/dApp paywall flow). Registered only under `--allow-balancing`; **not covered by `--max-spend`**. | daemon `balanceTransaction` |
-| `submit_transaction` | spend (extra gate) | Submit a pre-built, fully-balanced FinalizedTransaction hex and return its txId. Registered only under `--allow-balancing`; **not covered by `--max-spend`**. | daemon `submitTransaction` |
+| `balance_transaction` | spend (extra gate) | Balance, prove (for `stage: unproven` input — the common dApp shape), sign, and optionally submit an externally-built transaction (site/dApp paywall flow). Input as inline hex (`txHex`) or a server-host file path (`txFile`, hex text or raw binary) — exactly one. Registered only under `--allow-balancing`; **not covered by `--max-spend`**. | daemon `balanceTransaction` |
+| `submit_transaction` | spend (extra gate) | Submit a pre-built, fully-balanced FinalizedTransaction and return its txId. Input as inline hex (`txHex`) or a server-host file path (`txFile`) — exactly one. Registered only under `--allow-balancing`; **not covered by `--max-spend`**. | daemon `submitTransaction` |
 | `dust_register` | spend | Register NIGHT UTXOs for DUST generation. | daemon `dustRegister` |
 | `dust_deregister` | spend | Deregister NIGHT UTXOs from DUST generation. | daemon `dustDeregister` |
 
