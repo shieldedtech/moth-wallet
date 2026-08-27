@@ -213,3 +213,38 @@ references would, and that is out of scope here.
 - **No sync-state export/import** (carried from ADR 0003). Users cannot move a
   reference between machines or between the extension and the CLI, so each
   installation pays its own way.
+
+## Addendum, 2026-08-21: a distributed reference needs a witness
+
+The first real failure of this distribution model was not corruption or a bad
+download. It was a reference that was *correct when exported* and became wrong
+without changing a byte.
+
+Sync cursors are indexer-assigned event sequence numbers. Nothing in the payload
+ties an id to a block — `DustLedgerEvent` carries `id`, `raw`, `maxId` and
+`protocolVersion`, no height — so a bundle records a number whose meaning lives
+entirely in the indexer that issued it. When the default preprod indexer stopped
+having a 22-event hole in its dust id space, every cursor written under the old
+numbering began naming a different event, including the one in the bundle we ship
+(dust cursor `1431375`). Nothing detected it, because the URL never changed and a
+cursor cannot be checked against the chain.
+
+Two consequences for this ADR's design:
+
+1. **A published reference must carry a witness for each cursor** — the hash of
+   the event found at that id at export time — so a consumer can ask whether the
+   numbering underneath it still holds. Without one, "verify the download" only
+   proves the bytes arrived intact, which was never the failure mode.
+2. **A reference with no witness cannot be verified, only trusted.** The
+   in-progress implementation treats a witnessless *local* reference as
+   unverifiable-but-usable, so that an upgrade does not force every existing user
+   into a chain walk at once. That leniency is wrong for a *published* bundle,
+   which we control and can re-cut: a bundle whose numbering cannot be checked
+   should not install. Otherwise a fresh install silently inherits exactly the
+   skew this addendum describes, which is the state as of writing.
+
+The manifest is the natural home for the witnesses, alongside `height` and the
+per-part byte counts, and `export-preseed.mjs` is the natural place to record
+them. Checksums stay as they are — they answer a different question.
+
+See issue #40 and [ADR 0003](0003-preseed-reference.md).

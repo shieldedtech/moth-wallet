@@ -46,6 +46,7 @@ export { ProofClient } from '@shieldedtech/moth-wallet/proof/client';
 export { WalletError, NetworkError, ProofError } from '@shieldedtech/moth-wallet/types/errors';
 export { ExitCode } from '@shieldedtech/moth-wallet/types/exit-codes';
 export {
+  canonicalNetworkId,
   DEFAULT_NETWORKS,
   SUPPORTED_NETWORKS,
   serverProver,
@@ -94,6 +95,7 @@ export {
 export type { SwapInput, WalletKeys } from '@shieldedtech/moth-wallet/sync/operations';
 
 import {
+  canonicalNetworkId,
   DEFAULT_NETWORKS,
   resolveProverConfig,
   serverProver,
@@ -130,12 +132,14 @@ export interface MothBrowserConfig {
  * ```
  */
 export function createMothBrowser(config: MothBrowserConfig = {}) {
-  const networkId = config.network ?? 'mainnet';
+  const networkId = canonicalNetworkId(config.network ?? 'mainnet');
 
   const base = DEFAULT_NETWORKS[networkId] ?? {
     id: networkId,
     nodeUrl: 'ws://localhost:9944',
-    indexerUrl: 'http://localhost:8088',
+    // The GraphQL path is part of the endpoint, not decoration: the indexer
+    // client posts queries to it, and the bare origin is not a GraphQL endpoint.
+    indexerUrl: 'http://localhost:8088/api/v4/graphql',
     prover: serverProver(),
   };
 

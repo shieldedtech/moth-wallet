@@ -81,7 +81,7 @@ describe('NetworkFields', () => {
     expect(html.match(/role="radio"/g)).toHaveLength(state.available.length + PROVER_RADIOS);
     expect(html).toContain('aria-checked="true"');
     expect(html).toContain('Preview');
-    expect(html).toContain('Local');
+    expect(html).toContain('Undeployed');
     expect(html).not.toContain('Custom');
     expect(html).toContain('Node URL');
     expect(html).toContain('Indexer URL');
