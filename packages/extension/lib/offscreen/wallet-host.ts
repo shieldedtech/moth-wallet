@@ -44,7 +44,8 @@ import {
   type SignedMessage,
 } from '@shieldedtech/moth-browser';
 import { deriveAllAddressesFromSeed } from '@shieldedtech/moth-wallet/wallet/address';
-import * as ledger from '@midnight-ntwrk/ledger-v8';
+import type * as ledger from '@midnight-ntwrk/ledger-v8';
+import { ledgerFor } from '@shieldedtech/moth-wallet/ledger/index';
 import type { HistoryEntry } from '@midnight-ntwrk/dapp-connector-api';
 import { serializeBalances } from '../messaging/balances-json';
 import { serializeActivity } from '../messaging/activity-json';
@@ -580,6 +581,9 @@ export function sendTokens(
   return enqueueTransferOperation(() => trackOp(async () => {
     await ensureProver(network);
     const wallet = await syncEnsure(seedHex, walletName, network);
+    // Re-pin: the seam's "current" is process-global, and a concurrent task on
+    // a v8 network can move it while the awaits above run.
+    await initSdk((await detectLedgerVersion(network)).version);
     const finalized = await buildTransferTransaction(
       wallet.facade,
       activeWalletKeys(),
@@ -616,6 +620,9 @@ export function estimateTransferFee(
 ): Promise<{ fee: string }> {
   return enqueueTransferOperation(() => trackOp(async () => {
     const wallet = await syncEnsure(seedHex, walletName, network);
+    // Re-pin: the seam's "current" is process-global, and a concurrent task on
+    // a v8 network can move it while the awaits above run.
+    await initSdk((await detectLedgerVersion(network)).version);
     const fee = await coreEstimateTransferFee(
       wallet.facade,
       activeWalletKeys(),
@@ -639,10 +646,14 @@ export async function registerDust(
   dustAddress?: string,
 ): Promise<{ txHash: string | null; notYet?: DustNotYet }> {
   // Load the ledger this network speaks before any core call reaches the seam.
-  await initSdk((await detectLedgerVersion(network)).version);
+  const { version } = await detectLedgerVersion(network);
+  await initSdk(version);
   return trackOp(async () => {
     await ensureProver(network);
     const wallet = await syncEnsure(seedHex, walletName, network);
+    // Re-pin: the seam's "current" is process-global, and a concurrent task on
+    // a v8 network can move it while the awaits above run.
+    await initSdk(version);
     let txHash: string | null;
     try {
       txHash = await coreDesignateForDust(
@@ -684,10 +695,14 @@ export async function deregisterDust(
   network: NetworkConfig,
 ): Promise<{ txHash: string }> {
   // Load the ledger this network speaks before any core call reaches the seam.
-  await initSdk((await detectLedgerVersion(network)).version);
+  const { version } = await detectLedgerVersion(network);
+  await initSdk(version);
   return trackOp(async () => {
     await ensureProver(network);
     const wallet = await syncEnsure(seedHex, walletName, network);
+    // Re-pin: the seam's "current" is process-global, and a concurrent task on
+    // a v8 network can move it while the awaits above run.
+    await initSdk(version);
     const txHash = await coreDedesignateFromDust(
       wallet.facade,
       seedHex,
@@ -706,10 +721,14 @@ export async function transferBuild(
   requests: TransferRequestDTO[],
 ): Promise<{ txHex: string }> {
   // Load the ledger this network speaks before any core call reaches the seam.
-  await initSdk((await detectLedgerVersion(network)).version);
+  const { version } = await detectLedgerVersion(network);
+  await initSdk(version);
   return trackOp(async () => {
     await ensureProver(network);
     const wallet = await syncEnsure(seedHex, walletName, network);
+    // Re-pin: the seam's "current" is process-global, and a concurrent task on
+    // a v8 network can move it while the awaits above run.
+    await initSdk(version);
     const finalized = await buildTransferTransaction(
       wallet.facade,
       activeWalletKeys(),
@@ -732,10 +751,14 @@ export async function balanceTransaction(
   sealed: boolean,
 ): Promise<{ txHex: string }> {
   // Load the ledger this network speaks before any core call reaches the seam.
-  await initSdk((await detectLedgerVersion(network)).version);
+  const { version } = await detectLedgerVersion(network);
+  await initSdk(version);
   return trackOp(async () => {
     await ensureProver(network);
     const wallet = await syncEnsure(seedHex, walletName, network);
+    // Re-pin: the seam's "current" is process-global, and a concurrent task on
+    // a v8 network can move it while the awaits above run.
+    await initSdk(version);
     const finalized = await coreBalanceTransaction(
       wallet.facade,
       activeWalletKeys(),
@@ -759,9 +782,13 @@ export async function makeIntent(
   payFees: boolean,
 ): Promise<{ txHex: string }> {
   // Load the ledger this network speaks before any core call reaches the seam.
-  await initSdk((await detectLedgerVersion(network)).version);
+  const { version } = await detectLedgerVersion(network);
+  await initSdk(version);
   return trackOp(async () => {
     const wallet = await syncEnsure(seedHex, walletName, network);
+    // Re-pin: the seam's "current" is process-global, and a concurrent task on
+    // a v8 network can move it while the awaits above run.
+    await initSdk(version);
     const intent = await buildSwapIntent(
       wallet.facade,
       activeWalletKeys(),
@@ -782,15 +809,20 @@ export async function transferSubmit(
   txHex: string,
 ): Promise<void> {
   // Load the ledger this network speaks before any core call reaches the seam.
-  await initSdk((await detectLedgerVersion(network)).version);
+  const { version } = await detectLedgerVersion(network);
+  await initSdk(version);
   return trackOp(async () => {
     const wallet = await syncEnsure(seedHex, walletName, network);
-    const transaction = ledger.Transaction.deserialize<ledger.SignatureEnabled, ledger.Proof, ledger.Binding>(
-      'signature',
-      'proof',
-      'binding',
-      fromHex(txHex),
-    );
+    // Re-pin: the seam's "current" is process-global, and a concurrent task on
+    // a v8 network can move it while the awaits above run.
+    await initSdk(version);
+    // Through the seam, never a static module: this network may be v9, and a
+    // v8 deserializer refuses its transaction format outright.
+    const transaction = ledgerFor(version).Transaction.deserialize<
+      ledger.SignatureEnabled,
+      ledger.Proof,
+      ledger.Binding
+    >('signature', 'proof', 'binding', fromHex(txHex));
     await submitFinalizedTransaction(wallet.facade, transaction);
   });
 }

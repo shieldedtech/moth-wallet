@@ -149,6 +149,12 @@ export async function detectLedgerVersion(
   network: {readonly id: string; readonly indexerUrl: string; readonly ledgerVersion?: LedgerVersion},
   options: {readonly probe?: (indexerUrl: string) => Promise<number | undefined>} = {},
 ): Promise<DetectedLedger> {
+  // An explicit configuration is law: no probe, no cache, no race. Detection
+  // exists for configs written before the fork, which carry no version.
+  if (network.ledgerVersion !== undefined) {
+    return { version: network.ledgerVersion, source: 'config' };
+  }
+
   const cached = detected.get(network.id);
   if (cached) return cached;
 
