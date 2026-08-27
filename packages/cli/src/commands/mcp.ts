@@ -295,18 +295,52 @@ export default class Mcp extends BaseCommand {
       if (shuttingDown) return;
       shuttingDown = true;
       process.stderr.write(`\n[mcp] ${reason}, shutting down\n`);
+
+      // Last resort. The two awaits below are bounded individually, but a
+      // shutdown that cannot finish is a wallet left unlocked in memory, so the
+      // guarantee should not depend on having predicted where it sticks. Unref'd:
+      // it fires only while something else is still holding the loop open, which
+      // is exactly the case it exists for.
+      const watchdog = setTimeout(() => {
+        process.stderr.write('[mcp] shutdown watchdog fired — exiting now\n');
+        process.exit(0);
+      }, 15_000);
+      watchdog.unref();
       auditLog.recordLifecycle({
         wallet: walletName,
         network: network.id,
         event: 'shutdown-signal',
         message: `mcp-${transportKind} ${reason}`,
       });
-      await closeFrontend().catch((err) => {
-        process.stderr.write(`[mcp] transport close error: ${err}\n`);
-      });
-      await synced?.stop().catch((err) => {
-        process.stderr.write(`[mcp] synced.stop error: ${err}\n`);
-      });
+      // Bounded, because neither step is guaranteed to return. The wallet SDK's
+      // node client waits indefinitely on a node it cannot reach — the same
+      // failure the extension bounded in #86 — and the sync engine's stop() waits
+      // on it. Whether that bites is a race: if SIGTERM lands before the
+      // background sync attaches, `synced` is still null and stop() is a no-op,
+      // which is why this passed locally and hung on CI, where the engine won.
+      //
+      // A shutdown must not depend on a network call: past the deadline we say so
+      // and exit anyway. Dropping the wallet's keys and stopping the process are
+      // the parts that matter, and process.exit takes the socket with it.
+      const bounded = async (label: string, work: Promise<unknown>, ms = 5_000): Promise<void> => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const timedOut = Symbol('timeout');
+        const outcome = await Promise.race([
+          work.catch((err) => {
+            process.stderr.write(`[mcp] ${label} error: ${err}\n`);
+          }),
+          new Promise<typeof timedOut>((resolveOuter) => {
+            timer = setTimeout(() => resolveOuter(timedOut), ms);
+          }),
+        ]);
+        if (timer) clearTimeout(timer);
+        if (outcome === timedOut) {
+          process.stderr.write(`[mcp] ${label} did not finish within ${ms}ms — exiting anyway\n`);
+        }
+      };
+
+      await bounded('transport close', closeFrontend());
+      if (synced) await bounded('sync stop', synced.stop());
       try {
         unlocked.lock();
       } catch (err) {

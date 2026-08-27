@@ -334,6 +334,17 @@ describe('moth mcp (no devnet required)', () => {
         });
         expect(sessionId, 'initialize over the socket did not open a session').toBeTruthy();
 
+        // Wait for the sync engine to ATTACH before signalling, so shutdown has
+        // to stop a live engine rather than a null one. Without this the test
+        // passes or fails on a race: whichever won locally, CI lost, and the
+        // shutdown hung on the SDK's node client (the failure #86 bounded on the
+        // extension side). Best-effort — an engine that never attaches is still
+        // a valid thing to shut down, so the SIGTERM goes either way.
+        const readyBy = Date.now() + 20_000;
+        while (!/wallet engine ready|wallet sync failed/.test(stderrBuf) && Date.now() < readyBy) {
+          await new Promise((r) => setTimeout(r, 200));
+        }
+
         child.kill('SIGTERM');
         expect(await exited).toBe(0);
       } finally {
