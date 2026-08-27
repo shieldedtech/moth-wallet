@@ -2,6 +2,7 @@ import type { StorageAdapter } from '../storage/adapter.js';
 import type { WalletInfo, UnlockedWallet, DerivedKeys, WalletAddresses, AddressEncoding } from '../types/wallet.js';
 import { WalletError } from '../types/errors.js';
 import { generateMnemonic24, validateMnemonic, mnemonicToSeed, hexSeedToUint8Array } from './mnemonic.js';
+import { assertHexSeed } from './hex-seed.js';
 import { encryptKeystore, decryptKeystore, keystoreNeedsUpgrade, type EncryptedKeystore } from './keystore.js';
 import { deriveAllAddressesFromSeed, deriveRawKeys, Roles } from './address.js';
 import { deriveWalletKeys, type WalletKeys } from '../sync/operations.js';
@@ -302,6 +303,13 @@ export class WalletManager {
   }
 
   async importFromSeed(name: string, hexSeed: string, passphrase: string, network = 'devnet'): Promise<WalletInfo> {
+    // Shape-checked before anything is derived or written. There was no
+    // validation here at all: a malformed seed reached the SDK and surfaced as
+    // a bare 'Invalid seed', and one that was merely the wrong *length* was
+    // accepted outright — silently producing a different wallet. A hex seed has
+    // no checksum, so shape is the only thing that can be checked; that makes
+    // checking it worth more here, not less. See wallet/hex-seed.ts.
+    hexSeed = assertHexSeed(hexSeed);
     // A caller-supplied id (a --network flag, a picker selection) is about to be
     // persisted, so a retired name is resolved here rather than written back out.
     network = canonicalNetworkId(network);

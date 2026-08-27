@@ -340,6 +340,7 @@ export function registerHandlers(): void {
     return offscreen.walletImport({
       name: data.name,
       mnemonic: data.mnemonic,
+      seed: data.seed,
       passphrase: data.passphrase,
       network: data.network ?? network,
     });

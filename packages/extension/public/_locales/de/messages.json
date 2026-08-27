@@ -1543,5 +1543,41 @@
   },
   "dust_etaNotRegistered": {
     "message": "$1 noch nicht registriert"
+  },
+  "setup_importKindPhrase": {
+    "message": "Wiederherstellungsphrase"
+  },
+  "setup_importKindSeed": {
+    "message": "Hex-Seed"
+  },
+  "setup_importSeedSubtitle": {
+    "message": "Füge den Hex-Seed dieser Wallet ein. Er bleibt sichtbar, damit du ihn mit deinem Backup vergleichen kannst."
+  },
+  "setup_importSeedLabel": {
+    "message": "Hex-Seed"
+  },
+  "setup_importSeedPlaceholder": {
+    "message": "64 hexadezimale Zeichen, oder 128 für einen aus einer Wiederherstellungsphrase abgeleiteten Seed"
+  },
+  "setup_importSeedNoChecksum": {
+    "message": "Ein Seed hat keine eingebaute Prüfung, anders als eine Wiederherstellungsphrase. Ein falsches Zeichen stellt eine andere, leere Wallet wieder her und meldet keinen Fehler — vergleiche ihn daher vorher mit deinem Backup."
+  },
+  "setup_importSeedUnusualLength": {
+    "message": "Dieser Seed hat $1 Bytes. Werkzeuge erzeugen 32 oder 64 — prüfe, ob das Einfügen vollständig war. Ein unvollständiger Seed stellt eine andere Wallet wieder her."
+  },
+  "setup_importSeedErrNotHex": {
+    "message": "Ein Seed ist rein hexadezimal: Ziffern 0-9 und Buchstaben a-f."
+  },
+  "setup_importSeedErrOddLength": {
+    "message": "Dieser Seed hat eine ungerade Anzahl Zeichen, es fehlt also eines."
+  },
+  "setup_importSeedErrTooShort": {
+    "message": "Zu kurz mit $1 Bytes. Ein Seed hat 16 bis 64 Bytes — 64 hexadezimale Zeichen, oder 128 für einen aus einer Wiederherstellungsphrase abgeleiteten."
+  },
+  "setup_importSeedErrTooLong": {
+    "message": "Zu lang mit $1 Bytes. Ein Seed hat 16 bis 64 Bytes — 64 hexadezimale Zeichen, oder 128 für einen aus einer Wiederherstellungsphrase abgeleiteten."
+  },
+  "setup_passwordSubtitleSeed": {
+    "message": "Es entsperrt Moth auf diesem Gerät. Es kann deine Wallet nicht wiederherstellen, nur dein Seed kann das."
   }
 }

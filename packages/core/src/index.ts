@@ -23,6 +23,16 @@ export {
   formatDustBalance,
 } from './wallet/balance-format.js';
 export { generateMnemonic24, validateMnemonic, mnemonicToSeed, hexSeedToUint8Array } from './wallet/mnemonic.js';
+export {
+  checkHexSeed,
+  assertHexSeed,
+  describeHexSeedProblem,
+  MIN_SEED_BYTES,
+  MAX_SEED_BYTES,
+  CANONICAL_SEED_BYTES,
+  type HexSeedCheck,
+  type HexSeedProblem,
+} from './wallet/hex-seed.js';
 export { Roles } from './wallet/address.js';
 export { encryptKeystore, decryptKeystore, type EncryptedKeystore } from './wallet/keystore.js';
 export {

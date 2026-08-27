@@ -1543,5 +1543,41 @@
   },
   "dust_etaNotRegistered": {
     "message": "$1 aún no registrado"
+  },
+  "setup_importKindPhrase": {
+    "message": "Frase de recuperación"
+  },
+  "setup_importKindSeed": {
+    "message": "Seed hexadecimal"
+  },
+  "setup_importSeedSubtitle": {
+    "message": "Pega el seed hexadecimal de esta cartera. Permanece visible para que puedas compararlo con tu copia de seguridad."
+  },
+  "setup_importSeedLabel": {
+    "message": "Seed hexadecimal"
+  },
+  "setup_importSeedPlaceholder": {
+    "message": "64 caracteres hexadecimales, o 128 para un seed derivado de una frase de recuperación"
+  },
+  "setup_importSeedNoChecksum": {
+    "message": "Un seed no tiene comprobación integrada, a diferencia de una frase de recuperación. Un solo carácter incorrecto restaura otra cartera, vacía, y no informa de ningún error: compáralo con tu copia de seguridad antes de continuar."
+  },
+  "setup_importSeedUnusualLength": {
+    "message": "Este seed tiene $1 bytes. Las herramientas producen 32 o 64, así que comprueba que el pegado esté completo — un seed incompleto restaura otra cartera."
+  },
+  "setup_importSeedErrNotHex": {
+    "message": "Un seed es solo hexadecimal: dígitos 0-9 y letras a-f."
+  },
+  "setup_importSeedErrOddLength": {
+    "message": "Este seed tiene un número impar de caracteres, así que falta uno."
+  },
+  "setup_importSeedErrTooShort": {
+    "message": "Demasiado corto: $1 bytes. Un seed tiene de 16 a 64 bytes — 64 caracteres hexadecimales, o 128 para uno derivado de una frase de recuperación."
+  },
+  "setup_importSeedErrTooLong": {
+    "message": "Demasiado largo: $1 bytes. Un seed tiene de 16 a 64 bytes — 64 caracteres hexadecimales, o 128 para uno derivado de una frase de recuperación."
+  },
+  "setup_passwordSubtitleSeed": {
+    "message": "Desbloquea Moth en este dispositivo. No puede recuperar tu cartera, solo tu seed puede."
   }
 }

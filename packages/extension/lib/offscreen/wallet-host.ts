@@ -158,8 +158,29 @@ export async function walletCreate(
   return { info, mnemonic: phrase };
 }
 
-export async function walletImport(name: string, mnemonic: string, passphrase: string, network: string) {
-  return getMoth(network).wallets.import(name, mnemonic, passphrase, network);
+/**
+ * Restore an account from whichever backup artifact the caller holds.
+ *
+ * Two distinct core calls, not one with a branch inside it: `import` runs the
+ * BIP-39 checksum on the phrase, `importFromSeed` shape-checks the hex. Both
+ * record `createdHere: false` and no birthday, which is what keeps a restored
+ * account scanning from genesis — it may hold funds at any height, and seeding
+ * it past its own history would hide them (ADR 0003, rule 4).
+ */
+export async function walletImport(
+  name: string,
+  secret: {mnemonic?: string; seed?: string},
+  passphrase: string,
+  network: string,
+) {
+  const wallets = getMoth(network).wallets;
+  if (secret.seed !== undefined) {
+    return wallets.importFromSeed(name, secret.seed, passphrase, network);
+  }
+  if (secret.mnemonic === undefined) {
+    throw new Error('walletImport requires either a mnemonic or a seed');
+  }
+  return wallets.import(name, secret.mnemonic, passphrase, network);
 }
 
 export async function walletRemove(name: string, network: string): Promise<void> {

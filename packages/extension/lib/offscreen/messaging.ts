@@ -84,9 +84,11 @@ export interface OffscreenProtocol {
     /** Persist this phrase instead of a fresh one (shown to the user first). */
     mnemonic?: string;
   }): { info: WalletInfo; mnemonic: string };
+  /** Exactly one of mnemonic / seed is set; the host routes on which. */
   'os/walletImport'(data: {
     name: string;
-    mnemonic: string;
+    mnemonic?: string;
+    seed?: string;
     passphrase: string;
     network: string;
   }): WalletInfo;

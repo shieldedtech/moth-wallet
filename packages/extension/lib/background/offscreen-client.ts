@@ -113,7 +113,13 @@ export const offscreen = {
     await ensureOffscreen();
     return offscreenSend('os/walletCreate', data);
   },
-  async walletImport(data: { name: string; mnemonic: string; passphrase: string; network: string }) {
+  async walletImport(data: {
+    name: string;
+    mnemonic?: string;
+    seed?: string;
+    passphrase: string;
+    network: string;
+  }) {
     await ensureOffscreen();
     return offscreenSend('os/walletImport', data);
   },
