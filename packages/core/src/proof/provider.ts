@@ -1,17 +1,14 @@
-import * as ledger from '@midnight-ntwrk/ledger-v8';
+import type * as ledger from '@midnight-ntwrk/ledger-v8';
+import {ledger as activeLedger} from '../ledger/index.js';
 import {httpClientProvingProvider, httpClientProofProvider} from '@midnight-ntwrk/midnight-js-http-client-proof-provider';
 import {ZKConfigProvider, type KeyMaterialProvider} from '@midnight-ntwrk/midnight-js/types';
 import {
   provingProvider as wasmProvingProvider,
   type KeyMaterialProvider as WasmKeyMaterialProvider,
 } from '@midnight-ntwrk/zkir-v2';
-import {
-  makeServerProvingService,
-  makeWasmProvingService,
-} from '@midnightntwrk/wallet-sdk/capabilities/proving';
-import {WasmProver} from '@midnightntwrk/wallet-sdk/prover-client/effect';
+import {sdk, activeSdkVersion} from '../sdk/index.js';
 import {ProofClient} from './client.js';
-import type {ProverConfig} from '../types/network.js';
+import type {ProverConfig, LedgerVersion} from '../types/network.js';
 
 /** Adapter from the connector/Midnight.js key interface to ZKConfigProvider. */
 class KeyMaterialZkConfigProvider extends ZKConfigProvider<string> {
@@ -32,10 +29,22 @@ class KeyMaterialZkConfigProvider extends ZKConfigProvider<string> {
   }
 }
 
-let defaultWasmKeys: WasmKeyMaterialProvider | undefined;
+// Keyed by ledger version, not a bare singleton. Proving keys are
+// version-specific: a provider built while v8 was active produces proofs a v9
+// network rejects, and vice versa. Caching one for the life of the worker means
+// the first network a session touches decides which keys every later network
+// gets — switching preprod -> devnet silently proved with v8 keys. A proof
+// server is unaffected because it holds its own keys.
+const defaultWasmKeys = new Map<LedgerVersion, WasmKeyMaterialProvider>();
 
 function defaultWasmKeyMaterialProvider(): WasmKeyMaterialProvider {
-  return (defaultWasmKeys ??= WasmProver.makeDefaultKeyMaterialProvider());
+  const version = activeSdkVersion() ?? 'v8';
+  let provider = defaultWasmKeys.get(version);
+  if (!provider) {
+    provider = sdk().proverClient.WasmProver.makeDefaultKeyMaterialProvider();
+    defaultWasmKeys.set(version, provider);
+  }
+  return provider;
 }
 
 function wasmKeyMaterialProvider(source: KeyMaterialProvider): WasmKeyMaterialProvider {
@@ -86,20 +95,20 @@ export function createProofProvider(
   const provingProvider = createProvingProvider(config, keyMaterialProvider);
   return {
     proveTx: (transaction: ledger.UnprovenTransaction) =>
-      transaction.prove(provingProvider, ledger.CostModel.initialCostModel()),
+      transaction.prove(provingProvider, activeLedger().CostModel.initialCostModel()),
   };
 }
 
 /** Build the wallet facade service. WASM follows the SDK's documented setup. */
 export function createWalletProvingService(config: ProverConfig) {
   if (config.type === 'server') {
-    return makeServerProvingService({provingServerUrl: new URL(config.url)});
+    return sdk().proving.makeServerProvingService({provingServerUrl: new URL(config.url)});
   }
 
   // This is the SDK-documented path and works in Node, where the package's
   // proof-worker.js is addressable from node_modules.
   if (typeof process !== 'undefined' && process.versions?.node) {
-    return makeWasmProvingService();
+    return sdk().proving.makeWasmProvingService();
   }
 
   // Browser bundles do not emit the SDK's dependency-internal proof-worker.js.
@@ -109,7 +118,7 @@ export function createWalletProvingService(config: ProverConfig) {
   const provider = wasmProvingProvider(defaultWasmKeyMaterialProvider());
   return {
     prove: (transaction: ledger.UnprovenTransaction) =>
-      transaction.prove(provider, ledger.CostModel.initialCostModel()),
+      transaction.prove(provider, activeLedger().CostModel.initialCostModel()),
   };
 }
 

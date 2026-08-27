@@ -6,6 +6,8 @@ import {
   resolveProverConfig,
   serverProver,
   type NetworkConfig,
+  initSdk,
+  detectLedgerVersion,
 } from '@shieldedtech/moth-wallet';
 import type { NetworkState } from '../types.js';
 import type { NetworkOverrides } from '../settings.js';
@@ -62,7 +64,15 @@ export function useNetwork(initialNetworkId: string = 'devnet') {
       nodeUrl: overrides.nodeUrl ?? preset.nodeUrl,
       indexerUrl: overrides.indexerUrl ?? preset.indexerUrl,
       prover,
+      // Carried from the preset, or a v9 network silently becomes v8.
+      ...(preset.ledgerVersion ? { ledgerVersion: preset.ledgerVersion } : {}),
+      ...(preset.faucetUrl ? { faucetUrl: preset.faucetUrl } : {}),
     };
+
+    // Ask the network rather than trusting the shipped table; falls back to the
+    // configured value when the indexer is unreachable.
+    const { version } = await detectLedgerVersion(config);
+    await initSdk(version);
 
     currentIdRef.current = id;
 

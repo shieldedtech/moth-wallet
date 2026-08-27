@@ -6,7 +6,14 @@ import { applyNodeAuthHeader } from '../lib/background/node-auth-header';
 import { registerConnectorHandlers } from '../lib/background/connector-handlers';
 import { watchApprovalWindows } from '../lib/background/approvals';
 import { getSession } from '../lib/background/session';
-import { addPort, addSetupPort, startSync, registerSyncEvents, reconcileStartup } from '../lib/background/sync-service';
+import {
+  addPort,
+  addSetupPort,
+  startSync,
+  registerSyncEvents,
+  reconcileStartup,
+  broadcastSyncFailure,
+} from '../lib/background/sync-service';
 import { getNetworkConfig, getSettings } from '../lib/background/settings';
 import { AUTO_LOCK_ALARM, armAutoLock } from '../lib/background/auto-lock';
 
@@ -56,13 +63,7 @@ export default defineBackground({
         const session = await getSession();
         if (!session) return;
         const network = await getNetworkConfig();
-        await startSync(session, network).catch((err) => {
-          try {
-            port.postMessage({ kind: 'syncMessage', message: `Sync failed: ${err}` });
-          } catch {
-            /* port closed */
-          }
-        });
+        await startSync(session, network).catch(broadcastSyncFailure);
       })();
     });
   },

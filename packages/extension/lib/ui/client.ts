@@ -105,6 +105,30 @@ export function useDeveloperMode(): boolean {
   return developerMode;
 }
 
+/**
+ * True once `waiting` has held for `delayMs` without interruption — timing
+ * for WalletLoading's escape hatch (Settings → Network) when a sync hangs
+ * without ever throwing (wrong network selected, an unreachable endpoint, or
+ * a subsystem whose progress reads 100% but never flips `isSynced`). Resets
+ * whenever `waiting` goes false, so completing a sync — or the caller
+ * remounting for a fresh unlock/create/restore — clears it rather than
+ * leaving a stale "this is taking a while" armed for next time.
+ */
+export function useSlowSync(waiting: boolean, delayMs = 20_000): boolean {
+  const [slow, setSlow] = useState(false);
+
+  useEffect(() => {
+    if (!waiting) {
+      setSlow(false);
+      return;
+    }
+    const id = setTimeout(() => setSlow(true), delayMs);
+    return () => clearTimeout(id);
+  }, [waiting, delayMs]);
+
+  return slow;
+}
+
 export function useSelectedProverType(network: string | undefined) {
   const [proverType, setProverType] = useState<ProverType | null>(null);
   const latestRequest = useRef(0);

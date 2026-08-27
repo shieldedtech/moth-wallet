@@ -49,12 +49,21 @@ export {
   canonicalNetworkId,
   DEFAULT_NETWORKS,
   SUPPORTED_NETWORKS,
+  resolveLedgerVersion,
   serverProver,
   resolveProverConfig,
   isProverConfig,
   proverConfigsEqual,
   describeProver,
 } from '@shieldedtech/moth-wallet/types/network';
+export { initLedger, ledger, activeLedgerVersion } from '@shieldedtech/moth-wallet/ledger/index';
+export { initSdk, sdk, activeSdkVersion, createKeystoreFor } from '@shieldedtech/moth-wallet/sdk/index';
+export {
+  verifyNetworkLedger,
+  ledgerVersionForProtocol,
+  detectLedgerVersion,
+  resetLedgerDetectionCache,
+} from '@shieldedtech/moth-wallet/ledger/protocol-version';
 export {
   createProvingProvider,
   createProofProvider,
@@ -147,6 +156,10 @@ export function createMothBrowser(config: MothBrowserConfig = {}) {
     id: networkId,
     indexerUrl: config.indexerUrl ?? base.indexerUrl,
     nodeUrl: config.nodeUrl ?? base.nodeUrl,
+    // Carried through from the preset: dropping ledgerVersion would silently
+    // demote a v9 network like stagenet to the v8 default.
+    ...(base.ledgerVersion ? {ledgerVersion: base.ledgerVersion} : {}),
+    ...(base.faucetUrl ? {faucetUrl: base.faucetUrl} : {}),
     prover:
       config.prover ??
       (config.proofServerUrl ? serverProver(config.proofServerUrl) : resolveProverConfig(base)),

@@ -5,28 +5,30 @@
 // See NOTICE for attribution.
 
 import * as Rx from 'rxjs';
-import * as ledger from '@midnight-ntwrk/ledger-v8';
-import {DefaultConfiguration, WalletFacade, type FacadeState} from '@midnightntwrk/wallet-sdk/facade';
-import {
-  makeDefaultSubmissionService,
-  type SubmissionService,
-} from '@midnightntwrk/wallet-sdk/capabilities/submission';
+import type * as ledger from '@midnight-ntwrk/ledger-v8';
+import {ledger as activeLedger} from '../ledger/index.js';
+import type {DefaultConfiguration, WalletFacade, FacadeState} from '@midnightntwrk/wallet-sdk/facade';
+import type {SubmissionService} from '@midnightntwrk/wallet-sdk/capabilities/submission';
 // CustomDustWallet/CustomShieldedWallet let v8's dedup builders wrap the sync
 // pipeline (see sdk-dedup); the plain wallets remain for non-deduped paths.
-import {DustWallet, CustomDustWallet} from '@midnightntwrk/wallet-sdk/dust';
-import {ShieldedWallet, CustomShieldedWallet} from '@midnightntwrk/wallet-sdk/shielded';
-import {UnshieldedWallet, PublicKey, createKeystore} from '@midnightntwrk/wallet-sdk/unshielded';
-import {InMemoryTransactionHistoryStorage} from '@midnightntwrk/wallet-sdk';
-import {WalletEntrySchema, mergeWalletEntries} from '@midnightntwrk/wallet-sdk/facade';
+import type {DustWallet} from '@midnightntwrk/wallet-sdk/dust';
+import type {ShieldedWallet} from '@midnightntwrk/wallet-sdk/shielded';
+import type {UnshieldedWallet} from '@midnightntwrk/wallet-sdk/unshielded';
+
+
 import {HDWallet, Roles} from '@midnightntwrk/wallet-sdk/hd';
 import {setNetworkId} from '@midnight-ntwrk/midnight-js/network-id';
-import {resolveProverConfig, type NetworkConfig} from '../types/network.js';
+import {resolveProverConfig, type NetworkConfig, resolveLedgerVersion} from '../types/network.js';
 import {createWalletProvingService} from '../proof/provider.js';
 import {NIGHT_TOKEN_ID, formatNight} from '../types/tokens.js';
 import {formatDustBalance} from '../wallet/balance-format.js';
 import {ensureEmptyRefCache, preSeedNewWallet} from './preseed.js';
 import {InMemorySyncStateStore, syncStateKey, type SyncStateStore, type WalletPart} from './sync-store.js';
 import {dedupingShieldedBuilder, dedupingDustBuilder} from './sdk-dedup.js';
+import {sdk, createKeystoreFor} from '../sdk/index.js';
+import type {SignatureKind} from '../wallet/signature-encoding.js';
+import {activeLedgerVersion} from '../ledger/index.js';
+import {verifyNetworkLedger} from '../ledger/protocol-version.js';
 import {overallSyncProgress, type SubWallet} from './progress.js';
 import {partsToSeed} from './preseed-parts.js';
 import type {WalletKeys} from './operations.js';
@@ -56,7 +58,7 @@ export {NIGHT_TOKEN_ID, formatNight};
 function makeSubmittedOnlySubmissionService(
   relayURL: URL,
 ): SubmissionService<ledger.FinalizedTransaction> {
-  const inner = makeDefaultSubmissionService<ledger.FinalizedTransaction>({relayURL});
+  const inner = sdk().submission.makeDefaultSubmissionService<ledger.FinalizedTransaction>({relayURL});
   return {
     submitTransaction: ((tx: ledger.FinalizedTransaction) =>
       inner.submitTransaction(tx, 'Submitted')) as SubmissionService<ledger.FinalizedTransaction>['submitTransaction'],
@@ -323,13 +325,28 @@ export async function resolveSyncStore(explicit?: SyncStateStore): Promise<SyncS
   return store;
 }
 
+/**
+ * Cached unshielded state embeds the public key it was watching, and that key
+ * depends on the signature kind. An ECDSA wallet restoring state cached while
+ * schnorr was in force keeps watching the schnorr address: it reports "Synced"
+ * with a zero balance while its funds sit at the address it displayed.
+ *
+ * Schnorr keeps the original key, so no existing wallet is made to resync;
+ * ECDSA gets its own namespace, which also means a wallet poisoned by that bug
+ * simply finds nothing cached and syncs correctly from scratch.
+ */
+function cacheIdentity(walletName: string, part: WalletPart, kind: SignatureKind): string {
+  return part === 'unshielded' && kind === 'ecdsa' ? `${walletName}#ecdsa` : walletName;
+}
+
 function loadCachedState(
   store: SyncStateStore,
   walletName: string,
   networkId: string,
-  part: WalletPart
+  part: WalletPart,
+  kind: SignatureKind = 'schnorr'
 ): Promise<string | null> {
-  return store.get(syncStateKey(networkId, walletName, part));
+  return store.get(syncStateKey(networkId, cacheIdentity(walletName, part, kind), part));
 }
 
 function saveCachedState(
@@ -337,9 +354,10 @@ function saveCachedState(
   walletName: string,
   networkId: string,
   part: WalletPart,
-  state: string
+  state: string,
+  kind: SignatureKind = 'schnorr'
 ): Promise<void> {
-  return store.put(syncStateKey(networkId, walletName, part), state);
+  return store.put(syncStateKey(networkId, cacheIdentity(walletName, part, kind), part), state);
 }
 
 // Store-based (async) — keeps the browser (IndexedDB) path working; the Node
@@ -350,10 +368,11 @@ async function evictCachedState(
   store: SyncStateStore,
   walletName: string,
   networkId: string,
-  part: WalletPart
+  part: WalletPart,
+  kind: SignatureKind = 'schnorr'
 ): Promise<void> {
   try {
-    await store.delete(syncStateKey(networkId, walletName, part));
+    await store.delete(syncStateKey(networkId, cacheIdentity(walletName, part, kind), part));
   } catch {
     /* ignore */
   }
@@ -416,6 +435,17 @@ export async function startWalletSync(
   options?: WalletSyncOptions
 ): Promise<SyncedWallet> {
   installLogSuppression();
+
+  // Check the ledger before a single block is read. The fork is partial —
+  // collapsed Merkle updates are tagged [v1] and decode under both ledgers,
+  // while transactions do not — so a mismatched wallet syncs along happily and
+  // only fails when it first touches a transaction. Refusing here turns a late,
+  // unreadable failure into an immediate, legible one.
+  await verifyNetworkLedger(network, {
+    using: activeLedgerVersion() ?? resolveLedgerVersion(network),
+    action: 'sync',
+  });
+
   await ensureWebSocket();
   const store = await resolveSyncStore(options?.syncStore);
 
@@ -427,7 +457,9 @@ export async function startWalletSync(
   // Option A: keys arrive pre-derived; the seed was dropped at unlock.
   const shieldedSecretKeys = keys.shieldedSecretKeys;
   const dustSecretKey = keys.dustSecretKey;
-  const keystore = createKeystore(keys.nightExternalKey, network.id);
+  // The watched unshielded address depends on the kind; getting this wrong
+  // means syncing an address the user was never shown.
+  const keystore = createKeystoreFor(keys.nightExternalKey, network.id, keys.signatureKind);
 
   const indexerHttpUrl = network.indexerUrl;
   const indexerWsUrl = toWsUrl(indexerHttpUrl) + '/ws';
@@ -474,7 +506,7 @@ export async function startWalletSync(
   // shielded at tip (64,982) reached fully synced in 1.0s with identical balances.
   const cached = {
     shielded: await loadCachedState(store, name, network.id, 'shielded'),
-    unshielded: await loadCachedState(store, name, network.id, 'unshielded'),
+    unshielded: await loadCachedState(store, name, network.id, 'unshielded', keys.signatureKind),
     dust: await loadCachedState(store, name, network.id, 'dust'),
   };
   const missingParts = partsToSeed(cached);
@@ -512,7 +544,7 @@ export async function startWalletSync(
             seeded.push('shielded');
           }
           if (!cached.unshielded) {
-            await saveCachedState(store, name, network.id, 'unshielded', preSeeded.unshielded);
+            await saveCachedState(store, name, network.id, 'unshielded', preSeeded.unshielded, keys.signatureKind);
             seeded.push('unshielded');
           }
           if (!cached.dust && preSeeded.dust) {
@@ -544,7 +576,7 @@ export async function startWalletSync(
   if (savedShielded) {
     try {
       onProgress?.('Restoring shielded state from cache...');
-      shieldedWallet = CustomShieldedWallet(walletCfg, shieldedBuilder).restore(savedShielded);
+      shieldedWallet = sdk().shielded.CustomShieldedWallet(walletCfg, shieldedBuilder).restore(savedShielded);
       restoredFromCache = true;
     } catch {
       onProgress?.('Shielded cache corrupted, syncing from genesis...');
@@ -552,24 +584,24 @@ export async function startWalletSync(
     }
   }
   if (!shieldedWallet) {
-    shieldedWallet = CustomShieldedWallet(walletCfg, shieldedBuilder).startWithSecretKeys(shieldedSecretKeys);
+    shieldedWallet = sdk().shielded.CustomShieldedWallet(walletCfg, shieldedBuilder).startWithSecretKeys(shieldedSecretKeys);
   }
 
   // --- Unshielded wallet: try restore from cache ---
   onProgress?.('Starting unshielded wallet...');
   let unshieldedWallet: UnshieldedWallet | undefined;
-  const savedUnshielded = await loadCachedState(store, name, network.id, 'unshielded');
+  const savedUnshielded = await loadCachedState(store, name, network.id, 'unshielded', keys.signatureKind);
   if (savedUnshielded) {
     try {
       onProgress?.('Restoring unshielded state from cache...');
-      unshieldedWallet = UnshieldedWallet(walletCfg).restore(savedUnshielded);
+      unshieldedWallet = sdk().unshielded.UnshieldedWallet(walletCfg).restore(savedUnshielded);
     } catch {
       onProgress?.('Unshielded cache corrupted, syncing from genesis...');
-      await evictCachedState(store, name, network.id, 'unshielded');
+      await evictCachedState(store, name, network.id, 'unshielded', keys.signatureKind);
     }
   }
   if (!unshieldedWallet) {
-    unshieldedWallet = UnshieldedWallet(walletCfg).startWithPublicKey(PublicKey.fromKeyStore(keystore));
+    unshieldedWallet = sdk().unshielded.UnshieldedWallet(walletCfg).startWithPublicKey(sdk().unshielded.PublicKey.fromKeyStore(keystore));
   }
 
   // --- Dust wallet: try restore from cache ---
@@ -589,16 +621,16 @@ export async function startWalletSync(
   if (savedDust) {
     try {
       onProgress?.('Restoring dust state from cache...');
-      dustWallet = CustomDustWallet(dustCfg, dustBuilder).restore(savedDust);
+      dustWallet = sdk().dust.CustomDustWallet(dustCfg, dustBuilder).restore(savedDust);
     } catch {
       onProgress?.('Dust cache corrupted, syncing from genesis...');
       await evictCachedState(store, name, network.id, 'dust');
     }
   }
   if (!dustWallet) {
-    dustWallet = CustomDustWallet(dustCfg, dustBuilder).startWithSecretKey(
+    dustWallet = sdk().dust.CustomDustWallet(dustCfg, dustBuilder).startWithSecretKey(
       dustSecretKey,
-      ledger.LedgerParameters.initialParameters().dust
+      activeLedger().LedgerParameters.initialParameters().dust
     );
   }
 
@@ -608,7 +640,7 @@ export async function startWalletSync(
 
   // --- WalletFacade ---
   onProgress?.('Initializing wallet facade...');
-  const facade = await WalletFacade.init({
+  const facade = await sdk().facade.WalletFacade.init({
     configuration: walletCfg,
     // The SDK defaults to a proof server. Supply the service explicitly so
     // WASM mode follows the documented makeWasmProvingService() path.
@@ -707,12 +739,12 @@ export async function startWalletSync(
         const cacheNow = Date.now();
         if (cacheNow - lastCacheSaveTime > 60_000) {
           lastCacheSaveTime = cacheNow;
-          saveCache(store, facade, txHistoryStorage, name, network.id).catch(() => {});
+          saveCache(store, facade, txHistoryStorage, name, network.id, keys.signatureKind).catch(() => {});
         }
 
         if (balances.synced && !hasSavedCache) {
           hasSavedCache = true;
-          saveCache(store, facade, txHistoryStorage, name, network.id).catch(() => {});
+          saveCache(store, facade, txHistoryStorage, name, network.id, keys.signatureKind).catch(() => {});
         }
       },
       error: (err: any) => {
@@ -750,7 +782,7 @@ export async function startWalletSync(
 
   const stop = async () => {
     subscription.unsubscribe();
-    await saveCache(store, facade, txHistoryStorage, name, network.id).catch(() => {});
+    await saveCache(store, facade, txHistoryStorage, name, network.id, keys.signatureKind).catch(() => {});
 
     try {
       await facade.stop();
@@ -790,13 +822,13 @@ async function loadHistoryStorage(
   if (saved) {
     try {
       onProgress?.('Restoring transaction history from cache...');
-      return InMemoryTransactionHistoryStorage.restore(saved, WalletEntrySchema, mergeWalletEntries);
+      return sdk().root.InMemoryTransactionHistoryStorage.restore(saved, sdk().facade.WalletEntrySchema, sdk().facade.mergeWalletEntries);
     } catch {
       onProgress?.('Transaction history cache corrupted, rebuilding from sync...');
       await evictCachedState(store, walletName, networkId, 'history');
     }
   }
-  return new InMemoryTransactionHistoryStorage(WalletEntrySchema, mergeWalletEntries);
+  return new (sdk().root.InMemoryTransactionHistoryStorage)(sdk().facade.WalletEntrySchema, sdk().facade.mergeWalletEntries);
 }
 
 async function saveCache(
@@ -804,7 +836,10 @@ async function saveCache(
   facade: WalletFacade,
   history: {serialize(): Promise<string>},
   walletName: string,
-  networkId: string
+  networkId: string,
+  // Must match what loadCachedState will look for, or an ECDSA wallet writes
+  // to one key and reads from another and never restores.
+  signatureKind: SignatureKind = 'schnorr'
 ): Promise<void> {
   try {
     const [sh, un, du, hi] = await Promise.all([
@@ -823,7 +858,7 @@ async function saveCache(
       history.serialize().catch(() => null),
     ]).catch(() => [null, null, null, null]);
     if (sh) await saveCachedState(store, walletName, networkId, 'shielded', sh);
-    if (un) await saveCachedState(store, walletName, networkId, 'unshielded', un);
+    if (un) await saveCachedState(store, walletName, networkId, 'unshielded', un, signatureKind);
     if (du) await saveCachedState(store, walletName, networkId, 'dust', du);
     if (hi) await saveCachedState(store, walletName, networkId, 'history', hi);
   } catch {
@@ -1039,7 +1074,7 @@ function extractBalancesPartial(
   // Extract DUST generation info from the facade's dust sub-wallet state.
   // This matches mn-tui's extractDustGeneration pattern.
   try {
-    const nightRatio = ledger.LedgerParameters.initialParameters().dust.nightDustRatio as bigint;
+    const nightRatio = activeLedger().LedgerParameters.initialParameters().dust.nightDustRatio as bigint;
     // v4 API: availableCoins is a property returning DustFullInfo[]
     const coins = state.dust.availableCoins.filter((coin) => coin.maxCap > 0n);
 

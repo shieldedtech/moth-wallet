@@ -130,7 +130,7 @@ describe('upgrading a profile saved on the retired local network', () => {
   // the panel. An id with no mapping still takes the fallback, which is what
   // makes the migration load-bearing rather than decorative.
   it('still falls back for an id that has no current equivalent', async () => {
-    await fakeBrowser.storage.local.set({ settings: { network: 'stagenet' } });
+    await fakeBrowser.storage.local.set({ settings: { network: 'some-future-net' } });
 
     const { state } = await openNetworkPanel();
 

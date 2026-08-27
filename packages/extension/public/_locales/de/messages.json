@@ -704,6 +704,9 @@
   "network_descQanet": {
     "message": "Netzwerk für Qualitätssicherung"
   },
+  "network_descStagenet": {
+    "message": "Demonetzwerk auf dem v9-Ledger"
+  },
   "network_endpointUrls": {
     "message": "Endpunkt-URLs"
   },
@@ -1265,6 +1268,24 @@
   "setup_networkNote": {
     "message": "Du kannst das jederzeit in den Einstellungen unter Netzwerk ändern."
   },
+  "setup_signingTitle": {
+    "message": "Signaturalgorithmus"
+  },
+  "setup_signingSchnorr": {
+    "message": "Schnorr (empfohlen)"
+  },
+  "setup_signingSchnorrDesc": {
+    "message": "Funktioniert in jedem Midnight-Netzwerk."
+  },
+  "setup_signingEcdsa": {
+    "message": "ECDSA"
+  },
+  "setup_signingEcdsaDesc": {
+    "message": "Für secp256k1-Schlüsselverwahrung, etwa mit HSM oder KMS."
+  },
+  "setup_signingEcdsaWarning": {
+    "message": "ECDSA gibt diesem Konto eine andere unshielded-Adresse und in Netzwerken mit dem älteren Ledger gar keine. Nach dem Anlegen des Kontos ist dies nicht mehr änderbar."
+  },
   "setup_phraseTitle": {
     "message": "Schreib deine geheime Phrase auf"
   },
@@ -1396,6 +1417,15 @@
   },
   "welcome_gettingThingsReady": {
     "message": "Alles wird vorbereitet"
+  },
+  "welcome_loadingFailedTitle": {
+    "message": "Wallet konnte nicht geöffnet werden"
+  },
+  "welcome_loadingFailedHint": {
+    "message": "Meist ist das gewählte Netzwerk nicht erreichbar oder nicht das, auf dem dieses Konto funktioniert."
+  },
+  "welcome_loadingFailedAction": {
+    "message": "Netzwerk wechseln"
   },
   "welcome_loadingPreparingWallet": {
     "message": "Deine Wallet wird vorbereitet"

@@ -11,6 +11,14 @@ The English catalog (`messages/`) is the source of truth. Shipped locales live i
   buttons, activity labels): **AI-assisted drafts, NOT reviewed by a native speaker.**
   Safe UI chrome only (buttons, labels, titles, durations). Review recommended before
   a user-facing release, but low-risk.
+- **`setup_signing*`** (six keys: the ECDSA/Schnorr choice at account creation):
+  **AI-assisted drafts, NOT reviewed by a native speaker.** `setup_signingEcdsaWarning`
+  carries consequence meaning — a different address, no address on older-ledger networks,
+  and irreversibility — so it should get native-speaker review before a user-facing
+  release, unlike the safe UI chrome above it.
+- **`network_descStagenet`** (stagenet in the network picker): **AI-assisted draft, NOT
+  reviewed by a native speaker.** UI chrome describing a developer network, so low-risk
+  under the same rule as the 58 keys above.
 - **Sensitive copy: intentionally left in English**, pending native-speaker review.
   These carry security / financial / consequence meaning where a mistranslation could
   mislead, so they were NOT machine-drafted. Translate these with care and review:

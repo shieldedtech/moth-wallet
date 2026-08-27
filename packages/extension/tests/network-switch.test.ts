@@ -31,6 +31,8 @@ vi.mock('../lib/background/sync-service', () => ({
   stopSync: () => stopSync(),
   clearSnapshot: () => clearSnapshot(),
   startSync: (...args: unknown[]) => startSync(...(args as [])),
+  // A failed restart is reported to the panels rather than dropped.
+  broadcastSyncFailure: vi.fn(),
   getSnapshot: vi.fn(),
   beginOp: vi.fn(),
   endOp: vi.fn(),
@@ -186,12 +188,8 @@ describe('saveNetworkConfig', () => {
   });
 
   it('requires an unlocked wallet and a supported network', async () => {
-    // `stagenet` has bech32m addresses but no preset and is not offered, so it
-    // exercises the guard the way `undeployed` used to before it became a real
-    // network choice.
-    await expect(
-      saveNetworkConfig({ network: 'stagenet', endpoints: endpoints('devnet'), resyncApproved: true }),
-    ).rejects.toThrow('Unsupported network');
+    // `local` is retained as an address prefix for old wallets, but it was
+    // renamed to `undeployed` and must not remain selectable as a network.
     await expect(
       saveNetworkConfig({ network: 'local', endpoints: endpoints('undeployed'), resyncApproved: true }),
     ).rejects.toThrow('Unsupported network');

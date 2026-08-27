@@ -25,7 +25,8 @@ type Dispatch = {
 export const hostDispatch: Dispatch = {
   // walletList wraps an already-async wallets.list() — flatten the extra Promise.
   'os/walletList': async (host, d) => host.walletList(d.network),
-  'os/walletCreate': (host, d) => host.walletCreate(d.name, d.passphrase, d.network, d.birthday, d.mnemonic),
+  'os/walletCreate': (host, d) =>
+    host.walletCreate(d.name, d.passphrase, d.network, d.birthday, d.mnemonic, d.signatureKind),
   'os/walletImport': (host, d) => host.walletImport(d.name, d.mnemonic, d.passphrase, d.network),
   'os/walletRemove': (host, d) => host.walletRemove(d.name, d.network),
   'os/walletSetActive': (host, d) => host.walletSetActive(d.name, d.network),
@@ -57,7 +58,7 @@ export const hostDispatch: Dispatch = {
   'os/transferSubmit': (host, d) => host.transferSubmit(d.seedHex, d.walletName, d.network, d.txHex),
   'os/txHistoryGet': (host, d) => host.txHistoryGet(d.seedHex, d.walletName, d.network, d.pageNumber, d.pageSize),
   'os/activityGet': (host, d) => host.activityGet(d.seedHex, d.walletName, d.network),
-  'os/signData': (host, d) => host.signData(d.seedHex, d.network, d.data, d.encoding),
+  'os/signData': (host, d) => host.signData(d.seedHex, d.network, d.data, d.encoding, d.walletName),
   'os/deriveAppSecret': (host, d) => host.deriveAppSecret(d.seedHex, d.origin, d.domain),
   'os/provingProviderCheck': async (host, d) => {
     const payload = decodeBigintJson<ProvingProviderCheckPayload>(d.payloadJson);

@@ -386,12 +386,44 @@ Every command accepts:
 | `--indexer` | | config | Indexer GraphQL URL override (env: `MOTH_INDEXER_URL`) |
 | `--node-url` | | config | Node URL override (env: `MOTH_NODE_URL`) |
 
+### Signature kinds
+
+Networks run one of two ledger generations, and Moth picks which to load by asking the
+network for its `protocolVersion` rather than trusting a shipped table:
+
+| Ledger | Networks |
+|---|---|
+| v9 | `devnet`, `stagenet` |
+| v8 | `mainnet`, `preprod`, `preview`, `qanet`, `undeployed` |
+
+Ledger v9 adds a second signing algorithm, **ECDSA over secp256k1**, alongside BIP-340
+Schnorr. Schnorr is the default and works everywhere; ECDSA exists to make secp256k1 key
+custody possible — an HSM or KMS holding the key out of process.
+
+```bash
+moth wallet import --name my-ecdsa --network devnet --signature-kind ecdsa --seed-hex
+moth wallet generate --name my-ecdsa --network devnet --signature-kind ecdsa
+```
+
+Three things to know before choosing it:
+
+- **It changes your address.** The same seed gives a different *unshielded* address under
+  ECDSA than under Schnorr. Shielded and DUST addresses are identical either way.
+- **It is v9-only.** An ECDSA wallet has no unshielded address on `mainnet`, `preprod`,
+  `preview`, `qanet` or `undeployed`, so Moth refuses to create one there.
+- **It cannot be changed afterwards.** DUST generation is registered against the tagged night
+  key, so switching would strand NIGHT at the old address and stop DUST until re-registered.
+
+`moth wallet list` shows a `signing` column, populated only for ECDSA.
+
+
 ### Wallet Management
 
 | Command | Description |
 |---------|-------------|
 | `moth wallet generate [--name <name>]` | Create new wallet from random mnemonic |
 | `moth wallet import [--name <name>]` | Import from recovery phrase (stdin or interactive) or `--seed-hex` |
+| `--signature-kind schnorr\|ecdsa` | On `generate` and `import`. Unshielded signing algorithm, default `schnorr`. See [Signature kinds](#signature-kinds) |
 | `moth wallet list` | List all wallets |
 | `moth wallet address --name <name>` | Print a wallet's receive addresses (NIGHT, DUST, shielded) for every network. Offline — unlocks the keystore, no sync |
 | `moth wallet use [<name>]` | Switch active wallet (prompts if name omitted) |
@@ -583,6 +615,7 @@ const prover = new ProofClient('http://localhost:6300');
 | Network | Node | Indexer | Proof Server |
 |---------|------|--------|--------------|
 | devnet | `https://rpc.devnet.midnight.network` | `https://indexer.devnet.midnight.network/api/v4/graphql` | `http://localhost:6300` |
+| stagenet | `https://rpc.stagenet.shielded.tools` | `https://indexer.stagenet.shielded.tools/api/v4/graphql` | `http://localhost:6300` |
 | preview | `https://rpc.preview.midnight.network` | `https://indexer.preview.midnight.network/api/v4/graphql` | `http://localhost:6300` |
 | preprod | `https://rpc.preprod.midnight.network` | `https://indexer.preprod.midnight.network/api/v4/graphql` | `http://localhost:6300` |
 | qanet | `https://rpc.qanet.midnight.network` | `https://indexer.qanet.midnight.network/api/v4/graphql` | `http://localhost:6300` |

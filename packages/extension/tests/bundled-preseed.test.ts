@@ -1,9 +1,11 @@
+import { readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { installBundledReference } from '../lib/offscreen/bundled-preseed';
+import { hasBundledReference, installBundledReference } from '../lib/offscreen/bundled-preseed';
 
 const NETWORK = 'preprod';
 const HEIGHT_KEY = `empty-ref/${NETWORK}/height.txt`;
 const stateKey = (part: string) => `sync/${NETWORK}/__empty_ref__/${part}.dat`;
+const PRESEED_ROOT = new URL('../public/preseed/', import.meta.url);
 
 /** Records the ORDER of writes: the height must land last, so an interrupted
  *  install leaves state that loadUsableRefStates ignores rather than trusts. */
@@ -66,6 +68,23 @@ afterEach(() => {
 });
 
 describe('installBundledReference', () => {
+  it('accepts every reference shipped in the extension package', async () => {
+    const networks = readdirSync(PRESEED_ROOT, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name);
+
+    vi.stubGlobal('fetch', async (input: string | URL) => {
+      const network = new URL(String(input)).pathname.split('/').at(-2);
+      if (!network || !networks.includes(network)) return new Response(null, { status: 404 });
+      const manifest = readFileSync(new URL(`${network}/manifest.json`, PRESEED_ROOT), 'utf8');
+      return new Response(manifest, { status: 200 });
+    });
+
+    for (const network of networks) {
+      await expect(hasBundledReference(network), network).resolves.toBe(true);
+    }
+  });
+
   it('writes all three states and the height', async () => {
     await serveAssets();
     const store = recordingStore();

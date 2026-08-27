@@ -1,10 +1,16 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { chacha20poly1305 } from '@noble/ciphers/chacha.js';
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { scrypt } from '@noble/hashes/scrypt.js';
 import { WalletManager } from '../../../src/wallet/manager.js';
 import { deriveAllAddressesFromSeed } from '../../../src/wallet/address.js';
 import { MemoryStorage } from '../../helpers/memory-storage.js';
+import { initLedger } from '../../../src/ledger/index.js';
+
+// WalletManager reaches deriveWalletKeys, which takes its ledger from the seam.
+beforeAll(async () => {
+  await initLedger('v8');
+});
 
 describe('WalletManager.setLabel', () => {
   const encoder = new TextEncoder();

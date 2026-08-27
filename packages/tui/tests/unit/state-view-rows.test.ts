@@ -20,7 +20,7 @@ import { describe, expect, it } from 'vitest';
 import { flattenBalanceRows, shouldItemise, type DisplayTokenGroup } from '../../src/utils/balance.js';
 import { balanceBudget, truncateMiddle, windowRows } from '../../src/utils/display.js';
 
-const TOKEN = '29ed4a053c1ec576e7f7684832c062bebc5cf67c0a4a9242f4defebd4b112b94';
+const TOKEN = `token-${'x'.repeat(50)}-suffix`;
 
 const group = (token: string, coins: number): DisplayTokenGroup => ({
   token,
@@ -44,8 +44,8 @@ describe('truncateMiddle', () => {
   it('elides the middle and keeps both ends recognisable', () => {
     const short = truncateMiddle(TOKEN, 24);
     expect(short).toHaveLength(24);
-    expect(short.startsWith('29ed4a05')).toBe(true);
-    expect(short.endsWith('4b112b94')).toBe(true);
+    expect(short.startsWith('token-xxxxxx')).toBe(true);
+    expect(short.endsWith('xxxx-suffix')).toBe(true);
   });
 
   it('never exceeds the width it was given', () => {

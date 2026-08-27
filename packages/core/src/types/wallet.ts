@@ -22,6 +22,13 @@ export interface WalletKeys {
   readonly shieldedSecretKeys: ledger.ZswapSecretKeys;
   readonly dustSecretKey: ledger.DustSecretKey;
   readonly nightExternalKey: Uint8Array;
+  /**
+   * The signature kind this wallet's unshielded identity uses. It has to travel
+   * with the keys: the same secret yields a different unshielded address under
+   * ECDSA than under schnorr, so a wallet that syncs the wrong one watches an
+   * address it never gave out and reports an empty balance.
+   */
+  readonly signatureKind: 'schnorr' | 'ecdsa';
 }
 
 export interface AddressEncoding {
@@ -49,6 +56,12 @@ export interface WalletInfo {
   readonly birthday?: number;
   /** User-chosen display label; `name` remains the immutable storage key. */
   readonly label?: string;
+  /**
+   * Signature algorithm for this wallet's unshielded identity. Absent means
+   * schnorr — the only kind ledger v8 has, and what every wallet predating this
+   * field used. Fixed at creation; see WalletMeta for why it cannot change.
+   */
+  readonly signatureKind?: 'schnorr' | 'ecdsa';
 }
 
 export interface UnlockedWallet {

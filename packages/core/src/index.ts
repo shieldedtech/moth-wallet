@@ -1,9 +1,10 @@
 // Types
 export * from './types/index.js';
-export type { NetworkConfig, NetworkEndpoints, ProverConfig } from './types/network.js';
+export type { NetworkConfig, NetworkEndpoints, ProverConfig, LedgerVersion } from './types/network.js';
 export {
   canonicalNetworkId,
   DEFAULT_NETWORKS,
+  resolveLedgerVersion,
   SUPPORTED_NETWORKS,
   validateNetworkUrl,
   validateNetworkConfig,
@@ -13,6 +14,37 @@ export {
   proverConfigsEqual,
   describeProver,
 } from './types/network.js';
+
+// Ledger seam (v8 / v9)
+export {
+  initLedger,
+  ledger,
+  ledgerFor,
+  activeLedgerVersion,
+  resetLedgerRegistry,
+  type LedgerModule,
+} from './ledger/index.js';
+export {
+  PROTOCOL_VERSION_V8,
+  PROTOCOL_VERSION_V9,
+  ledgerVersionForProtocol,
+  assertLedgerForNetwork,
+  verifyNetworkLedger,
+  detectLedgerVersion,
+  resetLedgerDetectionCache,
+  type DetectedLedger,
+} from './ledger/protocol-version.js';
+
+// Wallet SDK seam (v8 / v9)
+export {
+  initSdk,
+  sdk,
+  sdkFor,
+  activeSdkVersion,
+  resetSdkRegistry,
+  createKeystoreFor,
+  type SdkModule,
+} from './sdk/index.js';
 
 // Wallet
 export { WalletManager } from './wallet/manager.js';
@@ -34,6 +66,12 @@ export {
 } from './wallet/night-amount.js';
 export { deriveAllAddressesFromSeed, deriveRawKeys, deriveShieldedPublicKeys, decodeBech32mAddress } from './wallet/address.js';
 export { signMessage, signedMessageBytes, type SignEncoding, type SignedMessage } from './wallet/sign-message.js';
+export {
+  signatureKindOf,
+  unwrapSignatureValue,
+  type SignatureKind,
+  type TaggedOrBare,
+} from './wallet/signature-encoding.js';
 export { deriveAppSecret } from './wallet/app-secret.js';
 export { loadBatchFile, executeBatchTransfer, batchExitCode, type BatchTransferEntry, type BatchTransferResult, type BatchTransferSummary } from './wallet/batch-transfer.js';
 

@@ -94,8 +94,8 @@ describe('canonicalNetworkId', () => {
 
   it('passes through ids it does not know, including the empty string', () => {
     // Custom and unlisted ids are legitimate — endpoints are overridable and
-    // `stagenet` has addresses but no preset — so this must not gate on a list.
-    expect(canonicalNetworkId('stagenet')).toBe('stagenet');
+    // future networks may have addresses before they gain a preset — so this
+    // must not gate on the current supported-network list.
     expect(canonicalNetworkId('some-future-net')).toBe('some-future-net');
     expect(canonicalNetworkId('')).toBe('');
   });

@@ -1,0 +1,30 @@
+{
+  "network": "stagenet",
+  "height": 186168,
+  "parts": {
+    "shielded": {
+      "bytes": 3504,
+      "gzipBytes": 1890
+    },
+    "unshielded": {
+      "bytes": 397,
+      "gzipBytes": 291
+    },
+    "dust": {
+      "bytes": 7197,
+      "gzipBytes": 3809
+    }
+  },
+  "witnesses": {
+    "shielded": {
+      "stream": "zswapLedgerEvents",
+      "id": 6999,
+      "digest": "e5b8368e59354a3d"
+    },
+    "dust": {
+      "stream": "dustLedgerEvents",
+      "id": 7006,
+      "digest": "cd440f8a1f939730"
+    }
+  }
+}

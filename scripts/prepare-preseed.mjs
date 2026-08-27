@@ -6,8 +6,10 @@ import {parseArgs} from 'node:util';
 
 import {
   DEFAULT_NETWORKS,
+  initSdk,
   preseedReferenceStatus,
   refreshEmptyRefCache,
+  resolveLedgerVersion,
 } from '@shieldedtech/moth-wallet';
 
 import {preparePreseed} from './lib/prepare-preseed.mjs';
@@ -20,11 +22,17 @@ const {values} = parseArgs({
 });
 
 if (!values.network) {
-  console.error('Usage: node scripts/prepare-preseed.mjs --network <preview|preprod> [--summary <path>]');
+  const known = Object.keys(DEFAULT_NETWORKS).join('|');
+  console.error(`Usage: node scripts/prepare-preseed.mjs --network <${known}> [--summary <path>]`);
   process.exit(2);
 }
 
 try {
+  // Load the SDK generation and ledger this network speaks; the sync below
+  // reaches both seams.
+  const selected = DEFAULT_NETWORKS[values.network];
+  if (selected) await initSdk(resolveLedgerVersion(selected));
+
   const result = await preparePreseed(values.network, {
     networks: DEFAULT_NETWORKS,
     status: preseedReferenceStatus,

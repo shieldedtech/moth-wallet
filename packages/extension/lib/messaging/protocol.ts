@@ -1,3 +1,8 @@
+/** Marks a syncMessage as a failure rather than progress. The loading screen
+ *  matches progress text by keyword and falls through to a generic line, so a
+ *  failure smuggled in as prose renders as reassurance and spins forever. */
+export const SYNC_FAILURE_PREFIX = 'Sync failed:';
+
 // Typed request/response protocol between UI surfaces (side panel, approval
 // window) and the background service worker. All payloads must survive
 // structured cloning — bigints and Dates travel as serialized strings.
@@ -60,6 +65,12 @@ export interface CreateWalletRequest {
   birthday?: number;
   /** Persist this pre-generated phrase (shown to the user first) instead of a fresh one. */
   mnemonic?: string;
+  /**
+   * Signature algorithm for the unshielded identity. Ledger v9 only — v8 has no
+   * ECDSA. Fixed at creation: it selects the address, and DUST must be
+   * re-registered if it changes.
+   */
+  signatureKind?: 'schnorr' | 'ecdsa';
 }
 
 export interface ImportWalletRequest {

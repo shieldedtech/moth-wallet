@@ -3,7 +3,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Toaster } from 'sonner';
-import { useSession, useWallets, usePanelEvents, useSelectedProverType } from '../../lib/ui/client';
+import { useSession, useWallets, usePanelEvents, useSelectedProverType, useSlowSync } from '../../lib/ui/client';
 import { accountLabel } from '../../lib/ui/format';
 import type { Screen } from '../../components/screens/navigation';
 import { GetStarted, openSetupTab } from '../../components/screens/GetStarted';
@@ -27,6 +27,7 @@ export function App() {
   const { wallets, refresh: refreshWallets } = useWallets();
   const events = usePanelEvents();
   const prover = useSelectedProverType(session.status?.network);
+  const slowSync = useSlowSync(!events.balances);
   const [screen, setScreen] = useState<Screen>('home');
   // Set when the user asks to switch accounts: the target's storage name. The
   // current session stays alive and syncing until this unlock succeeds, so
@@ -133,7 +134,18 @@ export function App() {
     );
   }
 
-  if (!events.balances) return <WalletLoading syncMessage={events.syncMessage} />;
+  // The loading screen short-circuits the router, so a failed sync used to be a
+  // dead end: it told the user to check the network and gave them no way to get
+  // there. Let the network screen through, and let the failure open it.
+  if (!events.balances && screen !== 'network-config') {
+    return (
+      <WalletLoading
+        syncMessage={events.syncMessage}
+        slow={slowSync}
+        onOpenNetwork={() => setScreen('network-config')}
+      />
+    );
+  }
 
   const shared = {
     navigate: setScreen,

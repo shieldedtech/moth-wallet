@@ -46,7 +46,7 @@ Every command accepts these. Defaults shown.
 | Flag | Short | Default | Purpose |
 |---|---|---|---|
 | `--output` | `-o` | `text` | `text` or `json` |
-| `--network` | `-n` | `devnet` | One of `devnet`, `preview`, `preprod`, `qanet`, `undeployed`. `undeployed` is the local devnet stack (node on `9944`, indexer on `8088`). Not restricted to that list — endpoints are overridable, so a custom id is a valid target and gets the localhost defaults. `local` was an earlier name for `undeployed` and still resolves to it. `mainnet` parses but every command refuses it: Moth is unaudited and not for real funds. |
+| `--network` | `-n` | `devnet` | One of `devnet`, `stagenet`, `preview`, `preprod`, `qanet`, `undeployed`. `undeployed` is the local devnet stack (node on `9944`, indexer on `8088`). Not restricted to that list — endpoints are overridable, so a custom id is a valid target and gets the localhost defaults. `local` was an earlier name for `undeployed` and still resolves to it. `mainnet` parses but every command refuses it: Moth is unaudited and not for real funds. |
 | `--wallet` | `-w` | active | Wallet name from `~/.moth/wallets/` |
 | `--verbose` | `-v` | off | Debug output to stderr |
 | `--timeout` | `-t` | varies | Per-op timeout (seconds) |

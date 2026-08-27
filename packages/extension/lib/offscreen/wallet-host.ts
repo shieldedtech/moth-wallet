@@ -8,6 +8,8 @@ import { installBundledReference, hasBundledReference } from './bundled-preseed'
 import { requestMeter, type MeterSnapshot } from './request-meter';
 import {
   createMothBrowser,
+  initSdk,
+  detectLedgerVersion,
   startWalletSync,
   buildTransferTransaction,
   estimateTransferFee as coreEstimateTransferFee,
@@ -40,9 +42,10 @@ import {
   type SwapInput,
   type SignEncoding,
   type SignedMessage,
+  ledger as activeLedger,
 } from '@shieldedtech/moth-browser';
 import { deriveAllAddressesFromSeed } from '@shieldedtech/moth-wallet/wallet/address';
-import * as ledger from '@midnight-ntwrk/ledger-v8';
+import type * as ledger from '@midnight-ntwrk/ledger-v8';
 import type { HistoryEntry } from '@midnight-ntwrk/dapp-connector-api';
 import { serializeBalances } from '../messaging/balances-json';
 import { serializeActivity } from '../messaging/activity-json';
@@ -102,10 +105,16 @@ function serializeForClients(balances: WalletBalances): string {
 type Moth = ReturnType<typeof createMothBrowser>;
 let cachedMoth: { network: string; moth: Moth } | null = null;
 
-function getMoth(network: string): Moth {
+// Async because the ledger WASM and the SDK generation the network needs must
+// both be loaded before any core call reaches a seam — deriveWalletKeys builds
+// a keystore, which is SDK-side. initSdk loads the matching ledger too and
+// caches, so this is a no-op after the first call for a given version.
+async function getMoth(network: string): Promise<Moth> {
   if (cachedMoth?.network !== network) {
     cachedMoth = { network, moth: createMothBrowser({ network }) };
   }
+  const {version} = await detectLedgerVersion(cachedMoth.moth.config);
+  await initSdk(version);
   return cachedMoth.moth;
 }
 
@@ -136,7 +145,7 @@ async function ensureProver(network: NetworkConfig): Promise<void> {
 // --- Wallet CRUD ----------------------------------------------------------
 
 export async function walletList(network: string): Promise<ReturnType<Moth['wallets']['list']>> {
-  return getMoth(network).wallets.list();
+  return (await getMoth(network)).wallets.list();
 }
 
 // The setup UI generates and shows the phrase (pure JS, no WASM) before asking
@@ -147,31 +156,37 @@ export async function walletCreate(
   network: string,
   birthday?: number,
   mnemonic?: string,
+  signatureKind: 'schnorr' | 'ecdsa' = 'schnorr',
 ) {
-  const { mnemonic: phrase, ...info } = await getMoth(network).wallets.generate(
+  const moth = await getMoth(network);
+  // Schnorr derives without the SDK seam; ECDSA does not exist on v8 and needs
+  // the v9 generation loaded before any address is derived.
+  if (signatureKind === 'ecdsa') await initSdk('v9');
+  const { mnemonic: phrase, ...info } = await moth.wallets.generate(
     name,
     passphrase,
     network,
     birthday,
     mnemonic,
+    signatureKind,
   );
   return { info, mnemonic: phrase };
 }
 
 export async function walletImport(name: string, mnemonic: string, passphrase: string, network: string) {
-  return getMoth(network).wallets.import(name, mnemonic, passphrase, network);
+  return (await getMoth(network)).wallets.import(name, mnemonic, passphrase, network);
 }
 
 export async function walletRemove(name: string, network: string): Promise<void> {
-  await getMoth(network).wallets.remove(name);
+  (await getMoth(network)).wallets.remove(name);
 }
 
 export async function walletSetActive(name: string, network: string): Promise<void> {
-  await getMoth(network).wallets.setActive(name);
+  (await getMoth(network)).wallets.setActive(name);
 }
 
 export async function walletSetLabel(name: string, label: string, network: string): Promise<void> {
-  await getMoth(network).wallets.setLabel(name, label);
+  (await getMoth(network)).wallets.setLabel(name, label);
 }
 
 // Reveal-phrase (Accounts screen): the original mnemonic, or the raw hex seed
@@ -182,7 +197,7 @@ export async function walletExportPhrase(
   passphrase: string,
   network: string,
 ): Promise<{ kind: 'mnemonic' | 'seed'; value: string }> {
-  return getMoth(network).wallets.exportPhrase(name, passphrase);
+  return (await getMoth(network)).wallets.exportPhrase(name, passphrase);
 }
 
 export async function walletSetNetwork(
@@ -211,12 +226,12 @@ export async function walletSetNetwork(
   // records it only on first arrival and only for wallets created here — an
   // imported wallet could hold funds on that chain at any height, so it keeps
   // scanning from genesis.
-  await getMoth(fromNetwork).wallets.setNetwork(name, network, address, birthday);
+  (await getMoth(fromNetwork)).wallets.setNetwork(name, network, address, birthday);
   return { address, addresses };
 }
 
 export async function walletUnlock(name: string, passphrase: string, network: string): Promise<UnlockedWallet> {
-  const unlocked = await getMoth(network).wallets.unlock(name, passphrase);
+  const unlocked = await (await getMoth(network)).wallets.unlock(name, passphrase);
   try {
     // The offscreen is the key-holder. Core's unlock() is seed-free (Option A),
     // so recover the serializable seed explicitly: Chrome tears the offscreen
@@ -224,7 +239,7 @@ export async function walletUnlock(name: string, passphrase: string, network: st
     // rebuild the WASM key bundle on each restart (walletKeys can't cross the
     // runtime-message boundary). The seed is dropped again after each op derives
     // its keys. See core WalletManager.exportSeedHex / D-KM-3.
-    const seedHex = await getMoth(network).wallets.exportSeedHex(name, passphrase);
+    const seedHex = await (await getMoth(network)).wallets.exportSeedHex(name, passphrase);
     const shielded = deriveShieldedPublicKeys(seedHex);
     return {
       name: unlocked.name,
@@ -290,13 +305,22 @@ export async function syncEnsure(
   // Wallets created by the extension store the chain tip at creation time as
   // their birthday; it lets the first sync pre-seed at tip instead of
   // scanning from genesis. Imported wallets have none and scan everything.
-  const birthday = (await getMoth(network.id).wallets.list())
-    .find((wallet) => wallet.name === walletName)?.birthday;
+  const record = (await (await getMoth(network.id)).wallets.list()).find(
+    (wallet) => wallet.name === walletName,
+  );
+  const birthday = record?.birthday;
+
+  // The kind travels with the keys. An ECDSA wallet has a different unshielded
+  // address from a schnorr one built on the same seed, so deriving without it
+  // makes the wallet watch an address it never showed the user — funds sent to
+  // the displayed address then look missing.
+  const signatureKind = record?.signatureKind ?? 'schnorr';
+  if (signatureKind === 'ecdsa') await initSdk('v9');
 
   // Derive the key bundle once for this session (Option A derive-and-drop):
   // startWalletSync and every subsequent op take walletKeys, and the raw seed
   // is not retained beyond this call.
-  const walletKeys = deriveWalletKeys(seedHex);
+  const walletKeys = deriveWalletKeys(seedHex, signatureKind);
   const synced = startWalletSync(
     walletKeys,
     network,
@@ -615,6 +639,8 @@ export async function registerDust(
   network: NetworkConfig,
   dustAddress?: string,
 ): Promise<{ txHash: string | null; notYet?: DustNotYet }> {
+  // Load the ledger this network speaks before any core call reaches the seam.
+  await initSdk((await detectLedgerVersion(network)).version);
   return trackOp(async () => {
     await ensureProver(network);
     const wallet = await syncEnsure(seedHex, walletName, network);
@@ -658,6 +684,8 @@ export async function deregisterDust(
   walletName: string,
   network: NetworkConfig,
 ): Promise<{ txHash: string }> {
+  // Load the ledger this network speaks before any core call reaches the seam.
+  await initSdk((await detectLedgerVersion(network)).version);
   return trackOp(async () => {
     await ensureProver(network);
     const wallet = await syncEnsure(seedHex, walletName, network);
@@ -678,6 +706,8 @@ export async function transferBuild(
   network: NetworkConfig,
   requests: TransferRequestDTO[],
 ): Promise<{ txHex: string }> {
+  // Load the ledger this network speaks before any core call reaches the seam.
+  await initSdk((await detectLedgerVersion(network)).version);
   return trackOp(async () => {
     await ensureProver(network);
     const wallet = await syncEnsure(seedHex, walletName, network);
@@ -702,6 +732,8 @@ export async function balanceTransaction(
   txHex: string,
   sealed: boolean,
 ): Promise<{ txHex: string }> {
+  // Load the ledger this network speaks before any core call reaches the seam.
+  await initSdk((await detectLedgerVersion(network)).version);
   return trackOp(async () => {
     await ensureProver(network);
     const wallet = await syncEnsure(seedHex, walletName, network);
@@ -727,6 +759,8 @@ export async function makeIntent(
   outputs: TransferRequestDTO[],
   payFees: boolean,
 ): Promise<{ txHex: string }> {
+  // Load the ledger this network speaks before any core call reaches the seam.
+  await initSdk((await detectLedgerVersion(network)).version);
   return trackOp(async () => {
     const wallet = await syncEnsure(seedHex, walletName, network);
     const intent = await buildSwapIntent(
@@ -748,9 +782,15 @@ export async function transferSubmit(
   network: NetworkConfig,
   txHex: string,
 ): Promise<void> {
+  // Load the ledger this network speaks before any core call reaches the seam.
+  await initSdk((await detectLedgerVersion(network)).version);
   return trackOp(async () => {
     const wallet = await syncEnsure(seedHex, walletName, network);
-    const transaction = ledger.Transaction.deserialize<ledger.SignatureEnabled, ledger.Proof, ledger.Binding>(
+    const transaction = activeLedger().Transaction.deserialize<
+      ledger.SignatureEnabled,
+      ledger.Proof,
+      ledger.Binding
+    >(
       'signature',
       'proof',
       'binding',
@@ -778,13 +818,21 @@ function toHistoryEntry(entry: { hash: string; status: 'SUCCESS' | 'FAILURE' | '
 
 // Signing needs only the seed + network id (no sync engine), so this is
 // deliberately independent of syncEnsure.
-export function signData(
+export async function signData(
   seedHex: string,
   network: NetworkConfig,
   data: string,
   encoding: SignEncoding,
-): SignedMessage {
-  return signMessage(seedHex, network.id, data, encoding);
+  walletName: string,
+): Promise<SignedMessage> {
+  // An ECDSA wallet signs with a different key and publishes a different
+  // verifying key, so signing with the default would hand the dApp a signature
+  // that verifies against a key the wallet never gave it.
+  const moth = await getMoth(network.id);
+  const record = (await moth.wallets.list()).find((w) => w.name === walletName);
+  const signatureKind = record?.signatureKind ?? 'schnorr';
+  if (signatureKind === 'ecdsa') await initSdk('v9');
+  return signMessage(seedHex, network.id, data, encoding, signatureKind);
 }
 
 // Deterministic per-(origin, domain) app secret. Like signData, this needs

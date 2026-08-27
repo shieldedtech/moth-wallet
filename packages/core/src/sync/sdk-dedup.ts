@@ -1,3 +1,4 @@
+import {sdk} from '../sdk/index.js';
 // Client-side workaround for an off-by-one in
 // @midnightntwrk/wallet-sdk-shielded and @midnightntwrk/wallet-sdk-dust-wallet.
 //
@@ -25,17 +26,7 @@
 // We wrap rather than fork — V1Builder.withSync is the documented
 // extension point.
 
-import {
-  V1Builder as ShieldedV1Builder,
-  Sync as ShieldedSync,
-  CoreWallet as ShieldedCoreWallet,
-} from '@midnightntwrk/wallet-sdk/shielded/v1';
 
-import {
-  V1Builder as DustV1Builder,
-  SyncService as DustSyncService,
-  CoreWallet as DustCoreWallet,
-} from '@midnightntwrk/wallet-sdk/dust/v1';
 
 type Updateish<T = unknown> = {
   readonly id: number | bigint | string;
@@ -125,18 +116,18 @@ function makeDedupingApplyUpdate<S extends {progress: {appliedIndex: bigint; [k:
 
 // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
 export function dedupingShieldedBuilder(): unknown {
-  return new ShieldedV1Builder().withDefaults().withSync(
+  return new (sdk().shieldedV1.V1Builder)().withDefaults().withSync(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ShieldedSync.makeEventsSyncService as any,
+    sdk().shieldedV1.Sync.makeEventsSyncService as any,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ((_config: unknown, _getContext: unknown) => {
-      const base = ShieldedSync.makeEventsSyncCapability();
+      const base = sdk().shieldedV1.Sync.makeEventsSyncCapability();
       return {
         applyUpdate: makeDedupingApplyUpdate(
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           base as any,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (state: any, patch: any) => ShieldedCoreWallet.updateProgress(state, patch),
+          (state: any, patch: any) => sdk().shieldedV1.CoreWallet.updateProgress(state, patch),
         ),
       };
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -151,20 +142,20 @@ export function dedupingShieldedBuilder(): unknown {
  */
 // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
 export function dedupingDustBuilder(): unknown {
-  return new DustV1Builder().withDefaults().withSync(
+  return new (sdk().dustV1.V1Builder)().withDefaults().withSync(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    DustSyncService.makeDefaultSyncService as any,
+    sdk().dustV1.SyncService.makeDefaultSyncService as any,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ((_config: unknown, _getContext: unknown) => {
       // makeDefaultSyncCapability ignores its args at runtime even though
       // V1Builder invokes the factory with (config, getContext).
-      const base = (DustSyncService.makeDefaultSyncCapability as () => unknown)();
+      const base = (sdk().dustV1.SyncService.makeDefaultSyncCapability as () => unknown)();
       return {
         applyUpdate: makeDedupingApplyUpdate(
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           base as any,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (state: any, patch: any) => DustCoreWallet.updateProgress(state, patch),
+          (state: any, patch: any) => sdk().dustV1.CoreWallet.updateProgress(state, patch),
         ),
       };
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

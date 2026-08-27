@@ -126,6 +126,13 @@ export async function installBundledReference(networkId: string, store: SyncStat
     // since it is at least as fresh as anything we ship.
     if (await store.get(emptyRefHeightKey(networkId))) return false;
 
+    // Ask the cached probe first. The guard above only latches once an install
+    // has succeeded, so for a network we ship nothing for it never latches and
+    // this runs on every sync start — a failing fetch every cycle, forever, in
+    // a request meter people read to spot real faults. hasBundledReference
+    // memoises per network, so the miss costs one fetch per worker lifetime.
+    if (!(await hasBundledReference(networkId))) return false;
+
     const manifest = parseManifest(await fetchText(assetUrl(networkId, 'manifest.json'), false));
     if (!manifest) return false;
 

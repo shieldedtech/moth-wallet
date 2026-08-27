@@ -1,6 +1,6 @@
 import type {NetworkConfig} from '../types/network.js';
-import {PolkadotNodeClient, makeConfig} from '@midnightntwrk/wallet-sdk/node-client';
-import {SerializedTransaction} from '@midnightntwrk/wallet-sdk';
+import type {PolkadotNodeClient} from '@midnightntwrk/wallet-sdk/node-client';
+import {sdk} from '../sdk/index.js';
 
 function toWsUrl(url: string): string {
   return url.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
@@ -15,8 +15,8 @@ export function createMidnightProvider(network: NetworkConfig) {
 
   function getClient(): Promise<PolkadotNodeClient> {
     if (!clientPromise) {
-      clientPromise = PolkadotNodeClient.init(
-        makeConfig({
+      clientPromise = sdk().nodeClient.PolkadotNodeClient.init(
+        sdk().nodeClient.makeConfig({
           nodeURL: new URL(toWsUrl(network.nodeUrl)),
         })
       );
@@ -27,7 +27,7 @@ export function createMidnightProvider(network: NetworkConfig) {
   return {
     async submitTx(finalizedTx: {serialize(): Uint8Array}): Promise<string> {
       const client = await getClient();
-      const serialized = SerializedTransaction.from(finalizedTx);
+      const serialized = sdk().root.SerializedTransaction.from(finalizedTx);
       // Wait only for Submitted — finalization is tracked separately by publicDataProvider.
       const event = await client.sendMidnightTransactionAndWait(serialized, 'Submitted');
       return event.txHash;
