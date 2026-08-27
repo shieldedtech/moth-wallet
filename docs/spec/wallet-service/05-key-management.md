@@ -101,7 +101,7 @@ sequenceDiagram
   Mgr->>FS: read keystore (encrypted)
   FS-->>Mgr: ciphertext + KDF params
   Mgr->>Mgr: Argon2id KDF + AES-256-GCM decrypt
-  Note over Mgr: local var: seedHex (BIP-39 64-char hex)<br>SCOPE: inside unlock()
+  Note over Mgr: local var: seedHex (hex: 128 chars from BIP-39,<br>64 if imported directly)<br>SCOPE: inside unlock()
   Mgr->>Derive: deriveWalletKeys(seedHex)
   Derive-->>Mgr: { shieldedSecretKeys,<br>  dustSecretKey, nightExternalKey }
   Mgr->>Mgr: seedHex = '' (overwrite local)

@@ -64,10 +64,11 @@ Restored accounts keep `createdHere: false` and no birthday, so they scan from
 genesis — they may hold funds at any height, and seeding one past its own history
 would hide them (ADR 0003, rule 4).
 
-Also corrected: two places documented a BIP-39 seed as 64 hex characters. It is
-128. `core/src/sync/operations.ts` and
+Also corrected: three places documented a BIP-39 seed as 64 hex characters. It is
+128 — 64 hex characters is a 32-byte seed, a different artifact that derives a
+different wallet. `core/src/sync/operations.ts` and two spots in
 `docs/spec/wallet-service/05-key-management.md`. That claim is precisely what
 would lead someone to write `length === 64` validation and reject the seeds this
-app exports.
+app exports (#99).
 
 Closes #98.
