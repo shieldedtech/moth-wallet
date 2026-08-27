@@ -3,6 +3,7 @@ import { browser } from 'wxt/browser';
 // the barrel drags in the ledger WASM (top-level await), which cannot exist in
 // the service worker's module graph. See lib/offscreen for where WASM lives.
 import {
+  canonicalNetworkId,
   DEFAULT_NETWORKS,
   isProverConfig,
   proverConfigsEqual,
@@ -95,7 +96,10 @@ export async function getSettings(): Promise<ExtensionSettings> {
   const saved = stored[SETTINGS_KEY] as Partial<ExtensionSettings> | undefined;
   const customEndpoints = parseEndpoints(saved?.customEndpoints);
   return {
-    network: saved?.network ?? DEFAULT_SETTINGS.network,
+    // Canonicalised on read: a selection saved under a network id that has since
+    // been renamed would otherwise match no preset and fall through to the
+    // localhost guess below.
+    network: canonicalNetworkId(saved?.network ?? DEFAULT_SETTINGS.network),
     customEndpoints,
     autoLockMinutes: 'autoLockMinutes' in (saved ?? {}) ? parseAutoLock(saved?.autoLockMinutes) : DEFAULT_SETTINGS.autoLockMinutes,
     nameResolverUrl: parseResolverUrl(saved?.nameResolverUrl),
@@ -126,7 +130,9 @@ export async function getNetworkConfig(networkId?: string): Promise<NetworkConfi
   const base = DEFAULT_NETWORKS[network] ?? {
     id: network,
     nodeUrl: 'ws://localhost:9944',
-    indexerUrl: 'http://localhost:8088',
+    // The GraphQL path is part of the endpoint, not decoration: the indexer
+    // client posts queries to it, and the bare origin is not a GraphQL endpoint.
+    indexerUrl: 'http://localhost:8088/api/v4/graphql',
     prover: serverProver(),
   };
   if (!customEndpoints || network !== settingsNetwork) return base;

@@ -70,6 +70,43 @@ node scripts/export-preseed.mjs --check
 
 A stale reference costs catch-up time, not correctness — the wallet syncs forward from the reference height — so one cut at release time stays useful for as long as the release does. Roughly half a second of catch-up per hour of age, measured on preprod. Refresh it when cutting a release rather than on a schedule; `--check` reports the age it would ship.
 
+### The preprod reference shipped before 2026-08-21 is stale — clear your cache
+
+If you have synced a preprod wallet with a build from before this date, clear that
+account's sync cache once:
+
+```bash
+moth wallet status --wallet <name> --network preprod   # confirm which account
+rm -rf ~/.moth/sync/preprod                            # CLI and TUI
+```
+
+In the extension: Settings → Advanced → Clear sync cache, with preprod selected.
+
+**Why.** Sync cursors are event sequence numbers assigned by the indexer, not
+heights derived from the chain. The default preprod indexer used to have a
+22-event hole in its dust id space; the host now serving that name numbers
+contiguously. Cursors written before that change therefore sit 22 events too high,
+and the bundled preprod reference (dust cursor `1431375`) is one of them — a wallet
+seeded from it resumes 22 dust events beyond the state the snapshot actually
+holds.
+
+**What it looks like if you don't.** Nothing. No error, no warning. Dust
+generation history is missing those events and the balance is quietly wrong.
+That silence is the whole problem, and it is why the fix is a cache clear rather
+than something the wallet can repair in place.
+
+**What you lose by clearing.** Sync time only — the account rescans from genesis,
+which is minutes for shielded and up to about an hour for dust on preprod. No key
+material and no funds are involved. Nothing is destroyed by the stale cursor
+either; the events are on chain and a rescan finds them.
+
+A rebuilt reference is being cut against the current indexer. Until it lands, a
+preprod account created on a fresh install will use the bundled reference and
+inherit the same skew, so clear the cache after your first sync there too. Builds
+from 2026-08-21 onward refuse a reference whose cursor no longer names the event it
+named when it was written — see [ADR 0003](docs/adr/0003-preseed-reference.md) and
+issue #40.
+
 The manually dispatched `Prepare preseed references` workflow prepares preview, preprod, or both in parallel. It restores only public reference state, refreshes to chain tip, exports the files, records SHA-256 checksums, and uploads reviewable workflow artifacts. It does not publish assets, modify the repository, open or merge a PR, or use OIDC. See [`docs/BENCHMARKING.md`](docs/BENCHMARKING.md) for what the preparation does and the sharp edges around it, and [ADR 0004](docs/adr/0004-preseed-distribution.md) for the longer-term distribution design.
 
 ## Prerequisites
@@ -545,10 +582,15 @@ const prover = new ProofClient('http://localhost:6300');
 
 | Network | Node | Indexer | Proof Server |
 |---------|------|--------|--------------|
-| devnet | `ws://localhost:9944` | `http://localhost:8088` | `http://localhost:6300` |
+| devnet | `https://rpc.devnet.midnight.network` | `https://indexer.devnet.midnight.network/api/v4/graphql` | `http://localhost:6300` |
 | preview | `https://rpc.preview.midnight.network` | `https://indexer.preview.midnight.network/api/v4/graphql` | `http://localhost:6300` |
 | preprod | `https://rpc.preprod.midnight.network` | `https://indexer.preprod.midnight.network/api/v4/graphql` | `http://localhost:6300` |
-| qanet | `https://rpc.qanet.dev.midnight.network` | `https://indexer.qanet.dev.midnight.network/api/v4/graphql` | `http://localhost:6300` |
+| qanet | `https://rpc.qanet.midnight.network` | `https://indexer.qanet.midnight.network/api/v4/graphql` | `http://localhost:6300` |
+| undeployed | `ws://localhost:9944` | `http://localhost:8088/api/v4/graphql` | `http://localhost:6300` |
+
+`undeployed` is the local devnet stack — see [§2. Fund the Wallet](#2-fund-the-wallet-local-devnet-only) for bringing one up.
+
+Mainnet is deliberately absent. Moth is an unaudited reference wallet for development and testing, so it is not a network to use it on: the CLI refuses to run against mainnet, and the extension keeps it out of the picker.
 
 Default network is `devnet`. Endpoints can be overridden at multiple levels (highest precedence first):
 
