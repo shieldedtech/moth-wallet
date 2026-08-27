@@ -725,10 +725,33 @@ async function replaceAuthorityViaSDK(options: ReplaceAuthorityOptions): Promise
   const {contractAddress, committee, threshold, renounce, currentSigners} = options;
   const {providers, projRequire, compiledContract} = await buildMaintenanceContext(options);
 
-  const protoLedger: any = projRequire('@midnight-ntwrk/midnight-js-protocol/ledger');
-  const {Transaction, SucceedEntirely}: any = projRequire('@midnight-ntwrk/midnight-js/types');
-  const {getNetworkId}: any = projRequire('@midnight-ntwrk/midnight-js/network-id');
-  const {ttlOneHour}: any = projRequire('@midnight-ntwrk/midnight-js-utils');
+  // require() first so the module comes from the project's tree and shares one
+  // WASM instance with the contract artifact; import() second because several of
+  // these packages are ESM-only and cannot be required at all
+  // (`@midnight-ntwrk/compact-js/dist/cjs/effect/index.js` does not exist). The
+  // insert paths above take the same two-step approach. Found by a live preprod
+  // run: without the fallback this dies on module resolution before reaching the
+  // chain.
+  const load = async (spec: string): Promise<any> => {
+    try {
+      return projRequire(spec);
+    } catch {
+      return await import(spec);
+    }
+  };
+  const protoLedger: any = await load('@midnight-ntwrk/midnight-js-protocol/ledger');
+  const {Transaction, SucceedEntirely}: any = await load('@midnight-ntwrk/midnight-js/types');
+  // The network id is module-global, and `load` may hand back a different module
+  // instance from the one this file imported at the top (project tree via
+  // require, moth's own via import). Setting it again on the instance actually
+  // being read is not belt-and-braces: without it the SDK refuses with "Network
+  // ID has not been configured" even though setNetworkId ran a moment earlier.
+  const netMod: any = await load('@midnight-ntwrk/midnight-js/network-id');
+  netMod.setNetworkId(options.network.id);
+  const getNetworkId = netMod.getNetworkId;
+  // Inlined rather than pulled from midnight-js-utils, whose CJS entry cannot be
+  // resolved here at all: one hour is the SDK's own default intent TTL.
+  const ttlOneHour = () => new Date(Date.now() + 60 * 60_000);
 
   const contractState = await providers.publicDataProvider.queryContractState(contractAddress);
   if (!contractState) {
@@ -800,7 +823,7 @@ async function replaceAuthorityViaSDK(options: ReplaceAuthorityOptions): Promise
     getNetworkId(), undefined, undefined,
     protoLedger.Intent.new(ttlOneHour()).addMaintenanceUpdate(update));
 
-  const {submitTx}: any = projRequire('@midnight-ntwrk/midnight-js/contracts');
+  const {submitTx}: any = await load('@midnight-ntwrk/midnight-js/contracts');
   const result = await submitTx(providers as any, {unprovenTx});
   if (result?.status !== SucceedEntirely) {
     throw new WalletError('NETWORK_ERROR',
