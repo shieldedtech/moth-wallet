@@ -48,6 +48,11 @@
       "strategy": "pattern",
       "target": "./dist/commands"
     },
-    "topicSeparator": " "
+    "topicSeparator": " ",
+    "topics": {
+      "maintenance": {
+        "description": "Contract maintenance updates: verifier keys, and the authority that can change them"
+      }
+    }
   }
 }

@@ -107,6 +107,8 @@ export {
   insertVerifierKey, type InsertVerifierKeyOptions,
   insertVerifierKeys, type InsertVerifierKeysOptions,
   type BatchEntryResult, type BatchInsertResult,
+  replaceAuthority, type ReplaceAuthorityOptions, type ReplaceAuthorityResult,
+  readAuthority, type AuthorityDescription, type AuthoritySigner,
 } from './contract/maintenance.js';
 export { queryContractState, type ContractState } from './contract/state.js';
 export {
