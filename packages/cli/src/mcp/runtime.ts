@@ -36,6 +36,10 @@ export interface WalletRuntime {
   readonly walletName: string;
   readonly network: NetworkConfig;
   readonly unlocked: UnlockedWallet;
+  /** The wallet's shielded (zswap) public identity — 64-char hex each.
+   *  dApp endpoints that build a shielded output to this wallet need
+   *  these, not just the bech32m address. Derived once at startup. */
+  readonly shieldedKeys: {readonly coinPublicKey: string; readonly encryptionPublicKey: string};
   readonly syncState: McpSyncState;
   readonly syncError: string | null;
   readonly everSynced: boolean;
@@ -61,6 +65,7 @@ export function createWalletRuntime(opts: {
   walletName: string;
   network: NetworkConfig;
   unlocked: UnlockedWallet;
+  shieldedKeys: {coinPublicKey: string; encryptionPublicKey: string};
   /** Fired once, the first time the wallet reports synced=true. */
   onFirstSynced?: () => void;
 }): WalletRuntime {
@@ -84,6 +89,7 @@ export function createWalletRuntime(opts: {
     walletName: opts.walletName,
     network: opts.network,
     unlocked: opts.unlocked,
+    shieldedKeys: opts.shieldedKeys,
     get syncState() {
       return syncState;
     },

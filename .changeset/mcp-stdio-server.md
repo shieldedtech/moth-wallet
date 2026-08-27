@@ -44,6 +44,9 @@ All amounts cross the interface as decimal strings in smallest units, per the
 daemon wire convention, and every tool's text block carries the full JSON
 payload alongside the summary — some MCP clients surface only text to the
 model, and data living solely in `structuredContent` is invisible there.
+`wallet_addresses` also serves the wallet's zswap public identity
+(`shieldedKeys.coinPublicKey` / `.encryptionPublicKey`), which dApp endpoints
+need to build shielded outputs to the wallet.
 Transfer recipients are validated beyond bech32m well-formedness: the address
 kind must match the transfer type (unshielded → `mn_addr_…`, shielded →
 `mn_shield-addr_…`) and the embedded network tag must match the wallet's

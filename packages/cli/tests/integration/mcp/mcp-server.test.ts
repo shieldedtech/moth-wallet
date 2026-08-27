@@ -217,6 +217,11 @@ describe('moth mcp (no devnet required)', () => {
       expect(s.addresses.dust).toBe(dustAddress);
       expect(s.addresses.shielded).toMatch(/^mn_shield-addr_/);
       expect(s.addresses.dust).toMatch(/^mn_dust_/);
+      // The zswap public identity a dApp endpoint needs to build a
+      // shielded output to this wallet.
+      expect(s.shieldedKeys.coinPublicKey).toMatch(/^[0-9a-f]{64}$/);
+      expect(s.shieldedKeys.encryptionPublicKey).toMatch(/^[0-9a-f]{64}$/);
+      expect(s.shieldedKeys.coinPublicKey).not.toBe(s.shieldedKeys.encryptionPublicKey);
       // The text block must carry the full payload — some MCP clients
       // surface only text to the model, and the shielded/dust addresses
       // were invisible there when the text was a bare summary.
@@ -225,6 +230,8 @@ describe('moth mcp (no devnet required)', () => {
         .join(' ');
       expect(text).toContain(shieldedAddress);
       expect(text).toContain(dustAddress);
+      expect(text).toContain(s.shieldedKeys.coinPublicKey);
+      expect(text).toContain(s.shieldedKeys.encryptionPublicKey);
     });
 
     it('wallet_list includes the served wallet', async () => {

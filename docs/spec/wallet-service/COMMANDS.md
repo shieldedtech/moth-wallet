@@ -234,7 +234,7 @@ All amounts cross the interface as decimal strings in smallest units (STARS for 
 |---|---|---|---|
 | `wallet_status` | read | Readiness, sync progress, raw balance totals. | daemon `getState` |
 | `wallet_balances` | read | Full balances incl. the spendable split (`unshieldedAvailable` vs reserved) and non-NIGHT tokens. | core `WalletBalances` + `unshieldedSplit` |
-| `wallet_addresses` | read | Receive addresses for the active network: `night` (mn_addr_…, unshielded), `shielded` (mn_shield-addr_…, shielded tokens), `dust` (mn_dust_…). Works before sync. | `UnlockedWallet.addresses` |
+| `wallet_addresses` | read | Receive addresses for the active network: `night` (mn_addr_…, unshielded), `shielded` (mn_shield-addr_…, shielded tokens), `dust` (mn_dust_…), plus `shieldedKeys` — the zswap `coinPublicKey` / `encryptionPublicKey` (64-char hex) a dApp needs to build a shielded output to this wallet. Works before sync. | `UnlockedWallet.addresses` + `deriveShieldedPublicKeys` |
 | `wallet_activity` | read | Transaction history, newest first, with per-token deltas and fees. | `facade.getAllFromTxHistory` + `deriveActivity` |
 | `wallet_list` | read | Wallets known to this machine; which one this server serves. | `WalletManager.list` |
 | `wait_for_sync` | read | Barrier: resolve once the wallet has reached the tip at least once (`everSynced` latches — raw `synced` flip-flops as blocks arrive). | sync subscription |

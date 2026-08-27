@@ -229,6 +229,7 @@ export function registerReadTools(server: McpServer, deps: McpToolDeps): void {
         '`night` (mn_addr_…) receives unshielded NIGHT and other unshielded tokens — also the wallet\'s identity in activity entries. ' +
         '`shielded` (mn_shield-addr_…) receives shielded tokens. ' +
         '`dust` (mn_dust_…) is the DUST address used for fee generation. ' +
+        '`shieldedKeys` carries the wallet\'s zswap public identity (coinPublicKey and encryptionPublicKey, 64-char hex) — what a dApp endpoint needs to build a shielded output to this wallet. ' +
         'Available immediately, even before sync completes.',
       annotations: READ_ONLY,
     },
@@ -244,9 +245,13 @@ export function registerReadTools(server: McpServer, deps: McpToolDeps): void {
             shielded: a.zswap.bech32m[net] ?? null,
             dust: a.dust.bech32m[net] ?? null,
           },
+          shieldedKeys: {
+            coinPublicKey: rt.shieldedKeys.coinPublicKey,
+            encryptionPublicKey: rt.shieldedKeys.encryptionPublicKey,
+          },
         };
         return ok(
-          `Receive addresses for wallet "${rt.walletName}" on ${net} — night (unshielded), shielded (zswap), and dust.`,
+          `Receive addresses for wallet "${rt.walletName}" on ${net} — night (unshielded), shielded (zswap), and dust — plus the shielded coin/encryption public keys.`,
           structured,
         );
       } catch (err) {

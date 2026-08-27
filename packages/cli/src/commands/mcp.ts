@@ -25,6 +25,7 @@ import {
   AuditLog,
   ConfirmationQueue,
   buildWalletHandlers,
+  deriveShieldedPublicKeys,
   parseNightAmount,
   startWalletSync,
   type SyncedWallet,
@@ -238,10 +239,20 @@ export default class Mcp extends BaseCommand {
     process.stderr.write(`[mcp] unlocking wallet "${walletName}" on ${network.id}\n`);
     const unlocked = await this.walletManager.unlock(walletName, passphrase);
 
+    // The wallet's shielded (zswap) public identity, served alongside the
+    // addresses: dApp endpoints that build a shielded output to this wallet
+    // need the coin & encryption public keys, not just the bech32m address.
+    // unlock() is seed-free (D-KM-3), so the seed is recovered explicitly
+    // and dropped after this derivation — the extension host's pattern.
+    const shieldedKeys = deriveShieldedPublicKeys(
+      await this.walletManager.exportSeedHex(walletName, passphrase),
+    );
+
     const runtime = createWalletRuntime({
       walletName,
       network,
       unlocked,
+      shieldedKeys,
       onFirstSynced: () => {
         process.stderr.write('[mcp] wallet synced\n');
         auditLog.recordLifecycle({wallet: walletName, network: network.id, event: 'sync-complete'});
