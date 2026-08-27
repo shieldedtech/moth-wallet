@@ -1591,5 +1591,8 @@
   },
   "accounts_revealAsSeedNote": {
     "message": "Zeigt den Hex-Seed, zu dem deine 24 Wörter expandieren. Manche Werkzeuge nehmen einen Seed statt einer Phrase. Er hat keine eingebaute Prüfung — kopiere ihn genau."
+  },
+  "accounts_revealNoPhraseReason": {
+    "message": "Dieses Konto wurde aus einem Hex-Seed wiederhergestellt und hat daher keine Wiederherstellungsphrase — eine Phrase lässt sich aus einem Seed nicht ermitteln. Der Seed ist das Backup."
   }
 }

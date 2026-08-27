@@ -22,6 +22,8 @@ export const accounts = {
     'Hex seed',
   accounts_revealAsBackupNote:
     'Reveals what this account was created from. Accounts restored from a seed show that seed, because they have no phrase.',
+  accounts_revealNoPhraseReason:
+    'This account was restored from a hex seed, so it has no recovery phrase — a phrase cannot be worked out from a seed. Its seed is the backup.',
   accounts_revealAsSeedNote:
     'Reveals the hex seed your 24 words expand to. Some tools take a seed instead of a phrase. It has no built-in check, so copy it exactly.',
   accounts_revealTitle: 'Secret phrase for $1',
