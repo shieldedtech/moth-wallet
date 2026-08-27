@@ -221,7 +221,17 @@ interface ProtocolMap {
   /** Reveal an account's backup secret after re-entering its password: the
    *  original mnemonic, or the raw hex seed for accounts imported from hex.
    *  Rejects on a wrong password. */
-  walletExportPhrase(data: { name: string; passphrase: string }): {
+  walletExportPhrase(data: {
+    name: string;
+    passphrase: string;
+    /**
+     * Which artifact to reveal. `backup` (the default) is whatever this account
+     * was created from. `seed` is the hex seed regardless — for a phrase-backed
+     * account that is the 64-byte seed its 24 words expand to, which some
+     * tooling wants and which cannot be reconstructed from the phrase by hand.
+     */
+    as?: 'backup' | 'seed';
+  }): {
     kind: 'mnemonic' | 'seed';
     value: string;
   };

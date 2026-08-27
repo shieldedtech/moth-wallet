@@ -135,9 +135,14 @@ export const offscreen = {
     await ensureOffscreen();
     return offscreenSend('os/walletSetLabel', { name, label, network });
   },
-  async walletExportPhrase(name: string, passphrase: string, network: string) {
+  async walletExportPhrase(
+    name: string,
+    passphrase: string,
+    network: string,
+    as?: 'backup' | 'seed',
+  ) {
     await ensureOffscreen();
-    return offscreenSend('os/walletExportPhrase', { name, passphrase, network });
+    return offscreenSend('os/walletExportPhrase', { name, passphrase, network, as });
   },
   async walletSetNetwork(data: {
     name: string;

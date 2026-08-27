@@ -30,7 +30,7 @@ export const hostDispatch: Dispatch = {
   'os/walletRemove': (host, d) => host.walletRemove(d.name, d.network),
   'os/walletSetActive': (host, d) => host.walletSetActive(d.name, d.network),
   'os/walletSetLabel': (host, d) => host.walletSetLabel(d.name, d.label, d.network),
-  'os/walletExportPhrase': (host, d) => host.walletExportPhrase(d.name, d.passphrase, d.network),
+  'os/walletExportPhrase': (host, d) => host.walletExportPhrase(d.name, d.passphrase, d.network, d.as),
   'os/walletSetNetwork': (host, d) => host.walletSetNetwork(d.name, d.fromNetwork, d.network, d.seedHex),
   'os/walletUnlock': (host, d) => host.walletUnlock(d.name, d.passphrase, d.network),
   // startWalletSync resolves a SyncedWallet, which isn't structured-cloneable —

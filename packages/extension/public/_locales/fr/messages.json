@@ -1579,5 +1579,17 @@
   },
   "setup_passwordSubtitleSeed": {
     "message": "Il déverrouille Moth sur cet appareil. Il ne peut pas restaurer votre portefeuille, seul votre seed le peut."
+  },
+  "accounts_revealAsBackup": {
+    "message": "Phrase de récupération"
+  },
+  "accounts_revealAsSeed": {
+    "message": "Seed hexadécimal"
+  },
+  "accounts_revealAsBackupNote": {
+    "message": "Révèle ce à partir de quoi ce compte a été créé. Les comptes restaurés depuis un seed affichent ce seed, car ils n’ont pas de phrase."
+  },
+  "accounts_revealAsSeedNote": {
+    "message": "Révèle le seed hexadécimal auquel vos 24 mots correspondent. Certains outils acceptent un seed plutôt qu’une phrase. Il n’a aucune vérification intégrée : copiez-le exactement."
   }
 }

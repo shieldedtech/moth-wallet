@@ -10,13 +10,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // it was handed, and keeps the two core calls distinct: `import` runs the
 // BIP-39 checksum, `importFromSeed` shape-checks the hex.
 
-const { walletsImport, importFromSeed } = vi.hoisted(() => ({
+const { walletsImport, importFromSeed, exportPhrase, exportSeedHex } = vi.hoisted(() => ({
   walletsImport: vi.fn(),
   importFromSeed: vi.fn(),
+  exportPhrase: vi.fn(),
+  exportSeedHex: vi.fn(),
 }));
 
 vi.mock('@shieldedtech/moth-browser', () => ({
-  createMothBrowser: () => ({ wallets: { import: walletsImport, importFromSeed } }),
+  createMothBrowser: () => ({
+    wallets: { import: walletsImport, importFromSeed, exportPhrase, exportSeedHex },
+  }),
   deriveShieldedPublicKeys: vi.fn(),
   startWalletSync: vi.fn(),
   buildTransferTransaction: vi.fn(),
@@ -38,7 +42,7 @@ vi.mock('@shieldedtech/moth-browser', () => ({
   EMPTY_COINS: {},
 }));
 
-import { walletImport } from '../lib/offscreen/wallet-host';
+import { walletImport, walletExportPhrase } from '../lib/offscreen/wallet-host';
 
 const SEED = 'ab'.repeat(32);
 
@@ -74,5 +78,37 @@ describe('offscreen walletImport routes on the artifact supplied', () => {
     await walletImport('Account-1', { mnemonic: 'alpha', seed: SEED }, 'pw', 'preview');
     expect(importFromSeed).toHaveBeenCalledTimes(1);
     expect(walletsImport).not.toHaveBeenCalled();
+  });
+});
+
+describe('offscreen walletExportPhrase reveals the artifact asked for', () => {
+  beforeEach(() => {
+    exportPhrase.mockReset().mockResolvedValue({ kind: 'mnemonic', value: 'alpha beta' });
+    exportSeedHex.mockReset().mockResolvedValue(SEED);
+  });
+
+  it('defaults to the account\'s own backup', async () => {
+    await expect(walletExportPhrase('Account-1', 'pw', 'preview')).resolves.toEqual({
+      kind: 'mnemonic',
+      value: 'alpha beta',
+    });
+    expect(exportSeedHex).not.toHaveBeenCalled();
+  });
+
+  it('returns the hex seed for a phrase-backed account when asked', async () => {
+    // The point of the feature: the 24 words cannot be expanded to their seed by
+    // hand, so the only way to obtain it is to ask the keystore.
+    await expect(walletExportPhrase('Account-1', 'pw', 'preview', 'seed')).resolves.toEqual({
+      kind: 'seed',
+      value: SEED,
+    });
+    expect(exportPhrase).not.toHaveBeenCalled();
+  });
+
+  it('reads the keystore with the supplied password, not a live session', async () => {
+    // D-KM-2: seed export goes through the keystore. Both arms take the password
+    // and neither is handed session key material.
+    await walletExportPhrase('Account-1', 'pw', 'preview', 'seed');
+    expect(exportSeedHex).toHaveBeenCalledWith('Account-1', 'pw');
   });
 });

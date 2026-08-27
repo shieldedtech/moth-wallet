@@ -14,6 +14,16 @@ export const accounts = {
   accounts_namePlaceholder: 'Account name',
   accounts_renameHint: 'Only shown in this wallet. Leave empty to go back to the default name.',
   accounts_revealMenu: 'Reveal secret phrase',
+  // Reveal can show either artifact. Chosen before the password is entered so
+  // only what was asked for is ever decrypted.
+  accounts_revealAsBackup:
+    'Recovery phrase',
+  accounts_revealAsSeed:
+    'Hex seed',
+  accounts_revealAsBackupNote:
+    'Reveals what this account was created from. Accounts restored from a seed show that seed, because they have no phrase.',
+  accounts_revealAsSeedNote:
+    'Reveals the hex seed your 24 words expand to. Some tools take a seed instead of a phrase. It has no built-in check, so copy it exactly.',
   accounts_revealTitle: 'Secret phrase for $1',
   accounts_revealHint: "Enter this account's password to reveal its secret phrase.",
   accounts_revealPasswordPlaceholder: 'Account password',

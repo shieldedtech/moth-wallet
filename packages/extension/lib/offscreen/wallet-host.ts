@@ -202,8 +202,17 @@ export async function walletExportPhrase(
   name: string,
   passphrase: string,
   network: string,
+  as: 'backup' | 'seed' = 'backup',
 ): Promise<{ kind: 'mnemonic' | 'seed'; value: string }> {
-  return getMoth(network).wallets.exportPhrase(name, passphrase);
+  const wallets = getMoth(network).wallets;
+  // Both arms decrypt the keystore with the password just re-entered, and
+  // neither touches the unlocked session's key material — the rule in
+  // docs/spec/wallet-service/05-key-management.md D-KM-2 that seed export goes
+  // through the keystore, not through a live session.
+  if (as === 'seed') {
+    return { kind: 'seed', value: await wallets.exportSeedHex(name, passphrase) };
+  }
+  return wallets.exportPhrase(name, passphrase);
 }
 
 export async function walletSetNetwork(

@@ -98,7 +98,12 @@ export interface OffscreenProtocol {
   'os/walletSetLabel'(data: { name: string; label: string; network: string }): void;
   /** Decrypt and return a wallet's backup secret (mnemonic, or hex seed for
    *  hex-imported wallets). Rejects on a wrong passphrase. */
-  'os/walletExportPhrase'(data: { name: string; passphrase: string; network: string }): {
+  'os/walletExportPhrase'(data: {
+    name: string;
+    passphrase: string;
+    network: string;
+    as?: 'backup' | 'seed';
+  }): {
     kind: 'mnemonic' | 'seed';
     value: string;
   };

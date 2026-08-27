@@ -370,7 +370,7 @@ export function registerHandlers(): void {
 
   onMessage('walletExportPhrase', async ({ data }) => {
     const { network } = await getSettings();
-    return offscreen.walletExportPhrase(data.name, data.passphrase, network);
+    return offscreen.walletExportPhrase(data.name, data.passphrase, network, data.as);
   });
 
   onMessage('networkConfigSave', ({ data }) => saveNetworkConfig(data));

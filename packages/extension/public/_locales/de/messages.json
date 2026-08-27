@@ -1579,5 +1579,17 @@
   },
   "setup_passwordSubtitleSeed": {
     "message": "Es entsperrt Moth auf diesem Gerät. Es kann deine Wallet nicht wiederherstellen, nur dein Seed kann das."
+  },
+  "accounts_revealAsBackup": {
+    "message": "Wiederherstellungsphrase"
+  },
+  "accounts_revealAsSeed": {
+    "message": "Hex-Seed"
+  },
+  "accounts_revealAsBackupNote": {
+    "message": "Zeigt, woraus dieses Konto erstellt wurde. Aus einem Seed wiederhergestellte Konten zeigen diesen Seed, da sie keine Phrase haben."
+  },
+  "accounts_revealAsSeedNote": {
+    "message": "Zeigt den Hex-Seed, zu dem deine 24 Wörter expandieren. Manche Werkzeuge nehmen einen Seed statt einer Phrase. Er hat keine eingebaute Prüfung — kopiere ihn genau."
   }
 }

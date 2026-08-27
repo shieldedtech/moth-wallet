@@ -1579,5 +1579,17 @@
   },
   "setup_passwordSubtitleSeed": {
     "message": "Desbloquea Moth en este dispositivo. No puede recuperar tu cartera, solo tu seed puede."
+  },
+  "accounts_revealAsBackup": {
+    "message": "Frase de recuperación"
+  },
+  "accounts_revealAsSeed": {
+    "message": "Seed hexadecimal"
+  },
+  "accounts_revealAsBackupNote": {
+    "message": "Muestra a partir de qué se creó esta cuenta. Las cuentas restauradas desde un seed muestran ese seed, porque no tienen frase."
+  },
+  "accounts_revealAsSeedNote": {
+    "message": "Muestra el seed hexadecimal al que se expanden tus 24 palabras. Algunas herramientas aceptan un seed en lugar de una frase. No tiene comprobación integrada: cópialo con exactitud."
   }
 }
