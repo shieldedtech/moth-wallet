@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { WalletManager, type WalletInfo, type UnlockedWallet, type StorageAdapter, type WalletAddresses, type WalletKeys } from '@shieldedtech/moth-wallet';
+import { WalletManager, type WalletInfo, type UnlockedWallet, type StorageAdapter, type WalletAddresses, type WalletKeys , chainTip, DEFAULT_NETWORKS} from '@shieldedtech/moth-wallet';
 import type { WalletState } from '../types.js';
 
 interface UnlockedEntry {
@@ -85,7 +85,17 @@ export function useWallet(storage: StorageAdapter) {
   }, []);
 
   const generate = useCallback(async (name: string, passphrase: string, network: string) => {
-    const info = await manager.generate(name, passphrase, network);
+    // Record the chain tip as this wallet's birthday, so its first sync can start
+    // from a pre-seed reference rather than walking from genesis. Only wallets
+    // generated here get one — importWallet below deliberately passes none, since
+    // a restored wallet may hold funds at any height (ADR 0003).
+    //
+    // Resolved from the network preset rather than any custom endpoints the user
+    // has configured: this runs before a connection exists, and it is best-effort
+    // anyway — no tip simply means the slow first sync.
+    const preset = DEFAULT_NETWORKS[network];
+    const birthday = preset ? await chainTip(preset.indexerUrl) : undefined;
+    const info = await manager.generate(name, passphrase, network, birthday);
     const wallet = await manager.unlock(name, passphrase);
     sessionCache.current.set(name, { wallet, addresses: wallet.addresses });
     newWallets.current.add(name);
@@ -134,6 +144,22 @@ export function useWallet(storage: StorageAdapter) {
     return activeWallet ? newWallets.current.has(activeWallet.name) : false;
   }, [activeWallet]);
 
+  /**
+   * The active wallet's birthday for a SPECIFIC network.
+   *
+   * Not `activeWallet.birthday`: `list()` resolves that against the wallet's own
+   * `meta.network`, so on a different network it returns a height belonging to
+   * another chain, or nothing. The sync needs the birthday for the network it is
+   * about to sync, or the pre-seed gate never opens.
+   */
+  const activeWalletBirthdayOn = useCallback(
+    async (networkId: string): Promise<number | undefined> => {
+      if (!activeWallet) return undefined;
+      return manager.birthdayOn(activeWallet.name, networkId);
+    },
+    [activeWallet, manager],
+  );
+
   return {
     wallets,
     activeWallet,
@@ -142,6 +168,7 @@ export function useWallet(storage: StorageAdapter) {
     getUnlocked,
     getActiveWalletKeys,
     isActiveWalletNew,
+    activeWalletBirthdayOn,
     unlock,
     lockAll,
     lockOne,

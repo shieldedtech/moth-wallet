@@ -93,6 +93,34 @@ describe('sync-service teardown', () => {
     expect(close).not.toHaveBeenCalled();
   });
 
+  // The regression. A stop against an unreachable node never settled, and every
+  // caller inherited the hang — the settings save, the idle teardown, the lock.
+  it('closes a document that never answers the stop', async () => {
+    vi.useFakeTimers();
+    syncStop.mockImplementation(() => new Promise<void>(() => {}));
+
+    const stopped = sync.stopSync();
+    await vi.advanceTimersByTimeAsync(45_000);
+    await stopped;
+
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves the document alone when the engine answers the stop', async () => {
+    await sync.stopSync();
+
+    expect(syncStop).toHaveBeenCalledTimes(1);
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  it('closes a document that cannot be reached at all', async () => {
+    syncStop.mockRejectedValue(new Error('Offscreen document did not become ready'));
+
+    await sync.stopSync();
+
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
   it('force-closes even while a port is open (lock)', async () => {
     sync.addPort(fakePort().port); // not idle
 

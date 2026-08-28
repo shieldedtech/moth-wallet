@@ -178,6 +178,14 @@ export async function saveNetworkConfig(data: {
   // dials, or the first attempt goes out unauthenticated and is rate-limited.
   await applyNodeAuthHeader(nextConfig.nodeUrl, nextConfig.nodeAuthHeader);
 
+  // Persisted before the engine is touched, and rolled back below if the switch
+  // fails: the edit must survive a restart that is slow or never completes.
+  const previousSettings = await getSettings();
+  await updateSettings({
+    network,
+    customEndpoints: endpointOverridesFor(network, data.endpoints),
+  });
+
   if (restartRequired) await stopSync();
 
   try {
@@ -204,15 +212,13 @@ export async function saveNetworkConfig(data: {
       await offscreen.syncCacheClear({ walletName: session.walletName, networkIds: [network] });
     }
 
-    await updateSettings({
-      network,
-      customEndpoints: endpointOverridesFor(network, data.endpoints),
-    });
     if (networkChanged) await saveSession(nextSession);
     if (resyncRequired) await clearSnapshot();
     if (restartRequired) void startSync(nextSession, nextConfig).catch(() => {});
     return statusFromSession(nextSession);
   } catch (error) {
+    // The account never moved, so the settings describing it must not claim otherwise.
+    await updateSettings(previousSettings).catch(() => {});
     if (restartRequired) void startSync(session, previousConfig).catch(() => {});
     throw error;
   }

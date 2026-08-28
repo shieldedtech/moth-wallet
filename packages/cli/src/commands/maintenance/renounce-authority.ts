@@ -82,7 +82,9 @@ export default class MaintenanceRenounceAuthority extends BaseCommand {
       if (msg.includes('syncing') || msg.includes('synced')) {
         process.stderr.write(`\r  ${msg}${''.padEnd(20)}`);
       }
-    }, walletName);
+      // Pre-seeding needs the birthday: without it this surface always syncs from
+      // genesis, which the preseed-call-sites guard test enforces across the CLI.
+    }, walletName, false, await this.syncBirthday(walletName, network.id));
     process.stderr.write('\n');
 
     try {
