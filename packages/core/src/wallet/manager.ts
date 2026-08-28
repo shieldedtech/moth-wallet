@@ -344,6 +344,27 @@ export class WalletManager {
     };
   }
 
+  /**
+   * The birthday this wallet asserts for a SPECIFIC network.
+   *
+   * `list()` resolves against the wallet's own `meta.network`, which is wrong for
+   * a sync driven by `--network`: birthdays are per-network (see `birthdays`), so
+   * asking about the wallet's default network returns a height belonging to a
+   * different chain, or nothing at all. Callers about to sync must ask about the
+   * network they are syncing.
+   *
+   * Never throws. A wallet with no meta, or an unreadable one, asserts nothing —
+   * and "no claim" means scan from genesis, which is slow but never wrong.
+   */
+  async birthdayOn(name: string, networkId: string): Promise<number | undefined> {
+    try {
+      const meta = await this.loadMeta(name);
+      return meta ? birthdayFor(meta, networkId) : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
   async unlock(name: string, passphrase: string): Promise<UnlockedWallet> {
     const restored = await this.readKeystore(name);
 
