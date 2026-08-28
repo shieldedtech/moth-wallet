@@ -608,7 +608,32 @@ export abstract class BaseCommand extends Command {
     process.stderr.write(formatError(category, message, this.outputFormat, hint) + '\n');
   }
 
+  /**
+   * Walk an error's cause chain and return the deepest distinct message.
+   *
+   * Effect-based SDK errors wrap the useful text several levels down: a node
+   * rejecting a transaction surfaces here as the bare string "Transaction
+   * submission error" while the reason sits in `cause`. Printing only the top
+   * message throws away the only part worth reading, and every caller then has
+   * to guess. `insertVerifierKeys` in core already walks the chain for exactly
+   * this reason; doing it here covers every command instead of one.
+   */
+  protected causeChain(err: unknown, limit = 8): string[] {
+    const seen: string[] = [];
+    let cur: any = err;
+    for (let i = 0; i < limit && cur; i++) {
+      const msg = cur?.defect?.message ?? cur?.message;
+      if (typeof msg === 'string' && msg.length > 0 && !seen.includes(msg)) seen.push(msg);
+      cur = cur?.cause ?? cur?.defect?.cause;
+    }
+    return seen;
+  }
+
   protected async catch(err: Error & { exitCode?: number }): Promise<unknown> {
+    if (process.env.MOTH_DEBUG_ERRORS === '1') {
+      const util = await import('node:util');
+      process.stderr.write('--- raw error ---\n' + util.inspect(err, {depth: 6, colors: false}) + '\n');
+    }
     // oclif's `this.exit(code)` throws an ExitError to terminate the
     // command — it isn't a user-facing error. Re-render it the way
     // oclif would have and propagate the original exit code; do NOT
@@ -619,7 +644,11 @@ export abstract class BaseCommand extends Command {
       throw err;
     }
     if (err instanceof WalletError) {
-      this.outputError((err as WalletError).category, err.message);
+      const chain = this.causeChain(err);
+      this.outputError(
+        (err as WalletError).category,
+        chain.length > 1 ? `${err.message}: ${chain.slice(1).join(' <- ')}` : err.message,
+      );
       if (this.verbose) {
         const origStack = (err as any).originalStack;
         if (origStack) this.log_verbose(`Original stack:\n${origStack}`);
@@ -627,7 +656,8 @@ export abstract class BaseCommand extends Command {
       }
       this.exit(1);
     }
-    this.outputError('WALLET_ERROR', err.message);
+    const chain = this.causeChain(err);
+    this.outputError('WALLET_ERROR', chain.length > 1 ? chain.join(': ') : err.message);
     if (this.verbose && err.stack) {
       this.log_verbose(`Stack:\n${err.stack}`);
     }
