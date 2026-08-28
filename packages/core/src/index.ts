@@ -106,6 +106,25 @@ export {
   type WitnessStream,
   type WitnessVerdict,
 } from './sync/cursor-witness.js';
+export {
+  createTimingRecorder,
+  createMemoryTimingStore,
+  DEFAULT_MAX_ENTRIES,
+  type TimingEntry,
+  type TimingSource,
+  type TimingStore,
+  type TimingRecorder,
+} from './diagnostics/timings.js';
+export { createFileTimingStore } from './diagnostics/file-timing-store.js';
+export {
+  exportReference,
+  importReference,
+  ReferenceImportError,
+  REFERENCE_PARTS,
+  type PortableReference,
+  type ReferenceManifest,
+} from './sync/preseed-portable.js';
+export { chainTip } from './sync/chain-tip.js';
 export { ensureEmptyRefCache, warmEmptyRefCache, refreshEmptyRefCache, preseedReferenceStatus, preSeedNewWallet, type WarmProgress } from './sync/preseed.js';
 
 // Contract

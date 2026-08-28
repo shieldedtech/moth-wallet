@@ -52,7 +52,7 @@ const NODE_BUILTIN_ALLOWLIST = new Set([
   'daemon/server.ts',
   'daemon/wallet-handlers.ts',
   // Writes timing samples to a file for diagnostics.
-  'diagnostics/fs-timing-store.ts',
+  'diagnostics/file-timing-store.ts',
   // The Node-side storage and sync-state backends. Their browser counterparts live
   // in packages/browser and back onto IndexedDB.
   'storage/fs-adapter.ts',

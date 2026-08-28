@@ -126,7 +126,7 @@ export default class Transfer extends BaseCommand {
     process.stderr.write('Syncing wallet before transfer...\n');
     const syncedWallet = await startWalletSync(wallet.walletKeys, network, (msg) => {
       this.log_verbose(msg);
-    }, walletName);
+    }, walletName, false, await this.syncBirthday(walletName, network.id));
 
     try {
       // Wait for the wallet to reach synced=true BEFORE building the tx.
