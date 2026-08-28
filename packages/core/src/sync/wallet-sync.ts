@@ -392,6 +392,10 @@ export interface WalletSyncOptions {
   batchUpdates?: BatchUpdatesOptions;
 }
 
+/** Bound on the SDK's own teardown. A healthy stop takes tens of milliseconds, so
+ *  this only ever elapses for one that will never finish. */
+const STOP_TIMEOUT_MS = 5_000;
+
 /**
  * Bring up the WalletFacade (shielded + unshielded + dust) and start syncing.
  * Takes `walletKeys` (the typed bundle derived once at unlock — Option A, the
@@ -752,10 +756,19 @@ export async function startWalletSync(
     subscription.unsubscribe();
     await saveCache(store, facade, txHistoryStorage, name, network.id).catch(() => {});
 
-    try {
-      await facade.stop();
-    } catch {
-      /* ignore */
+    // `facade.stop()` never settles against an unreachable node: it awaits a
+    // Polkadot client created with `throwOnConnect: false`. saveCache ran first.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timedOut = await new Promise<boolean>((resolve) => {
+      timer = setTimeout(() => resolve(true), STOP_TIMEOUT_MS);
+      facade.stop().then(
+        () => resolve(false),
+        () => resolve(false)
+      );
+    });
+    clearTimeout(timer);
+    if (timedOut) {
+      onProgress?.(`Sync stop timed out after ${STOP_TIMEOUT_MS / 1000}s — abandoning SDK teardown`);
     }
   };
 
