@@ -1590,7 +1590,7 @@
     "message": "Muestra a partir de qué se creó esta cuenta. Las cuentas restauradas desde un seed muestran ese seed, porque no tienen frase."
   },
   "accounts_revealAsSeedNote": {
-    "message": "Muestra el seed hexadecimal al que se expanden tus 24 palabras. Algunas herramientas aceptan un seed en lugar de una frase. No tiene comprobación integrada: cópialo con exactitud."
+    "message": "Muestra el seed de 128 caracteres (64 bytes) al que se expanden tus 24 palabras, para herramientas que aceptan un seed en lugar de una frase. La mayoría de las herramientas de Midnight esperan un seed de 64 caracteres (32 bytes); no son intercambiables, y truncar este seed restaura una cartera distinta y vacía. Tus 24 palabras siguen siendo la copia de seguridad de esta cuenta."
   },
   "accounts_revealNoPhraseReason": {
     "message": "Esta cuenta se restauró desde un seed hexadecimal, así que no tiene frase de recuperación — una frase no puede deducirse de un seed. Su seed es la copia de seguridad."

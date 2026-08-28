@@ -1590,7 +1590,7 @@
     "message": "Révèle ce à partir de quoi ce compte a été créé. Les comptes restaurés depuis un seed affichent ce seed, car ils n’ont pas de phrase."
   },
   "accounts_revealAsSeedNote": {
-    "message": "Révèle le seed hexadécimal auquel vos 24 mots correspondent. Certains outils acceptent un seed plutôt qu’une phrase. Il n’a aucune vérification intégrée : copiez-le exactement."
+    "message": "Révèle le seed de 128 caractères (64 octets) auquel vos 24 mots correspondent, pour les outils qui acceptent un seed plutôt qu'une phrase. La plupart des outils Midnight attendent un seed de 64 caractères (32 octets) ; les deux ne sont pas interchangeables, et tronquer celui-ci restaure un autre portefeuille, vide. Vos 24 mots restent la sauvegarde de ce compte."
   },
   "accounts_revealNoPhraseReason": {
     "message": "Ce compte a été restauré depuis un seed hexadécimal : il n’a donc pas de phrase de récupération, et une phrase ne peut pas être déduite d’un seed. Son seed est la sauvegarde."
