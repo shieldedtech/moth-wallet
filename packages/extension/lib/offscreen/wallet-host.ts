@@ -266,6 +266,10 @@ function activeWalletKeys(): WalletKeys {
 // sync engine against it.
 let stopping: Promise<void> | null = null;
 
+/** Bound on waiting out a start-then-stop round trip. Well above a slow cold start,
+ *  because abandoning a healthy one leaves two engines coming up at once. */
+const STOP_TIMEOUT_MS = 30_000;
+
 export async function syncEnsure(
   seedHex: string,
   walletName: string,
@@ -456,10 +460,30 @@ export async function syncStop(): Promise<void> {
     stopping = (stopping ?? Promise.resolve()).then(async () => {
       try {
         target.unsubscribe?.();
-        const wallet = await target.synced;
-        await wallet.stop();
       } catch {
-        /* never finished starting */
+        /* subscription already gone */
+      }
+      // Unbounded on purpose: an engine that comes up after the wait below gave up
+      // must still be stopped, or it keeps writing the cache the next one restores.
+      const settled = target.synced.then(
+        (wallet) => wallet.stop().catch(() => {}),
+        () => {
+          /* never finished starting */
+        },
+      );
+      // The wait itself is bounded, because a start against an unreachable node
+      // settles neither way and every caller of syncStop inherits that.
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timedOut = await new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(true), STOP_TIMEOUT_MS);
+        void settled.then(() => resolve(false));
+      });
+      clearTimeout(timer);
+      if (timedOut) {
+        emit(
+          'os/eventSyncMessage',
+          `Sync stop still pending after ${STOP_TIMEOUT_MS / 1000}s — continuing without it`,
+        );
       }
     });
   }
@@ -470,7 +494,8 @@ export async function syncStop(): Promise<void> {
 }
 
 export async function syncCacheClear(walletName: string, networkIds: string[]): Promise<void> {
-  // syncStop writes its final state, so it must finish before deletion.
+  // syncStop writes its final state, so it must finish before deletion. Best-effort:
+  // an abandoned start can still come up later and write its cache back over this.
   await syncStop();
   const store = new IdbSyncStateStore();
   for (const networkId of new Set(networkIds)) {

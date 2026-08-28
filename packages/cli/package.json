@@ -50,6 +50,11 @@
       "strategy": "pattern",
       "target": "./dist/commands"
     },
-    "topicSeparator": " "
+    "topicSeparator": " ",
+    "topics": {
+      "preseed": {
+        "description": "Inspect and maintain this machine's pre-seed reference: one empty wallet synced to chain tip, which lets a new wallet start from its state instead of walking the chain."
+      }
+    }
   }
 }
