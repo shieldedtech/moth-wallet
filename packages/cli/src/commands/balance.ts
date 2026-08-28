@@ -71,15 +71,26 @@ export default class Balance extends BaseCommand {
     const network = await this.getNetworkConfig(flags.network, this.getNetworkOverrides(flags));
 
     process.stderr.write('Syncing wallet…\n');
+    // Same instrument the extension uses, writing ~/.moth/timings.json. Off
+    // unless enabled, so this costs one file read otherwise. Worth having here
+    // in particular: a headless sync gives no other signal about where the time
+    // went, and sync is the phase that takes it.
+    await this.timings.record('marker', 'balance: sync start');
     const synced: SyncedWallet = await startWalletSync(
       wallet.walletKeys,
       network,
-      (msg) => this.log_verbose(`[sync] ${msg}`),
+      (msg) => {
+        this.log_verbose(`[sync] ${msg}`);
+        void this.timings.record('sync', msg);
+      },
       walletName,
+      false,
+      await this.syncBirthday(walletName, network.id),
     );
 
     try {
       await waitForSynced(synced, flags['wait-timeout-ms']);
+      await this.timings.record('marker', 'balance: synced (balances readable)');
 
       const b = synced.balances;
       const unshNight = (b.unshielded[NIGHT_TOKEN_ID] ?? 0n) as bigint;
