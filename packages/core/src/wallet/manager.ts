@@ -3,7 +3,7 @@ import type { WalletInfo, UnlockedWallet, DerivedKeys, WalletAddresses, AddressE
 import { WalletError } from '../types/errors.js';
 import { generateMnemonic24, validateMnemonic, mnemonicToSeed, hexSeedToUint8Array } from './mnemonic.js';
 import { encryptKeystore, decryptKeystore, keystoreNeedsUpgrade, type EncryptedKeystore } from './keystore.js';
-import { deriveAllAddressesFromSeed, deriveRawKeys, Roles } from './address.js';
+import { deriveAllAddressesFromSeed, deriveRawKeys, Roles, addressForNetwork } from './address.js';
 import { deriveWalletKeys, type WalletKeys } from '../sync/operations.js';
 import { removeWalletSyncArtifacts } from '../sync/wallet-sync.js';
 import { canonicalNetworkId } from '../types/network.js';
@@ -540,7 +540,23 @@ export class WalletManager {
    * in the clear at create/import time). The full per-role address set and any
    * key material still require unlock — only the primary night address is here.
    */
-  async list(): Promise<WalletInfo[]> {
+  /**
+   * List wallets.
+   *
+   * `options.network` is the network the CALLER cares about, and it changes the
+   * `address` field: the stored one is written at create/import with whichever
+   * network was current then, so a wallet created on devnet and since used on
+   * preprod otherwise reports a devnet address forever. Re-encoding needs no
+   * keys — the payload is the key material, the prefix is metadata — so the
+   * right address is available without an unlock (see addressForNetwork). Callers
+   * that forwarded the stored value sent a wrong-network address wherever it
+   * went; `moth dust status` did, and preprod's indexer rejected it (#107).
+   *
+   * Omitting it preserves the previous behaviour exactly: each wallet's address
+   * as recorded. `addressNetwork` always says which network the returned address
+   * is encoded for, so a caller never has to infer it from the prefix.
+   */
+  async list(options: {readonly network?: string} = {}): Promise<WalletInfo[]> {
     const config = await this.loadConfig();
     const wallets: WalletInfo[] = [];
     const emptyAddr: AddressEncoding = { hex: '', bech32m: {} };
@@ -551,9 +567,17 @@ export class WalletManager {
 
     for (const name of config.wallets) {
       const meta = await this.loadMeta(name);
+      const recorded = meta?.address ?? '(locked)';
+      // Fall back to the recorded value when re-encoding cannot be done (no
+      // address yet, or an unparseable one): a creation-time address is more
+      // use to a caller than an empty field.
+      const wanted = options.network
+        ? (addressForNetwork(recorded, options.network) ?? recorded)
+        : recorded;
       wallets.push({
         name,
-        address: meta?.address ?? '(locked)',
+        address: wanted,
+        addressNetwork: options.network ?? meta?.network ?? config.defaultNetwork,
         addresses: lockedAddresses,
         network: meta?.network ?? config.defaultNetwork,
         active: config.activeWallet === name,
