@@ -132,6 +132,9 @@ export async function getNetworkConfig(networkId?: string): Promise<NetworkConfi
   if (!customEndpoints || network !== settingsNetwork) return base;
   return {
     id: base.id,
+    // The ledger generation belongs to the network, not to its endpoints:
+    // overrides move URLs, never the serialization format.
+    ...(base.ledgerVersion ? { ledgerVersion: base.ledgerVersion } : {}),
     ...(customEndpoints.nodeAuthHeader ? { nodeAuthHeader: customEndpoints.nodeAuthHeader } : {}),
     nodeUrl: customEndpoints.nodeUrl,
     indexerUrl: customEndpoints.indexerUrl,
