@@ -10,7 +10,8 @@ interface KeysProps {
   isUnlocked: (name: string) => boolean;
   getAddresses: (name: string) => { unshielded: string; shielded: string; dust: string } | null;
   onUnlock: (name: string, passphrase: string) => Promise<void>;
-  onLock: (name: string) => void;
+  /** Takes down any live sync for the wallet before its keys are freed, so it awaits. */
+  onLock: (name: string) => Promise<void>;
   onSwitch: (name: string) => Promise<void>;
   onRemove: (name: string) => Promise<void>;
   onClearCache: (name: string) => void;
@@ -96,8 +97,8 @@ export function Keys({
     }
     if (input === 'l') {
       if (isUnlocked(w.name)) {
-        onLock(w.name);
-        setMessage(`Locked ${w.name}`);
+        setMessage(`Locking ${w.name}...`);
+        void onLock(w.name).then(() => setMessage(`Locked ${w.name}`));
       }
       return;
     }
