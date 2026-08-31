@@ -10,6 +10,7 @@ import {
   ShieldedEncryptionPublicKey,
   DustAddress,
   MidnightBech32m,
+  UnshieldedAddress,
 } from '@midnightntwrk/wallet-sdk/address-format';
 import {createKeystore} from '@midnightntwrk/wallet-sdk/unshielded';
 import {setNetworkId} from '@midnight-ntwrk/midnight-js/network-id';
@@ -143,6 +144,36 @@ export function deriveShieldedPublicKeys(seedHex: string): {
  */
 export function deriveAllAddresses(): WalletAddresses {
   throw new Error('deriveAllAddresses is deprecated — use deriveAllAddressesFromSeed(seedHex)');
+}
+
+/**
+ * Re-encode an address for a different network.
+ *
+ * A Midnight address is a payload plus a network HRP; the payload is the key
+ * material and carries no network of its own. So the same wallet's unshielded
+ * address on devnet and on preprod differ only in prefix and checksum —
+ * `mn_addr_devnet18ph9d9…eskkpdrr` and `mn_addr_preprod18ph9d9…esngsypp` both
+ * decode to `386e5697…97c73`.
+ *
+ * That matters because `WalletMeta.address` is written once, at create or import,
+ * with whichever network was current then. A wallet created on devnet and since
+ * used on preprod still reports its devnet address, and a caller that forwards it
+ * — `moth dust status` did — sends a wrong-network address wherever it goes
+ * (#107). Re-encoding needs no keys, so the correct address for the network being
+ * asked about is always available without an unlock.
+ *
+ * Returns null when the input cannot be parsed or re-encoded, so a caller can
+ * fall back to the stored value rather than lose the field entirely.
+ */
+export function addressForNetwork(address: string, network: string): string | null {
+  try {
+    const parsed = MidnightBech32m.parse(address);
+    const current = typeof parsed.network === 'symbol' ? 'mainnet' : String(parsed.network);
+    if (current === network) return address;
+    return (MidnightBech32m.encode(network, parsed.decode(UnshieldedAddress, current as never)) as any).toString();
+  } catch {
+    return null;
+  }
 }
 
 export function decodeBech32mAddress(address: string): {

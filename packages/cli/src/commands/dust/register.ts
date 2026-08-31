@@ -16,7 +16,10 @@ export default class DustRegister extends BaseCommand {
   static override flags = {
     ...BaseCommand.baseFlags,
     receiver: Flags.string({
-      description: 'DUST receiver address override (default: own DUST address)',
+      description:
+        'DUST receiver address override (default: own DUST address, encoded for --network). ' +
+        'Pass one only to send generated DUST somewhere other than this wallet: an address ' +
+        'encoded for a different network is refused by the node as a bare submission error.',
     }),
     yes: Flags.boolean({
       char: 'y',
