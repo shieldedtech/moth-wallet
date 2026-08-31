@@ -43,6 +43,35 @@ export type DaemonSubmitTransactionResult = {
 };
 
 // ─────────────────────────────────────────────────────────────────────
+// balanceTransaction
+// ─────────────────────────────────────────────────────────────────────
+
+export type DaemonBalanceTransactionParams = {
+  /** Hex-encoded transaction to balance (dApp connector flow: the wallet
+   *  pays its fees and adds inputs/outputs to remove imbalances, then
+   *  proves and signs). */
+  readonly hex: string;
+  /** Input stage: 'sealed' → Transaction<SignatureEnabled, Proof, Binding>;
+   *  'unsealed' → …Proof, PreBinding; 'unproven' → …PreProof, PreBinding —
+   *  the common dApp shape (dApps cannot prove; the wallet's finalize step
+   *  generates the proofs via its proof server). */
+  readonly stage: 'sealed' | 'unsealed' | 'unproven';
+  /** Submit the balanced transaction too (default true). When false the
+   *  balanced FinalizedTransaction is returned as hex instead. */
+  readonly submit?: boolean;
+  readonly summary?: string;
+  readonly details?: readonly string[];
+};
+
+export type DaemonBalanceTransactionResult = {
+  readonly submitted: boolean;
+  /** Transaction id when submitted; null otherwise. */
+  readonly txId: string | null;
+  /** Hex-encoded balanced FinalizedTransaction when submit=false; null otherwise. */
+  readonly finalizedHex: string | null;
+};
+
+// ─────────────────────────────────────────────────────────────────────
 // transferTokens
 // ─────────────────────────────────────────────────────────────────────
 

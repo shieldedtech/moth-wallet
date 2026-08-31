@@ -5,9 +5,9 @@ last-updated: 2026-06-22
 
 # Commands Reference
 
-Comprehensive reference for everything Moth exposes — CLI commands, TUI keybindings, and the daemon RPC verbs that back service-mode deployments.
+Comprehensive reference for everything Moth exposes — CLI commands, TUI keybindings, the daemon RPC verbs that back service-mode deployments, and the MCP tool surface for AI agents.
 
-> Three runtimes, one core. The CLI, TUI, and daemon RPC are thin shells around the shared `packages/core` engine. A command name appearing in all three columns means it routes through the same handler code; the surface is just dressed differently per shell.
+> Four runtimes, one core. The CLI, TUI, daemon RPC, and MCP server are thin shells around the shared `packages/core` engine. A command name appearing in several columns means it routes through the same handler code; the surface is just dressed differently per shell.
 
 ## Overview
 
@@ -16,6 +16,8 @@ graph LR
   CLI[moth CLI]
   TUI[moth tui]
   Svc[moth daemon serve]
+  MCP[moth mcp]
+  Agent[AI agent<br>MCP client]
   Core[packages/core]
   Sock[(Unix socket<br>~/.moth/sync/&lt;net&gt;/&lt;wallet&gt;.sock)]
   Chain[(Midnight chain<br>indexer + node + proof server)]
@@ -26,6 +28,8 @@ graph LR
   TUI -.->|hosts the<br>daemon socket| Sock
   Svc --> Core
   Svc -.->|hosts the<br>daemon socket| Sock
+  Agent -.->|MCP JSON-RPC<br>over stdio| MCP
+  MCP -->|in-process| Core
   Sock -.->|JSON-RPC| Core
   Core --> Chain
 ```
@@ -183,6 +187,68 @@ Error categories: `WALLET_ERROR`, `NETWORK_ERROR`, `INVALID_INPUT`, `TIMEOUT`, `
 
 ---
 
+## MCP Server (`moth mcp`)
+
+`moth mcp` starts a [Model Context Protocol](https://modelcontextprotocol.io) server exposing the wallet as typed tools to AI agents (Claude Code, Claude Desktop, Cursor, and any other MCP client). Like `moth daemon serve`, it is a thin shell: the write-verb bodies are core's `buildWalletHandlers` — the same code path as the daemon and TUI, including the max-spend cap, auto-approve audit records, and `~/.moth/daemon-audit.log`.
+
+Two transports:
+
+- **stdio** (default) — the MCP client spawns `moth mcp` and owns its lifetime; stdin/stdout are the JSON-RPC channel. One client per process. Client configuration:
+
+  ```json
+  {
+    "command": "moth",
+    "args": ["mcp", "--wallet", "<name>", "--network", "<net>"],
+    "env": { "MOTH_PASSPHRASE": "..." }
+  }
+  ```
+
+- **http** (`--transport http --bind 127.0.0.1:<port>`) — the operator runs the server; clients connect to `http://<bind>/mcp` (MCP Streamable HTTP). Any number of concurrent sessions share the one unlocked wallet and warm sync. Loopback binds only — the transport is unencrypted and unauthenticated (same rule as the daemon's TCP bind, minus API keys: kernel-local trust only); DNS-rebinding protection rejects requests whose Host header is not a loopback form. Port `0` picks a free port and prints it. Clients that only speak stdio can bridge with [`mcp-remote`](https://www.npmjs.com/package/mcp-remote): `npx -y mcp-remote http://127.0.0.1:<port>/mcp --allow-http` — the passphrase then never appears in any client config.
+
+Operational rules, all consequences of stdout being the JSON-RPC channel:
+
+- **`MOTH_PASSPHRASE` is required** — stdin belongs to the protocol, so no prompt is possible. Set it in the MCP client's `env` block; don't rely on a `.env` file (the client chooses the cwd).
+- **All logging goes to stderr.** The command reroutes any stray stdout writer (SDK loggers, `console.log`) to stderr before the wallet engine starts.
+- **The handshake never waits for sync.** The transport connects right after unlock; the wallet syncs in the background. Agents call `wait_for_sync` before treating balances or activity as authoritative. A first sync can take minutes; running `moth mcp` alongside a TUI/daemon for the same wallet double-syncs the same on-disk cache.
+- The server exits (and locks the wallet) on client disconnect (stdin EOF), SIGINT, or SIGTERM.
+
+### Consent
+
+Read tools are always served. Spend tools follow the daemon's headless consent policy — all three or nothing, refused at startup otherwise:
+
+| Requirement | Why |
+|---|---|
+| `--auto-approve` flag | There is no human at an MCP server to answer L3 modals. |
+| `MOTH_DAEMON_AUTO_APPROVE=1` env | Belt-and-suspenders — a stray flag in shell history can't disable consent alone. |
+| `--max-spend <NIGHT>` | Per-transaction NIGHT cap enforced in the shared `transferTokens` handler. **NIGHT only** — non-NIGHT token transfers bypass it. |
+
+A fourth, separately-armed escalation exists on top of the spend gate: `--allow-balancing` registers the `balance_transaction` and `submit_transaction` tools (the dApp-connector flow — e.g. a website's endpoint generates a payment transaction, the wallet balances/proves/signs/submits it, the site grants access). They share one flag because both have the same property that demands it: **`--max-spend` cannot protect them** — the value inside externally-built transaction bytes is opaque to the wallet, which funds or sends whatever the transaction carries. The flag is refused without the full spend gate underneath.
+
+Every auto-approved spend is appended to `~/.moth/daemon-audit.log` with `decision: 'auto-approve'`; lifecycle records are tagged `mcp-stdio`.
+
+### Tools
+
+All amounts cross the interface as decimal strings in smallest units (STARS for NIGHT, SPECK for DUST) — the daemon wire convention. Every result carries both `structuredContent` and a text block holding a human-readable summary plus the same JSON payload — some MCP clients surface only text to the model, and data living solely in `structuredContent` would be invisible there.
+
+| Tool | Kind | Purpose | Backed by |
+|---|---|---|---|
+| `wallet_status` | read | Readiness, sync progress, raw balance totals. | daemon `getState` |
+| `wallet_balances` | read | Full balances incl. the spendable split (`unshieldedAvailable` vs reserved) and non-NIGHT tokens. | core `WalletBalances` + `unshieldedSplit` |
+| `wallet_addresses` | read | Receive addresses for the active network: `night` (mn_addr_…, unshielded), `shielded` (mn_shield-addr_…, shielded tokens), `dust` (mn_dust_…), plus `shieldedKeys` — the zswap `coinPublicKey` / `encryptionPublicKey` (64-char hex) a dApp needs to build a shielded output to this wallet. Works before sync. | `UnlockedWallet.addresses` + `deriveShieldedPublicKeys` |
+| `wallet_activity` | read | Transaction history, newest first, with per-token deltas and fees. | `facade.getAllFromTxHistory` + `deriveActivity` |
+| `wallet_list` | read | Wallets known to this machine; which one this server serves. | `WalletManager.list` |
+| `wait_for_sync` | read | Barrier: resolve once the wallet has reached the tip at least once (`everSynced` latches — raw `synced` flip-flops as blocks arrive). | sync subscription |
+| `transfer_tokens` | spend | Send NIGHT or another token, unshielded or shielded; refuses NIGHT above `--max-spend`. The recipient's address kind must match the transfer type and its network tag must match the wallet's network. | daemon `transferTokens` |
+| `estimate_transfer_fee` | spend* | DUST fee estimate for a transfer, without sending. | core `estimateTransferFee` |
+| `balance_transaction` | spend (extra gate) | Balance, prove (for `stage: unproven` input — the common dApp shape), sign, and optionally submit an externally-built transaction (site/dApp paywall flow). Input as inline hex (`txHex`) or a server-host file path (`txFile`, hex text or raw binary) — exactly one. Registered only under `--allow-balancing`; **not covered by `--max-spend`**. | daemon `balanceTransaction` |
+| `submit_transaction` | spend (extra gate) | Submit a pre-built, fully-balanced FinalizedTransaction and return its txId. Input as inline hex (`txHex`) or a server-host file path (`txFile`) — exactly one. Registered only under `--allow-balancing`; **not covered by `--max-spend`**. | daemon `submitTransaction` |
+| `dust_register` | spend | Register NIGHT UTXOs for DUST generation. | daemon `dustRegister` |
+| `dust_deregister` | spend | Deregister NIGHT UTXOs from DUST generation. | daemon `dustDeregister` |
+
+\* fee estimation moves no funds but is registered with the spend group — it exercises the same coin-selection machinery and has no use in a read-only deployment.
+
+---
+
 ## TUI Reference
 
 `moth tui` launches the Ink/React dashboard. It hosts a daemon while running, so `moth daemon …` commands (or `moth wallet status`) work in another shell.
@@ -291,6 +357,7 @@ The full surface is in `packages/core/src/daemon/wallet-rpc-types.ts`. Summary:
 | `getState` | read | Sync progress + balances. | `{ ready, walletName, networkId, synced, syncProgress, balances }` |
 | `clearSyncCache` | write (L3) | Wipe the daemon's on-disk sync cache. Next sync starts from genesis. | `{ cleared: true }` |
 | `submitTransaction` | write (L3) | Submit a pre-built finalized transaction. | `{ txHash, status, blockHash, blockHeight }` |
+| `balanceTransaction` | write (L3) | Balance a dApp-supplied transaction (connector `balance*Transaction`): pay fees, add wallet inputs/outputs, prove, sign; optionally submit. `stage` selects the input: `sealed` / `unsealed` (proven), or `unproven` — the common dApp shape, where the wallet also generates the proofs. The value moved is opaque, so `--max-spend` cannot cap it — the modal/audit details say so. | `{ submitted, txId, finalizedHex }` |
 | `transferTokens` | write (L3) | Build + submit a token transfer. | `{ txId }` |
 | `callCircuit` | write (L3) | Call a circuit on a deployed contract. | `{ txHash, status, contractAddress, fees }` |
 | `deployContract` | write (L3) | Deploy a contract. | `{ txHash, status, contractAddress, fees }` |

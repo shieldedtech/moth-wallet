@@ -18,6 +18,7 @@ import type {ConfirmationQueue} from './confirmation-queue.js';
 import type {RpcHandler, ConnectionContext} from './server.js';
 import type {AuditLog, AuditDecision} from './audit-log.js';
 import {
+  parseBalanceTransactionParams,
   parseSubmitTransactionParams,
   parseTransferTokensParams,
   parseCallCircuitParams,
@@ -30,6 +31,7 @@ import {
   shortenHex,
 } from './wallet-rpc-parsers.js';
 import type {
+  DaemonBalanceTransactionResult,
   DaemonCallCircuitResult,
   DaemonDeployContractResult,
   DaemonDustDeregisterResult,
@@ -41,7 +43,13 @@ import type {
   DaemonTransferTokensResult,
 } from './wallet-rpc-types.js';
 
-import {sendTokensWithKeys, designateForDustWithKeys, dedesignateFromDustWithKeys} from '../sync/operations.js';
+import {
+  sendTokensWithKeys,
+  designateForDustWithKeys,
+  dedesignateFromDustWithKeys,
+  balanceTransaction,
+  submitFinalizedTransaction,
+} from '../sync/operations.js';
 import type {WalletKeys} from '../sync/operations.js';
 import {callCircuit} from '../contract/call.js';
 import {deployContract} from '../contract/deploy.js';
@@ -296,6 +304,81 @@ export function buildWalletHandlers(deps: WalletHandlerDeps): Record<string, Rpc
           return {txId: String(txId)};
         },
         (r) => ({txHash: r.txId}),
+      );
+    },
+
+    // ─────────────────────────────────────────────────────────────────
+    // balanceTransaction
+    // ─────────────────────────────────────────────────────────────────
+
+    balanceTransaction: async (rawParams: unknown, ctx: ConnectionContext): Promise<DaemonBalanceTransactionResult> => {
+      const params = parseBalanceTransactionParams(rawParams);
+      const {facade, walletKeys} = requireReady();
+      const submit = params.submit !== false;
+
+      // Pre-validate the bytes deserialize at the declared stage so a
+      // malformed payload is INVALID_PARAMS, not INTERNAL_ERROR from
+      // deep inside the balancing path. balanceTransaction deserializes
+      // again itself; the double parse is cheap and CPU-only.
+      const txBytes = new Uint8Array(Buffer.from(params.hex, 'hex'));
+      const markers =
+        params.stage === 'sealed'
+          ? (['proof', 'binding'] as const)
+          : params.stage === 'unsealed'
+            ? (['proof', 'pre-binding'] as const)
+            : (['pre-proof', 'pre-binding'] as const);
+      try {
+        ledger.Transaction.deserialize(
+          'signature' as never,
+          markers[0] as never,
+          markers[1] as never,
+          txBytes,
+        );
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new DaemonProtocolError(
+          'INVALID_PARAMS',
+          `failed to deserialize hex as a ${params.stage} (${markers[0]}/${markers[1]}) transaction: ${msg}`,
+        );
+      }
+
+      return withAudit(
+        'balanceTransaction',
+        params.summary ??
+          `Balance${params.stage === 'unproven' ? ' and prove' : ''} a dApp-supplied transaction${submit ? ', then submit it' : ''}`,
+        [
+          `Wallet: ${walletName}`,
+          `Network: ${network.id}`,
+          `Tx size: ${Math.floor(params.hex.length / 2)} bytes (${params.stage})`,
+          // The whole point of balancing is that the wallet adds its own
+          // inputs to cover whatever the transaction needs — so unlike
+          // transferTokens there is no visible amount to cap. Say so in
+          // the modal instead of letting the operator assume the cap holds.
+          'CAUTION: value moved is opaque to the wallet — the --max-spend cap does NOT apply.',
+          submit ? 'Submits after balancing.' : 'Returns the balanced transaction without submitting.',
+          ...(params.details ?? []),
+        ],
+        ctx,
+        async () => {
+          const finalized = await balanceTransaction(
+            facade,
+            walletKeys,
+            network.id,
+            txBytes,
+            params.stage,
+            (stage) => log('info', `[balanceTransaction] ${stage}`),
+          );
+          if (!submit) {
+            return {
+              submitted: false,
+              txId: null,
+              finalizedHex: Buffer.from(finalized.serialize()).toString('hex'),
+            };
+          }
+          const txId = await submitFinalizedTransaction(facade, finalized);
+          return {submitted: true, txId: String(txId), finalizedHex: null};
+        },
+        (r) => ({txHash: r.txId ?? undefined}),
       );
     },
 

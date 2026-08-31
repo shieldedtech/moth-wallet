@@ -735,7 +735,10 @@ export async function balanceTransaction(
       activeWalletKeys(),
       network.id,
       fromHex(txHex),
-      sealed,
+      // The connector's balanceSealed/balanceUnsealed pair maps onto the
+      // core op's stage enum; the connector has no unproven verb (dApps
+      // use the proving-provider API for that).
+      sealed ? 'sealed' : 'unsealed',
       (stage) => emit('os/eventTxStage', stage),
     );
     return { txHex: toHex(finalized.serialize()) };
