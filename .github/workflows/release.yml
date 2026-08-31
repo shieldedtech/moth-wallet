@@ -91,7 +91,7 @@ jobs:
       # maintainer approves those runs before the version PR can merge.
       - name: Create or update version PR
         if: ${{ steps.releases.outputs.hasReleases == 'true' }}
-        uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d  # v1.9.0
+        uses: changesets/action@8488615a623b1b9c987934bb89eae8af6a946ac1  # v2.1.1
         with:
           # Keep the compound command in a package script; the action does not
           # invoke shell operators when it executes its input.
@@ -105,7 +105,7 @@ jobs:
       # then recover or create tags and GitHub Releases through Changesets.
       - name: Publish stable release
         if: ${{ steps.releases.outputs.hasReleases == 'false' && steps.package_changes.outputs.hasReleaseWork == 'true' }}
-        uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d  # v1.9.0
+        uses: changesets/action@8488615a623b1b9c987934bb89eae8af6a946ac1  # v2.1.1
         with:
           publish: yarn run release
         env:
