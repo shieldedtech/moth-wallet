@@ -1,6 +1,7 @@
 ---
 '@shieldedtech/moth-extension': minor
 '@shieldedtech/moth-wallet': minor
+'@shieldedtech/moth-tui': patch
 ---
 
 **The extension can restore an account from a raw hex seed.** Previously it
@@ -63,6 +64,18 @@ wallet.
 Restored accounts keep `createdHere: false` and no birthday, so they scan from
 genesis — they may hold funds at any height, and seeding one past its own history
 would hide them (ADR 0003, rule 4).
+
+**The TUI's hex import was that validation.** `SeedEntryScreen` matched
+`/^[0-9a-fA-F]{64}$/` and did it *before* `importFromSeed`, so core's new check
+never ran and the screen refused every length the SDK accepts bar one — including
+the 128-character seed this release teaches the extension to reveal. Round-trip
+a phrase-backed account (extension → Accounts → Reveal → Hex seed) into the
+TUI's hex import and it answered "Invalid hex seed. Must be exactly 64 hex
+characters", while the CLI took the same string. The check now lives in
+`tui/src/screens/onboarding/seed-input.ts` and delegates to `checkHexSeed`, so
+the TUI inherits the bounds and the unusual-length warning instead of
+re-deciding them; a test sweeps 16..64 bytes so the screen cannot silently drift
+tighter than core again.
 
 Also corrected: three places documented a BIP-39 seed as 64 hex characters. It is
 128 — 64 hex characters is a 32-byte seed, a different artifact that derives a
