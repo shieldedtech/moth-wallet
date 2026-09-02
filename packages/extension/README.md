@@ -82,6 +82,13 @@ the release tag manually.
 
 - **tsconfig deviation:** this package extends WXT's generated `.wxt/tsconfig.json` (path aliases, extension globals) instead of the repo's `tsconfig.base.json` — the base config's `rootDir`/`outDir`/`declaration` assumptions don't fit a Vite-bundled app. Run `yarn workspace @shieldedtech/moth-extension compile` for a typecheck.
 - Wallet keys live encrypted (ChaCha20-Poly1305) in IndexedDB via `@shieldedtech/moth-browser`; the unlocked seed is held only in `browser.storage.session` (memory-backed, cleared when the browser exits). Locking is explicit — lock button, account removal, network switch; there is no inactivity auto-lock for now (its timer used to kill a sync in progress).
+- **Settings → Network → Clear cache and resync** forgets everything synced for
+  the active account on its network — sync state, cached balances, pending
+  activity, and the network's pre-seed reference — and syncs again from genesis.
+  It is the recovery for a local devnet that was taken down and brought back up
+  as a new chain: every cached artefact then describes a chain that no longer
+  exists, and the sync engine cannot tell. Nothing is spent; on the new chain the
+  balance simply reflects what that chain holds.
 - The proving method selected under Settings → Network is used for wallet and
   dApp transactions. Local WASM proving is recommended for simple transactions,
   such as token transfers. Complex transactions, such as contract calls, require

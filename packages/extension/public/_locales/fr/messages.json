@@ -1127,6 +1127,30 @@
   "settings_networkConfig": {
     "message": "Configuration réseau"
   },
+  "settings_resync": {
+    "message": "Vider le cache et resynchroniser"
+  },
+  "settings_resyncDescription": {
+    "message": "Oublier tout ce qui a été synchronisé pour ce compte sur la chaîne actuelle et parcourir de nouveau la chaîne depuis le début."
+  },
+  "settings_resyncButton": {
+    "message": "Vider"
+  },
+  "settings_resyncTitle": {
+    "message": "Vider le cache et resynchroniser ?"
+  },
+  "settings_resyncBody": {
+    "message": "Moth supprime l’état synchronisé de ce compte, les soldes en cache, l’activité en attente et la référence préparée pour $1, puis synchronise depuis le début de la chaîne. Rien ne change sur la chaîne et vos fonds restent où ils sont. Sur un réseau réinitialisé, le solde reflétera la nouvelle chaîne."
+  },
+  "settings_resyncConfirm": {
+    "message": "Vider et resynchroniser"
+  },
+  "settings_resyncWorking": {
+    "message": "Vidage…"
+  },
+  "settings_resyncError": {
+    "message": "Impossible de vider le cache. Réessayez."
+  },
   "settings_sectionSecurity": {
     "message": "Sécurité"
   },

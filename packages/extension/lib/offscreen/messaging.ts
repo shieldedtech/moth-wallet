@@ -126,6 +126,12 @@ export interface OffscreenProtocol {
   'os/syncStop'(): void;
   /** Clear persisted sync state after the running engine has stopped. */
   'os/syncCacheClear'(data: { walletName: string; networkIds: string[] }): void;
+  /** Forget everything cached for this account on this network and start over:
+   *  the account's sync state, its pending submissions, and the network's
+   *  pre-seed reference — store and in-process memo. For a local chain restarted
+   *  from genesis, where all of it describes a chain that no longer exists.
+   *  Stops the engine first; the caller restarts it. */
+  'os/syncCacheReset'(data: { walletName: string; network: NetworkConfig }): void;
 
   /** Ensure sync, wait for a synced snapshot, and return serialized balances. */
   'os/balancesGet'(data: { seedHex: string; walletName: string; network: NetworkConfig }): string;

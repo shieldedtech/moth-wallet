@@ -309,6 +309,13 @@ interface ProtocolMap {
    *  stream over the port. */
   deregisterDust(): { txHash: string };
 
+  /** Forget everything synced for the unlocked account on its network — sync
+   *  state, cached balances, pending activity, and the network's prepared
+   *  reference — and sync again from the start of the chain. For a local
+   *  network that was brought back up from genesis, where the cached state
+   *  describes a chain that no longer exists. Spends nothing. */
+  resyncFromScratch(): void;
+
   /** Rebuild the local DUST view: evict the dust sync cache and rescan. Spends
    *  nothing. `started` is false when a transaction was in flight. */
 
