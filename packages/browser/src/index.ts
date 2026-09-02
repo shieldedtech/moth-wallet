@@ -108,6 +108,12 @@ export {
   deriveWalletKeys,
 } from '@shieldedtech/moth-wallet/sync/operations';
 export type { SwapInput, WalletKeys } from '@shieldedtech/moth-wallet/sync/operations';
+export {
+  summarizeTransaction,
+  summarizeConnectorTransaction,
+  decodeConnectorTransaction,
+} from '@shieldedtech/moth-wallet/sync/tx-summary';
+export type { TransactionSummary, TxTokenAmount } from '@shieldedtech/moth-wallet/sync/tx-summary';
 
 import {
   canonicalNetworkId,

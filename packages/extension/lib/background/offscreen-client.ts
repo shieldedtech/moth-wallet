@@ -276,6 +276,10 @@ export const offscreen = {
     });
     return decodeBigintJson<Uint8Array>(resultJson);
   },
+  async txSummary(data: { network: NetworkConfig; txHex: string; sealed: boolean }) {
+    await ensureOffscreen();
+    return offscreenSend('os/txSummary', data);
+  },
   async balanceTransaction(data: SyncTarget & { txHex: string; sealed: boolean }) {
     await ensureOffscreen();
     return offscreenSend('os/balanceTransaction', data);

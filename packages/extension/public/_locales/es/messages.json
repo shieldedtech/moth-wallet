@@ -305,6 +305,21 @@
   "approval_balanceNote": {
     "message": "Tu billetera puede aportar fondos propios para balancear esta transacción. Aprueba solo transacciones de sitios en los que confíes."
   },
+  "approval_youPay": {
+    "message": "Pagas"
+  },
+  "approval_youGetBack": {
+    "message": "Recibes de vuelta"
+  },
+  "approval_contractCallsLabel": {
+    "message": "Llamadas a contratos"
+  },
+  "approval_spendsNothing": {
+    "message": "Esta transacción no toma nada de tu billetera aparte de la comisión de red."
+  },
+  "approval_summaryUnavailable": {
+    "message": "Moth no pudo leer qué gasta esta transacción. Apruébala solo si confías en $1 y sabes lo que hace."
+  },
   "approval_transferSubtitle": {
     "message": "Nada se mueve hasta que apruebes."
   },

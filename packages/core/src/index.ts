@@ -74,6 +74,10 @@ export {
   type ShieldedCoinInfo, type UnshieldedCoinInfo, type DustCoinInfo,
 } from './sync/wallet-sync.js';
 export {
+  summarizeTransaction, summarizeConnectorTransaction, decodeConnectorTransaction,
+  type TransactionSummary, type TxTokenAmount,
+} from './sync/tx-summary.js';
+export {
   // Union of both lines: main's build/estimate/submit + batch types the
   // extension imports, plus v8's derive-and-drop walletKeys write paths.
   sendTokens, sendTokensWithKeys, deriveWalletKeys,
