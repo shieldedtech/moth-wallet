@@ -158,8 +158,29 @@ export async function walletCreate(
   return { info, mnemonic: phrase };
 }
 
-export async function walletImport(name: string, mnemonic: string, passphrase: string, network: string) {
-  return getMoth(network).wallets.import(name, mnemonic, passphrase, network);
+/**
+ * Restore an account from whichever backup artifact the caller holds.
+ *
+ * Two distinct core calls, not one with a branch inside it: `import` runs the
+ * BIP-39 checksum on the phrase, `importFromSeed` shape-checks the hex. Both
+ * record `createdHere: false` and no birthday, which is what keeps a restored
+ * account scanning from genesis — it may hold funds at any height, and seeding
+ * it past its own history would hide them (ADR 0003, rule 4).
+ */
+export async function walletImport(
+  name: string,
+  secret: {mnemonic?: string; seed?: string},
+  passphrase: string,
+  network: string,
+) {
+  const wallets = getMoth(network).wallets;
+  if (secret.seed !== undefined) {
+    return wallets.importFromSeed(name, secret.seed, passphrase, network);
+  }
+  if (secret.mnemonic === undefined) {
+    throw new Error('walletImport requires either a mnemonic or a seed');
+  }
+  return wallets.import(name, secret.mnemonic, passphrase, network);
 }
 
 export async function walletRemove(name: string, network: string): Promise<void> {
@@ -181,8 +202,17 @@ export async function walletExportPhrase(
   name: string,
   passphrase: string,
   network: string,
+  as: 'backup' | 'seed' = 'backup',
 ): Promise<{ kind: 'mnemonic' | 'seed'; value: string }> {
-  return getMoth(network).wallets.exportPhrase(name, passphrase);
+  const wallets = getMoth(network).wallets;
+  // Both arms decrypt the keystore with the password just re-entered, and
+  // neither touches the unlocked session's key material — the rule in
+  // docs/spec/wallet-service/05-key-management.md D-KM-2 that seed export goes
+  // through the keystore, not through a live session.
+  if (as === 'seed') {
+    return { kind: 'seed', value: await wallets.exportSeedHex(name, passphrase) };
+  }
+  return wallets.exportPhrase(name, passphrase);
 }
 
 export async function walletSetNetwork(
