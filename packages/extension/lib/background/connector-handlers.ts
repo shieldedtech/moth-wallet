@@ -13,7 +13,7 @@ import { onMessage, deserializeBalances } from '../messaging/protocol';
 import { encodeBigintJson, decodeBigintJson } from '../messaging/bigint-json';
 import { connectorError, serializeError, type ErrorCode } from '../connector/errors';
 import { NOT_IMPLEMENTED_METHODS, type ConnectorMethod } from '../connector/constants';
-import type { TransferRequestDTO, SwapInputDTO, ProvingKeyMaterialDTO } from '../offscreen/messaging';
+import type { TransferRequestDTO, SwapInputDTO, ProvingKeyMaterialDTO, TxSummaryDTO } from '../offscreen/messaging';
 import { getSettings, getNetworkConfig } from './settings';
 import { getSession, type Session } from './session';
 import { isAllowed, grant, revoke, listAll } from './permissions';
@@ -146,8 +146,16 @@ function addressFor(session: Session, role: keyof Session['addresses'], networkI
   return encoded[networkId] ?? Object.values(encoded)[0] ?? '';
 }
 
+/** Display data for a `balance` approval. `summary` is null when the transaction
+ *  could not be read; the screen then says so instead of showing nothing. */
+export interface BalanceApprovalPayload {
+  sealed: boolean;
+  summary: TxSummaryDTO | null;
+}
+
 // Shared by balanceSealedTransaction / balanceUnsealedTransaction: validate the
-// tx hex, prompt for approval (balancing spends wallet funds to cover fees and
+// tx hex, read what the transaction takes from the wallet, prompt for approval
+// with that in view (balancing spends wallet funds to cover fees and
 // imbalances), then balance + prove in the offscreen host. `sealed` selects the
 // input binding stage.
 async function balance(
@@ -163,10 +171,22 @@ async function balance(
   if (options.payFees === false) {
     throw connectorError('InvalidRequest', 'Moth always pays fees; payFees: false is unsupported');
   }
-  const approved = await requestApproval('balance', origin, { sealed }, senderTabId, preparedPanel);
+  const network = await getNetworkConfig();
+  // The user is about to authorize spending, so the approval must say what
+  // leaves the wallet. A summary that cannot be produced (a stage the ledger
+  // won't decode, a ledger mismatch) is not a reason to hide the request: the
+  // screen states plainly that the amounts are unknown, and balancing itself
+  // will surface the underlying error if the user goes ahead.
+  let summary: TxSummaryDTO | null = null;
+  try {
+    summary = await offscreen.txSummary({ network, txHex: tx, sealed });
+  } catch {
+    summary = null;
+  }
+  const payload: BalanceApprovalPayload = { sealed, summary };
+  const approved = await requestApproval('balance', origin, payload, senderTabId, preparedPanel);
   if (!approved) throw connectorError('Rejected', 'User rejected the transaction');
 
-  const network = await getNetworkConfig();
   const { txHex } = await offscreen.balanceTransaction({
     seedHex: session.seedHex,
     walletName: session.walletName,

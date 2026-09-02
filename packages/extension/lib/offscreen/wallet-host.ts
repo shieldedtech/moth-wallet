@@ -14,6 +14,7 @@ import {
   buildTransferTransaction,
   estimateTransferFee as coreEstimateTransferFee,
   balanceTransaction as coreBalanceTransaction,
+  summarizeConnectorTransaction,
   buildSwapIntent,
   designateForDust as coreDesignateForDust,
   dedesignateFromDust as coreDedesignateFromDust,
@@ -66,6 +67,7 @@ import type {
   SwapInputDTO,
   UnlockedWallet,
   ProvingKeyMaterialDTO,
+  TxSummaryDTO,
 } from './messaging';
 import type { DustNotYet } from '../messaging/protocol';
 import type { HostEvent, HostEventData } from './worker-rpc';
@@ -720,6 +722,18 @@ export async function transferBuild(
     );
     return { txHex: toHex(finalized.serialize()) };
   });
+}
+
+// What balancing a dApp-supplied transaction would take from the wallet, for the
+// approval prompt that precedes balanceTransaction below. Reads the transaction's
+// own per-segment imbalances, so it needs the ledger loaded but neither keys nor
+// a synced wallet, and never books or spends anything.
+export async function txSummary(network: NetworkConfig, txHex: string, sealed: boolean): Promise<TxSummaryDTO> {
+  await initSdk((await detectLedgerVersion(network)).version);
+  const summary = summarizeConnectorTransaction(fromHex(txHex), sealed);
+  const dto = (entries: typeof summary.spends) =>
+    entries.map((entry) => ({ kind: entry.kind, tokenId: entry.tokenId, amount: entry.amount.toString() }));
+  return { spends: dto(summary.spends), receives: dto(summary.receives), contractActions: summary.contractActions };
 }
 
 // Balance a dApp-supplied transaction (connector balance*Transaction). Needs a

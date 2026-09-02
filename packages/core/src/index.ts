@@ -112,6 +112,10 @@ export {
   type SendRequest, type TxStage, type NightUtxo, type FinalizedTransaction, type WalletKeys,
 } from './sync/operations.js';
 export {
+  summarizeTransaction, summarizeConnectorTransaction, decodeConnectorTransaction,
+  type TransactionSummary, type TxTokenAmount,
+} from './sync/tx-summary.js';
+export {
   InMemorySyncStateStore, syncStateKey, emptyRefStateKey, emptyRefMnemonicKey, emptyRefHeightKey,
   type SyncStateStore, type WalletPart,
 } from './sync/sync-store.js';

@@ -81,6 +81,7 @@ describe('HOST_METHODS', () => {
     'os/transferBuild',
     'os/transferSubmit',
     'os/txHistoryGet',
+    'os/txSummary',
     'os/activityGet',
     'os/signData',
     'os/deriveAppSecret',
