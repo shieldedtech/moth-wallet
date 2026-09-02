@@ -1145,6 +1145,30 @@
   "settings_networkConfig": {
     "message": "Configuración de red"
   },
+  "settings_resync": {
+    "message": "Borrar caché y resincronizar"
+  },
+  "settings_resyncDescription": {
+    "message": "Olvida todo lo sincronizado para esta cuenta en $1 y vuelve a escanear la cadena desde el principio. Úsalo después de reiniciar una red local."
+  },
+  "settings_resyncButton": {
+    "message": "Borrar"
+  },
+  "settings_resyncTitle": {
+    "message": "¿Borrar caché y resincronizar?"
+  },
+  "settings_resyncBody": {
+    "message": "Moth elimina el estado sincronizado de esta cuenta, los saldos en caché, la actividad pendiente y la referencia preparada para $1, y luego sincroniza desde el inicio de la cadena. Nada cambia en la cadena y tus fondos siguen donde están. En una red reiniciada, el saldo reflejará la nueva cadena."
+  },
+  "settings_resyncConfirm": {
+    "message": "Borrar y resincronizar"
+  },
+  "settings_resyncWorking": {
+    "message": "Borrando…"
+  },
+  "settings_resyncError": {
+    "message": "No se pudo borrar la caché. Inténtalo de nuevo."
+  },
   "settings_sectionSecurity": {
     "message": "Seguridad"
   },
