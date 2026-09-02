@@ -1145,6 +1145,30 @@
   "settings_networkConfig": {
     "message": "Netzwerkkonfiguration"
   },
+  "settings_resync": {
+    "message": "Cache leeren und neu synchronisieren"
+  },
+  "settings_resyncDescription": {
+    "message": "Alles vergessen, was für dieses Konto auf der aktuellen Chain synchronisiert wurde, und die Chain von Anfang an neu scannen."
+  },
+  "settings_resyncButton": {
+    "message": "Leeren"
+  },
+  "settings_resyncTitle": {
+    "message": "Cache leeren und neu synchronisieren?"
+  },
+  "settings_resyncBody": {
+    "message": "Moth löscht den synchronisierten Zustand dieses Kontos, zwischengespeicherte Guthaben, ausstehende Aktivitäten und die vorbereitete Referenz für $1 und synchronisiert dann vom Anfang der Chain. Auf der Chain ändert sich nichts, dein Guthaben bleibt, wo es ist. Bei einem zurückgesetzten Netzwerk zeigt das Guthaben die neue Chain."
+  },
+  "settings_resyncConfirm": {
+    "message": "Leeren & neu synchronisieren"
+  },
+  "settings_resyncWorking": {
+    "message": "Wird geleert…"
+  },
+  "settings_resyncError": {
+    "message": "Der Cache konnte nicht geleert werden. Versuche es erneut."
+  },
   "settings_sectionSecurity": {
     "message": "Sicherheit"
   },

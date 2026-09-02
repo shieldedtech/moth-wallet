@@ -66,6 +66,7 @@ describe('HOST_METHODS', () => {
     'os/syncEnsure',
     'os/syncStop',
     'os/syncCacheClear',
+    'os/syncCacheReset',
     'os/balancesGet',
     'os/sendTokens',
     'os/estimateTransferFee',

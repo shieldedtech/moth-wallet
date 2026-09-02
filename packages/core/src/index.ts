@@ -138,7 +138,7 @@ export {
   type WitnessStream,
   type WitnessVerdict,
 } from './sync/cursor-witness.js';
-export { ensureEmptyRefCache, warmEmptyRefCache, refreshEmptyRefCache, preseedReferenceStatus, preSeedNewWallet, type WarmProgress } from './sync/preseed.js';
+export { ensureEmptyRefCache, warmEmptyRefCache, clearEmptyRefCache, refreshEmptyRefCache, preseedReferenceStatus, preSeedNewWallet, type WarmProgress } from './sync/preseed.js';
 
 // Contract
 export { loadContractArtifact, type ContractArtifact } from './contract/artifact-loader.js';

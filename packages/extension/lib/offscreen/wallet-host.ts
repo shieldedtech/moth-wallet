@@ -23,6 +23,7 @@ import {
   deriveWalletKeys,
   clearSyncCache,
   clearDustSyncCache,
+  clearEmptyRefCache,
   warmEmptyRefCache,
   preseedReferenceStatus,
   DustRegistrationNotYetError,
@@ -505,6 +506,19 @@ export async function syncCacheClear(walletName: string, networkIds: string[]): 
     // not revive pending rows for a chain state the user explicitly cleared.
     await store.delete(submissionsKey(networkId, walletName)).catch(() => {});
   }
+}
+
+// Everything syncCacheClear drops, plus what it deliberately leaves alone: the
+// network's pre-seed reference. A wallet-scoped clear keeps the reference because
+// it is still right for the chain — but when a local chain came back from
+// genesis, the reference describes the old chain and every fresh sync would be
+// seeded from it. The DUST-heal stamp goes too, so the rebuild heuristic starts
+// from a clean slate on the new chain.
+export async function syncCacheReset(walletName: string, network: NetworkConfig): Promise<void> {
+  await syncCacheClear(walletName, [network.id]);
+  const store = new IdbSyncStateStore();
+  await clearEmptyRefCache(network.id, store);
+  await store.delete(dustHealKey(network.id, walletName)).catch(() => {});
 }
 
 export async function balancesGet(

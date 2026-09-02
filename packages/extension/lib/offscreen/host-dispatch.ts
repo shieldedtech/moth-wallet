@@ -41,6 +41,7 @@ export const hostDispatch: Dispatch = {
   },
   'os/syncStop': (host) => host.syncStop(),
   'os/syncCacheClear': (host, d) => host.syncCacheClear(d.walletName, d.networkIds),
+  'os/syncCacheReset': (host, d) => host.syncCacheReset(d.walletName, d.network),
   'os/balancesGet': (host, d) => host.balancesGet(d.seedHex, d.walletName, d.network),
   'os/sendTokens': (host, d) => host.sendTokens(d.seedHex, d.walletName, d.network, d.requests),
   'os/estimateTransferFee': (host, d) =>

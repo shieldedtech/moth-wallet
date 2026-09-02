@@ -1192,6 +1192,11 @@ export async function clearSyncCache(walletName: string, networkId: string, stor
   const resolved = await resolveSyncStore(store);
   await evictCachedState(resolved, walletName, networkId, 'shielded');
   await evictCachedState(resolved, walletName, networkId, 'unshielded');
+  // An ECDSA wallet keeps its unshielded cache under a second identity (see
+  // cacheIdentity). The caller does not know the wallet's kind, so evict both:
+  // deleting an absent key costs nothing, leaving a stale cache behind costs a
+  // "cleared" wallet that resumes from the state the user just asked to drop.
+  await evictCachedState(resolved, walletName, networkId, 'unshielded', 'ecdsa');
   await evictCachedState(resolved, walletName, networkId, 'dust');
   await evictCachedState(resolved, walletName, networkId, 'history');
 }
