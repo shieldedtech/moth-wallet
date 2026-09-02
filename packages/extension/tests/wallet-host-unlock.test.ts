@@ -32,6 +32,7 @@ vi.mock('@shieldedtech/moth-browser', () => ({
   deriveWalletKeys: vi.fn(),
   clearSyncCache: vi.fn(),
   clearDustSyncCache: vi.fn(),
+  clearEmptyRefCache: vi.fn(),
   signMessage: vi.fn(),
   deriveActivity: vi.fn(),
   IdbSyncStateStore: class {},

@@ -29,6 +29,16 @@ export const settings = {
   settings_preseedWarmingDescriptionOn:
     'Preparing $1 in the background. It takes about an hour and continues whenever the wallet is open. Accounts created after it finishes start in seconds.',
   settings_networkConfig: 'Network config',
+  settings_resync: 'Clear cache and resync',
+  settings_resyncDescription:
+    'Forget everything synced for this account on the current chain and scan the chain again from the start.',
+  settings_resyncButton: 'Clear',
+  settings_resyncTitle: 'Clear cache and resync?',
+  settings_resyncBody:
+    'Moth deletes this account\u2019s synced state, cached balances, pending activity and the prepared reference for $1, then syncs from the beginning of the chain. Nothing on chain changes and your funds stay where they are. On a network that was reset, the balance will reflect the new chain.',
+  settings_resyncConfirm: 'Clear & resync',
+  settings_resyncWorking: 'Clearing\u2026',
+  settings_resyncError: 'Could not clear the cache. Try again.',
   settings_sectionSecurity: 'Security',
   settings_autoLock: 'Auto-lock',
   settings_autoLockDemo: 'The wallet never locks itself on its own.',
