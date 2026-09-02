@@ -241,6 +241,12 @@ export interface UnshieldedCoinInfo {
   value: bigint;
   type: string;
   registeredForDustGeneration: boolean;
+  /** When this UTXO was created, epoch ms — null if the SDK reported none.
+   *  Powers the "register promptly" guidance in dust registration UX: a
+   *  devnet defect (docs/bugs-found #15) has been triggered by registering
+   *  NIGHT that sat unregistered for minutes, never by registering within
+   *  seconds of it arriving. */
+  ctimeMs: number | null;
 }
 
 export interface DustCoinInfo {
@@ -970,6 +976,7 @@ function extractBalancesPartial(
         value: c.utxo?.value ?? 0n,
         type: c.utxo?.type ?? '',
         registeredForDustGeneration: c.meta?.registeredForDustGeneration === true,
+        ctimeMs: c.meta?.ctime ? c.meta.ctime.getTime() : null,
       });
     }
     for (const c of state.unshielded?.pendingCoins ?? []) {
@@ -979,6 +986,7 @@ function extractBalancesPartial(
         value,
         type,
         registeredForDustGeneration: c.meta?.registeredForDustGeneration === true,
+        ctimeMs: c.meta?.ctime ? c.meta.ctime.getTime() : null,
       });
       // Count booked inputs toward the displayed balance. A send or DUST
       // registration reserves its own NIGHT UTxOs (moved available→pending)

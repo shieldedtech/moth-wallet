@@ -45,6 +45,10 @@ import {
   type SignEncoding,
   type SignedMessage,
   ledger as activeLedger,
+  activeLedgerVersion,
+  submitWithHealthTracking,
+  dustSpendHealthTracker,
+  diagnoseSubmissionFailure,
 } from '@shieldedtech/moth-browser';
 import { deriveAllAddressesFromSeed } from '@shieldedtech/moth-wallet/wallet/address';
 import type * as ledger from '@midnight-ntwrk/ledger-v8';
@@ -548,10 +552,18 @@ export async function nightCoins(
   const wallet = await syncEnsure(seedHex, walletName, network);
   const balances = await waitForSyncedBalances(wallet, SYNC_WAIT_MS);
   const rows: NightCoinRow[] = [];
-  const push = (list: readonly { value: bigint; type: string; registeredForDustGeneration?: boolean }[], booked: boolean) => {
+  const push = (
+    list: readonly { value: bigint; type: string; registeredForDustGeneration?: boolean; ctimeMs?: number | null }[],
+    booked: boolean,
+  ) => {
     for (const c of list) {
       if (c.type !== NIGHT_TOKEN_ID) continue;
-      rows.push({ valueStars: c.value.toString(), registered: c.registeredForDustGeneration === true, booked });
+      rows.push({
+        valueStars: c.value.toString(),
+        registered: c.registeredForDustGeneration === true,
+        booked,
+        ctimeMs: c.ctimeMs ?? null,
+      });
     }
   };
   push(balances.coins.unshielded.available, false);
@@ -576,6 +588,22 @@ function enqueueTransferOperation<T>(operation: () => Promise<T>): Promise<T> {
     () => undefined,
   );
   return run;
+}
+
+// Every fee-paying submission funnels through here (or through the inline
+// try/catch in registerDust, which needs to special-case a preflight bail-out
+// that never reaches the node). A run of InvalidDustSpendProof rejections
+// covers three unrelated conditions — a transient race, a wallet/node ledger
+// mismatch, and a wedged devnet dust ledger that only a chain reset clears —
+// and none of them can be told apart from one rejection alone. See
+// core/sync/dust-ledger-health.ts and the upstream report it exists to back:
+// docs/bugs-found.md-style evidence of a devnet whose dust state stops
+// reconciling with any wallet's, permanently, while blocks keep being
+// produced. A success clears the streak; only a persistent run, with the
+// chain still advancing and this wallet's ledger confirmed correct, is
+// surfaced as DustLedgerWedgedError instead of the raw rejection.
+function submitTracked<T>(network: NetworkConfig, walletName: string, submit: () => Promise<T>): Promise<T> {
+  return submitWithHealthTracking(submit, {network, walletName, usingLedger: activeLedgerVersion()});
 }
 
 // Best effort: a bookkeeping failure must never turn a submitted transaction
@@ -605,7 +633,7 @@ export function sendTokens(
       (stage) => emit('os/eventTxStage', stage),
     );
     emit('os/eventTxStage', 'submitting');
-    const txHash = await submitFinalizedTransaction(wallet.facade, finalized);
+    const txHash = await submitTracked(network, walletName, () => submitFinalizedTransaction(wallet.facade, finalized));
     // The activity feed's pending row is single-output. Record the rich detail
     // only for a lone output; a batch records a plain pending send (the applied
     // chain entry supplies every delta once it lands).
@@ -669,10 +697,14 @@ export async function registerDust(
         dustAddress,
         (stage) => emit('os/eventTxStage', stage),
       );
+      dustSpendHealthTracker(network.id, walletName).recordSuccess();
     } catch (e) {
       // Returned rather than rethrown: the panel needs the figures to render a
       // localized wait, and an Error crossing this channel arrives as a bare
-      // string. Everything else still throws and surfaces as a failure.
+      // string. Everything else still throws and surfaces as a failure. A
+      // DustRegistrationNotYetError never reached the node — it is a
+      // preflight bail-out — so it must not count toward (or reset) the
+      // wedge-detection streak either way; only skip it below.
       if (e instanceof DustRegistrationNotYetError) {
         return {
           txHash: null,
@@ -683,7 +715,10 @@ export async function registerDust(
           },
         };
       }
-      throw e;
+      const usingLedger = activeLedgerVersion();
+      throw usingLedger
+        ? await diagnoseSubmissionFailure(dustSpendHealthTracker(network.id, walletName), e, {network, usingLedger})
+        : e;
     }
     if (txHash) {
       await noteSubmitted(network.id, walletName, { hash: txHash, submittedAt: Date.now(), kind: 'dust' });
@@ -705,12 +740,13 @@ export async function deregisterDust(
   return trackOp(async () => {
     await ensureProver(network);
     const wallet = await syncEnsure(seedHex, walletName, network);
-    const txHash = await coreDedesignateFromDust(
-      wallet.facade,
-      seedHex,
-      network.id,
-      (stage) => emit('os/eventTxStage', stage),
-    );
+    const txHash = await submitTracked(network, walletName, () =>
+      coreDedesignateFromDust(
+        wallet.facade,
+        seedHex,
+        network.id,
+        (stage) => emit('os/eventTxStage', stage),
+      ));
     await noteSubmitted(network.id, walletName, { hash: txHash, submittedAt: Date.now(), kind: 'dust' });
     return { txHash };
   });
@@ -824,7 +860,7 @@ export async function transferSubmit(
       'binding',
       fromHex(txHex),
     );
-    await submitFinalizedTransaction(wallet.facade, transaction);
+    await submitTracked(network, walletName, () => submitFinalizedTransaction(wallet.facade, transaction));
   });
 }
 
