@@ -305,6 +305,21 @@
   "approval_balanceNote": {
     "message": "Deine Wallet kann eigene Mittel beisteuern, um diese Transaktion auszugleichen. Genehmige nur Transaktionen von Seiten, denen du vertraust."
   },
+  "approval_youPay": {
+    "message": "Du zahlst"
+  },
+  "approval_youGetBack": {
+    "message": "Du erhältst zurück"
+  },
+  "approval_contractCallsLabel": {
+    "message": "Vertragsaufrufe"
+  },
+  "approval_spendsNothing": {
+    "message": "Diese Transaktion entnimmt deiner Wallet nichts außer der Netzwerkgebühr."
+  },
+  "approval_summaryUnavailable": {
+    "message": "Moth konnte nicht lesen, was diese Transaktion ausgibt. Genehmige sie nur, wenn du $1 vertraust und weißt, was sie tut."
+  },
   "approval_transferSubtitle": {
     "message": "Nichts wird bewegt, bis du genehmigst."
   },
@@ -454,6 +469,12 @@
   },
   "dust_generateBodyReceiver": {
     "message": "This registers your unregistered $1 so it starts generating $2. You can do this again whenever you receive more $1."
+  },
+  "dust_receiveRegisterNudge": {
+    "message": "$1 erhalten — registriere es jetzt, damit es sofort mit der $2-Generierung beginnt."
+  },
+  "dust_staleRegisterWarning": {
+    "message": "Ein Teil dieses $1 liegt schon eine Weile unregistriert da. In manchen Netzwerken wurde das späte Registrieren von $1 — statt sofort nach Erhalt — mit einem seltenen, schwerwiegenden Netzwerkfehler in Verbindung gebracht, der sich nur durch einen Netzwerk-Reset beheben lässt. Am sichersten ist es, $1 sofort nach Erhalt zu registrieren."
   },
   "dust_deregisterBody": {
     "message": "This deregisters your $1 from $2 generation. The $2 you have stays and still pays fees, but it won't refill. You can register again anytime."
@@ -1129,6 +1150,30 @@
   },
   "settings_networkConfig": {
     "message": "Netzwerkkonfiguration"
+  },
+  "settings_resync": {
+    "message": "Cache leeren und neu synchronisieren"
+  },
+  "settings_resyncDescription": {
+    "message": "Alles vergessen, was für dieses Konto auf der aktuellen Chain synchronisiert wurde, und die Chain von Anfang an neu scannen."
+  },
+  "settings_resyncButton": {
+    "message": "Leeren"
+  },
+  "settings_resyncTitle": {
+    "message": "Cache leeren und neu synchronisieren?"
+  },
+  "settings_resyncBody": {
+    "message": "Moth löscht den synchronisierten Zustand dieses Kontos, zwischengespeicherte Guthaben, ausstehende Aktivitäten und die vorbereitete Referenz für $1 und synchronisiert dann vom Anfang der Chain. Auf der Chain ändert sich nichts, dein Guthaben bleibt, wo es ist. Bei einem zurückgesetzten Netzwerk zeigt das Guthaben die neue Chain."
+  },
+  "settings_resyncConfirm": {
+    "message": "Leeren & neu synchronisieren"
+  },
+  "settings_resyncWorking": {
+    "message": "Wird geleert…"
+  },
+  "settings_resyncError": {
+    "message": "Der Cache konnte nicht geleert werden. Versuche es erneut."
   },
   "settings_sectionSecurity": {
     "message": "Sicherheit"

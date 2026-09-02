@@ -241,6 +241,12 @@ export interface UnshieldedCoinInfo {
   value: bigint;
   type: string;
   registeredForDustGeneration: boolean;
+  /** When this UTXO was created, epoch ms — null if the SDK reported none.
+   *  Powers the "register promptly" guidance in dust registration UX: a
+   *  devnet defect (docs/bugs-found #15) has been triggered by registering
+   *  NIGHT that sat unregistered for minutes, never by registering within
+   *  seconds of it arriving. */
+  ctimeMs: number | null;
 }
 
 export interface DustCoinInfo {
@@ -970,6 +976,7 @@ function extractBalancesPartial(
         value: c.utxo?.value ?? 0n,
         type: c.utxo?.type ?? '',
         registeredForDustGeneration: c.meta?.registeredForDustGeneration === true,
+        ctimeMs: c.meta?.ctime ? c.meta.ctime.getTime() : null,
       });
     }
     for (const c of state.unshielded?.pendingCoins ?? []) {
@@ -979,6 +986,7 @@ function extractBalancesPartial(
         value,
         type,
         registeredForDustGeneration: c.meta?.registeredForDustGeneration === true,
+        ctimeMs: c.meta?.ctime ? c.meta.ctime.getTime() : null,
       });
       // Count booked inputs toward the displayed balance. A send or DUST
       // registration reserves its own NIGHT UTxOs (moved available→pending)
@@ -1192,6 +1200,11 @@ export async function clearSyncCache(walletName: string, networkId: string, stor
   const resolved = await resolveSyncStore(store);
   await evictCachedState(resolved, walletName, networkId, 'shielded');
   await evictCachedState(resolved, walletName, networkId, 'unshielded');
+  // An ECDSA wallet keeps its unshielded cache under a second identity (see
+  // cacheIdentity). The caller does not know the wallet's kind, so evict both:
+  // deleting an absent key costs nothing, leaving a stale cache behind costs a
+  // "cleared" wallet that resumes from the state the user just asked to drop.
+  await evictCachedState(resolved, walletName, networkId, 'unshielded', 'ecdsa');
   await evictCachedState(resolved, walletName, networkId, 'dust');
   await evictCachedState(resolved, walletName, networkId, 'history');
 }

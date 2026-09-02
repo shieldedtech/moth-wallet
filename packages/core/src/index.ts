@@ -112,6 +112,16 @@ export {
   type SendRequest, type TxStage, type NightUtxo, type FinalizedTransaction, type WalletKeys,
 } from './sync/operations.js';
 export {
+  summarizeTransaction, summarizeConnectorTransaction, decodeConnectorTransaction,
+  type TransactionSummary, type TxTokenAmount,
+} from './sync/tx-summary.js';
+export {
+  isDustSpendProofRejection, diagnoseSubmissionFailure, dustSpendHealthTracker,
+  resetDustSpendHealthTrackers, DustSpendHealthTracker, DustLedgerWedgedError,
+  DEFAULT_WEDGE_THRESHOLD, submitWithHealthTracking,
+  type DustLedgerHealthContext, type SubmitHealthContext,
+} from './sync/dust-ledger-health.js';
+export {
   InMemorySyncStateStore, syncStateKey, emptyRefStateKey, emptyRefMnemonicKey, emptyRefHeightKey,
   type SyncStateStore, type WalletPart,
 } from './sync/sync-store.js';
@@ -134,7 +144,7 @@ export {
   type WitnessStream,
   type WitnessVerdict,
 } from './sync/cursor-witness.js';
-export { ensureEmptyRefCache, warmEmptyRefCache, refreshEmptyRefCache, preseedReferenceStatus, preSeedNewWallet, type WarmProgress } from './sync/preseed.js';
+export { ensureEmptyRefCache, warmEmptyRefCache, clearEmptyRefCache, refreshEmptyRefCache, preseedReferenceStatus, preSeedNewWallet, type WarmProgress } from './sync/preseed.js';
 
 // Contract
 export { loadContractArtifact, type ContractArtifact } from './contract/artifact-loader.js';

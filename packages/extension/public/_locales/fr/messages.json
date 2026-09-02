@@ -305,6 +305,21 @@
   "approval_balanceNote": {
     "message": "Votre portefeuille peut ajouter ses propres fonds pour équilibrer cette transaction. N'approuvez que les transactions de sites de confiance."
   },
+  "approval_youPay": {
+    "message": "Vous payez"
+  },
+  "approval_youGetBack": {
+    "message": "Vous récupérez"
+  },
+  "approval_contractCallsLabel": {
+    "message": "Appels de contrat"
+  },
+  "approval_spendsNothing": {
+    "message": "Cette transaction ne prélève rien sur votre portefeuille en dehors des frais de réseau."
+  },
+  "approval_summaryUnavailable": {
+    "message": "Moth n'a pas pu lire ce que cette transaction dépense. N'approuvez que si vous faites confiance à $1 et savez ce qu'elle fait."
+  },
   "approval_transferSubtitle": {
     "message": "Rien ne bouge avant votre approbation."
   },
@@ -454,6 +469,12 @@
   },
   "dust_generateBodyReceiver": {
     "message": "This registers your unregistered $1 so it starts generating $2. You can do this again whenever you receive more $1."
+  },
+  "dust_receiveRegisterNudge": {
+    "message": "$1 reçu — enregistrez-le maintenant pour qu'il commence à générer $2 tout de suite."
+  },
+  "dust_staleRegisterWarning": {
+    "message": "Une partie de ce $1 est restée non enregistrée un certain temps. Sur certains réseaux, enregistrer $1 longtemps après l'avoir reçu — plutôt qu'immédiatement — a été associé à un défaut de réseau rare et grave, sans autre solution qu'une réinitialisation du réseau. Le plus sûr est d'enregistrer $1 dès sa réception."
   },
   "dust_deregisterBody": {
     "message": "This deregisters your $1 from $2 generation. The $2 you have stays and still pays fees, but it won't refill. You can register again anytime."
@@ -1129,6 +1150,30 @@
   },
   "settings_networkConfig": {
     "message": "Configuration réseau"
+  },
+  "settings_resync": {
+    "message": "Vider le cache et resynchroniser"
+  },
+  "settings_resyncDescription": {
+    "message": "Oublier tout ce qui a été synchronisé pour ce compte sur la chaîne actuelle et parcourir de nouveau la chaîne depuis le début."
+  },
+  "settings_resyncButton": {
+    "message": "Vider"
+  },
+  "settings_resyncTitle": {
+    "message": "Vider le cache et resynchroniser ?"
+  },
+  "settings_resyncBody": {
+    "message": "Moth supprime l’état synchronisé de ce compte, les soldes en cache, l’activité en attente et la référence préparée pour $1, puis synchronise depuis le début de la chaîne. Rien ne change sur la chaîne et vos fonds restent où ils sont. Sur un réseau réinitialisé, le solde reflétera la nouvelle chaîne."
+  },
+  "settings_resyncConfirm": {
+    "message": "Vider et resynchroniser"
+  },
+  "settings_resyncWorking": {
+    "message": "Vidage…"
+  },
+  "settings_resyncError": {
+    "message": "Impossible de vider le cache. Réessayez."
   },
   "settings_sectionSecurity": {
     "message": "Sécurité"

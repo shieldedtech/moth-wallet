@@ -160,6 +160,10 @@ export const offscreen = {
     await ensureOffscreen();
     return offscreenSend('os/syncCacheClear', data);
   },
+  async syncCacheReset(data: { walletName: string; network: NetworkConfig }) {
+    await ensureOffscreen();
+    return offscreenSend('os/syncCacheReset', data);
+  },
   async balancesGet(data: SyncTarget) {
     await ensureOffscreen();
     return offscreenSend('os/balancesGet', data);
@@ -266,6 +270,10 @@ export const offscreen = {
       payloadJson: encodeBigintJson(payload satisfies ProvingProviderProvePayload),
     });
     return decodeBigintJson<Uint8Array>(resultJson);
+  },
+  async txSummary(data: { network: NetworkConfig; txHex: string; sealed: boolean }) {
+    await ensureOffscreen();
+    return offscreenSend('os/txSummary', data);
   },
   async balanceTransaction(data: SyncTarget & { txHex: string; sealed: boolean }) {
     await ensureOffscreen();

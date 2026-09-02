@@ -35,6 +35,30 @@ export interface SwapInputDTO {
   amount: string;
 }
 
+/** One token amount a dApp transaction moves in or out of the wallet; amount as a decimal string. */
+export interface TxTokenAmountDTO {
+  kind: 'shielded' | 'unshielded' | 'dust';
+  /** Raw token type hex; empty for DUST. */
+  tokenId: string;
+  /** Always positive; direction is the list it sits in. */
+  amount: string;
+}
+
+/**
+ * What balancing a dApp-supplied transaction costs the wallet, read off the
+ * transaction before the user approves it (core sync/tx-summary.ts). Fees are
+ * not part of it — they are only known once the wallet has balanced and proven
+ * its own segment, and are always paid in DUST.
+ */
+export interface TxSummaryDTO {
+  /** What the wallet must supply — the tokens that leave it. */
+  spends: TxTokenAmountDTO[];
+  /** Surplus the wallet collects back as change. */
+  receives: TxTokenAmountDTO[];
+  /** Contract calls, deploys and maintenance updates in the transaction. */
+  contractActions: number;
+}
+
 /** Contract circuit material supplied by a connected dApp for one proof call. */
 export interface ProvingKeyMaterialDTO {
   zkir: Uint8Array;
@@ -125,6 +149,12 @@ export interface OffscreenProtocol {
   'os/syncStop'(): void;
   /** Clear persisted sync state after the running engine has stopped. */
   'os/syncCacheClear'(data: { walletName: string; networkIds: string[] }): void;
+  /** Forget everything cached for this account on this network and start over:
+   *  the account's sync state (every part, every identity), its pending
+   *  submissions, and the network's pre-seed reference — store and in-process
+   *  memo. For a local chain restarted from genesis, where all of it describes a
+   *  chain that no longer exists. Stops the engine first; the caller restarts it. */
+  'os/syncCacheReset'(data: { walletName: string; network: NetworkConfig }): void;
 
   /** Ensure sync, wait for a synced snapshot, and return serialized balances. */
   'os/balancesGet'(data: { seedHex: string; walletName: string; network: NetworkConfig }): string;
@@ -217,6 +247,12 @@ export interface OffscreenProtocol {
     txHex: string;
     sealed: boolean;
   }): { txHex: string };
+
+  /** Read what a dApp-supplied transaction would take from (and return to) the
+   *  wallet once balanced, for the approval prompt. Needs the network's ledger
+   *  loaded but no keys and no sync. `sealed` selects the deserialization stage,
+   *  exactly as os/balanceTransaction does. */
+  'os/txSummary'(data: { network: NetworkConfig; txHex: string; sealed: boolean }): TxSummaryDTO;
 
   /** Build a swap intent (`makeIntent`); returns the unproven, unbound tx hex. */
   'os/makeIntent'(data: {
