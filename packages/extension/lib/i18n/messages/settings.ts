@@ -31,7 +31,7 @@ export const settings = {
   settings_networkConfig: 'Network config',
   settings_resync: 'Clear cache and resync',
   settings_resyncDescription:
-    'Forget everything synced for this account on $1 and scan the chain again from the start. Use it after a local network was reset.',
+    'Forget everything synced for this account on the current chain and scan the chain again from the start.',
   settings_resyncButton: 'Clear',
   settings_resyncTitle: 'Clear cache and resync?',
   settings_resyncBody:

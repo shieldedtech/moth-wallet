@@ -1149,7 +1149,7 @@
     "message": "Cache leeren und neu synchronisieren"
   },
   "settings_resyncDescription": {
-    "message": "Alles vergessen, was für dieses Konto auf $1 synchronisiert wurde, und die Chain von Anfang an neu scannen. Nützlich, nachdem ein lokales Netzwerk zurückgesetzt wurde."
+    "message": "Alles vergessen, was für dieses Konto auf der aktuellen Chain synchronisiert wurde, und die Chain von Anfang an neu scannen."
   },
   "settings_resyncButton": {
     "message": "Leeren"

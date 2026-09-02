@@ -298,7 +298,7 @@ export function Settings({ onBack, navigate }: { onBack: () => void; navigate: (
           <span className="min-w-0 pr-3">
             <span className="block text-sm font-medium">{t('settings_resync')}</span>
             <span className="block text-[12.5px] text-muted-foreground">
-              {t('settings_resyncDescription', [networkLabel(settings.network)])}
+              {t('settings_resyncDescription')}
             </span>
           </span>
           <Button size="sm" variant="secondary" className="shrink-0" onClick={() => setConfirmingResync(true)}>

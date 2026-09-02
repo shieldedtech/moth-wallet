@@ -1149,7 +1149,7 @@
     "message": "Vider le cache et resynchroniser"
   },
   "settings_resyncDescription": {
-    "message": "Oublier tout ce qui a été synchronisé pour ce compte sur $1 et parcourir de nouveau la chaîne depuis le début. À utiliser après la réinitialisation d’un réseau local."
+    "message": "Oublier tout ce qui a été synchronisé pour ce compte sur la chaîne actuelle et parcourir de nouveau la chaîne depuis le début."
   },
   "settings_resyncButton": {
     "message": "Vider"

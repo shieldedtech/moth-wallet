@@ -1149,7 +1149,7 @@
     "message": "Borrar caché y resincronizar"
   },
   "settings_resyncDescription": {
-    "message": "Olvida todo lo sincronizado para esta cuenta en $1 y vuelve a escanear la cadena desde el principio. Úsalo después de reiniciar una red local."
+    "message": "Olvida todo lo sincronizado para esta cuenta en la cadena actual y vuelve a escanear la cadena desde el principio."
   },
   "settings_resyncButton": {
     "message": "Borrar"
