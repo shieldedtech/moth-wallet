@@ -2,8 +2,10 @@
 // dApp approvals take over the panel while pending.
 
 import { useEffect, useRef, useState } from 'react';
-import { Toaster } from 'sonner';
-import { useSession, useWallets, usePanelEvents, useSelectedProverType } from '../../lib/ui/client';
+import { Toaster, toast } from 'sonner';
+import { useSession, useWallets, usePanelEvents, useSelectedProverType, useRegisterNudge } from '../../lib/ui/client';
+import { t } from '../../lib/i18n';
+import { nativeAssetLabelsForNetwork } from '../../lib/ui/token-labels';
 import { accountLabel } from '../../lib/ui/format';
 import type { Screen } from '../../components/screens/navigation';
 import { GetStarted, openSetupTab } from '../../components/screens/GetStarted';
@@ -27,6 +29,15 @@ export function App() {
   const { wallets, refresh: refreshWallets } = useWallets();
   const events = usePanelEvents();
   const prover = useSelectedProverType(session.status?.network);
+  // Suggest registering for DUST the moment this wallet first shows
+  // unregistered NIGHT, rather than waiting for the user to find the Dust
+  // screen on their own — see dust-nudge.ts.
+  const registerNudgeDue = useRegisterNudge(events.balances);
+  useEffect(() => {
+    if (!registerNudgeDue) return;
+    const labels = nativeAssetLabelsForNetwork(session.status?.network ?? '');
+    toast(t('dust_receiveRegisterNudge', [labels.night, labels.dust]));
+  }, [registerNudgeDue, session.status?.network]);
   const [screen, setScreen] = useState<Screen>('home');
   // Set when the user asks to switch accounts: the target's storage name. The
   // current session stays alive and syncing until this unlock succeeds, so
