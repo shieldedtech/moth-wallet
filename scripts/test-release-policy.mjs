@@ -7,6 +7,10 @@ const workflow = readFileSync(new URL('../.github/workflows/release.yml', import
 const rootPackage = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 const publishingRunbook = readFileSync(new URL('../NPM_PUBLISHING.md', import.meta.url), 'utf8');
 const credentialPattern = /(?:SHIELDED_NPMJS_TOKEN|NPM_TOKEN|NODE_AUTH_TOKEN)/;
+const changesetsActionMajors = [
+  ...workflow.matchAll(/uses:\s+changesets\/action@[0-9a-f]{40}\s+#\s+v(\d+)\.\d+\.\d+/g),
+].map((match) => Number(match[1]));
+const changesetsCliMajor = Number(rootPackage.devDependencies['@changesets/cli'].match(/\d+/)?.[0]);
 
 function requirePolicy(condition, message) {
   if (!condition) {
@@ -69,6 +73,25 @@ requirePolicy(
   ) && workflow.includes('github-token: ${{ github.token }}'),
   'the version PR action must use the repository GITHUB_TOKEN and run only for releasable changesets',
 );
+requirePolicy(changesetsActionMajors.length === 2, 'both release paths must use the Changesets action');
+requirePolicy(
+  changesetsCliMajor === 3 && changesetsActionMajors.every((major) => major === 2),
+  'Changesets action v2 must be paired with Changesets CLI v3',
+);
+requirePolicy(
+  workflow.includes('version-script: yarn run version-release') &&
+    workflow.includes('publish-script: yarn run release') &&
+    workflow.includes('commit-message: "chore: version packages"') &&
+    workflow.includes('pr-title: "chore: version packages"') &&
+    !/^          (?:version|publish|commitMode|title|commit):/mu.test(workflow),
+  'Changesets action inputs must use the v2 names',
+);
+requirePolicy(
+  /publish-script:[^\S\r\n]+yarn run release\r?\n(?:[^\S\r\n]*#[^\r\n]*\r?\n)*[^\S\r\n]+push-with-git-cli:[^\S\r\n]+true/u.test(
+    workflow,
+  ),
+  'the custom publisher must push its annotated tags with Git so recovery preserves their target commits',
+);
 requirePolicy(
   !workflow.includes('secrets.') && !workflow.includes('MIDNIGHTCI_PACKAGES_WRITE'),
   'the release workflow must not depend on PATs or repository secrets',
@@ -88,6 +111,11 @@ requirePolicy(
 requirePolicy(
   rootPackage.scripts.release === 'node scripts/release-packages.mjs',
   'stable publishing must use the idempotent package reconciler',
+);
+requirePolicy(
+  rootPackage.scripts['version-release'] ===
+    'yarn run version && yarn install --mode=update-lockfile --no-immutable',
+  'version PR creation must regenerate the lockfile when CI immutable mode is enabled',
 );
 requirePolicy(
   publishingRunbook.includes('Approve workflows') &&
