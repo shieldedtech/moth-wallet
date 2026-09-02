@@ -84,9 +84,11 @@ export interface OffscreenProtocol {
     /** Persist this phrase instead of a fresh one (shown to the user first). */
     mnemonic?: string;
   }): { info: WalletInfo; mnemonic: string };
+  /** Exactly one of mnemonic / seed is set; the host routes on which. */
   'os/walletImport'(data: {
     name: string;
-    mnemonic: string;
+    mnemonic?: string;
+    seed?: string;
     passphrase: string;
     network: string;
   }): WalletInfo;
@@ -96,7 +98,12 @@ export interface OffscreenProtocol {
   'os/walletSetLabel'(data: { name: string; label: string; network: string }): void;
   /** Decrypt and return a wallet's backup secret (mnemonic, or hex seed for
    *  hex-imported wallets). Rejects on a wrong passphrase. */
-  'os/walletExportPhrase'(data: { name: string; passphrase: string; network: string }): {
+  'os/walletExportPhrase'(data: {
+    name: string;
+    passphrase: string;
+    network: string;
+    as?: 'backup' | 'seed';
+  }): {
     kind: 'mnemonic' | 'seed';
     value: string;
   };
