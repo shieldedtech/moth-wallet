@@ -19,11 +19,19 @@
     "changeset": "changeset",
     "version": "changeset version",
     "version-release": "yarn run version && yarn install",
-    "release": "node scripts/release-packages.mjs"
+    "release": "node scripts/release-packages.mjs",
+    "check:versions": "node scripts/check-midnight-versions.mjs",
+    "compile:contracts": "node scripts/compile-contracts.mjs"
   },
   "resolutions": {
     "@midnight-ntwrk/compact-js": "2.5.1",
+    "@midnight-ntwrk/compact-runtime": "0.16.0",
     "@midnight-ntwrk/ledger-v8": "8.1.0",
+    "@midnight-ntwrk/onchain-runtime-v3": "3.0.0",
+    "@midnight-ntwrk/platform-js": "2.2.4",
+    "@midnight-ntwrk/zkir-v2": "2.1.0",
+    "@midnightntwrk/wallet-sdk": "1.2.0",
+    "@midnightntwrk/wallet-sdk-abstractions": "2.1.0",
     "@vitejs/plugin-react": "^5",
     "adm-zip": ">=0.6.0",
     "brace-expansion": ">=5.0.9",
