@@ -346,6 +346,7 @@ export function registerHandlers(): void {
     return offscreen.walletImport({
       name: data.name,
       mnemonic: data.mnemonic,
+      seed: data.seed,
       passphrase: data.passphrase,
       network: data.network ?? network,
     });
@@ -375,7 +376,7 @@ export function registerHandlers(): void {
 
   onMessage('walletExportPhrase', async ({ data }) => {
     const { network } = await getSettings();
-    return offscreen.walletExportPhrase(data.name, data.passphrase, network);
+    return offscreen.walletExportPhrase(data.name, data.passphrase, network, data.as);
   });
 
   onMessage('networkConfigSave', ({ data }) => saveNetworkConfig(data));

@@ -1543,5 +1543,56 @@
   },
   "dust_etaNotRegistered": {
     "message": "$1 pas encore enregistré"
+  },
+  "setup_importKindPhrase": {
+    "message": "Phrase de récupération"
+  },
+  "setup_importKindSeed": {
+    "message": "Seed hexadécimal"
+  },
+  "setup_importSeedSubtitle": {
+    "message": "Collez le seed hexadécimal de ce portefeuille. Il reste visible pour que vous puissiez le comparer à votre sauvegarde."
+  },
+  "setup_importSeedLabel": {
+    "message": "Seed hexadécimal"
+  },
+  "setup_importSeedPlaceholder": {
+    "message": "64 caractères hexadécimaux, ou 128 pour un seed dérivé d’une phrase de récupération"
+  },
+  "setup_importSeedNoChecksum": {
+    "message": "Un seed n’a aucune vérification intégrée, contrairement à une phrase de récupération. Un seul caractère erroné restaure un autre portefeuille, vide, sans signaler d’erreur : comparez-le à votre sauvegarde avant de continuer."
+  },
+  "setup_importSeedUnusualLength": {
+    "message": "Ce seed fait $1 octets. Les outils produisent 32 ou 64 : vérifiez que le collage est complet, car un seed incomplet restaure un autre portefeuille."
+  },
+  "setup_importSeedErrNotHex": {
+    "message": "Un seed est uniquement hexadécimal : chiffres 0-9 et lettres a-f."
+  },
+  "setup_importSeedErrOddLength": {
+    "message": "Ce seed a un nombre impair de caractères, il en manque donc un."
+  },
+  "setup_importSeedErrTooShort": {
+    "message": "Trop court : $1 octets. Un seed fait 16 à 64 octets — 64 caractères hexadécimaux, ou 128 pour un seed dérivé d’une phrase de récupération."
+  },
+  "setup_importSeedErrTooLong": {
+    "message": "Trop long : $1 octets. Un seed fait 16 à 64 octets — 64 caractères hexadécimaux, ou 128 pour un seed dérivé d’une phrase de récupération."
+  },
+  "setup_passwordSubtitleSeed": {
+    "message": "Il déverrouille Moth sur cet appareil. Il ne peut pas restaurer votre portefeuille, seul votre seed le peut."
+  },
+  "accounts_revealAsBackup": {
+    "message": "Phrase de récupération"
+  },
+  "accounts_revealAsSeed": {
+    "message": "Seed hexadécimal"
+  },
+  "accounts_revealAsBackupNote": {
+    "message": "Révèle ce à partir de quoi ce compte a été créé. Les comptes restaurés depuis un seed affichent ce seed, car ils n’ont pas de phrase."
+  },
+  "accounts_revealAsSeedNote": {
+    "message": "Révèle le seed de 128 caractères (64 octets) auquel vos 24 mots correspondent, pour les outils qui acceptent un seed plutôt qu'une phrase. La plupart des outils Midnight attendent un seed de 64 caractères (32 octets) ; les deux ne sont pas interchangeables, et tronquer celui-ci restaure un autre portefeuille, vide. Vos 24 mots restent la sauvegarde de ce compte."
+  },
+  "accounts_revealNoPhraseReason": {
+    "message": "Ce compte a été restauré depuis un seed hexadécimal : il n’a donc pas de phrase de récupération, et une phrase ne peut pas être déduite d’un seed. Son seed est la sauvegarde."
   }
 }

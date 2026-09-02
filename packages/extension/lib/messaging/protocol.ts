@@ -62,12 +62,25 @@ export interface CreateWalletRequest {
   mnemonic?: string;
 }
 
-export interface ImportWalletRequest {
+/**
+ * Restore an existing account from either backup artifact. Exactly one of
+ * `mnemonic` / `seed` is required, enforced by the union rather than by a
+ * runtime check, so a caller cannot send both or neither.
+ *
+ * The seed arm exists because a wallet created from a raw hex seed has no
+ * mnemonic and never will — BIP-39's phrase-to-seed step is a one-way KDF, so
+ * there is nothing to type into a word grid. Before this, such an account could
+ * be created in the TUI and CLI but was unreachable from the extension, even
+ * though the extension's own session model is seed-based throughout.
+ */
+export type ImportWalletRequest = {
   name: string;
-  mnemonic: string;
   passphrase: string;
   network?: string;
-}
+} & (
+  | {mnemonic: string; seed?: never}
+  | {seed: string; mnemonic?: never}
+);
 
 export interface SendTokensRequest {
   type: 'shielded' | 'unshielded';
@@ -208,7 +221,17 @@ interface ProtocolMap {
   /** Reveal an account's backup secret after re-entering its password: the
    *  original mnemonic, or the raw hex seed for accounts imported from hex.
    *  Rejects on a wrong password. */
-  walletExportPhrase(data: { name: string; passphrase: string }): {
+  walletExportPhrase(data: {
+    name: string;
+    passphrase: string;
+    /**
+     * Which artifact to reveal. `backup` (the default) is whatever this account
+     * was created from. `seed` is the hex seed regardless — for a phrase-backed
+     * account that is the 64-byte seed its 24 words expand to, which some
+     * tooling wants and which cannot be reconstructed from the phrase by hand.
+     */
+    as?: 'backup' | 'seed';
+  }): {
     kind: 'mnemonic' | 'seed';
     value: string;
   };

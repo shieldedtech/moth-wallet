@@ -14,6 +14,26 @@ export const accounts = {
   accounts_namePlaceholder: 'Account name',
   accounts_renameHint: 'Only shown in this wallet. Leave empty to go back to the default name.',
   accounts_revealMenu: 'Reveal secret phrase',
+  // Reveal can show either artifact. Chosen before the password is entered so
+  // only what was asked for is ever decrypted.
+  accounts_revealAsBackup:
+    'Recovery phrase',
+  accounts_revealAsSeed:
+    'Hex seed',
+  accounts_revealAsBackupNote:
+    'Reveals what this account was created from. Accounts restored from a seed show that seed, because they have no phrase.',
+  accounts_revealNoPhraseReason:
+    'This account was restored from a hex seed, so it has no recovery phrase — a phrase cannot be worked out from a seed. Its seed is the backup.',
+  // States the length because the length is the trap: a phrase expands to 64
+  // bytes, while `moth wallet import --seed-hex` and the node toolkit deal in
+  // 32. Pasting 128 characters where 64 are expected errors out harmlessly;
+  // truncating to 64 does not — it restores a different, empty wallet and
+  // reports nothing, which is what setup_importSeedNoChecksum warns about on the
+  // way in. And it names the phrase as the backup: 128 characters cannot be
+  // hand-transcribed, and a seed kept as the record of a phrase-backed account
+  // can never regenerate that phrase.
+  accounts_revealAsSeedNote:
+    'Reveals the 128-character (64-byte) seed your 24 words expand to, for tools that take a seed instead of a phrase. Most Midnight tooling expects a 64-character (32-byte) seed — these are not interchangeable, and truncating this one restores a different, empty wallet. Your 24 words remain the backup for this account.',
   accounts_revealTitle: 'Secret phrase for $1',
   accounts_revealHint: "Enter this account's password to reveal its secret phrase.",
   accounts_revealPasswordPlaceholder: 'Account password',
