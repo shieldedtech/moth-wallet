@@ -305,6 +305,21 @@
   "approval_balanceNote": {
     "message": "Deine Wallet kann eigene Mittel beisteuern, um diese Transaktion auszugleichen. Genehmige nur Transaktionen von Seiten, denen du vertraust."
   },
+  "approval_youPay": {
+    "message": "Du zahlst"
+  },
+  "approval_youGetBack": {
+    "message": "Du erhältst zurück"
+  },
+  "approval_contractCallsLabel": {
+    "message": "Vertragsaufrufe"
+  },
+  "approval_spendsNothing": {
+    "message": "Diese Transaktion entnimmt deiner Wallet nichts außer der Netzwerkgebühr."
+  },
+  "approval_summaryUnavailable": {
+    "message": "Moth konnte nicht lesen, was diese Transaktion ausgibt. Genehmige sie nur, wenn du $1 vertraust und weißt, was sie tut."
+  },
   "approval_transferSubtitle": {
     "message": "Nichts wird bewegt, bis du genehmigst."
   },

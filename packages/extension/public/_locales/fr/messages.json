@@ -305,6 +305,21 @@
   "approval_balanceNote": {
     "message": "Votre portefeuille peut ajouter ses propres fonds pour équilibrer cette transaction. N'approuvez que les transactions de sites de confiance."
   },
+  "approval_youPay": {
+    "message": "Vous payez"
+  },
+  "approval_youGetBack": {
+    "message": "Vous récupérez"
+  },
+  "approval_contractCallsLabel": {
+    "message": "Appels de contrat"
+  },
+  "approval_spendsNothing": {
+    "message": "Cette transaction ne prélève rien sur votre portefeuille en dehors des frais de réseau."
+  },
+  "approval_summaryUnavailable": {
+    "message": "Moth n'a pas pu lire ce que cette transaction dépense. N'approuvez que si vous faites confiance à $1 et savez ce qu'elle fait."
+  },
   "approval_transferSubtitle": {
     "message": "Rien ne bouge avant votre approbation."
   },

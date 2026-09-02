@@ -24,6 +24,7 @@ vi.mock('@shieldedtech/moth-browser', () => ({
   buildTransferTransaction: vi.fn(),
   estimateTransferFee: vi.fn(),
   balanceTransaction: vi.fn(),
+  summarizeConnectorTransaction: vi.fn(),
   buildSwapIntent: vi.fn(),
   designateForDust: vi.fn(),
   dedesignateFromDust: vi.fn(),
