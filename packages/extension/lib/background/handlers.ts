@@ -225,6 +225,40 @@ export async function saveNetworkConfig(data: {
 }
 
 /**
+ * Drop everything cached for the unlocked account on its network and sync again
+ * from genesis. The recovery for a local devnet that went down and came back as
+ * a new chain: the cached sync state, pending submissions and the network's
+ * pre-seed reference all describe the old chain, and the engine has no way to
+ * notice on its own beyond failing in ways that name none of this.
+ *
+ * Same shape as the indexer-change branch of saveNetworkConfig — stop, clear,
+ * drop the snapshot so the panel shows the loading screen, restart — and, like
+ * it, bracketed as one op so idle teardown cannot close the offscreen document
+ * between the clear and the restart. Nothing is spent and nothing on chain
+ * changes.
+ */
+export async function resyncFromScratch(): Promise<void> {
+  const session = await getSession();
+  if (!session) throw new Error('Wallet is locked');
+  const network = await getNetworkConfig();
+
+  beginOp();
+  try {
+    await stopSync();
+    try {
+      await offscreen.syncCacheReset({ walletName: session.walletName, network });
+      await clearSnapshot();
+    } finally {
+      // Whether the clear succeeded or not, the engine must come back: a wallet
+      // left stopped looks exactly like a wallet that is stuck.
+      void startSync(session, network).catch(() => {});
+    }
+  } finally {
+    endOp();
+  }
+}
+
+/**
  * Close the transaction timeline.
  *
  * `tx: submitting` is emitted before submitWithRetry, and nothing was recorded
@@ -553,6 +587,8 @@ export function registerHandlers(): void {
       return null;
     }
   });
+
+  onMessage('resyncFromScratch', () => resyncFromScratch());
 
   // Spends nothing, but brackets the op anyway: it stops and restarts the sync
   // engine, and the service worker must not suspend underneath that.

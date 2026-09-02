@@ -171,6 +171,10 @@ export const offscreen = {
     await ensureOffscreen();
     return offscreenSend('os/syncCacheClear', data);
   },
+  async syncCacheReset(data: { walletName: string; network: NetworkConfig }) {
+    await ensureOffscreen();
+    return offscreenSend('os/syncCacheReset', data);
+  },
   async balancesGet(data: SyncTarget) {
     await ensureOffscreen();
     return offscreenSend('os/balancesGet', data);
