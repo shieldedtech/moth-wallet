@@ -16,6 +16,10 @@ const NODE_POLYFILLS: PolyfillOptions = {
 
 export default defineConfig({
   modules: ['@wxt-dev/module-react'],
+  // A fixed path outside the repo gives Chrome a stable extension ID, instead
+  // of one that follows the source directory. See README, "Building to a fixed
+  // directory".
+  outDir: process.env.MOTH_EXT_OUT_DIR || '.output',
   zip: {
     name: 'moth-extension',
     artifactTemplate: '{{name}}-{{packageVersion}}-{{browser}}.zip',
