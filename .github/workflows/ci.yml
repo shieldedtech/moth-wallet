@@ -50,6 +50,17 @@ jobs:
       - name: Install dependencies
         run: yarn install --immutable
 
+      # Fails fast on Midnight version drift. `yarn constraints` catches a
+      # caret range or an undeclared @midnight* package in a workspace
+      # manifest; `check:versions` catches what constraints structurally
+      # cannot see — duplicate WASM instances in the resolved tree, a contract
+      # artifact built by the wrong compiler, resolutions that have drifted
+      # from the train, and scaffolding templates left on stale versions.
+      - name: Check Midnight version train
+        run: |
+          yarn constraints
+          yarn check:versions
+
       # Builds the workspace in dependency order (core/browser first) so the
       # extension/cli type checks and tests resolve the built packages.
       - name: Build packages

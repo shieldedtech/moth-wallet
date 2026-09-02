@@ -1,0 +1,54 @@
+{
+  "$comment": [
+    "Single source of truth for the Midnight toolchain + SDK version set.",
+    "These packages must move as ONE train: the compiler decides which",
+    "compact-runtime its artifacts demand (via checkRuntimeVersion), the",
+    "runtime decides which onchain-runtime it loads, and midnight-js pins",
+    "both exactly. Bump one in isolation and you get either an install",
+    "failure or a duplicate-WASM `expected instance of StateValue` at call",
+    "time. See docs/MIDNIGHT_VERSIONS.md before changing anything here.",
+    "Enforced by yarn.config.cjs and scripts/check-midnight-versions.mjs."
+  ],
+
+  "compiler": "0.31.1",
+  "languageVersion": "0.23.0",
+
+  "npm": {
+    "@midnight-ntwrk/compact-js": "2.5.1",
+    "@midnight-ntwrk/compact-runtime": "0.16.0",
+    "@midnight-ntwrk/dapp-connector-api": "4.0.1",
+    "@midnight-ntwrk/ledger-v8": "8.1.0",
+    "@midnight-ntwrk/midnight-js": "4.1.1",
+    "@midnight-ntwrk/midnight-js-contracts": "4.1.1",
+    "@midnight-ntwrk/midnight-js-http-client-proof-provider": "4.1.1",
+    "@midnight-ntwrk/midnight-js-indexer-public-data-provider": "4.1.1",
+    "@midnight-ntwrk/midnight-js-level-private-state-provider": "4.1.1",
+    "@midnight-ntwrk/midnight-js-network-id": "4.1.1",
+    "@midnight-ntwrk/midnight-js-node-zk-config-provider": "4.1.1",
+    "@midnight-ntwrk/midnight-js-types": "4.1.1",
+    "@midnight-ntwrk/onchain-runtime-v3": "3.0.0",
+    "@midnight-ntwrk/platform-js": "2.2.4",
+    "@midnight-ntwrk/zkir-v2": "2.1.0",
+    "@midnightntwrk/wallet-sdk": "1.2.0",
+    "@midnightntwrk/wallet-sdk-abstractions": "2.1.0"
+  },
+
+  "singleInstance": [
+    "@midnight-ntwrk/compact-js",
+    "@midnight-ntwrk/compact-runtime",
+    "@midnight-ntwrk/ledger-v8",
+    "@midnight-ntwrk/onchain-runtime-v3",
+    "@midnight-ntwrk/platform-js",
+    "@midnight-ntwrk/zkir-v2",
+    "@midnightntwrk/wallet-sdk",
+    "@midnightntwrk/wallet-sdk-abstractions"
+  ],
+
+  "artifacts": [
+    "packages/core/contracts/moth-ft/managed/compiler/contract-info.json"
+  ],
+
+  "templates": [
+    "packages/cli/templates/dapp/api/package.json"
+  ]
+}
