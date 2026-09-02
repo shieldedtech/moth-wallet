@@ -116,6 +116,12 @@ export {
   type TransactionSummary, type TxTokenAmount,
 } from './sync/tx-summary.js';
 export {
+  isDustSpendProofRejection, diagnoseSubmissionFailure, dustSpendHealthTracker,
+  resetDustSpendHealthTrackers, DustSpendHealthTracker, DustLedgerWedgedError,
+  DEFAULT_WEDGE_THRESHOLD, submitWithHealthTracking,
+  type DustLedgerHealthContext, type SubmitHealthContext,
+} from './sync/dust-ledger-health.js';
+export {
   InMemorySyncStateStore, syncStateKey, emptyRefStateKey, emptyRefMnemonicKey, emptyRefHeightKey,
   type SyncStateStore, type WalletPart,
 } from './sync/sync-store.js';

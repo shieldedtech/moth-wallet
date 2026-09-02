@@ -109,6 +109,20 @@ export {
   decodeConnectorTransaction,
 } from '@shieldedtech/moth-wallet/sync/tx-summary';
 export type { TransactionSummary, TxTokenAmount } from '@shieldedtech/moth-wallet/sync/tx-summary';
+export {
+  isDustSpendProofRejection,
+  diagnoseSubmissionFailure,
+  dustSpendHealthTracker,
+  resetDustSpendHealthTrackers,
+  DustSpendHealthTracker,
+  DustLedgerWedgedError,
+  DEFAULT_WEDGE_THRESHOLD,
+  submitWithHealthTracking,
+} from '@shieldedtech/moth-wallet/sync/dust-ledger-health';
+export type {
+  DustLedgerHealthContext,
+  SubmitHealthContext,
+} from '@shieldedtech/moth-wallet/sync/dust-ledger-health';
 
 import {
   canonicalNetworkId,
