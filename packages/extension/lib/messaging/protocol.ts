@@ -207,6 +207,11 @@ export interface NightCoinRow {
    *  count toward the displayed balance but cannot be registered, which is how a
    *  wallet shows 500 NIGHT and still reports nothing to register. */
   booked: boolean;
+  /** When this UTXO arrived, epoch ms — null if unknown. Powers the "register
+   *  promptly" warning: a devnet defect (docs/upstream-issues) has so far only
+   *  ever been triggered by registering NIGHT that sat unregistered for
+   *  minutes, never by registering within seconds of it arriving. */
+  ctimeMs: number | null;
 }
 
 interface ProtocolMap {

@@ -470,6 +470,12 @@
   "dust_generateBodyReceiver": {
     "message": "This registers your unregistered $1 so it starts generating $2. You can do this again whenever you receive more $1."
   },
+  "dust_receiveRegisterNudge": {
+    "message": "$1 reçu — enregistrez-le maintenant pour qu'il commence à générer $2 tout de suite."
+  },
+  "dust_staleRegisterWarning": {
+    "message": "Une partie de ce $1 est restée non enregistrée un certain temps. Sur certains réseaux, enregistrer $1 longtemps après l'avoir reçu — plutôt qu'immédiatement — a été associé à un défaut de réseau rare et grave, sans autre solution qu'une réinitialisation du réseau. Le plus sûr est d'enregistrer $1 dès sa réception."
+  },
   "dust_deregisterBody": {
     "message": "This deregisters your $1 from $2 generation. The $2 you have stays and still pays fees, but it won't refill. You can register again anytime."
   },

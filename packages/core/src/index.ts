@@ -103,6 +103,12 @@ export {
   type DustRegistrationEstimate,
 } from './sync/dust-registration-estimate.js';
 export {
+  isDustSpendProofRejection, diagnoseSubmissionFailure, dustSpendHealthTracker,
+  resetDustSpendHealthTrackers, DustSpendHealthTracker, DustLedgerWedgedError,
+  DEFAULT_WEDGE_THRESHOLD, submitWithHealthTracking,
+  type DustLedgerHealthContext, type SubmitHealthContext,
+} from './sync/dust-ledger-health.js';
+export {
   readEventWitness,
   compareWitness,
   verifyCursorWitness,

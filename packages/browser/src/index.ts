@@ -79,6 +79,20 @@ export type {
   ActivityKind,
   ActivityStatus,
 } from '@shieldedtech/moth-wallet/sync/activity';
+export {
+  isDustSpendProofRejection,
+  diagnoseSubmissionFailure,
+  dustSpendHealthTracker,
+  resetDustSpendHealthTrackers,
+  DustSpendHealthTracker,
+  DustLedgerWedgedError,
+  DEFAULT_WEDGE_THRESHOLD,
+  submitWithHealthTracking,
+} from '@shieldedtech/moth-wallet/sync/dust-ledger-health';
+export type {
+  DustLedgerHealthContext,
+  SubmitHealthContext,
+} from '@shieldedtech/moth-wallet/sync/dust-ledger-health';
 export { formatNight, NIGHT_TOKEN_ID } from '@shieldedtech/moth-wallet/types/tokens';
 export {
   sendTokens,
