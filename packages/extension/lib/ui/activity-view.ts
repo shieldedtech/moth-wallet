@@ -81,9 +81,40 @@ function shortAddress(address: string): string {
   return `${address.slice(0, 8)}…${address.slice(-4)}`;
 }
 
-function tokenName(delta: ActivityDelta, labels: NativeAssetLabels): string {
+/**
+ * Display name for a token.
+ *
+ * Prefers the name the user gave it. A raw token id is meaningless to read —
+ * "-2 24419f09…" in a feed says nothing about what moved — and the wallet
+ * already knows the name because the user typed it. Falls back to a truncated
+ * id when unnamed, which is the best available handle.
+ *
+ * `names` is keyed by token id. Lookup is case-insensitive and ignores a `0x`
+ * prefix, since ids reach us from several sources with inconsistent formatting.
+ */
+function tokenName(
+  delta: ActivityDelta,
+  labels: NativeAssetLabels,
+  names?: Record<string, string>,
+): string {
   if (delta.kind === 'unshielded' && delta.tokenType === NIGHT_TOKEN_ID) return labels.night;
+  const named = lookupTokenName(delta.tokenType, names);
+  if (named) return named;
   return `${delta.tokenType.slice(0, 8)}…`;
+}
+
+function lookupTokenName(
+  tokenType: string,
+  names?: Record<string, string>,
+): string | undefined {
+  if (!names) return undefined;
+  const direct = names[tokenType];
+  if (direct) return direct;
+  const wanted = tokenType.replace(/^0x/i, '').toLowerCase();
+  for (const [id, name] of Object.entries(names)) {
+    if (id.replace(/^0x/i, '').toLowerCase() === wanted && name) return name;
+  }
+  return undefined;
 }
 
 function magnitude(delta: ActivityDelta): string {
@@ -95,8 +126,8 @@ function magnitude(delta: ActivityDelta): string {
   return formatTokenBalance(raw, 0);
 }
 
-function signedAmount(delta: ActivityDelta, labels: NativeAssetLabels): string {
-  return `${delta.amount < 0n ? '-' : '+'}${magnitude(delta)} ${tokenName(delta, labels)}`;
+function signedAmount(delta: ActivityDelta, labels: NativeAssetLabels, names?: Record<string, string>): string {
+  return `${delta.amount < 0n ? '-' : '+'}${magnitude(delta)} ${tokenName(delta, labels, names)}`;
 }
 
 // The design's times are 24-hour ("09:58") and its dates day-first ("12 Jun");
@@ -123,6 +154,9 @@ export function activityRowView(
   entry: ActivityEntry,
   labels: NativeAssetLabels,
   now = new Date(),
+  /** User-assigned token names, keyed by token id. Optional so existing
+   *  callers and tests keep working; without it ids render as before. */
+  tokenNames?: Record<string, string>,
 ): ActivityRowView {
   const failed = entry.status === 'FAILURE';
   const positives = entry.deltas.filter((delta) => delta.amount > 0n);
@@ -150,7 +184,7 @@ export function activityRowView(
           const target = shortAddress(entry.counterparty);
           title = entry.pending ? t('activity_sendingTo', [target]) : t('activity_sentTo', [target]);
         } else if (amountDelta) {
-          const token = tokenName(amountDelta, labels);
+          const token = tokenName(amountDelta, labels, tokenNames);
           title = entry.pending ? t('activity_sendingToken', [token]) : t('activity_sentToken', [token]);
         } else {
           title = entry.pending ? t('activity_sending') : t('activity_sent');
@@ -164,7 +198,7 @@ export function activityRowView(
       title = entry.counterparty
         ? t('activity_receivedFrom', [shortAddress(entry.counterparty)])
         : amountDelta
-          ? t('activity_receivedToken', [tokenName(amountDelta, labels)])
+          ? t('activity_receivedToken', [tokenName(amountDelta, labels, tokenNames)])
           : t('activity_received');
       break;
     }
@@ -173,7 +207,7 @@ export function activityRowView(
       const gave = negatives[0];
       title =
         gave && amountDelta
-          ? t('activity_swappedFor', [tokenName(gave, labels), tokenName(amountDelta, labels)])
+          ? t('activity_swappedFor', [tokenName(gave, labels, tokenNames), tokenName(amountDelta, labels, tokenNames)])
           : t('activity_swappedTokens');
       break;
     }
@@ -185,7 +219,7 @@ export function activityRowView(
   }
 
   let amount: string | null = null;
-  if (amountDelta) amount = signedAmount(amountDelta, labels);
+  if (amountDelta) amount = signedAmount(amountDelta, labels, tokenNames);
   else if (entry.dustDelta !== 0n) {
     amount = `${entry.dustDelta < 0n ? '-' : '+'}${formatDust(
       entry.dustDelta < 0n ? -entry.dustDelta : entry.dustDelta,
