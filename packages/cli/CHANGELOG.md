@@ -6,7 +6,7 @@
 
 - b49c96d: Give the CLI and TUI the pre-seed, timings and DUST-registration behaviour the
   extension already had.
-  
+
   **Birthdays.** `chainTip` moves from the extension's background handlers into
   core, and `wallet generate` on both surfaces records the chain tip as the new
   wallet's birthday. Without one the `reference.height <= birthday` guard can never
@@ -14,27 +14,27 @@
   29.3s and 78.6 min on preprod. Imports still get none, deliberately: a restored
   wallet may hold funds at any height, and seeding it past its own history would
   lose them silently.
-  
+
   **`moth preseed status|refresh|build`.** Thin wrappers over core functions
   that already existed but had no caller outside the extension. `refresh` is the
   one worth having — 9.1s to catch a reference up, against 53.6 min to rebuild it
   from genesis, which is what someone does by hand when the command is missing.
   `build` says how long it will take before starting, because an unattended command
   that appears to hang for an hour is indistinguishable from a broken one.
-  
+
   **Phase timings on disk.** `createFileTimingStore` backs the existing
   storage-agnostic recorder with `~/.moth/timings.json` — the path
   `docs/BENCHMARKING.md` already documented and nothing wrote. `moth diagnostics
   timings` shows the timeline as deltas, and recording stays off until switched on.
   A headless sync is where this matters most: it is the surface with no other
   signal about where the time went.
-  
+
   **DUST registration in the TUI.** `DustRegistrationNotYetError` is now caught
   distinctly, so a wallet whose NIGHT is too new to cover the registration fee is
   told "not yet" instead of shown the raw SDK error as a failure. The panel and the
   CLI already did this; the TUI was the surface still reporting it as a defect.
 - 426b757: Detect and steer users away from the devnet dust-ledger wedge (docs/bugs-found #15-style defect).
-  
+
   Some devnets (midnight-node 2.0.0-rc.4 / midnight-ledger 9.1.0.0-rc.3) can
   enter a state where a DUST registration leaves the node's dust ledger unable
   to reconcile with any wallet's, permanently — every subsequent dust spend,
@@ -45,7 +45,7 @@
   the evidence and the draft issue against `midnightntwrk/midnight-node` /
   `midnight-ledger` — but Moth users hit it on shared and local devnets, so
   Moth now detects and steers around it rather than retrying forever.
-  
+
   **Detection** (`@shieldedtech/moth-wallet`, `sync/dust-ledger-health.ts`): a
   run of consecutive, independently built submissions rejected with the same
   ambiguous signature — with the chain confirmed still producing new blocks
@@ -55,7 +55,7 @@
   transfer` / `moth dust register`, and the daemon's `transferTokens` /
   `dustRegister` / `dustDeregister` RPCs (used by both the headless CLI daemon
   and the TUI).
-  
+
   **Registration UX** (`@shieldedtech/moth-extension`): the "Register for
   DUST" flow now warns before registering a NIGHT coin that has sat
   unregistered for more than a minute — the only pattern with zero known
@@ -63,39 +63,39 @@
   funding — and a wallet that has never registered is nudged to do so as soon
   as new NIGHT is observed, rather than waiting for the user to find the Dust
   screen on their own.
-  
+
   **Repro harness**: `packages/cli/tests/integration/daemon/dust-wedge-repro.test.ts`
   isolates the fund-to-register delay as the one variable prior occurrences
   didn't control for, holding UTXO size fixed at the size every known success
   used (10,000,000 NIGHT).
-  
+
   No change to transaction construction, signing, or proving — every
   registration involved in the underlying defect was accepted by the ledger,
   so this only classifies what a rejection means after the fact.
 - b49c96d: Move a pre-seed reference between machines: `moth preseed export` / `import`.
-  
+
   Building a reference IS the chain walk — tens of minutes, once per network per
   machine. That cost is identical for everyone, because a reference holds public
   chain state and nothing else, so it is work that should be done once and shared
   rather than repeated by every developer who clones the repo. ADR 0005 called for
   these two actions; the rest of the command shipped without them.
-  
+
   The on-disk shape is the one `scripts/export-preseed.mjs` already writes and CI
   already publishes: gzipped state per sub-wallet plus a manifest. One format, so a
   reference exported here can be dropped into the extension package, and one
   downloaded from a release can be imported here.
-  
+
   `export` never writes the reference wallet's mnemonic. That is the only secret in
   the arrangement — the state blobs are public chain data, but the mnemonic
   controls the wallet they were built from, and a published reference is meant to
   be safe to hand to strangers. The command says so in its own output.
-  
+
   `import` refuses rather than guesses. A bundle for another network would seed
   wallets from a chain they have never been on, and the mismatch is silent
   afterwards. A bundle older than what is already present is a downgrade that costs
   catch-up time on every wallet created from then on; `--force` allows it, for
   replacing a corrupt newer reference with a known-good older one.
-  
+
   Every part is decompressed before any part is written. Unpacking as it went left
   the store holding new shielded and unshielded state beside an old dust state when
   a later part turned out to be corrupt — a mixture that never existed on chain,
