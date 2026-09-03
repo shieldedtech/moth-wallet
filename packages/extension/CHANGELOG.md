@@ -5,7 +5,7 @@
 ### Minor Changes
 
 - a17b719: Show what a dApp transaction takes from the wallet before the user approves it.
-  
+
   When a connected dApp calls `balanceSealedTransaction` or
   `balanceUnsealedTransaction`, the wallet is asked to cover whatever the dApp's
   transaction is short of — and the approval screen said only "Network fee: paid
@@ -14,7 +14,7 @@
   pay") and any surplus it collects back ("You get back"), plus the number of
   contract calls when there are any. If the transaction cannot be decoded, it
   says so in a visible warning rather than showing nothing.
-  
+
   The amounts come from the transaction itself, before anything is balanced,
   booked or spent: core gains `summarizeTransaction` /
   `summarizeConnectorTransaction` (`sync/tx-summary.ts`), which sums the ledger's
@@ -24,7 +24,7 @@
   included — they are only known once the wallet has balanced and proven its own
   segment, and are always paid in DUST.
 - f736ebd: Settings → Network gains "Clear cache and resync".
-  
+
   A local network that goes down and comes back as a new chain from genesis
   leaves the wallet holding state for a chain that no longer exists: the
   account's serialized sync state, its pending submissions, and the network's
@@ -34,13 +34,13 @@
   for the active account on its network, clears the cached balance snapshot so
   the loading screen shows, and starts syncing again from the start of the
   chain. Nothing is spent.
-  
+
   Core gains `clearEmptyRefCache(networkId, store)` (`sync/preseed.ts`), which
   removes the reference's state parts, height, cursor witnesses and mnemonic and
   forgets the in-process memo — without the last, a worker that had already
   verified the reference would keep handing the stale one out.
 - 426b757: Detect and steer users away from the devnet dust-ledger wedge (docs/bugs-found #15-style defect).
-  
+
   Some devnets (midnight-node 2.0.0-rc.4 / midnight-ledger 9.1.0.0-rc.3) can
   enter a state where a DUST registration leaves the node's dust ledger unable
   to reconcile with any wallet's, permanently — every subsequent dust spend,
@@ -51,7 +51,7 @@
   the evidence and the draft issue against `midnightntwrk/midnight-node` /
   `midnight-ledger` — but Moth users hit it on shared and local devnets, so
   Moth now detects and steers around it rather than retrying forever.
-  
+
   **Detection** (`@shieldedtech/moth-wallet`, `sync/dust-ledger-health.ts`): a
   run of consecutive, independently built submissions rejected with the same
   ambiguous signature — with the chain confirmed still producing new blocks
@@ -61,7 +61,7 @@
   transfer` / `moth dust register`, and the daemon's `transferTokens` /
   `dustRegister` / `dustDeregister` RPCs (used by both the headless CLI daemon
   and the TUI).
-  
+
   **Registration UX** (`@shieldedtech/moth-extension`): the "Register for
   DUST" flow now warns before registering a NIGHT coin that has sat
   unregistered for more than a minute — the only pattern with zero known
@@ -69,31 +69,31 @@
   funding — and a wallet that has never registered is nudged to do so as soon
   as new NIGHT is observed, rather than waiting for the user to find the Dust
   screen on their own.
-  
+
   **Repro harness**: `packages/cli/tests/integration/daemon/dust-wedge-repro.test.ts`
   isolates the fund-to-register delay as the one variable prior occurrences
   didn't control for, holding UTXO size fixed at the size every known success
   used (10,000,000 NIGHT).
-  
+
   No change to transaction construction, signing, or proving — every
   registration involved in the underlying defect was accepted by the ledger,
   so this only classifies what a rejection means after the fact.
 - 09d3c88: **Accounts → Reveal can now show an account's hex seed, not only its recovery
   phrase.**
-  
+
   The 24 words cannot be expanded to their seed by hand — BIP-39's phrase-to-seed
   step is PBKDF2 — so for a phrase-backed account the seed was simply unobtainable
   from the extension, even though tooling that wants a seed rather than a phrase is
   common. `walletExportPhrase` takes an `as: 'backup' | 'seed'` and the offscreen
   host routes to `exportPhrase` or `exportSeedHex` accordingly.
-  
+
   The choice is made **before** the password is entered, not as a toggle on the
   revealed value. Fetching both on one password entry would be the smoother
   interaction and would put a secret on the page nobody asked to see; only the
   artifact actually requested is decrypted. Both arms read the keystore with the
   password just supplied and neither touches the unlocked session's key material,
   per D-KM-2 in `docs/spec/wallet-service/05-key-management.md`.
-  
+
   The seed is deliberately **not** offered next to the phrase during wallet
   creation. A phrase carries a BIP-39 checksum, so one wrong word is caught on
   restore; a seed carries nothing, and one wrong character restores a different,
@@ -101,14 +101,14 @@
   backups at the moment someone is writing one down would quietly downgrade the
   backup. This is an interop and recovery-of-last-resort affordance, sited
   accordingly.
-  
+
   An account restored from a hex seed has no phrase, so its `backup` arm returns
   the seed and the existing view labels it as one — the choice self-corrects
   instead of needing a stored "which kind" flag on the account.
 - eb4d56a: **The extension can restore an account from a raw hex seed.** Previously it
   accepted a 24-word phrase and nothing else, which made accounts created from a
   seed permanently unreachable there.
-  
+
   That was not a policy — a wallet created from a hex seed **has no mnemonic and
   can never be given one**, because BIP-39's phrase-to-seed step is a one-way KDF.
   There was nothing to type into the word grid. Meanwhile the TUI
@@ -117,7 +117,7 @@
   `seedHex` at unlock and carries it through every operation. A mnemonic was only
   ever a transport format for the seed, and the extension accepted just that one
   format at the door.
-  
+
   The plumbing was the only thing missing. `wallets` in the browser facade *is* a
   `WalletManager`, so `importFromSeed` was already callable from the offscreen
   document; `unlock` already handled a `seed:` keystore. `ImportWalletRequest` is
@@ -126,28 +126,28 @@
   offscreen host routes to whichever core call fits. The two stay separate calls,
   not one with a branch: `import` runs the BIP-39 checksum, `importFromSeed`
   shape-checks the hex.
-  
+
   The restore screen now offers both artifacts as tabs on one page. No
   "which do you have?" step first: anyone restoring already knows which they hold,
   so that step would cost a click and gather nothing.
-  
+
   **New in core: `wallet/hex-seed.ts`, and `importFromSeed` now validates.** It had
   no validation whatsoever — a malformed seed reached the SDK and surfaced as a
   bare `Invalid seed`, and a merely wrong-*length* seed was accepted outright,
   silently producing a different wallet. `checkHexSeed` returns a machine-readable
   problem so each surface can word it itself (the extension localises it; the CLI
   and TUI use `describeHexSeedProblem`). The TUI and CLI inherit the fix.
-  
+
   **The validation is shaped around the fact that a hex seed has no checksum.**
   Measured against the wallet SDK, `HDWallet.fromSeed` accepts any 16–64 byte
   seed and refuses 15 or 65 — and every accepted length derives a *different*
   wallet. So:
-  
+
   - change one character and there is **no error**, just a different, valid, empty
     wallet;
   - truncate a paste and the same is true;
   - whereas one wrong word in a phrase fails `validateMnemonic`.
-  
+
   The bounds therefore match what the SDK actually accepts rather than a rule of
   our own, with a test that fails if an SDK bump moves them. Lengths other than 32
   or 64 bytes — the two sizes real tooling emits — are **warned about, not
@@ -155,17 +155,17 @@
   length, and refusing would lock such a wallet out. And the field is deliberately
   **not** a password input: reading the seed back against a backup is the only
   check available, so masking it would remove the sole defence.
-  
+
   Note those two sizes are not interchangeable. A 32-byte seed is what the Midnight
   node toolkit and `moth wallet import --seed-hex` deal in; the 64-byte one is the
   BIP-39 seed a phrase expands to, and what `exportSeedHex` returns for a
   phrase-backed wallet. Truncating the latter to the former gives a different
   wallet.
-  
+
   Restored accounts keep `createdHere: false` and no birthday, so they scan from
   genesis — they may hold funds at any height, and seeding one past its own history
   would hide them (ADR 0003, rule 4).
-  
+
   **The TUI's hex import was that validation.** `SeedEntryScreen` matched
   `/^[0-9a-fA-F]{64}$/` and did it *before* `importFromSeed`, so core's new check
   never ran and the screen refused every length the SDK accepts bar one — including
@@ -177,21 +177,21 @@
   the TUI inherits the bounds and the unusual-length warning instead of
   re-deciding them; a test sweeps 16..64 bytes so the screen cannot silently drift
   tighter than core again.
-  
+
   Also corrected: three places documented a BIP-39 seed as 64 hex characters. It is
   128 — 64 hex characters is a 32-byte seed, a different artifact that derives a
   different wallet. `core/src/sync/operations.ts` and two spots in
   `docs/spec/wallet-service/05-key-management.md`. That claim is precisely what
   would lead someone to write `length === 64` validation and reject the seeds this
   app exports (#99).
-  
+
   Closes #98.
 
 ### Patch Changes
 
 - b49c96d: Bound the sync-engine teardown, and stop a wedged one from pinning everything
   behind it.
-  
+
   `facade.stop()` closes the wallet SDK's submission service, which first awaits
   the Polkadot client the facade was built with. That client is created with
   `ApiPromise.create({throwOnConnect: false})`, so against a node that never
@@ -199,9 +199,9 @@
   stop therefore had no failure path, and every caller inherited the hang. The
   trigger is a node URL that does not answer, which is exactly the state a user is
   in while editing one, Local network being the common case.
-  
+
   Three consequences, all fixed here:
-  
+
   - **Settings → Network's Save button spun for ever and discarded the edit.**
     `saveNetworkConfig` awaited the stop before persisting, so the save neither
     completed nor failed and the next attempt started from the same broken
@@ -214,26 +214,26 @@
     suspend.
   - **Locking never freed the worker holding key material,** because `lockNow`'s
     forced teardown waited on the same stop.
-  
+
   `facade.stop()` is now raced against a 5s bound. The offscreen `syncStop` no
   longer waits unboundedly on a start that may never finish, and still stops that
   engine whenever it does come up, so an abandoned start cannot keep syncing behind
   a new one.
 - c1c462e: **Reveal no longer offers a recovery phrase for accounts that do not have one.**
-  
+
   The first version accepted either choice and then answered with the seed for a
   seed-restored account, because that account genuinely has no phrase — BIP-39's
   phrase-to-seed step is one-way, so one cannot be worked back out. Correct
   values, but it read as the selection being ignored: pick "recovery phrase", get
   a hex seed, with the explanation arriving only after the password was entered.
-  
+
   The phrase option is now disabled for those accounts, with the reason shown
   next to it, and the dialog opens on the seed instead.
-  
+
   To grey it out *before* asking for a password, the UI has to know which artifact
   an account holds. `WalletInfo.backupKind` (`'mnemonic' | 'seed'`) records it:
   `generate` and `import` write `'mnemonic'`, `importFromSeed` writes `'seed'`.
-  
+
   `undefined` on accounts written before the field, and deliberately not defaulted
   — guessing `'mnemonic'` would tell a seed-imported account it has a phrase,
   which is the bug this exists to prevent. Unknown leaves the option open and lets
@@ -244,12 +244,12 @@
   the stored value is missing or wrong, alongside the address backfill already
   there, so a normal unlock does not touch storage.
 - 35df097: Ask which account to unlock when there is more than one.
-  
+
   Deleting the active account left the password apparently rejected. Removal
   promotes the next account to active, but silently: the unlock screen showed a
   generic "Welcome back" with no indication the target had changed, so a correct
   password for the account the user had in mind was rejected by a different one.
-  
+
   The screen now lists the accounts with their network, defaults to the active
   one, and unlocks whichever is selected. A single account is unchanged.
 - Updated dependencies [a17b719]
