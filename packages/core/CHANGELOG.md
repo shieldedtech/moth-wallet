@@ -5,7 +5,7 @@
 ### Minor Changes
 
 - a17b719: Show what a dApp transaction takes from the wallet before the user approves it.
-  
+
   When a connected dApp calls `balanceSealedTransaction` or
   `balanceUnsealedTransaction`, the wallet is asked to cover whatever the dApp's
   transaction is short of — and the approval screen said only "Network fee: paid
@@ -14,7 +14,7 @@
   pay") and any surplus it collects back ("You get back"), plus the number of
   contract calls when there are any. If the transaction cannot be decoded, it
   says so in a visible warning rather than showing nothing.
-  
+
   The amounts come from the transaction itself, before anything is balanced,
   booked or spent: core gains `summarizeTransaction` /
   `summarizeConnectorTransaction` (`sync/tx-summary.ts`), which sums the ledger's
@@ -25,7 +25,7 @@
   segment, and are always paid in DUST.
 - b49c96d: Give the CLI and TUI the pre-seed, timings and DUST-registration behaviour the
   extension already had.
-  
+
   **Birthdays.** `chainTip` moves from the extension's background handlers into
   core, and `wallet generate` on both surfaces records the chain tip as the new
   wallet's birthday. Without one the `reference.height <= birthday` guard can never
@@ -33,27 +33,27 @@
   29.3s and 78.6 min on preprod. Imports still get none, deliberately: a restored
   wallet may hold funds at any height, and seeding it past its own history would
   lose them silently.
-  
+
   **`moth preseed status|refresh|build`.** Thin wrappers over core functions
   that already existed but had no caller outside the extension. `refresh` is the
   one worth having — 9.1s to catch a reference up, against 53.6 min to rebuild it
   from genesis, which is what someone does by hand when the command is missing.
   `build` says how long it will take before starting, because an unattended command
   that appears to hang for an hour is indistinguishable from a broken one.
-  
+
   **Phase timings on disk.** `createFileTimingStore` backs the existing
   storage-agnostic recorder with `~/.moth/timings.json` — the path
   `docs/BENCHMARKING.md` already documented and nothing wrote. `moth diagnostics
   timings` shows the timeline as deltas, and recording stays off until switched on.
   A headless sync is where this matters most: it is the surface with no other
   signal about where the time went.
-  
+
   **DUST registration in the TUI.** `DustRegistrationNotYetError` is now caught
   distinctly, so a wallet whose NIGHT is too new to cover the registration fee is
   told "not yet" instead of shown the raw SDK error as a failure. The panel and the
   CLI already did this; the TUI was the surface still reporting it as a defect.
 - 0508a38: Four CLI fixes found by a manual test pass, none of which the test suite could see.
-  
+
   **Amounts are parsed strictly (#63).** `moth transfer` used `parseFloat` and
   `Math.round`, and `parseFloat` keeps whatever prefix it understands: `1,5` was
   accepted as **1 NIGHT**, losing a third of the value with no warning; `0.0000001`
@@ -62,13 +62,13 @@
   `parseNightAmount` in core now refuses all of them, in BigInt, with a message
   naming what is wrong — and `daemon transfer` already did it this way, so the two
   paths finally agree.
-  
+
   **`moth transfer` can select a token (#62).** It hardcoded `NIGHT_TOKEN_ID`, so a
   wallet holding anything else could spend it only through `daemon transfer
   --token-id`. Same flag name and default here. The positional amount stays a NIGHT
   decimal and is refused for other tokens, directing to `--amount` in raw base units
   — mis-scaling a token by NIGHT's 10⁶ would be worse than refusing.
-  
+
   **`moth wallet export-phrase` exists (#59).** `WalletManager.exportPhrase` and
   `exportSeedHex` have always been in core, and the extension exposes them, but no
   CLI command did. So the CLI had no backup path — a phrase was shown once at
@@ -77,19 +77,19 @@
   default and refused non-interactively without `--yes`, following `wallet remove`.
   A wallet imported from a hex seed says so rather than presenting a seed as a
   phrase.
-  
+
   **`wallet address` takes `--wallet` (#60).** It was the only command in the CLI
   requiring `--name`, which made it the only one that could not act on the active
   wallet: `wallet use w1` then `wallet address` failed with "Missing required flag
   name". `--name` remains as an alias.
-  
+
   **`dust register` distinguishes empty from done (#58).** `designateForDust`
   returns `null` both when every UTXO is already designated and when there are no
   NIGHT UTXOs at all, and the command reported the first for both — vacuously true
   of an empty wallet, and read as success. An unfunded wallet now gets "No NIGHT to
   designate" and a non-zero exit.
 - 426b757: Detect and steer users away from the devnet dust-ledger wedge (docs/bugs-found #15-style defect).
-  
+
   Some devnets (midnight-node 2.0.0-rc.4 / midnight-ledger 9.1.0.0-rc.3) can
   enter a state where a DUST registration leaves the node's dust ledger unable
   to reconcile with any wallet's, permanently — every subsequent dust spend,
@@ -100,7 +100,7 @@
   the evidence and the draft issue against `midnightntwrk/midnight-node` /
   `midnight-ledger` — but Moth users hit it on shared and local devnets, so
   Moth now detects and steers around it rather than retrying forever.
-  
+
   **Detection** (`@shieldedtech/moth-wallet`, `sync/dust-ledger-health.ts`): a
   run of consecutive, independently built submissions rejected with the same
   ambiguous signature — with the chain confirmed still producing new blocks
@@ -110,7 +110,7 @@
   transfer` / `moth dust register`, and the daemon's `transferTokens` /
   `dustRegister` / `dustDeregister` RPCs (used by both the headless CLI daemon
   and the TUI).
-  
+
   **Registration UX** (`@shieldedtech/moth-extension`): the "Register for
   DUST" flow now warns before registering a NIGHT coin that has sat
   unregistered for more than a minute — the only pattern with zero known
@@ -118,19 +118,19 @@
   funding — and a wallet that has never registered is nudged to do so as soon
   as new NIGHT is observed, rather than waiting for the user to find the Dust
   screen on their own.
-  
+
   **Repro harness**: `packages/cli/tests/integration/daemon/dust-wedge-repro.test.ts`
   isolates the fund-to-register delay as the one variable prior occurrences
   didn't control for, holding UTXO size fixed at the size every known success
   used (10,000,000 NIGHT).
-  
+
   No change to transaction construction, signing, or proving — every
   registration involved in the underlying defect was accepted by the ledger,
   so this only classifies what a rejection means after the fact.
 - eb4d56a: **The extension can restore an account from a raw hex seed.** Previously it
   accepted a 24-word phrase and nothing else, which made accounts created from a
   seed permanently unreachable there.
-  
+
   That was not a policy — a wallet created from a hex seed **has no mnemonic and
   can never be given one**, because BIP-39's phrase-to-seed step is a one-way KDF.
   There was nothing to type into the word grid. Meanwhile the TUI
@@ -139,7 +139,7 @@
   `seedHex` at unlock and carries it through every operation. A mnemonic was only
   ever a transport format for the seed, and the extension accepted just that one
   format at the door.
-  
+
   The plumbing was the only thing missing. `wallets` in the browser facade *is* a
   `WalletManager`, so `importFromSeed` was already callable from the offscreen
   document; `unlock` already handled a `seed:` keystore. `ImportWalletRequest` is
@@ -148,28 +148,28 @@
   offscreen host routes to whichever core call fits. The two stay separate calls,
   not one with a branch: `import` runs the BIP-39 checksum, `importFromSeed`
   shape-checks the hex.
-  
+
   The restore screen now offers both artifacts as tabs on one page. No
   "which do you have?" step first: anyone restoring already knows which they hold,
   so that step would cost a click and gather nothing.
-  
+
   **New in core: `wallet/hex-seed.ts`, and `importFromSeed` now validates.** It had
   no validation whatsoever — a malformed seed reached the SDK and surfaced as a
   bare `Invalid seed`, and a merely wrong-*length* seed was accepted outright,
   silently producing a different wallet. `checkHexSeed` returns a machine-readable
   problem so each surface can word it itself (the extension localises it; the CLI
   and TUI use `describeHexSeedProblem`). The TUI and CLI inherit the fix.
-  
+
   **The validation is shaped around the fact that a hex seed has no checksum.**
   Measured against the wallet SDK, `HDWallet.fromSeed` accepts any 16–64 byte
   seed and refuses 15 or 65 — and every accepted length derives a *different*
   wallet. So:
-  
+
   - change one character and there is **no error**, just a different, valid, empty
     wallet;
   - truncate a paste and the same is true;
   - whereas one wrong word in a phrase fails `validateMnemonic`.
-  
+
   The bounds therefore match what the SDK actually accepts rather than a rule of
   our own, with a test that fails if an SDK bump moves them. Lengths other than 32
   or 64 bytes — the two sizes real tooling emits — are **warned about, not
@@ -177,17 +177,17 @@
   length, and refusing would lock such a wallet out. And the field is deliberately
   **not** a password input: reading the seed back against a backup is the only
   check available, so masking it would remove the sole defence.
-  
+
   Note those two sizes are not interchangeable. A 32-byte seed is what the Midnight
   node toolkit and `moth wallet import --seed-hex` deal in; the 64-byte one is the
   BIP-39 seed a phrase expands to, and what `exportSeedHex` returns for a
   phrase-backed wallet. Truncating the latter to the former gives a different
   wallet.
-  
+
   Restored accounts keep `createdHere: false` and no birthday, so they scan from
   genesis — they may hold funds at any height, and seeding one past its own history
   would hide them (ADR 0003, rule 4).
-  
+
   **The TUI's hex import was that validation.** `SeedEntryScreen` matched
   `/^[0-9a-fA-F]{64}$/` and did it *before* `importFromSeed`, so core's new check
   never ran and the screen refused every length the SDK accepts bar one — including
@@ -199,17 +199,17 @@
   the TUI inherits the bounds and the unusual-length warning instead of
   re-deciding them; a test sweeps 16..64 bytes so the screen cannot silently drift
   tighter than core again.
-  
+
   Also corrected: three places documented a BIP-39 seed as 64 hex characters. It is
   128 — 64 hex characters is a 32-byte seed, a different artifact that derives a
   different wallet. `core/src/sync/operations.ts` and two spots in
   `docs/spec/wallet-service/05-key-management.md`. That claim is precisely what
   would lead someone to write `length === 64` validation and reject the seeds this
   app exports (#99).
-  
+
   Closes #98.
 - 3e131e2: Detect an indexer renumbering instead of silently syncing from the wrong place.
-  
+
   Sync cursors are indexer-assigned event sequence numbers, and nothing ties an id
   to a block — `DustLedgerEvent` carries only `id`, `raw`, `maxId` and
   `protocolVersion`. So when the same URL starts serving a differently-numbered
@@ -217,7 +217,7 @@
   point without erroring. The only guard was a string comparison of `indexerUrl`,
   which by definition cannot see a backend swap behind an unchanged name — and it
   lived in the extension's background, so the CLI and TUI had no check at all.
-  
+
   This has already happened on preprod. The default indexer had a 22-wide hole in
   its dust id space; the host now serving that name numbers contiguously, so cursors
   written before the change sit 22 events too high. The pre-seed reference committed
@@ -225,13 +225,13 @@
   is 22 events beyond the state the snapshot holds — verified against the live
   indexer, where that id now yields digest `3f3576deb45ad350` while the event the
   reference actually stopped at yields `11c8cf9fd5a736f2`.
-  
+
   A cursor is now stored with a **witness**: the hash of the event found at that id.
   On resume the id is re-read and compared. Same event means the numbering is
   unchanged; a different event means it moved and the cursor is refused, failing
   closed to a genesis sync — the direction ADR-0003 already establishes as always
   safe.
-  
+
   A witness rather than one global indexer fingerprint, because a fingerprint has to
   be sampled at a fixed id and any id below the point where two numberings diverge
   returns the *same* event from both. Sampled at preprod's hole (989781), old and
@@ -240,13 +240,13 @@
   across the exact cutover it existed to detect. The divergence point is not
   knowable in advance; a witness has no such blind spot, because it asks only about
   the id the cache actually depends on.
-  
+
   Three paths are gated: the warm read verifies before handing a reference to any
   wallet, a build records witnesses for the cursors it stops at, and
   `refreshEmptyRefCache` refuses to resume across a mismatch — resuming would carry
   the old numbering forward into a reference that then looks freshly built, which
   destroys the evidence.
-  
+
   Scope. Only shielded and dust are witnessed: they ride the global ledger-event
   numbering and are the two the preprod change moved, where unshielded is keyed by
   address. Per-wallet caches are not yet gated — normal sync persistence is written
@@ -255,25 +255,25 @@
   unverifiable rather than invalid, so upgrading does not force a chain walk on
   everyone at once; new references carry witnesses and the population converges.
 - e31eaf8: Record a witness per cursor in exported references, and refuse a bundle without one.
-  
+
   A published reference records cursors that are indexer-assigned event sequence
   numbers, so its correctness depends on an indexer that the bundle says nothing
   about. That is how the preprod bundle stayed in use after the numbering underneath
   it moved: the bytes were intact, the checksums matched, and the cursors had
   quietly stopped naming the events they were written for.
-  
+
   `export-preseed.mjs` now reads the event at each cursor and records its hash in
   the manifest under `witnesses`, alongside `height` and the per-part sizes. It
   refuses to export at all if a cursor cannot be witnessed — including the case
   where the indexer returns no event at or after the cursor, which means the
   reference is *ahead* of the indexer it is being exported against and is itself the
   renumbering signal.
-  
+
   The extension's installer requires them. A manifest without a witness for shielded
   and dust is rejected, and the witnesses are written to the store before the height
   — the height is what marks a reference usable, so a reference that reads as usable
   without its witnesses is one that skips verification.
-  
+
   The asymmetry with local references is deliberate. A witnessless reference already
   on disk is treated as unverifiable rather than invalid, because the alternative
   forces every existing user into a chain walk on upgrade. A witnessless *bundle* is
@@ -282,49 +282,49 @@
   currently in the repository has no witnesses and will therefore no longer install;
   a reference rebuilt from genesis against the current indexer replaces it.
 - b49c96d: Move a pre-seed reference between machines: `moth preseed export` / `import`.
-  
+
   Building a reference IS the chain walk — tens of minutes, once per network per
   machine. That cost is identical for everyone, because a reference holds public
   chain state and nothing else, so it is work that should be done once and shared
   rather than repeated by every developer who clones the repo. ADR 0005 called for
   these two actions; the rest of the command shipped without them.
-  
+
   The on-disk shape is the one `scripts/export-preseed.mjs` already writes and CI
   already publishes: gzipped state per sub-wallet plus a manifest. One format, so a
   reference exported here can be dropped into the extension package, and one
   downloaded from a release can be imported here.
-  
+
   `export` never writes the reference wallet's mnemonic. That is the only secret in
   the arrangement — the state blobs are public chain data, but the mnemonic
   controls the wallet they were built from, and a published reference is meant to
   be safe to hand to strangers. The command says so in its own output.
-  
+
   `import` refuses rather than guesses. A bundle for another network would seed
   wallets from a chain they have never been on, and the mismatch is silent
   afterwards. A bundle older than what is already present is a downgrade that costs
   catch-up time on every wallet created from then on; `--force` allows it, for
   replacing a corrupt newer reference with a known-good older one.
-  
+
   Every part is decompressed before any part is written. Unpacking as it went left
   the store holding new shielded and unshielded state beside an old dust state when
   a later part turned out to be corrupt — a mixture that never existed on chain,
   with a height key that still looked consistent. The height is written last, since
   it is what marks a reference usable.
 - c1c462e: **Reveal no longer offers a recovery phrase for accounts that do not have one.**
-  
+
   The first version accepted either choice and then answered with the seed for a
   seed-restored account, because that account genuinely has no phrase — BIP-39's
   phrase-to-seed step is one-way, so one cannot be worked back out. Correct
   values, but it read as the selection being ignored: pick "recovery phrase", get
   a hex seed, with the explanation arriving only after the password was entered.
-  
+
   The phrase option is now disabled for those accounts, with the reason shown
   next to it, and the dialog opens on the seed instead.
-  
+
   To grey it out *before* asking for a password, the UI has to know which artifact
   an account holds. `WalletInfo.backupKind` (`'mnemonic' | 'seed'`) records it:
   `generate` and `import` write `'mnemonic'`, `importFromSeed` writes `'seed'`.
-  
+
   `undefined` on accounts written before the field, and deliberately not defaulted
   — guessing `'mnemonic'` would tell a seed-imported account it has a phrase,
   which is the bug this exists to prevent. Unknown leaves the option open and lets
@@ -336,14 +336,14 @@
   there, so a normal unlock does not touch storage.
 - 04f1aa4: **`undeployed` replaces `local` as the local devnet network.** Every interface now
   offers it, including the extension, which could not select it before.
-  
+
   The two were duplicate presets for the same thing. `undeployed` is the id the
   Midnight tooling, `docs/TESTING.md`, and this repo's own README instructions all
   use for the local stack, and it points at the node port that stack listens on —
   `9944`. `local` pointed at `9933`, which nothing in the documented stack serves,
   so selecting **Local** in the extension connected to a closed port. It has been
   that way since the first commit.
-  
+
   `local` was kept out of the extension's picker by a comment claiming the wallet
   could not derive addresses for `undeployed`. That was false: `mn_addr_undeployed1…`,
   `mn_dust_undeployed1…` and `mn_shield-addr_undeployed1…` have always derived, and
@@ -351,7 +351,7 @@
   The loop now covers `undeployed` and `stagenet`, and a new test holds
   `SUPPORTED_NETWORKS` equal to the keys of `DEFAULT_NETWORKS`, so a preset no
   interface can reach — or an offered network with no preset — fails the suite.
-  
+
   **Breaking, with a migration.** `local` is gone from `SUPPORTED_NETWORKS` and
   `DEFAULT_NETWORKS`, and the extension rejects it on save. Read paths resolve it via
   `canonicalNetworkId`, exported from core: the extension's stored selection, a
@@ -361,11 +361,11 @@
   a migrated wallet keeps its pre-seed shortcut instead of resyncing from genesis.
   Stored records are rewritten lazily, only when something else is already saving
   them. `local` stays in `ALL_NETWORKS` so addresses already handed out still resolve.
-  
+
   Sync caches are keyed by network, so a migrated account resyncs once under the new
   key — correct, since the node URL genuinely changes — and its old entries are left
   behind rather than cleaned up.
-  
+
   Also fixed alongside: the four localhost indexer fallbacks pointed at
   `http://localhost:8088` without the `/api/v4/graphql` path the indexer client posts
   queries to, and the README's network table listed `devnet` as localhost, omitted
@@ -378,7 +378,7 @@
 
 - b49c96d: Bound the sync-engine teardown, and stop a wedged one from pinning everything
   behind it.
-  
+
   `facade.stop()` closes the wallet SDK's submission service, which first awaits
   the Polkadot client the facade was built with. That client is created with
   `ApiPromise.create({throwOnConnect: false})`, so against a node that never
@@ -386,9 +386,9 @@
   stop therefore had no failure path, and every caller inherited the hang. The
   trigger is a node URL that does not answer, which is exactly the state a user is
   in while editing one, Local network being the common case.
-  
+
   Three consequences, all fixed here:
-  
+
   - **Settings → Network's Save button spun for ever and discarded the edit.**
     `saveNetworkConfig` awaited the stop before persisting, so the save neither
     completed nor failed and the next attempt started from the same broken
@@ -401,13 +401,13 @@
     suspend.
   - **Locking never freed the worker holding key material,** because `lockNow`'s
     forced teardown waited on the same stop.
-  
+
   `facade.stop()` is now raced against a 5s bound. The offscreen `syncStop` no
   longer waits unboundedly on a start that may never finish, and still stops that
   engine whenever it does come up, so an abandoned start cannot keep syncing behind
   a new one.
 - f736ebd: Settings → Network gains "Clear cache and resync".
-  
+
   A local network that goes down and comes back as a new chain from genesis
   leaves the wallet holding state for a chain that no longer exists: the
   account's serialized sync state, its pending submissions, and the network's
@@ -417,28 +417,28 @@
   for the active account on its network, clears the cached balance snapshot so
   the loading screen shows, and starts syncing again from the start of the
   chain. Nothing is spent.
-  
+
   Core gains `clearEmptyRefCache(networkId, store)` (`sync/preseed.ts`), which
   removes the reference's state parts, height, cursor witnesses and mnemonic and
   forgets the in-process memo — without the last, a worker that had already
   verified the reference would keep handing the stale one out.
 - 2dabc50: Make `moth config` usable, and add smoke coverage for the class of bug it was.
-  
+
   `config` declared an optional positional argument (`action`) ahead of a required
   one (`key`). @oclif/core rejects that outright — with `action` absent, a single
   value is ambiguous between an action and a key — so every invocation failed at
   spec validation and the command body never ran. `action` is now required, which
   changes no working behaviour because nothing worked.
-  
+
   Nothing caught this because no test invoked the command. Two probes now cover the
   class:
-  
+
   - **Positional order, checked statically from source.** This is the one that
     bites: reverting the fix produces `config: required "key" follows optional
     "action"`.
   - **A `--help` sweep over all 35 commands**, which catches a broken flag
     definition, a bad example, or an import that throws on load.
-  
+
   Worth recording why it takes two. `--help` does not validate positional-argument
   order: with the bad spec in place, `moth config --help` prints help perfectly
   happily while bare `moth config` reports "Invalid argument spec". So the help
@@ -446,23 +446,23 @@
   checked separately. Invoking every command bare would catch it, but would also
   run them.
 - 9afd580: Refuse mainnet at the `--network` flag, not in one of its consumers.
-  
+
   The refusal lived inside `BaseCommand.getNetworkConfig`, and twelve commands never
   call it — including both that create wallets. `moth wallet generate --network
   mainnet` derived mainnet addresses, wrote a keystore, printed a recovery phrase
   and exited 0, with no warning shown. A guard in one consumer is not a guard; it is
   a convention that holds wherever someone remembered it.
-  
+
   It now hangs off the `--network` flag that every command inherits through
   `baseFlags`, so no command can take a network id without it. `getNetworkConfig`
   keeps the check as defence in depth, for an id arriving from stored config or from
   a caller assembling flags itself, and both now route through one
   `assertNotMainnet`.
-  
+
   Verified across the paths the issue did not cover: `wallet generate`, `wallet
   import`, `wallet use` and `tui` all now print the warning and exit 1 without
   writing a keystore, while `--network preprod` is untouched.
-  
+
   Also guards `config set default-network mainnet`, which is the second way a
   network id enters the CLI — `WalletManager` falls back to `config.defaultNetwork`
   for a wallet with no network of its own, so a stored value reaches the same code
@@ -471,51 +471,51 @@
   required one, which oclif rejects, so every invocation of that command fails
   before it runs. Filed separately.
 - b49c96d: Read the birthday back, so a CLI or TUI wallet can actually pre-seed.
-  
+
   The birthday was written and never read. `startWalletSync`'s pre-seed gate is
   `(isNewWallet || birthday)`, and no CLI command passed either — eleven of them
   stopped at `walletName`, and the TUI hook passed `isNewWallet` but no birthday,
   so the guard `emptyRef.height <= birthday` could never be reached. The effect was
   silent: `moth balance -n preprod -v` showed no pre-seed line at all and dust began
   at 0%, with the reference sitting unused.
-  
+
   Every sync call site now passes it, resolved through a new
   `WalletManager.birthdayOn(name, networkId)`. Per network on purpose: `list()`
   resolves against the wallet's own `meta.network`, so a sync driven by `--network`
   was reading a height belonging to a different chain, or nothing at all. It never
   throws — a wallet with no meta asserts nothing, and "no claim" means scan from
   genesis, which is slow but never wrong.
-  
+
   Guarded by a test that walks the AST of every `startWalletSync` call in the CLI
   and TUI and fails any that omits the birthday, since nothing else would notice
   this regressing. Verified by deliberately dropping the argument.
 - c2f8b73: Re-cut the pre-seed bundles from genesis, and add one for qanet.
-  
+
   The preprod bundle recorded dust cursor `1431375`, written under the indexer's old
   numbering. Under the numbering now served, that id names an event 22 positions
   later than the state the snapshot holds, so every wallet seeded from it resumed
   past 22 dust events — no error, just missing generation history (#40).
-  
+
   All three references were rebuilt from genesis rather than refreshed, because a
   refresh resumes from the stored cursor and would have carried the old numbering
   forward into a bundle that then looked freshly built:
-  
+
   | Network | Height | Build | Dust cursor |
   | --- | --- | --- | --- |
   | preprod | 2,203,416 | 55 min | 1,449,958 (was 1,431,375) |
   | preview | 519,470 | 3 min | 141,062 |
   | qanet | 2,314,786 | 14 min | 346,693 |
-  
+
   Each manifest now carries a witness per cursor, so a consumer can tell whether the
   numbering it was written under still holds — these are the first bundles that can
   be verified rather than trusted, and the first that the installer will accept.
-  
+
   qanet ships for the first time. It costs 140 KB, not the several megabytes preprod
   does: its chain is longer but has far fewer dust events, and dust is what makes a
   reference large. The control that offers on-device warming probes which networks
   ship a reference rather than listing them, so no code changed to add it.
 - b49c96d: Move the pre-seed commands from `moth dust preseed` to `moth preseed`.
-  
+
   DUST is why the pre-seed matters — the 4.9 MB blob, the ~1.4M events, the tens of
   minutes, where shielded and unshielded take seconds — which is what put it under
   `dust`. But that describes the motivation, not the thing: the pre-seed writes all
@@ -523,9 +523,9 @@
   shared by every wallet there, whereas `moth dust` groups per-wallet token
   operations. A command tree should say what a thing is, and someone whose first
   sync is crawling searches for "preseed" rather than reasoning their way to DUST.
-  
+
   Settled while the command had not shipped, so the rename costs no compatibility.
-  
+
   Each action is now a real subcommand — `preseed status|import|refresh|build|export`
   — instead of one command taking an action argument. `--timeout` therefore belongs
   to `build` and `--force` to `import`, rather than every flag hanging off the group
@@ -533,9 +533,9 @@
   carries an oclif topic description; without one the help listed the whole group
   under whichever subcommand sorted first.
 - b49c96d: Require all three parts of a pre-seed reference, and drop `node:zlib` from core.
-  
+
   Two findings from review on the CLI/TUI parity work.
-  
+
   **A missing part was as damaging as a corrupt one.** Both `exportReference` and
   `importReference` checked only dust, so a bundle without shielded state imported
   the other two over an existing reference and moved the height key with them. The
@@ -545,7 +545,7 @@
   inflated height then feeding the `emptyRef.height <= birthday` guard, seeding
   wallets whose birthday fell between the two. Both functions now require every
   part: export returns null, import refuses and names each missing file.
-  
+
   **`node:zlib` had no business in core.** Nothing in the browser or extension
   packages imported `preseed-portable` yet, but it is re-exported from core's
   barrel — and that barrel reaches 36 Node builtins where the browser package's
@@ -557,52 +557,52 @@
   slightly less than `scripts/export-preseed.mjs` does at level 9; sizes are
   recorded in the manifest either way, and decompression is level-agnostic.
 - 9be5669: Show what a transfer can actually spend.
-  
+
   A synced wallet reported 500 NIGHT and refused a 10 NIGHT transfer with
   `Insufficient funds`. Both figures were true and neither was reconcilable from
   outside the wallet.
-  
+
   The displayed balance counts coins reserved by transactions in flight, and does
   so deliberately — dropping them flashes the balance to zero mid-send. But the SDK
   spends from `availableUtxos` alone, so the number shown was never the number that
   could be spent, and nothing surfaced the difference.
-  
+
   `moth balance` now prints the split when anything is reserved, and stays quiet
   otherwise:
-  
+
   ```
   NIGHT:
     unshielded: 500.000000  (500000000 STARS)
       available:  0.000000  ← what a transfer can use
       reserved:   500.000000  (a transaction in flight holds these)
   ```
-  
+
   JSON gains `unshieldedAvailable` and `unshieldedReserved` beside the existing
   fields, so nothing reading it today breaks. The transfer's insufficient-funds
   path names the number that blocked it, and says nothing when a reservation was
   not the cause.
-  
+
   Nothing new is computed — `WalletBalances.coins` already carried the split.
-  
+
   This makes the state visible; it does not stop reservations outliving their
   transactions. A wallet already in that state still needs its sync cache cleared.
 - ea1793d: Report sync progress that is neither invented nor erased.
-  
+
   Two defects in how progress reached the surfaces, close enough together in
   `extractBalancesPartial` that fixing them apart would mean resolving the same
   twenty lines twice.
-  
+
   **A partial emission erased a sub-wallet.** Each sub-wallet's coins and its
   progress were read inside a single `try`, and the coin loops reached into the
   state without the optional chaining used one line above on the balances:
-  
+
   ```ts
   const sb = state.shielded?.balances;              // guarded
   for (const c of state.shielded.availableCoins) {  // not guarded — throws here
   …
   subProgress.shielded = {applied, total};          // never reached
   ```
-  
+
   An emission carrying no slice for a part threw in the loop and skipped the
   progress assignment, leaving `{applied: 0, total: 0}` — which `fraction()` treats
   as **complete**, correctly for a sub-wallet with genuinely nothing to apply and
@@ -612,7 +612,7 @@
   carries its previous value forward when an emission says nothing about it;
   progress does not go backwards inside a session. A genuinely 0/0 part still
   counts as complete rather than stalling the overall figure.
-  
+
   **The ETA assumed every sync starts at zero.** `etaSeconds` was
   `elapsedMs / percentage - elapsedMs`, which treats cumulative progress as this
   session's work. Dust resumes from cache constantly, so a run that restored at
@@ -622,51 +622,51 @@
   now comes from a per-session baseline: the same inputs give 41m and 12m19s,
   falling as the run proceeds. Below 0.2 points of movement it reports nothing,
   since an admitted unknown beats a number derived from noise.
-  
+
   Both bugs predate the CLI/TUI parity work, which only made the first visible by
   putting per-sub-wallet counters on screen. The daemon and extension read the same
   balances.
 - 316ca82: Document `moth transfer` as it actually works.
-  
+
   The README showed `moth transfer <amount> NIGHT --to <addr>` on two rows. That form
   does not parse — `transfer` declares one positional and rejects the second with
   `Unexpected argument: NIGHT`. It was the documented invocation, so it was the first
   thing a new user would type.
-  
+
   Corrected to `moth transfer [<amount>] [--to <addr>]`, and the rows now say what
   was previously stated nowhere: the in-process command is NIGHT-only, with the
   token hardcoded and no flag to change it. A row for `moth daemon transfer` covers
   the path that *can* move other tokens, including the distinction between
   `--amount` (raw smallest units, any token) and `--night` (a decimal converted at
   10⁶ STARS, refused for anything but NIGHT).
-  
+
   Docs only. Whether the in-process command should grow token selection is the open
   half of #62.
 - 89f34aa: Stop the sync before freeing the keys when the TUI quits.
-  
+
   Quitting printed a wall of WASM errors over the exiting terminal, once per live
   sync:
-  
+
   ```
   Wallet.Other: Error while applying sync update
     cause: Error: Dust secret key was cleared
       at DustLocalState.replayEventsWithChanges
   ```
-  
+
   The quit handler called `lockAll()` and then `exit()`, zeroing the
   `DustSecretKey` in the WASM heap while the dust sync was still mid-batch. The
   only `stop()` lived in an unmount cleanup, ran after `exit()`, and was
   fire-and-forget, so the sync's next batch reached for a key that no longer
   existed.
-  
+
   `useBalance` now exposes an awaited `stop()` — unsubscribe, await the facade's
   stop, bounded by a timeout so a sync that will not settle cannot keep the TUI
   open — and both quit paths await it before locking.
-  
+
   Nothing was corrupted: the wallet was exiting and its state was already
   persisted. It simply looked like a crash every time, and would have buried a real
   error.
-  
+
   The non-quit unmount path (Ctrl-C, a crash, the process ending) now stops before
   locking as well, which narrows the window rather than closing it — a React
   cleanup cannot await, so a batch already inside the WASM call can still find the
