@@ -204,6 +204,16 @@ export const offscreen = {
     await ensureOffscreen();
     return offscreenSend('os/relayRetry', undefined);
   },
+  async shieldedCoinsGet(data: SyncTarget) {
+    await ensureOffscreen();
+    return offscreenSend('os/shieldedCoinsGet', data);
+  },
+
+  async shieldedRebuild(data: SyncTarget) {
+    await ensureOffscreen();
+    return offscreenSend('os/shieldedRebuild', data);
+  },
+
   async dustRebuild(data: SyncTarget) {
     await ensureOffscreen();
     return offscreenSend('os/dustRebuild', data);

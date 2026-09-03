@@ -57,6 +57,7 @@ export function Settings({ onBack, navigate }: { onBack: () => void; navigate: (
   const [resolverDraft, setResolverDraft] = useState('');
   const [appearance, setAppearance] = useState<Appearance>(() => loadAppearance());
   const [copiedDiagnostics, setCopiedDiagnostics] = useState(false);
+  const [rebuildingShielded, setRebuildingShielded] = useState(false);
 
   const updateAppearance = (patch: Partial<Appearance>) => {
     const next = { ...appearance, ...patch };
@@ -121,6 +122,19 @@ export function Settings({ onBack, navigate }: { onBack: () => void; navigate: (
   // already holds — no extra round trip — and deliberately excludes addresses,
   // account names and balances, because a user pastes this into a public issue
   // without reading it first. See lib/ui/diagnostics-report.ts.
+  // Evict the shielded sync cache and rescan. Nothing is spent and nothing can
+  // be stranded: on failure the existing cache is either intact or already
+  // rebuilding, so just release the button and let the sync indicator speak.
+  const rebuildShielded = async () => {
+    if (rebuildingShielded) return;
+    setRebuildingShielded(true);
+    try {
+      await sendMessage('shieldedRebuild', undefined);
+    } catch {
+      setRebuildingShielded(false);
+    }
+  };
+
   const copyDiagnostics = async () => {
     if (!settings) return;
     const report = buildDiagnosticsReport({
@@ -394,6 +408,30 @@ export function Settings({ onBack, navigate }: { onBack: () => void; navigate: (
           </span>
           <Button size="sm" variant="secondary" className="shrink-0" onClick={() => void copyDiagnostics()}>
             {copiedDiagnostics ? t('settings_copyDiagnosticsDone') : t('settings_copyDiagnostics')}
+          </Button>
+        </div>
+
+        <Separator />
+
+        {/*
+          Rebuilds ONLY the shielded sub-wallet. Deliberately not a full cache
+          clear: DUST is by far the slowest part to resync, and a shielded coin
+          problem should not cost a DUST rescan. Spends nothing, so there is no
+          confirm step — the sync indicator reports the rescan.
+        */}
+        <div className="flex items-center justify-between px-4 py-[13px]">
+          <span className="min-w-0 pr-3">
+            <span className="block text-sm font-medium">{t('settings_rebuildShielded')}</span>
+            <span className="block text-[12.5px] text-muted-foreground">{t('settings_rebuildShieldedDesc')}</span>
+          </span>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="shrink-0"
+            disabled={rebuildingShielded}
+            onClick={() => void rebuildShielded()}
+          >
+            {rebuildingShielded ? t('settings_rebuildShieldedBusy') : t('settings_rebuildShieldedAction')}
           </Button>
         </div>
       </Section>

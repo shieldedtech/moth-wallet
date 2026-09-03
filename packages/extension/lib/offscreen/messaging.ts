@@ -172,6 +172,24 @@ export interface OffscreenProtocol {
     applied: number;
     total: number;
   };
+  /** Evict ONLY the shielded sync cache and restart sync so the shielded
+   *  sub-wallet rescans. Spends nothing. Kept separate from a full clear because
+   *  DUST is much slower to resync. `started` is false when a tx was in flight. */
+  /** Shielded coins with spend detail (nonce, colour, value, Merkle index), as
+   *  a JSON string with bigints stringified. On demand and shielded-only, so the
+   *  balances emission keeps dropping `coins` for performance. */
+  'os/shieldedCoinsGet'(data: {
+    seedHex: string;
+    walletName: string;
+    network: NetworkConfig;
+  }): string;
+
+  'os/shieldedRebuild'(data: {
+    seedHex: string;
+    walletName: string;
+    network: NetworkConfig;
+  }): { started: boolean };
+
   /** Evict the dust sync cache and restart sync so the dust sub-wallet rescans.
    *  Spends nothing. `started` is false when a transaction was in flight. */
   'os/dustRebuild'(data: {

@@ -56,4 +56,9 @@ export const settings = {
   settings_copyDiagnosticsDesc:
     'Environment and configuration for a bug report. No addresses, account names or balances — safe to paste in a public issue.',
   settings_copyDiagnosticsDone: 'Copied',
+  settings_rebuildShielded: 'Rebuild shielded coin records',
+  settings_rebuildShieldedDesc:
+    'Rescan shielded coins from the chain. Use this if a shielded balance looks wrong or stale. Spends nothing, and leaves DUST alone — DUST is much slower to resync.',
+  settings_rebuildShieldedAction: 'Rebuild',
+  settings_rebuildShieldedBusy: 'Rebuilding…',
 } as const;

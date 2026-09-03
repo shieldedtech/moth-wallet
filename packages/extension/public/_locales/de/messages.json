@@ -1543,5 +1543,17 @@
   },
   "dust_etaNotRegistered": {
     "message": "$1 noch nicht registriert"
+  },
+  "settings_rebuildShielded": {
+    "message": "Shielded-Coin-Daten neu aufbauen"
+  },
+  "settings_rebuildShieldedDesc": {
+    "message": "Shielded-Coins erneut von der Chain einlesen. Nutze dies, wenn ein Shielded-Guthaben falsch oder veraltet aussieht. Kostet nichts und lässt DUST unberührt — DUST synchronisiert deutlich langsamer."
+  },
+  "settings_rebuildShieldedAction": {
+    "message": "Neu aufbauen"
+  },
+  "settings_rebuildShieldedBusy": {
+    "message": "Wird aufgebaut…"
   }
 }

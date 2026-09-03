@@ -65,8 +65,15 @@ export {
   startWalletSync,
   clearSyncCache,
   clearDustSyncCache,
+  clearShieldedSyncCache,
+  clearSyncCacheParts,
   EMPTY_COINS,
 } from '@shieldedtech/moth-wallet/sync/wallet-sync';
+export {
+  markShieldedSpent,
+  isShieldedSpent,
+  shieldedNullifiersOf,
+} from '@shieldedtech/moth-wallet/sync/spent-shielded';
 export {
   deriveActivity,
   deriveActivityEntry,

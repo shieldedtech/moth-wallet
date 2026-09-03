@@ -57,7 +57,8 @@ export {
 
 // Sync
 export {
-  startWalletSync, formatNight, NIGHT_TOKEN_ID, clearSyncCache, clearDustSyncCache, resolveSyncStore,
+  startWalletSync, formatNight, NIGHT_TOKEN_ID, clearSyncCache, clearDustSyncCache,
+  clearShieldedSyncCache, clearSyncCacheParts, resolveSyncStore,
   EMPTY_COINS, EMPTY_SUB_PROGRESS, type WalletSyncOptions,
   type WalletBalances, type SyncedWallet, type DustGeneration, type SyncProgress,
   type SubWalletSyncProgress, type SubWalletProgress, type WalletCoinDetails,
@@ -178,3 +179,11 @@ export {
   type ApiKeyRecord, type ApiKeyGenerated, type ApiKeyAuthResult,
 } from './daemon/index.js';
 export { unshieldedSplit, describeReservation, type SpendableSplit } from './wallet/spendable.js';
+
+export {
+  markShieldedSpent,
+  isShieldedSpent,
+  shieldedNullifiersOf,
+  spentShieldedCount,
+  clearShieldedSpent,
+} from './sync/spent-shielded.js';

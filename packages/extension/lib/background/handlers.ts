@@ -553,6 +553,25 @@ export function registerHandlers(): void {
     }
   });
 
+  // Rebuild ONLY the shielded sub-wallet. Same bracketing rationale as
+  // dustRebuild below; kept separate so this does not force a DUST rescan,
+  // which is much slower.
+  onMessage('shieldedRebuild', async () => {
+    const session = await getSession();
+    if (!session) throw new Error('Wallet is locked');
+    const network = await getNetworkConfig();
+    beginOp();
+    try {
+      return await offscreen.shieldedRebuild({
+        seedHex: session.seedHex,
+        walletName: session.walletName,
+        network,
+      });
+    } finally {
+      endOp();
+    }
+  });
+
   // Spends nothing, but brackets the op anyway: it stops and restarts the sync
   // engine, and the service worker must not suspend underneath that.
   onMessage('dustRebuild', async () => {
