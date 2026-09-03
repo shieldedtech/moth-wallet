@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { History } from 'lucide-react';
 import type { WalletBalances } from '@shieldedtech/moth-browser';
 import { t } from '../../lib/i18n';
-import { useActivity } from '../../lib/ui/client';
+import { useActivity, useTokenNames } from '../../lib/ui/client';
 import { nativeAssetLabelsForNetwork } from '../../lib/ui/token-labels';
 import {
   ACTIVITY_FILTERS,
@@ -29,6 +29,7 @@ export function Activity({
 }) {
   const labels = nativeAssetLabelsForNetwork(network);
   const entries = useActivity(balances);
+  const { names: tokenNames } = useTokenNames();
   const [filter, setFilter] = useState<ActivityFilter>('all');
 
   const filterLabels: Record<ActivityFilter, string> = {
@@ -78,7 +79,7 @@ export function Activity({
             <div key={group.label}>
               <p className="section-label mb-1">{group.label}</p>
               {group.entries.map((entry) => (
-                <ActivityRow key={entry.hash} view={activityRowView(entry, labels)} />
+                <ActivityRow key={entry.hash} view={activityRowView(entry, labels, undefined, tokenNames)} />
               ))}
             </div>
           ))}
