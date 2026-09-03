@@ -1543,5 +1543,8 @@
   },
   "dust_etaNotRegistered": {
     "message": "$1 aún no registrado"
+  },
+  "syncStatus_etaRemaining": {
+    "message": "quedan $1"
   }
 }

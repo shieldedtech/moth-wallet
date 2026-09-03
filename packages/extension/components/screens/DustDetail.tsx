@@ -95,6 +95,11 @@ export function DustDetail({
   const dustSynced = useSyncRegressionGrace(
     balances?.syncProgress.dustSynced ?? false,
     balances !== null,
+    // Raw dust fraction: a rebuild drops this far enough to bypass the grace,
+    // so an explicit rescan is reported instead of being smoothed over.
+    balances && balances.subProgress.dust.total > 0
+      ? balances.subProgress.dust.applied / balances.subProgress.dust.total
+      : undefined,
   );
 
   if (!balances) {

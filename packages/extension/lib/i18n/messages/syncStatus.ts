@@ -5,4 +5,5 @@ export const syncStatus = {
   syncStatus_percent: '$1%',
   syncStatus_shielded: 'Shielded',
   syncStatus_unshielded: 'Unshielded',
+  syncStatus_etaRemaining: '$1 left',
 } as const;
