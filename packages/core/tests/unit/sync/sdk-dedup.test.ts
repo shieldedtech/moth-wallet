@@ -122,3 +122,96 @@ describe('makeDedupingApplyUpdate', () => {
     expect(base.applyUpdate).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('out-of-order batches (regression: dust generation tree hole)', () => {
+  const makeState = (appliedIndex: bigint): FakeState => ({
+    progress: {appliedIndex},
+    protocolVersion: 1,
+  });
+
+  it('flags a batch whose already-applied event follows a fresh one', () => {
+    // Filtering by predicate would remove id 3 from the MIDDLE and hand the SDK
+    // [5, 7] — a replay with a hole the ledger tree rejects as non-linear.
+    const r = partitionByAppliedIndex(
+      [{id: 5, maxId: 10}, {id: 3, maxId: 10}, {id: 7, maxId: 10}],
+      4n,
+    );
+    expect(r.outOfOrder).toBe(true);
+    expect(r.droppedCount).toBe(0);
+  });
+
+  it('does not filter an out-of-order batch — forwards it whole to the SDK', () => {
+    const batch = [{id: 5, maxId: 10}, {id: 3, maxId: 10}, {id: 7, maxId: 10}];
+    const base = {applyUpdate: vi.fn().mockReturnValue([makeState(7n), {changes: [], protocolVersion: 1}])};
+    const apply = makeDedupingApplyUpdate(base as never, (st) => st);
+
+    apply(makeState(4n), {updates: batch} as never);
+
+    expect(base.applyUpdate).toHaveBeenCalledTimes(1);
+    const forwarded = base.applyUpdate.mock.calls[0]![1] as {updates: unknown[]};
+    expect(forwarded.updates).toHaveLength(3);
+  });
+
+  it('reports outOfOrder false for an ascending batch', () => {
+    const r = partitionByAppliedIndex([{id: 3, maxId: 9}, {id: 5, maxId: 9}], 4n);
+    expect(r.outOfOrder).toBe(false);
+    expect(r.fresh.map((u) => Number(u.id))).toEqual([5]);
+  });
+});
+
+describe('non-linear insert errors', () => {
+  const makeState = (appliedIndex: bigint): FakeState => ({
+    progress: {appliedIndex},
+    protocolVersion: 1,
+  });
+
+  const LEDGER_ERROR =
+    'values inserted non-linearly into dust generation tree; ' +
+    'expected to insert index 337423, but received 337429.';
+
+  it('explains the failure and names the recovery, preserving the cause', () => {
+    const original = new Error(LEDGER_ERROR);
+    const base = {applyUpdate: vi.fn().mockImplementation(() => { throw original; })};
+    const apply = makeDedupingApplyUpdate(base as never, (st) => st);
+
+    let thrown: unknown;
+    try {
+      apply(makeState(1291234n), {
+        updates: [{id: 1291235, maxId: 1478078}, {id: 1291240, maxId: 1478078}],
+      } as never);
+    } catch (e) {
+      thrown = e;
+    }
+
+    const err = thrown as Error & {cause?: unknown};
+    expect(err.message).toContain(LEDGER_ERROR);
+    expect(err.message).toContain('will not recover on retry');
+    expect(err.message).toContain('appliedIndex=1291234');
+    expect(err.message).toContain('1291235..1291240');
+    expect(err.message).toContain('Clear this wallet part');
+    expect(err.cause).toBe(original);
+  });
+
+  it('leaves unrelated errors untouched', () => {
+    const original = new Error('indexer connection reset');
+    const base = {applyUpdate: vi.fn().mockImplementation(() => { throw original; })};
+    const apply = makeDedupingApplyUpdate(base as never, (st) => st);
+
+    expect(() => apply(makeState(5n), {updates: [{id: 6, maxId: 9}]} as never)).toThrow(original);
+  });
+
+  it('reports how many events were dropped as already applied', () => {
+    const base = {applyUpdate: vi.fn().mockImplementation(() => { throw new Error(LEDGER_ERROR); })};
+    const apply = makeDedupingApplyUpdate(base as never, (st) => st);
+
+    let thrown: unknown;
+    try {
+      apply(makeState(10n), {
+        updates: [{id: 9, maxId: 20}, {id: 10, maxId: 20}, {id: 11, maxId: 20}],
+      } as never);
+    } catch (e) {
+      thrown = e;
+    }
+    expect((thrown as Error).message).toContain('2 dropped as already applied');
+  });
+});
