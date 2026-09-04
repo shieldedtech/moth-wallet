@@ -12,6 +12,8 @@ build/
 # contributors find out at commit time rather than at push time. It carries no
 # secrets. It survived in the old repository only because it was tracked before
 # the .env* rule existed, and a fresh `git add` silently dropped it.
+# Personal settings belong in .envrc.local, which .envrc sources and the .env*
+# rule above keeps ignored — see envrc.local.example.
 !.envrc
 !.env.example
 
