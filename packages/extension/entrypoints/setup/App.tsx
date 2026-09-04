@@ -24,6 +24,9 @@ import { browser } from 'wxt/browser';
 // (@scure BIP-39), so it stays out of the ledger WASM the barrel would drag in —
 // generating the phrase in-page keeps "Create" instant.
 import { generateMnemonic24 } from '@shieldedtech/moth-wallet/wallet/mnemonic';
+// Same reason, same subpath rule: the seed shape-check is pure string work, so
+// validating as the user pastes must not drag the ledger WASM into this tab.
+import { checkHexSeed, type HexSeedCheck } from '@shieldedtech/moth-wallet/wallet/hex-seed';
 import { t } from '../../lib/i18n';
 import { sendMessage } from '../../lib/messaging/protocol';
 import { holdSetupPort } from '../../lib/ui/setup-port';
@@ -36,9 +39,12 @@ import { Crescent, OrbitingMoth } from '../../components/moth/panel';
 import { nativeAssetLabelsForNetwork } from '../../lib/ui/token-labels';
 import { NoteCard } from '../../components/moth/note-card';
 import { WordChipGrid, WordInputGrid } from '../../components/moth/words';
+import { Tabs, TabsList, TabsTrigger } from '../../components/ui/tabs';
 import { useNetworkConfig, NetworkFields, type SupportedNetwork } from '../../components/screens/NetworkConfig';
 
 type Mode = 'create' | 'import';
+/** Which backup artifact the person restoring is holding. */
+type ImportKind = 'phrase' | 'seed';
 type Step = 'welcome' | 'words' | 'password' | 'network' | 'phrase' | 'done';
 
 // Step CTAs are ink pills in light; on dark surfaces that reads muted for the
@@ -55,6 +61,12 @@ export function App() {
   const [mode, setMode] = useState<Mode>(initialMode ?? 'create');
   const [step, setStep] = useState<Step>(initialMode === 'create' ? 'phrase' : initialMode === 'import' ? 'words' : 'welcome');
   const [words, setWords] = useState<string[]>(Array(24).fill(''));
+  // A wallet created from a raw hex seed has no mnemonic and cannot be given
+  // one (BIP-39's phrase-to-seed step is one-way), so restoring it needs a
+  // second input, not a cleverer parse of the word grid.
+  const [importKind, setImportKind] = useState<ImportKind>('phrase');
+  const [seedInput, setSeedInput] = useState('');
+  const seedCheck = checkHexSeed(seedInput);
   // Matches DEFAULT_SETTINGS: never start an account on a value-bearing network.
   const [network, setNetwork] = useState<SupportedNetwork>('preprod');
   const [mnemonic, setMnemonic] = useState(() => (initialMode === 'create' ? generateMnemonic24() : ''));
@@ -119,7 +131,12 @@ export function App() {
         // Persist the phrase the user already backed up on the phrase step.
         await sendMessage('walletCreate', { name: storageName, passphrase, network, mnemonic });
       } else {
-        await sendMessage('walletImport', { name: storageName, mnemonic: words.join(' ').trim(), passphrase, network });
+        await sendMessage(
+          'walletImport',
+          importKind === 'seed'
+            ? { name: storageName, seed: seedInput.trim(), passphrase, network }
+            : { name: storageName, mnemonic: words.join(' ').trim(), passphrase, network },
+        );
       }
       // Set the label before unlocking so the session picks it up immediately.
       if (label) await sendMessage('walletRename', { name: storageName, label });
@@ -149,29 +166,62 @@ export function App() {
   }
 
   if (step === 'words') {
+    const incomplete = importKind === 'seed' ? !seedCheck.ok : words.some((w) => !w);
     return (
       <Shell progress={{ current: 1, total: 3 }} onBack={() => setStep('welcome')}>
         <h1 className="m-0 font-display text-[38px] font-extrabold">{t('setup_importTitle')}</h1>
         <p className="mt-2 text-[16.5px] text-muted-foreground">
-          {t('setup_importSubtitle')}
+          {importKind === 'seed' ? t('setup_importSeedSubtitle') : t('setup_importSubtitle')}
         </p>
+        {/* Both methods on one screen rather than a "which do you have?" step
+            first: anyone restoring already knows which artifact they hold, so
+            that step would cost a click and gather nothing. */}
         <div className="pt-6">
-          <WordInputGrid words={words} onChange={setWords} />
+          <Tabs value={importKind} onValueChange={(v) => { setImportKind(v as ImportKind); setError(''); }}>
+            <TabsList>
+              <TabsTrigger value="phrase">{t('setup_importKindPhrase')}</TabsTrigger>
+              <TabsTrigger value="seed">{t('setup_importKindSeed')}</TabsTrigger>
+            </TabsList>
+          </Tabs>
         </div>
-        <button
-          onClick={() =>
-            void navigator.clipboard.readText().then((text) => {
-              const parts = splitSeedPhrase(text).slice(0, 24);
-              setWords([...parts, ...Array(Math.max(0, 24 - parts.length)).fill('')]);
-            })
-          }
-          className="mt-3 cursor-pointer self-start border-0 bg-transparent p-0 text-sm font-semibold text-link"
-        >
-          {t('setup_pastePhrase')}
-        </button>
+        {importKind === 'seed' ? (
+          <div className="flex flex-col gap-2 pt-6">
+            {/* Deliberately NOT a password field. A seed has no checksum, so
+                reading it back against a backup is the only way to catch a
+                bad paste — masking it removes the one available check. */}
+            <textarea
+              value={seedInput}
+              onChange={(e) => setSeedInput(e.target.value)}
+              spellCheck={false}
+              autoComplete="off"
+              rows={3}
+              aria-label={t('setup_importSeedLabel')}
+              placeholder={t('setup_importSeedPlaceholder')}
+              className="w-full resize-none break-all rounded-xl border border-border bg-card px-3 py-2.5 font-mono text-[13px] outline-none focus:border-ring"
+            />
+            <SeedFieldNote check={seedCheck} touched={seedInput.trim().length > 0} />
+          </div>
+        ) : (
+          <>
+            <div className="pt-6">
+              <WordInputGrid words={words} onChange={setWords} />
+            </div>
+            <button
+              onClick={() =>
+                void navigator.clipboard.readText().then((text) => {
+                  const parts = splitSeedPhrase(text).slice(0, 24);
+                  setWords([...parts, ...Array(Math.max(0, 24 - parts.length)).fill('')]);
+                })
+              }
+              className="mt-3 cursor-pointer self-start border-0 bg-transparent p-0 text-sm font-semibold text-link"
+            >
+              {t('setup_pastePhrase')}
+            </button>
+          </>
+        )}
         {error && <p className="m-0 pt-2 text-sm text-destructive">{error}</p>}
         <div className="flex justify-end pt-8">
-          <Button variant="secondary" size="lg" className={STEP_CTA} disabled={words.some((w) => !w)} onClick={() => setStep('network')}>
+          <Button variant="secondary" size="lg" className={STEP_CTA} disabled={incomplete} onClick={() => setStep('network')}>
             {t('setup_continue')}
           </Button>
         </div>
@@ -214,6 +264,7 @@ export function App() {
         name={accountName}
         onNameChange={setAccountName}
         defaultName={`Account ${walletCount + 1}`}
+        recoveredBy={mode === 'import' && importKind === 'seed' ? 'seed' : 'phrase'}
         onBack={() => setStep('network')}
         onSubmit={(value) => {
           void finishSetup(value, network);
@@ -305,6 +356,7 @@ export function PasswordStep({
   name,
   onNameChange,
   defaultName,
+  recoveredBy,
   onBack,
   onSubmit,
 }: {
@@ -315,6 +367,12 @@ export function PasswordStep({
   onNameChange: (value: string) => void;
   /** Placeholder showing the auto-assigned name used when left blank. */
   defaultName: string;
+  /**
+   * Which artifact CAN recover this account, for the subtitle. The password
+   * never can, and saying "only your 24 words can" to someone who restored
+   * from a hex seed points them at a phrase that does not exist for them.
+   */
+  recoveredBy: 'phrase' | 'seed';
   onBack: () => void;
   onSubmit: (passphrase: string) => void;
 }) {
@@ -329,7 +387,7 @@ export function PasswordStep({
     <Shell progress={progress} onBack={onBack}>
       <h1 className="m-0 font-display text-[38px] font-extrabold">{t('setup_passwordTitle')}</h1>
       <p className="mt-2 text-[16.5px] text-muted-foreground">
-        {t('setup_passwordSubtitle')}
+        {recoveredBy === 'seed' ? t('setup_passwordSubtitleSeed') : t('setup_passwordSubtitle')}
       </p>
       <div className="flex max-w-[420px] flex-col gap-4 pt-6">
         <div>
@@ -548,4 +606,46 @@ function Done() {
       </div>
     </div>
   );
+}
+
+/**
+ * Inline feedback under the seed field.
+ *
+ * The standing note is the important one, and it shows whenever seed mode is
+ * open rather than only on error: a hex seed carries no checksum, so there is
+ * no wrong-seed error to wait for. A single altered character restores a
+ * different, valid, empty wallet and reports nothing. Shape problems are all
+ * that can be detected, and an unusual-but-valid length is the likeliest sign
+ * of a truncated paste — worth flagging, not worth refusing, since a wallet
+ * genuinely created at that length must stay recoverable.
+ */
+function SeedFieldNote({check, touched}: {check: HexSeedCheck; touched: boolean}) {
+  if (touched && !check.ok && check.problem !== 'empty') {
+    return <p className="m-0 text-[12.5px] text-destructive">{seedProblemText(check)}</p>;
+  }
+  return (
+    <>
+      {check.ok && check.unusualLength && (
+        <p className="m-0 text-[12.5px] text-destructive">
+          {t('setup_importSeedUnusualLength', [String(check.bytes)])}
+        </p>
+      )}
+      <p className="m-0 text-[12.5px] text-muted-foreground">{t('setup_importSeedNoChecksum')}</p>
+    </>
+  );
+}
+
+function seedProblemText(check: HexSeedCheck): string {
+  switch (check.problem) {
+    case 'not-hex':
+      return t('setup_importSeedErrNotHex');
+    case 'odd-length':
+      return t('setup_importSeedErrOddLength');
+    case 'too-short':
+      return t('setup_importSeedErrTooShort', [String(check.bytes)]);
+    case 'too-long':
+      return t('setup_importSeedErrTooLong', [String(check.bytes)]);
+    default:
+      return '';
+  }
 }

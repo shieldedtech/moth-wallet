@@ -30,6 +30,12 @@ export const approval = {
   approval_paidIn: 'Paid in $1',
   approval_balanceNote:
     'Your wallet may add its own funds to balance this transaction. Only approve transactions from sites you trust.',
+  approval_youPay: 'You pay',
+  approval_youGetBack: 'You get back',
+  approval_contractCallsLabel: 'Contract calls',
+  approval_spendsNothing: 'This transaction takes nothing from your wallet apart from the network fee.',
+  approval_summaryUnavailable:
+    'Moth could not read what this transaction spends. Approve it only if you trust $1 and know what it does.',
   approval_transferSubtitle: 'Nothing moves until you approve.',
   approval_youSend: 'You send',
   approval_usingLabel: 'Using',
