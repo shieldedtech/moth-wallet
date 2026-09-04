@@ -415,6 +415,21 @@ function subPct(sub: {applied: number; total: number}, done: boolean): string {
   return sub.total > 0 ? `${Math.round(Math.min(1, sub.applied / sub.total) * 100)}%` : '100%';
 }
 
+/**
+ * Re-assert the SDK's global network id.
+ *
+ * `startWalletSync` sets it, and every write path sets it again at its own
+ * boundary (see operations.ts and contract/*), because it is process-global and
+ * whatever ran last owns it. A caller that reuses an already-started sync —
+ * WarmSyncPool handing a facade back after the session visited another network —
+ * skips `startWalletSync` entirely, so it has to make the same assertion the
+ * cold path would have made, or the reused wallet encodes addresses for the
+ * network it is no longer on.
+ */
+export function applyNetworkId(networkId: string): void {
+  setNetworkId(networkId);
+}
+
 export async function startWalletSync(
   keys: WalletKeys,
   network: NetworkConfig,
