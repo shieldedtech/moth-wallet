@@ -28,6 +28,7 @@ import {ensureEmptyRefCache, preSeedNewWallet} from './preseed.js';
 import {InMemorySyncStateStore, syncStateKey, type SyncStateStore, type WalletPart} from './sync-store.js';
 import {dedupingShieldedBuilder, dedupingDustBuilder} from './sdk-dedup.js';
 import {overallSyncProgress, type SubWallet} from './progress.js';
+import {isShieldedSpent} from './spent-shielded.js';
 import {partsToSeed} from './preseed-parts.js';
 import type {WalletKeys} from './operations.js';
 
@@ -233,6 +234,27 @@ export interface SubWalletSyncProgress {
 export interface ShieldedCoinInfo {
   value: bigint;
   type: string;
+  /**
+   * Coin nonce (hex). Together with `type`, `value` and `mtIndex` this is the
+   * full `QualifiedShieldedCoinInfo` a Compact circuit needs in order to spend
+   * the coin — e.g. any contract taking a coin as a circuit argument.
+   *
+   * Previously dropped: only `{value, type}` was kept, which is enough to show a
+   * balance but NOT enough to spend. A DApp cannot recover these itself — the
+   * connector exposes no coin enumeration, and the indexer's
+   * `queryZSwapAndContractState` returns a contract-filtered Zswap state whose
+   * `firstFree` is 0, so it cannot yield a global Merkle index. The wallet is
+   * the only party that tracks the global commitment tree for its own coins.
+   *
+   * Optional because pending coins have no Merkle index yet.
+   */
+  nonce?: string;
+  /** Zswap Merkle index. Absent for pending coins, which are not yet in the tree. */
+  mtIndex?: bigint;
+  /** Coin commitment (hex) — identifies the coin in the commitment tree. */
+  commitment?: string;
+  /** Nullifier (hex) — revealed when the coin is spent. */
+  nullifier?: string;
 }
 
 export interface UnshieldedCoinInfo {
@@ -917,11 +939,46 @@ function extractBalancesPartial(
   try {
     const sb = state.shielded?.balances;
     if (sb && typeof sb === 'object') shielded = sb as Record<string, bigint>;
+    // Keep the FULL coin, not just {value, type}. The SDK's AvailableCoin is
+    // `{coin: QualifiedShieldedCoinInfo, commitment, nullifier}` and the
+    // QualifiedShieldedCoinInfo carries the nonce and mt_index that a circuit
+    // needs to spend it. Dropping them made every spend-a-user-coin contract
+    // pattern (vaults, wrappers, escrow) uncallable from a DApp.
     for (const c of state.shielded?.availableCoins ?? []) {
-      coins.shielded.available.push({value: c.coin?.value ?? 0n, type: c.coin?.type ?? ''});
+      // A coin this process already spent is NOT available, whatever the SDK
+      // still says. Offering it produces a transaction the balancer cannot
+      // satisfy ("Insufficient funds"), naming the wrong cause. See
+      // spent-shielded.ts. Also subtract it from the displayed balance so the
+      // total and the coin list cannot disagree.
+      if (isShieldedSpent(c.nullifier)) {
+        const t = c.coin?.type ?? '';
+        const v = c.coin?.value ?? 0n;
+        if (t in shielded) {
+          const left = (shielded[t] ?? 0n) - v;
+          if (left > 0n) shielded[t] = left;
+          else delete shielded[t];
+        }
+        continue;
+      }
+      coins.shielded.available.push({
+        value: c.coin?.value ?? 0n,
+        type: c.coin?.type ?? '',
+        nonce: c.coin?.nonce,
+        mtIndex: c.coin?.mt_index,
+        commitment: c.commitment,
+        nullifier: c.nullifier,
+      });
     }
     for (const c of state.shielded?.pendingCoins ?? []) {
-      coins.shielded.pending.push({value: c.coin?.value ?? 0n, type: c.coin?.type ?? ''});
+      // Pending coins are not in the commitment tree yet, so there is no
+      // mt_index — the nonce is still useful for correlating them.
+      coins.shielded.pending.push({
+        value: c.coin?.value ?? 0n,
+        type: c.coin?.type ?? '',
+        nonce: c.coin?.nonce,
+        commitment: c.commitment,
+        nullifier: c.nullifier,
+      });
     }
   } catch {
     /* shielded coins not ready */
@@ -1232,6 +1289,42 @@ export async function removeWalletSyncArtifacts(
  * the chain — the targeted repair for a dust view that stopped ingesting
  * generation records for newer NIGHT UTXOs.
  */
+/**
+ * Clear ONLY the shielded sync cache, leaving unshielded, dust and history
+ * intact.
+ *
+ * Worth having separately because a full `clearSyncCache` forces a DUST resync,
+ * which is by far the slowest part — so anyone wanting to rebuild shielded coin
+ * state (e.g. to check whether coins are rediscoverable from the seed, or after
+ * a non-linear commitment-tree error) would otherwise pay for a DUST rescan
+ * they did not need.
+ */
+export async function clearShieldedSyncCache(
+  walletName: string,
+  networkId: string,
+  store?: SyncStateStore
+): Promise<void> {
+  const resolved = await resolveSyncStore(store);
+  await evictCachedState(resolved, walletName, networkId, 'shielded');
+}
+
+/**
+ * Clear an arbitrary subset of the sync cache. `clearSyncCache` is the
+ * all-of-them case; this exists so callers can be surgical without reaching for
+ * the private `evictCachedState`.
+ */
+export async function clearSyncCacheParts(
+  walletName: string,
+  networkId: string,
+  parts: readonly WalletPart[],
+  store?: SyncStateStore
+): Promise<void> {
+  const resolved = await resolveSyncStore(store);
+  for (const part of parts) {
+    await evictCachedState(resolved, walletName, networkId, part);
+  }
+}
+
 export async function clearDustSyncCache(
   walletName: string,
   networkId: string,

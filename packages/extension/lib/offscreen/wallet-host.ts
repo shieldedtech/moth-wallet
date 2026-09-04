@@ -21,6 +21,9 @@ import {
   deriveWalletKeys,
   clearSyncCache,
   clearDustSyncCache,
+  clearShieldedSyncCache,
+  markShieldedSpent,
+  shieldedNullifiersOf,
   clearEmptyRefCache,
   warmEmptyRefCache,
   preseedReferenceStatus,
@@ -375,6 +378,7 @@ export async function syncEnsure(
 // the deficit is already displayed; shouldRepairDustView only decides whether to
 // offer it (see dustView().canRebuild).
 let dustRebuildInFlight = false;
+let shieldedRebuildInFlight = false;
 
 // Transaction work in flight (building/proving/balancing/submitting). The
 // rebuild restarts the sync engine, which must NEVER happen underneath one of
@@ -462,6 +466,30 @@ export async function preseedWarm(network: NetworkConfig): Promise<{ started: bo
     return { started: false };
   } finally {
     refWarmInFlight = null;
+  }
+}
+
+/** Evict ONLY the shielded cache and restart sync so the shielded sub-wallet
+ *  rescans. Deliberately separate from dustRebuild and from a full cache clear:
+ *  DUST is the slowest sub-wallet to resync, so rebuilding shielded coin state
+ *  must not force a DUST rescan.
+ *
+ *  `started: false` means a transaction was in flight and nothing was touched. */
+export async function shieldedRebuild(
+  seedHex: string,
+  walletName: string,
+  network: NetworkConfig,
+): Promise<{ started: boolean }> {
+  if (shieldedRebuildInFlight || inFlightOps > 0) return { started: false };
+  shieldedRebuildInFlight = true;
+  try {
+    emit('os/eventSyncMessage', 'Rebuilding shielded coin records…');
+    await syncStop();
+    await clearShieldedSyncCache(walletName, network.id, new IdbSyncStateStore());
+    await syncEnsure(seedHex, walletName, network);
+    return { started: true };
+  } finally {
+    shieldedRebuildInFlight = false;
   }
 }
 
@@ -562,6 +590,55 @@ export async function balancesGet(
 ): Promise<string> {
   const wallet = await syncEnsure(seedHex, walletName, network);
   return serializeForClients(await waitForSyncedBalances(wallet, SYNC_WAIT_MS));
+}
+
+/**
+ * Shielded coins with the detail needed to SPEND one — nonce, colour, value and
+ * Merkle index, i.e. a QualifiedShieldedCoinInfo.
+ *
+ * Separate from `balancesGet` on purpose. That path runs `serializeForClients`,
+ * which deliberately blanks `coins` because the dust list grows all through sync
+ * and shipping it on every ~1s emission hitches the panel's main thread. This is
+ * ON DEMAND and SHIELDED-ONLY: a bounded list, requested only when a DApp
+ * actually needs to spend a coin, so the emission path keeps its optimisation.
+ *
+ * Returns JSON with bigints as decimal strings — the offscreen→SW→page hops
+ * cannot be relied on to preserve BigInt.
+ */
+export async function shieldedCoinsGet(
+  seedHex: string,
+  walletName: string,
+  network: NetworkConfig,
+): Promise<string> {
+  const wallet = await syncEnsure(seedHex, walletName, network);
+  const balances = await waitForSyncedBalances(wallet, SYNC_WAIT_MS);
+  const shielded = balances.coins.shielded;
+  // Report sync state alongside the coins. An empty list is otherwise ambiguous
+  // between "still syncing" and "genuinely none", and a caller cannot tell
+  // whether to wait or to give up — the same total-0 ambiguity that makes sync
+  // progress misreport.
+  const shieldedSynced = balances.syncProgress.shieldedSynced;
+  const rows = [
+    ...shielded.available.map((c) => ({
+      nonce: c.nonce ?? null,
+      type: c.type,
+      value: c.value.toString(),
+      // Named mt_index to match the QualifiedShieldedCoinInfo a circuit wants.
+      mt_index: c.mtIndex?.toString() ?? null,
+      commitment: c.commitment ?? null,
+      status: 'available' as const,
+    })),
+    ...shielded.pending.map((c) => ({
+      nonce: c.nonce ?? null,
+      type: c.type,
+      value: c.value.toString(),
+      // Not in the commitment tree yet, so not spendable.
+      mt_index: null,
+      commitment: c.commitment ?? null,
+      status: 'pending' as const,
+    })),
+  ];
+  return JSON.stringify({ shieldedSynced, coins: rows });
 }
 
 /**
@@ -869,6 +946,11 @@ export async function transferSubmit(
       fromHex(txHex),
     );
     await submitTracked(network, walletName, () => submitFinalizedTransaction(wallet.facade, transaction));
+    // Record the shielded coins this transaction spends, so they stop being
+    // reported as available before sync notices. Without this the wallet keeps
+    // offering a spent coin and the next spend fails with "Insufficient funds",
+    // which names the wrong cause. See core's spent-shielded.ts.
+    markShieldedSpent(shieldedNullifiersOf(transaction));
   });
 }
 

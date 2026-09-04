@@ -90,6 +90,8 @@ describe('HOST_METHODS', () => {
     'os/provingProviderProve',
     'os/balanceTransaction',
     'os/makeIntent',
+    'os/shieldedCoinsGet',
+    'os/shieldedRebuild',
   ];
 
   it('covers every request method exactly once', () => {
