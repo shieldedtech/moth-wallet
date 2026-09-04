@@ -1589,6 +1589,9 @@
   "dust_etaNotRegistered": {
     "message": "$1 noch nicht registriert"
   },
+  "syncStatus_etaRemaining": {
+    "message": "$1 übrig"
+  },
   "setup_importKindPhrase": {
     "message": "Wiederherstellungsphrase"
   },

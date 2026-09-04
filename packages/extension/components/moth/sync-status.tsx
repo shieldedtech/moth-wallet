@@ -8,9 +8,34 @@ export interface SyncStatusView {
   shielded: number;
   unshielded: number;
   dust: number;
+  /**
+   * Estimated seconds remaining, or null when not yet estimable.
+   *
+   * Computed in core against the SLOWEST sub-wallet with a baseline correction
+   * for resumed syncs, so it is meaningful for a long rebuild. Surfaced here
+   * because a rescan with no duration signal leaves the user unable to tell a
+   * slow job from a stuck one.
+   */
+  etaSeconds?: number | null;
 }
 
 const clamp = (value: number) => Math.max(0, Math.min(100, Math.round(value)));
+
+/**
+ * Coarse duration for an ETA. Deliberately rounded: the estimate is a rate
+ * extrapolation, so minute-level precision would imply accuracy it does not
+ * have. Returns null when there is nothing worth showing, so callers render
+ * nothing rather than a misleading "0s".
+ */
+function formatEta(seconds: number | null | undefined): string | null {
+  if (seconds === null || seconds === undefined || seconds <= 0) return null;
+  if (seconds < 90) return `~${Math.max(5, Math.round(seconds / 5) * 5)}s`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `~${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const rem = minutes % 60;
+  return rem === 0 ? `~${hours} h` : `~${hours} h ${rem} min`;
+}
 
 /**
  * Once synced, give the wallet a few progressive emissions to catch a newly
@@ -63,10 +88,29 @@ export function syncDisplayReducer(
 }
 
 /**
+ * Below this fraction a regression is treated as REAL and reported at once,
+ * skipping the grace period.
+ *
+ * The grace exists to stop ordinary tip advances flashing syncing UI — those
+ * dip a fraction of a percent. A deliberate cache rebuild drops progress to
+ * near zero, and holding "Synced · 100%" over minutes of genuine rescanning is
+ * the opposite of what the user needs: they asked for the rebuild and have no
+ * other signal for how long it will take.
+ */
+const REAL_REGRESSION_BELOW = 0.9;
+
+/**
  * Show a newly synced state immediately, but delay regressions after the first
  * successful sync so ordinary tip advances do not flash syncing UI.
+ *
+ * Pass `rawPercentage` (0..1) so a large drop — a cache rebuild — bypasses the
+ * grace instead of being smoothed over.
  */
-export function useSyncRegressionGrace(rawSynced: boolean, active = true): boolean {
+export function useSyncRegressionGrace(
+  rawSynced: boolean,
+  active = true,
+  rawPercentage?: number,
+): boolean {
   const [displayState, dispatchDisplay] = useReducer(
     syncDisplayReducer,
     rawSynced,
@@ -82,12 +126,19 @@ export function useSyncRegressionGrace(rawSynced: boolean, active = true): boole
     dispatchDisplay({ type: 'source', synced: rawSynced });
     if (rawSynced || !displayState.hasSynced) return;
 
+    // A big drop is a rebuild or a genuine resync, not a tip advance: report it
+    // immediately rather than waiting out the grace.
+    if (rawPercentage !== undefined && rawPercentage < REAL_REGRESSION_BELOW) {
+      dispatchDisplay({ type: 'reset' });
+      return;
+    }
+
     const timeout = setTimeout(
       () => dispatchDisplay({ type: 'regressionGraceElapsed' }),
       SYNC_REGRESSION_GRACE_MS,
     );
     return () => clearTimeout(timeout);
-  }, [active, rawSynced, displayState.hasSynced]);
+  }, [active, rawSynced, displayState.hasSynced, rawPercentage]);
 
   return active && (rawSynced || displayState.synced);
 }
@@ -114,7 +165,9 @@ export function SyncStatus({
   const dust = clamp(view.dust);
   const rawOverall = Math.round((shielded + unshielded + dust) / 3);
   const rawSynced = rawOverall >= 100;
-  const synced = useSyncRegressionGrace(rawSynced);
+  // Pass the raw fraction so a rebuild's large drop bypasses the grace instead
+  // of being smoothed into a false "Synced · 100%".
+  const synced = useSyncRegressionGrace(rawSynced, true, rawOverall / 100);
 
   // Keep the expanded detail consistent with the top-bar status during the
   // grace period instead of showing "Synced" beside temporarily lower rows.
@@ -122,6 +175,9 @@ export function SyncStatus({
   const visibleUnshielded = synced && !rawSynced ? 100 : unshielded;
   const visibleDust = synced && !rawSynced ? 100 : dust;
   const overall = synced && !rawSynced ? 100 : rawOverall;
+  // Suppressed during the grace period: an ETA beside a "Synced" pill reads as
+  // a contradiction.
+  const eta = synced ? null : formatEta(view.etaSeconds);
 
   useEffect(() => {
     if (!open) return;
@@ -157,7 +213,11 @@ export function SyncStatus({
               {synced ? t('syncStatus_synced') : t('syncStatus_syncing')}
             </span>
             {!synced && (
-              <span className="text-[12.5px] text-muted-foreground">{t('syncStatus_percent', [overall])}</span>
+              <span className="text-[12.5px] text-muted-foreground">
+                {t('syncStatus_percent', [overall])}
+                {/* Only while genuinely syncing, and only when estimable. */}
+                {eta && <span className="ml-1.5">{t('syncStatus_etaRemaining', [eta])}</span>}
+              </span>
             )}
           </div>
           <div className="flex flex-col gap-[11px]">
