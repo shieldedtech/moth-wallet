@@ -83,7 +83,7 @@ export type {WalletKeys} from '../types/wallet.js';
 import type {WalletKeys} from '../types/wallet.js';
 
 /**
- * Derive the typed key bundle from a 64-char BIP-39 hex seed. Option A key
+ * Derive the typed key bundle from a hex seed. Option A key
  * model (v8's D-KM-3): callers derive once at unlock and discard the raw seed
  * immediately — the bundle holds everything the write paths need, so the seed
  * is never threaded through the daemon or the extension messaging layers.

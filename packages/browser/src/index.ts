@@ -34,6 +34,7 @@ export type {
 export {
   warmEmptyRefCache,
   preseedReferenceStatus,
+  clearEmptyRefCache,
   type WarmProgress,
 } from '@shieldedtech/moth-wallet/sync/preseed';
 export { WalletManager } from '@shieldedtech/moth-wallet/wallet/manager';
@@ -85,6 +86,20 @@ export type {
   ActivityKind,
   ActivityStatus,
 } from '@shieldedtech/moth-wallet/sync/activity';
+export {
+  isDustSpendProofRejection,
+  diagnoseSubmissionFailure,
+  dustSpendHealthTracker,
+  resetDustSpendHealthTrackers,
+  DustSpendHealthTracker,
+  DustLedgerWedgedError,
+  DEFAULT_WEDGE_THRESHOLD,
+  submitWithHealthTracking,
+} from '@shieldedtech/moth-wallet/sync/dust-ledger-health';
+export type {
+  DustLedgerHealthContext,
+  SubmitHealthContext,
+} from '@shieldedtech/moth-wallet/sync/dust-ledger-health';
 export { formatNight, NIGHT_TOKEN_ID } from '@shieldedtech/moth-wallet/types/tokens';
 export {
   sendTokens,
@@ -100,6 +115,12 @@ export {
   deriveWalletKeys,
 } from '@shieldedtech/moth-wallet/sync/operations';
 export type { SwapInput, WalletKeys } from '@shieldedtech/moth-wallet/sync/operations';
+export {
+  summarizeTransaction,
+  summarizeConnectorTransaction,
+  decodeConnectorTransaction,
+} from '@shieldedtech/moth-wallet/sync/tx-summary';
+export type { TransactionSummary, TxTokenAmount } from '@shieldedtech/moth-wallet/sync/tx-summary';
 
 import {
   canonicalNetworkId,

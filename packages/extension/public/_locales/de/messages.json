@@ -305,6 +305,21 @@
   "approval_balanceNote": {
     "message": "Deine Wallet kann eigene Mittel beisteuern, um diese Transaktion auszugleichen. Genehmige nur Transaktionen von Seiten, denen du vertraust."
   },
+  "approval_youPay": {
+    "message": "Du zahlst"
+  },
+  "approval_youGetBack": {
+    "message": "Du erhältst zurück"
+  },
+  "approval_contractCallsLabel": {
+    "message": "Vertragsaufrufe"
+  },
+  "approval_spendsNothing": {
+    "message": "Diese Transaktion entnimmt deiner Wallet nichts außer der Netzwerkgebühr."
+  },
+  "approval_summaryUnavailable": {
+    "message": "Moth konnte nicht lesen, was diese Transaktion ausgibt. Genehmige sie nur, wenn du $1 vertraust und weißt, was sie tut."
+  },
   "approval_transferSubtitle": {
     "message": "Nichts wird bewegt, bis du genehmigst."
   },
@@ -454,6 +469,12 @@
   },
   "dust_generateBodyReceiver": {
     "message": "This registers your unregistered $1 so it starts generating $2. You can do this again whenever you receive more $1."
+  },
+  "dust_receiveRegisterNudge": {
+    "message": "$1 erhalten — registriere es jetzt, damit es sofort mit der $2-Generierung beginnt."
+  },
+  "dust_staleRegisterWarning": {
+    "message": "Ein Teil dieses $1 liegt schon eine Weile unregistriert da. In manchen Netzwerken wurde das späte Registrieren von $1 — statt sofort nach Erhalt — mit einem seltenen, schwerwiegenden Netzwerkfehler in Verbindung gebracht, der sich nur durch einen Netzwerk-Reset beheben lässt. Am sichersten ist es, $1 sofort nach Erhalt zu registrieren."
   },
   "dust_deregisterBody": {
     "message": "This deregisters your $1 from $2 generation. The $2 you have stays and still pays fees, but it won't refill. You can register again anytime."
@@ -1127,6 +1148,30 @@
   "settings_networkConfig": {
     "message": "Netzwerkkonfiguration"
   },
+  "settings_resync": {
+    "message": "Cache leeren und neu synchronisieren"
+  },
+  "settings_resyncDescription": {
+    "message": "Alles vergessen, was für dieses Konto auf der aktuellen Chain synchronisiert wurde, und die Chain von Anfang an neu scannen."
+  },
+  "settings_resyncButton": {
+    "message": "Leeren"
+  },
+  "settings_resyncTitle": {
+    "message": "Cache leeren und neu synchronisieren?"
+  },
+  "settings_resyncBody": {
+    "message": "Moth löscht den synchronisierten Zustand dieses Kontos, zwischengespeicherte Guthaben, ausstehende Aktivitäten und die vorbereitete Referenz für $1 und synchronisiert dann vom Anfang der Chain. Auf der Chain ändert sich nichts, dein Guthaben bleibt, wo es ist. Bei einem zurückgesetzten Netzwerk zeigt das Guthaben die neue Chain."
+  },
+  "settings_resyncConfirm": {
+    "message": "Leeren & neu synchronisieren"
+  },
+  "settings_resyncWorking": {
+    "message": "Wird geleert…"
+  },
+  "settings_resyncError": {
+    "message": "Der Cache konnte nicht geleert werden. Versuche es erneut."
+  },
   "settings_sectionSecurity": {
     "message": "Sicherheit"
   },
@@ -1555,5 +1600,56 @@
   },
   "settings_rebuildShieldedBusy": {
     "message": "Wird aufgebaut…"
+  },
+  "setup_importKindPhrase": {
+    "message": "Wiederherstellungsphrase"
+  },
+  "setup_importKindSeed": {
+    "message": "Hex-Seed"
+  },
+  "setup_importSeedSubtitle": {
+    "message": "Füge den Hex-Seed dieser Wallet ein. Er bleibt sichtbar, damit du ihn mit deinem Backup vergleichen kannst."
+  },
+  "setup_importSeedLabel": {
+    "message": "Hex-Seed"
+  },
+  "setup_importSeedPlaceholder": {
+    "message": "64 hexadezimale Zeichen, oder 128 für einen aus einer Wiederherstellungsphrase abgeleiteten Seed"
+  },
+  "setup_importSeedNoChecksum": {
+    "message": "Ein Seed hat keine eingebaute Prüfung, anders als eine Wiederherstellungsphrase. Ein falsches Zeichen stellt eine andere, leere Wallet wieder her und meldet keinen Fehler — vergleiche ihn daher vorher mit deinem Backup."
+  },
+  "setup_importSeedUnusualLength": {
+    "message": "Dieser Seed hat $1 Bytes. Werkzeuge erzeugen 32 oder 64 — prüfe, ob das Einfügen vollständig war. Ein unvollständiger Seed stellt eine andere Wallet wieder her."
+  },
+  "setup_importSeedErrNotHex": {
+    "message": "Ein Seed ist rein hexadezimal: Ziffern 0-9 und Buchstaben a-f."
+  },
+  "setup_importSeedErrOddLength": {
+    "message": "Dieser Seed hat eine ungerade Anzahl Zeichen, es fehlt also eines."
+  },
+  "setup_importSeedErrTooShort": {
+    "message": "Zu kurz mit $1 Bytes. Ein Seed hat 16 bis 64 Bytes — 64 hexadezimale Zeichen, oder 128 für einen aus einer Wiederherstellungsphrase abgeleiteten."
+  },
+  "setup_importSeedErrTooLong": {
+    "message": "Zu lang mit $1 Bytes. Ein Seed hat 16 bis 64 Bytes — 64 hexadezimale Zeichen, oder 128 für einen aus einer Wiederherstellungsphrase abgeleiteten."
+  },
+  "setup_passwordSubtitleSeed": {
+    "message": "Es entsperrt Moth auf diesem Gerät. Es kann deine Wallet nicht wiederherstellen, nur dein Seed kann das."
+  },
+  "accounts_revealAsBackup": {
+    "message": "Wiederherstellungsphrase"
+  },
+  "accounts_revealAsSeed": {
+    "message": "Hex-Seed"
+  },
+  "accounts_revealAsBackupNote": {
+    "message": "Zeigt, woraus dieses Konto erstellt wurde. Aus einem Seed wiederhergestellte Konten zeigen diesen Seed, da sie keine Phrase haben."
+  },
+  "accounts_revealAsSeedNote": {
+    "message": "Zeigt den 128 Zeichen langen (64 Byte) Seed, zu dem deine 24 Wörter expandieren — für Werkzeuge, die einen Seed statt einer Phrase annehmen. Die meisten Midnight-Werkzeuge erwarten einen 64 Zeichen langen (32 Byte) Seed; die beiden sind nicht austauschbar, und ein Kürzen dieses Seeds stellt eine andere, leere Wallet wieder her. Deine 24 Wörter bleiben das Backup für dieses Konto."
+  },
+  "accounts_revealNoPhraseReason": {
+    "message": "Dieses Konto wurde aus einem Hex-Seed wiederhergestellt und hat daher keine Wiederherstellungsphrase — eine Phrase lässt sich aus einem Seed nicht ermitteln. Der Seed ist das Backup."
   }
 }
