@@ -9,7 +9,7 @@
 // the last, never the whole balance.
 
 import { useEffect, useRef, useState } from 'react';
-import { LoaderCircle, Moon } from 'lucide-react';
+import { LoaderCircle, Moon, TriangleAlert } from 'lucide-react';
 import { NIGHT_TOKEN_ID } from '@shieldedtech/moth-wallet/types/tokens';
 import {
   registerOutcome,
@@ -19,6 +19,7 @@ import {
 } from '../../lib/ui/dust-register-outcome';
 import { waitPhrase } from '../../lib/ui/wait-phrase';
 import type { DustNotYet, NightCoinRow } from '../../lib/messaging/protocol';
+import { isStaleUnregistered, oldestUnregisteredCoinAge } from '../../lib/ui/dust-register-timing';
 
 /** Why registration is not possible yet, in the user's language. A null wait
  *  means no amount of waiting helps — the holding's ceiling is below the fee. */
@@ -92,6 +93,11 @@ export function DustDetail({
   // Latches once the rebuild is requested: the sync restart it triggers takes
   // minutes, and re-requesting it would only start the rescan over.
   const [rebuilding, setRebuilding] = useState(false);
+  // Powers the "register promptly" warning below — fetched independently of
+  // the collapsible coin breakdown (NightCoinBreakdown), which only loads on
+  // demand, so the warning is available the moment the register button is
+  // pressed even if the breakdown was never opened.
+  const [coinRows, setCoinRows] = useState<NightCoinRow[] | null>(null);
   const dustSynced = useSyncRegressionGrace(
     balances?.syncProgress.dustSynced ?? false,
     balances !== null,
@@ -101,6 +107,21 @@ export function DustDetail({
       ? balances.subProgress.dust.applied / balances.subProgress.dust.total
       : undefined,
   );
+
+  useEffect(() => {
+    if (!dustSynced) return;
+    let live = true;
+    void sendMessage('dustNightCoins', undefined)
+      .then((rows) => {
+        if (live) setCoinRows(rows);
+      })
+      .catch(() => {
+        /* the warning just stays silent — nothing was spent, nothing to recover */
+      });
+    return () => {
+      live = false;
+    };
+  }, [dustSynced]);
 
   if (!balances) {
     return (
@@ -208,6 +229,8 @@ export function DustDetail({
     setReceiver(ownDustAddress);
     setConfirm('register');
   };
+
+  const staleRegistration = isStaleUnregistered(oldestUnregisteredCoinAge(coinRows ?? []));
 
   return (
     <PanelScreen
@@ -321,6 +344,11 @@ export function DustDetail({
           <p className="m-0">
             {t('dust_generateBodyReceiver', [labels.night, labels.dust])}
           </p>
+          {staleRegistration && (
+            <NoteCard variant="error" icon={TriangleAlert}>
+              {t('dust_staleRegisterWarning', [labels.night])}
+            </NoteCard>
+          )}
           <label className="flex flex-col gap-1.5">
             <span className="text-[12px] font-semibold uppercase tracking-wide">{t('dust_addressLabel', [labels.dust])}</span>
             <AddressPicker

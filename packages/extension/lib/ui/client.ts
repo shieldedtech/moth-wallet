@@ -16,6 +16,7 @@ import {
 import { deserializeActivity } from '../messaging/activity-json';
 import type { AddressBookEntry } from '../background/address-book';
 import type { AddressKind } from './address';
+import { hasUnregisteredNightToNudge } from './dust-nudge';
 
 /** Fired on the window when the background reports an out-of-band lock, so the
  *  session hook re-reads status without the shell having to wire the two hooks
@@ -103,6 +104,21 @@ export function useDeveloperMode(): boolean {
   }, []);
 
   return developerMode;
+}
+
+/**
+ * True exactly once per mount, the first time this wallet shows unregistered
+ * NIGHT, fully synced — see dust-nudge.ts. Latched (never resets to false)
+ * so a caller driving a one-shot toast off it does not need its own guard.
+ */
+export function useRegisterNudge(balances: WalletBalances | null): boolean {
+  const [due, setDue] = useState(false);
+
+  useEffect(() => {
+    if (!due && hasUnregisteredNightToNudge(balances)) setDue(true);
+  }, [balances, due]);
+
+  return due;
 }
 
 export function useSelectedProverType(network: string | undefined) {
