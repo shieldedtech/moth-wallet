@@ -62,12 +62,64 @@ interface Capability<S, U> {
 function partitionByAppliedIndex<U extends Updateish>(
   updates: ReadonlyArray<U>,
   appliedIndex: bigint,
-): {fresh: ReadonlyArray<U>; droppedCount: number} {
-  const fresh: U[] = [];
-  for (const u of updates) {
-    if (BigInt(u.id) > appliedIndex) fresh.push(u);
+): {fresh: ReadonlyArray<U>; droppedCount: number; outOfOrder: boolean} {
+  // Prefix only. The previous form filtered the whole array by predicate, which
+  // for an out-of-order batch removes an already-applied event from the MIDDLE
+  // and hands the SDK a replay with a hole in it — the ledger tree then rejects
+  // the insert as non-linear, four layers down, naming none of this.
+  let i = 0;
+  while (i < updates.length && BigInt(updates[i]!.id) <= appliedIndex) i++;
+  const fresh = updates.slice(i);
+  // An already-applied id after the first fresh one means this batch is not the
+  // ascending stream the filter assumes, so its result cannot be trusted.
+  const outOfOrder = fresh.some((u) => BigInt(u.id) <= appliedIndex);
+  return {fresh, droppedCount: i, outOfOrder};
+}
+
+const NON_LINEAR = /inserted non-linearly/i;
+
+/**
+ * Turn the ledger's bare non-linear-insert message into something that names
+ * the cause and the way out.
+ *
+ * The tree rejects the insert because the events it needed never reached it.
+ * Retrying cannot help — the same batch replays from the same cursor — so a
+ * wallet in this state loops on one error forever. The cursor and batch shape
+ * are the evidence for which side dropped them, so they go in the message.
+ */
+function enrichNonLinear<U extends Updateish>(
+  err: unknown,
+  ctx: {appliedIndex: bigint; updates: ReadonlyArray<U>; droppedCount: number},
+): unknown {
+  const message = err instanceof Error ? err.message : String(err);
+  if (!NON_LINEAR.test(message)) return err;
+  const ids = ctx.updates.map((u) => BigInt(u.id));
+  const range = ids.length === 0 ? '(empty batch)' : `${ids[0]}..${ids[ids.length - 1]}`;
+  const enriched = new Error(
+    `${message}\n` +
+      `The sync cache is inconsistent with the event stream and will not recover on ` +
+      `retry — the same batch replays from the same cursor. ` +
+      `appliedIndex=${ctx.appliedIndex}, replayed ${ids.length} event(s) ${range}, ` +
+      `${ctx.droppedCount} dropped as already applied. ` +
+      `Clear this wallet part's sync cache and resync to recover.`,
+  );
+  (enriched as Error & {cause?: unknown}).cause = err;
+  return enriched;
+}
+
+/** Call the SDK, enriching a non-linear-insert failure with the cursor context. */
+function applyGuarded<S, U extends Updateish>(
+  base: Capability<S, U>,
+  state: S & {progress: {appliedIndex: bigint}},
+  wrapped: WrappedUpdate<U>,
+  updates: ReadonlyArray<U>,
+  droppedCount: number,
+): readonly [S, {changes: unknown[]; protocolVersion: number}] {
+  try {
+    return base.applyUpdate(state, updates === wrapped.updates ? wrapped : {...wrapped, updates});
+  } catch (err) {
+    throw enrichNonLinear(err, {appliedIndex: state.progress.appliedIndex, updates, droppedCount});
   }
-  return {fresh, droppedCount: updates.length - fresh.length};
 }
 
 function makeDedupingApplyUpdate<S extends {progress: {appliedIndex: bigint; [k: string]: unknown}; protocolVersion: number | bigint}, U extends Updateish>(
@@ -79,11 +131,21 @@ function makeDedupingApplyUpdate<S extends {progress: {appliedIndex: bigint; [k:
       return base.applyUpdate(state, wrapped);
     }
 
-    const {fresh, droppedCount} = partitionByAppliedIndex(wrapped.updates, state.progress.appliedIndex);
+    const {fresh, droppedCount, outOfOrder} = partitionByAppliedIndex(
+      wrapped.updates,
+      state.progress.appliedIndex,
+    );
+
+    if (outOfOrder) {
+      // Not the ascending stream this filter assumes. Dropping a mid-batch event
+      // here is what creates the hole the tree rejects, so drop nothing and let
+      // the SDK decide — its own skip path is the conservative one.
+      return applyGuarded(base, state, wrapped, wrapped.updates, 0);
+    }
 
     if (droppedCount === 0) {
       // No duplicates — fast path, defer entirely to the SDK.
-      return base.applyUpdate(state, wrapped);
+      return applyGuarded(base, state, wrapped, wrapped.updates, 0);
     }
 
     if (fresh.length === 0) {
@@ -100,7 +162,7 @@ function makeDedupingApplyUpdate<S extends {progress: {appliedIndex: bigint; [k:
 
     // Partial overlap — hand only the fresh suffix to the SDK so its
     // own appliedIndex advancement still reflects the batch tail.
-    return base.applyUpdate(state, {...wrapped, updates: fresh});
+    return applyGuarded(base, state, wrapped, fresh, droppedCount);
   };
 }
 
@@ -177,4 +239,5 @@ export function dedupingDustBuilder(): unknown {
 export const __TEST_ONLY__ = {
   partitionByAppliedIndex,
   makeDedupingApplyUpdate,
+  enrichNonLinear,
 };
