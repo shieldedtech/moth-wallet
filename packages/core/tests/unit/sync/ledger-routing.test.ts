@@ -8,9 +8,12 @@ import {describe, expect, it} from 'vitest';
 import * as ledgerV8 from '@midnightntwrk/wallet-sdk/ledger/v8';
 import * as ledgerV9 from '@midnightntwrk/wallet-sdk/ledger/v9';
 import {ProtocolVersion, WalletTransaction} from '@midnightntwrk/wallet-sdk';
+import * as Rx from 'rxjs';
+import type {WalletFacade} from '@midnightntwrk/wallet-sdk/facade';
 import {
   forks,
   isLedgerV9,
+  protocolStatus,
   transactionFromBytes,
   transactionHashOf,
   unshieldedPublicKeyAt,
@@ -125,5 +128,42 @@ describe('unshieldedPublicKeyAt', () => {
     // Same identity either side, which is what lets one wallet cross.
     expect(from.address).toBe(below.address);
     expect(from.addressHex).toBe(below.addressHex);
+  });
+});
+
+describe('protocolStatus', () => {
+  // Only the members protocolStatus reads; the facade's own state class needs three live wallets.
+  const facadeAt = (state: {
+    activeProtocolVersion: ProtocolVersion.ProtocolVersion;
+    protocol: {_tag: 'Settled'; version: ProtocolVersion.ProtocolVersion} | {_tag: 'Crossing'; from: ProtocolVersion.ProtocolVersion; to: ProtocolVersion.ProtocolVersion; behind: readonly ('shielded' | 'unshielded' | 'dust')[]};
+    protocolVersion: {shielded: ProtocolVersion.ProtocolVersion; unshielded: ProtocolVersion.ProtocolVersion; dust: ProtocolVersion.ProtocolVersion};
+  }): WalletFacade => ({state: () => Rx.of(state)}) as unknown as WalletFacade;
+
+  it('reports a settled wallet at the ledger its version implies', async () => {
+    const status = await protocolStatus(
+      facadeAt({
+        activeProtocolVersion: V9,
+        protocol: {_tag: 'Settled', version: V9},
+        protocolVersion: {shielded: V9, unshielded: V9, dust: V9},
+      }),
+    );
+    expect(status).toEqual({
+      version: V9,
+      ledger: 'v9',
+      phase: {kind: 'settled'},
+      wallets: {shielded: V9, unshielded: V9, dust: V9},
+    });
+  });
+
+  it('reports a crossing by the version being left, the one ahead, and who is behind', async () => {
+    const status = await protocolStatus(
+      facadeAt({
+        activeProtocolVersion: BELOW_FORK,
+        protocol: {_tag: 'Crossing', from: BELOW_FORK, to: V9, behind: ['shielded', 'dust']},
+        protocolVersion: {shielded: BELOW_FORK, unshielded: V9, dust: BELOW_FORK},
+      }),
+    );
+    expect(status.ledger).toBe('v8');
+    expect(status.phase).toEqual({kind: 'crossing', from: BELOW_FORK, to: V9, behind: ['shielded', 'dust']});
   });
 });

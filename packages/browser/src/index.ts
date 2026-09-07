@@ -110,8 +110,9 @@ export {
   transactionHashOf,
   finalizedTransactionFromBytes,
   activeProtocolVersion,
+  protocolStatus,
 } from '@shieldedtech/moth-wallet/sync/operations';
-export type { SwapInput, WalletKeys } from '@shieldedtech/moth-wallet/sync/operations';
+export type { SwapInput, WalletKeys, ProtocolStatus, LedgerVersion } from '@shieldedtech/moth-wallet/sync/operations';
 export {
   summarizeTransaction,
   summarizeConnectorTransaction,

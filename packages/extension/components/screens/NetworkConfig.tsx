@@ -3,7 +3,7 @@
 // there is intentionally no separate "Custom" network choice.
 
 import { useEffect, useState } from 'react';
-import { Check, Cpu, Globe, RefreshCw, Server, TriangleAlert } from 'lucide-react';
+import { Check, Cpu, Globe, Layers, RefreshCw, Server, TriangleAlert } from 'lucide-react';
 import {
   DEFAULT_NETWORKS,
   SUPPORTED_NETWORKS,
@@ -14,6 +14,7 @@ import {
 } from '@shieldedtech/moth-wallet/types/network';
 import { t, type MessageKey } from '../../lib/i18n';
 import { sendMessage, type NetworkEndpoints } from '../../lib/messaging/protocol';
+import type { ProtocolStatusDTO } from '../../lib/offscreen/messaging';
 import { Button } from '../ui/button';
 import { DialogShell } from '../ui/dialog';
 import { Input } from '../ui/input';
@@ -450,9 +451,87 @@ function UrlField({
   );
 }
 
+/** Where the wallets stand, as the wallet SDK reports it: unknown until the
+ *  background answers, null when no sync session is up. */
+export type ProtocolState =
+  | { status: 'checking' }
+  | { status: 'known'; info: ProtocolStatusDTO }
+  | { status: 'unavailable' };
+
+/** Ask the background once per mount of the screen. */
+function useProtocolStatus(): ProtocolState {
+  const [state, setState] = useState<ProtocolState>({ status: 'checking' });
+  useEffect(() => {
+    let cancelled = false;
+    void sendMessage('networkProtocolGet', undefined)
+      .then((info) => {
+        if (!cancelled) setState(info ? { status: 'known', info } : { status: 'unavailable' });
+      })
+      .catch(() => {
+        if (!cancelled) setState({ status: 'unavailable' });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return state;
+}
+
+const WALLET_NAMES: Record<'shielded' | 'unshielded' | 'dust', MessageKey> = {
+  shielded: 'network_walletShielded',
+  unshielded: 'network_walletUnshielded',
+  dust: 'network_walletDust',
+};
+
+/**
+ * The protocol version the wallet SDK reports for the account in use: the
+ * version transactions are built for, the ledger that puts the wallet on, and
+ * whether the three wallets have settled on it or are still crossing a fork.
+ * Read-only, and about the network in use rather than the one being picked,
+ * because it comes from the wallets that are actually syncing.
+ */
+export function ProtocolCard({ networkName, protocol }: { networkName: string; protocol: ProtocolState }) {
+  return (
+    <div className="flex flex-col gap-3 rounded-[16px] bg-card p-4">
+      <p className="section-label m-0 flex items-center gap-2">
+        <Layers size={14} aria-hidden />
+        {t('network_protocolTitle', [networkName])}
+      </p>
+      {protocol.status === 'checking' && (
+        <p className="m-0 text-[12.5px] text-muted-foreground">{t('network_protocolChecking')}</p>
+      )}
+      {protocol.status === 'unavailable' && (
+        <p className="m-0 text-[12.5px] text-muted-foreground">{t('network_protocolUnavailable')}</p>
+      )}
+      {protocol.status === 'known' && (
+        <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-[12.5px]">
+          <dt className="m-0 text-muted-foreground">{t('network_protocolVersion')}</dt>
+          <dd className="m-0 text-right font-mono font-semibold">{String(protocol.info.version)}</dd>
+          <dt className="m-0 text-muted-foreground">{t('network_ledger')}</dt>
+          <dd className="m-0 text-right font-semibold">
+            {protocol.info.ledger === 'v9' ? t('network_ledgerV9') : t('network_ledgerV8')}
+          </dd>
+          <dt className="m-0 text-muted-foreground">{t('network_protocolPhase')}</dt>
+          <dd className="m-0 text-right">
+            {protocol.info.phase.kind === 'settled'
+              ? t('network_protocolSettled')
+              : t('network_protocolCrossing', [
+                  String(protocol.info.phase.from),
+                  String(protocol.info.phase.to),
+                  protocol.info.phase.behind.map((wallet) => t(WALLET_NAMES[wallet])).join(', '),
+                ])}
+          </dd>
+        </dl>
+      )}
+      <p className="m-0 text-[11.5px] leading-relaxed text-muted-foreground">{t('network_protocolHelp')}</p>
+    </div>
+  );
+}
+
 /** Settings → Network and endpoint configuration for the active account. */
 export function NetworkConfig({ onBack, onSaved }: { onBack: () => void; onSaved: () => Promise<void> }) {
   const net = useNetworkConfig();
+  const protocol = useProtocolStatus();
   const [confirming, setConfirming] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -496,6 +575,7 @@ export function NetworkConfig({ onBack, onSaved }: { onBack: () => void; onSaved
         <p className="m-0 text-[13.5px] text-muted-foreground">
           {t('network_intro')}
         </p>
+        {net.ready && <ProtocolCard networkName={networkLabel(net.current)} protocol={protocol} />}
         <NetworkFields state={net} />
         <NoteCard variant="neutral" icon={RefreshCw}>
           {t('network_resyncNote')}

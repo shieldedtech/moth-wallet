@@ -14,7 +14,7 @@ import * as Rx from 'rxjs';
 import * as ledgerV8 from '@midnightntwrk/wallet-sdk/ledger/v8';
 import * as ledgerV9 from '@midnightntwrk/wallet-sdk/ledger/v9';
 import {ProtocolVersion, WalletTransaction, type AnyTx, type FinalizedTx} from '@midnightntwrk/wallet-sdk';
-import {DefaultForkSchedule, type WalletFacade} from '@midnightntwrk/wallet-sdk/facade';
+import {DefaultForkSchedule, type WalletFacade, type WalletKind} from '@midnightntwrk/wallet-sdk/facade';
 import {createKeystore as createV1Keystore, PublicKey as V1PublicKey} from '@midnightntwrk/wallet-sdk/unshielded/v1';
 import {createKeystore, PublicKey} from '@midnightntwrk/wallet-sdk/unshielded';
 
@@ -34,6 +34,47 @@ export function isLedgerV9(version: ProtocolVersion.ProtocolVersion): boolean {
 export async function activeProtocolVersion(facade: WalletFacade): Promise<ProtocolVersion.ProtocolVersion> {
   const state = await Rx.firstValueFrom(facade.state());
   return state.activeProtocolVersion;
+}
+
+/** Which ledger version reads a chain at `version`. */
+export type LedgerVersion = 'v8' | 'v9';
+
+/**
+ * Where the wallets stand on the protocol version line, as the SDK reports it.
+ *
+ * `version` is what the facade builds transactions for: the lowest of the three
+ * wallets' versions, because nothing the facade builds can span the boundary.
+ * Around a fork the wallets disagree for a while, and `phase` says so: `crossing`
+ * names the version they are leaving, the one they are heading to, and which
+ * wallets have not arrived yet. It resolves on its own as synchronization proceeds.
+ */
+export interface ProtocolStatus {
+  readonly version: ProtocolVersion.ProtocolVersion;
+  readonly ledger: LedgerVersion;
+  readonly phase:
+    | {readonly kind: 'settled'}
+    | {
+        readonly kind: 'crossing';
+        readonly from: ProtocolVersion.ProtocolVersion;
+        readonly to: ProtocolVersion.ProtocolVersion;
+        readonly behind: readonly WalletKind[];
+      };
+  readonly wallets: Readonly<Record<WalletKind, ProtocolVersion.ProtocolVersion>>;
+}
+
+/** The wallets' protocol status, read off the facade's current state. */
+export async function protocolStatus(facade: WalletFacade): Promise<ProtocolStatus> {
+  const state = await Rx.firstValueFrom(facade.state());
+  const protocol = state.protocol;
+  return {
+    version: state.activeProtocolVersion,
+    ledger: isLedgerV9(state.activeProtocolVersion) ? 'v9' : 'v8',
+    phase:
+      protocol._tag === 'Settled'
+        ? {kind: 'settled'}
+        : {kind: 'crossing', from: protocol.from, to: protocol.to, behind: protocol.behind},
+    wallets: state.protocolVersion,
+  };
 }
 
 const MARKERS = {

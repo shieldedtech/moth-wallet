@@ -87,9 +87,9 @@ export {
   listNightUtxos,
   // Transactions travel as version-stamped handles; these read hashes and bytes
   // through the ledger version the wallets are acting at.
-  transactionHashOf, finalizedTransactionFromBytes, activeProtocolVersion,
+  transactionHashOf, finalizedTransactionFromBytes, activeProtocolVersion, protocolStatus,
   type SendRequest, type TxStage, type NightUtxo, type FinalizedTransaction, type UnprovenTransaction,
-  type WalletKeys,
+  type WalletKeys, type ProtocolStatus, type LedgerVersion,
 } from './sync/operations.js';
 export {
   InMemorySyncStateStore, syncStateKey, emptyRefStateKey, emptyRefMnemonicKey, emptyRefHeightKey,

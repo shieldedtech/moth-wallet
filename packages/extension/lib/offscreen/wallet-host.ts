@@ -20,6 +20,7 @@ import {
   transactionHashOf,
   finalizedTransactionFromBytes,
   activeProtocolVersion,
+  protocolStatus as coreProtocolStatus,
   deriveShieldedPublicKeys,
   deriveWalletKeys,
   clearSyncCache,
@@ -71,6 +72,7 @@ import type {
   UnlockedWallet,
   ProvingKeyMaterialDTO,
   TxSummaryDTO,
+  ProtocolStatusDTO,
 } from './messaging';
 import type { DustNotYet } from '../messaging/protocol';
 import type { HostEvent, HostEventData } from './worker-rpc';
@@ -438,6 +440,41 @@ export { relayRetry };
  *  and cheap: it prunes a bounded array and returns totals. */
 export function requestStats(): MeterSnapshot {
   return requestMeter.snapshot();
+}
+
+/**
+ * Where the synced wallets stand on the protocol version line, read from the
+ * wallet SDK's facade state — the authority on which ledger this wallet is
+ * acting on. Null when no sync session is up: the version is a fact about the
+ * running wallets, not about the network configuration.
+ */
+export async function protocolStatus(): Promise<ProtocolStatusDTO | null> {
+  if (!current) return null;
+  let wallet: SyncedWallet;
+  try {
+    wallet = await current.synced;
+  } catch {
+    return null;
+  }
+  const status = await coreProtocolStatus(wallet.facade);
+  return {
+    version: Number(status.version),
+    ledger: status.ledger,
+    phase:
+      status.phase.kind === 'settled'
+        ? { kind: 'settled' }
+        : {
+            kind: 'crossing',
+            from: Number(status.phase.from),
+            to: Number(status.phase.to),
+            behind: [...status.phase.behind],
+          },
+    wallets: {
+      shielded: Number(status.wallets.shielded),
+      unshielded: Number(status.wallets.unshielded),
+      dust: Number(status.wallets.dust),
+    },
+  };
 }
 
 /** Zero the counters. The lifetime figures are kept precisely so nothing else

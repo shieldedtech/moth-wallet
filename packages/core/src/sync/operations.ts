@@ -45,7 +45,14 @@ export type FinalizedTransaction = FinalizedTx;
 /** An unproven transaction handle, as a swap intent leaves the wallet. */
 export type UnprovenTransaction = UnprovenTx;
 
-export {transactionHashOf, finalizedTransactionFromBytes, activeProtocolVersion} from './ledger-routing.js';
+export {
+  transactionHashOf,
+  finalizedTransactionFromBytes,
+  activeProtocolVersion,
+  protocolStatus,
+  type ProtocolStatus,
+  type LedgerVersion,
+} from './ledger-routing.js';
 
 /** The wallet's schnorr signing keystore over its unshielded seed. */
 function unshieldedKeystore(keys: WalletKeys, networkId: string): UnshieldedKeystore {
