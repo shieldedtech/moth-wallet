@@ -32,11 +32,14 @@ Contents:
 
 ## 1. Key management: derive-and-drop
 
-**Pattern.** Derive a typed key bundle once, immediately drop the raw seed, and
-pass the bundle — never the seed — through the rest of the system.
-`deriveWalletKeys(seedHex)` returns `{ shieldedSecretKeys, dustSecretKey,
-nightExternalKey }`; the local `seedHex` reference is dropped (`seedHex = ''`)
-right after.
+**Pattern.** Derive a key bundle once, immediately drop the master seed, and
+pass the bundle — never the master seed — through the rest of the system.
+`deriveWalletKeys(seedHex)` returns the per-role seeds `{ shielded, unshielded,
+dust }` (the SDK's `WalletSeeds` shape: account 0, index 0, roles 3/0/2); the
+local `seedHex` reference is dropped (`seedHex = ''`) right after. The SDK
+derives each ledger version's key objects from these seeds and holds them for as
+long as the wallet runs, which is what lets one wallet follow the chain across
+the v9 fork.
 
 **Caveat — you drop the reference, you don't scrub the bytes.** `seedHex` is a
 JavaScript string, and strings are immutable: `seedHex = ''` only releases *this*
@@ -53,9 +56,10 @@ cryptographic zeroization of the plaintext.
   `walletKeys` field and the `seedHex = ''` after derivation).
 
 **Why.** Every Midnight write path (transfer, DUST designation, contract call)
-accepts the typed keys directly, so there's no reason to keep the seed live. In a
-multi-tenant daemon this is a hard security boundary: the seed exists only inside
-`unlock` and never enters RPC/messaging.
+takes the bundle — for the schnorr keystore that signs — and the started wallet
+holds the rest, so there's no reason to keep the master seed live. In a
+multi-tenant daemon this is a hard security boundary: the master seed exists only
+inside `unlock` and never enters RPC/messaging.
 
 **Gotcha.** Make the invariant *type-level*: don't expose `seedHex` on the
 unlocked-wallet type at all, or callers will quietly depend on it. When we first
@@ -65,16 +69,19 @@ migrated the extension, one call site still read `unlocked.seedHex` (now
 
 ## 2. The WASM-serialization boundary
 
-**The single most subtle thing in a browser wallet.** The typed key bundle from
-§1 is backed by WASM objects (`ZswapSecretKeys`, `DustSecretKey`). **WASM objects
-cannot cross a process or document boundary** (Chrome runtime messages,
-structured clone, web-worker postMessage). Only plain serializable data — like
-the hex seed — can.
+**The single most subtle thing in a browser wallet.** The running wallet — the
+SDK's key objects (`ZswapSecretKeys`, `DustSecretKey`) and its sync state — lives
+in WASM. **WASM objects cannot cross a process or document boundary** (Chrome
+runtime messages, structured clone, web-worker postMessage). Only plain
+serializable data — like the hex seed — can.
 
 **Consequence.** Wherever the key-holder is a *separate, restartable context*
 from the UI (an MV3 offscreen document, a worker, a daemon socket), you cannot
-ship the keys across. You ship a serializable secret (the seed) to the
-key-holder, and it re-derives the bundle locally, then drops the seed (§1).
+ship the running wallet across. You ship a serializable secret (the seed) to the
+key-holder, and it re-derives the bundle and starts the wallet locally, then
+drops the seed (§1). The per-role seeds in the bundle are plain bytes and *could*
+cross, but they are secrets too, so they are kept inside the key-holder alongside
+the wallet.
 
 - Moth's core `unlock` is seed-free by design (§1), so the extension recovers a
   serializable seed through an explicit, single-purpose method:
@@ -133,10 +140,16 @@ the fs work behind the dynamic import (see `removeWalletSyncArtifacts`).
 
 ## 5. The sync engine
 
-**SDK dedup.** The wallet SDK can insert commitment-tree items non-linearly and
-throw "values inserted non-linearly into the commitment tree." Wrap the shielded
-and DUST sub-wallet builders with deduping builders:
-- `dedupingShieldedBuilder` / `dedupingDustBuilder` — `packages/core/src/sync/sdk-dedup.ts:127`/`:153`, wired at `wallet-sync.ts:461`/`:507`.
+**Two ledgers, one wallet.** `@midnightntwrk/wallet-sdk` 2.0 runs ledger-v8
+below the chain's v9 fork and ledger-v9 from it, and its forking wallets cross on
+their own. Moth starts them from per-role seeds (`WalletKeys`) and carries every
+transaction as a version-stamped handle; bytes that arrive without a stamp are
+read through the ledger the wallets are acting at:
+- `packages/core/src/sync/ledger-routing.ts` — `transactionFromBytes`, `transactionHashOf`, the pre-seed key encoders.
+
+(The SDK 1.x boundary-event off-by-one moth used to work around in
+`sync/sdk-dedup.ts` is fixed upstream in 2.0; see
+`docs/upstream/wallet-sdk-sync-applyUpdate-off-by-one.md`.)
 
 **Submitted-only submission.** By default the facade resolves a submit only at
 *Finalized* (12–60 s+). In an MV3 extension the runtime message port can't outlive

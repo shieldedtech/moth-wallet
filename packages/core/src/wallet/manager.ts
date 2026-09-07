@@ -463,10 +463,9 @@ export class WalletManager {
     seedHex = '';
 
     let locked = false;
-    // Actually scrub key material — not just flip a flag. Zero the raw
-    // byte arrays and clear() the WASM-held secret keys so a compromised
-    // process can't recover them after lock. Best-effort and idempotent:
-    // a clear() throw (e.g. already freed) must not stop the rest.
+    // Actually scrub key material — not just flip a flag. Zero every byte array
+    // so a compromised process can't recover them after lock. Best-effort and
+    // idempotent: a throw on one buffer must not stop the rest.
     const lock = (): void => {
       if (locked) return;
       locked = true;
@@ -476,23 +475,15 @@ export class WalletManager {
         keys.dust,
         keys.zswap,
         keys.metadata,
-        walletKeys.nightExternalKey,
+        walletKeys.shielded,
+        walletKeys.unshielded,
+        walletKeys.dust,
       ]) {
         try {
           b.fill(0);
         } catch {
           /* not a writable view — ignore */
         }
-      }
-      try {
-        walletKeys.shieldedSecretKeys.clear();
-      } catch {
-        /* already cleared/freed */
-      }
-      try {
-        walletKeys.dustSecretKey.clear();
-      } catch {
-        /* already cleared/freed */
       }
     };
     return {

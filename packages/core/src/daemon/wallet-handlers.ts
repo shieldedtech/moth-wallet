@@ -10,7 +10,6 @@
 import {resolve as resolvePath} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {Buffer} from 'node:buffer';
-import * as ledger from '@midnight-ntwrk/ledger-v8';
 import type {WalletFacade} from '@midnightntwrk/wallet-sdk/facade';
 
 import {DaemonProtocolError} from './protocol.js';
@@ -41,7 +40,13 @@ import type {
   DaemonTransferTokensResult,
 } from './wallet-rpc-types.js';
 
-import {sendTokensWithKeys, designateForDustWithKeys, dedesignateFromDustWithKeys} from '../sync/operations.js';
+import {
+  sendTokensWithKeys,
+  designateForDustWithKeys,
+  dedesignateFromDustWithKeys,
+  finalizedTransactionFromBytes,
+  type FinalizedTransaction,
+} from '../sync/operations.js';
 import {submitWithHealthTracking} from '../sync/dust-ledger-health.js';
 import type {WalletKeys} from '../sync/operations.js';
 import {callCircuit} from '../contract/call.js';
@@ -281,14 +286,11 @@ export function buildWalletHandlers(deps: WalletHandlerDeps): Record<string, Rpc
         ],
         ctx,
         async () => {
-          let tx: ledger.FinalizedTransaction;
+          let tx: FinalizedTransaction;
           try {
-            tx = ledger.Transaction.deserialize(
-              'signature' as never,
-              'proof' as never,
-              'binding' as never,
-              Buffer.from(params.hex, 'hex'),
-            ) as ledger.FinalizedTransaction;
+            // Read with the ledger the wallets are acting at: the hex carries no
+            // protocol version of its own.
+            tx = await finalizedTransactionFromBytes(facade, Buffer.from(params.hex, 'hex'));
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             throw new DaemonProtocolError('INVALID_PARAMS', `failed to deserialize hex as FinalizedTransaction: ${msg}`);

@@ -5,20 +5,16 @@
 // See NOTICE for attribution.
 
 import * as Rx from 'rxjs';
-import * as ledger from '@midnight-ntwrk/ledger-v8';
-import {DefaultConfiguration, WalletFacade, type FacadeState} from '@midnightntwrk/wallet-sdk/facade';
+import {WalletFacade, type DefaultConfiguration, type FacadeState} from '@midnightntwrk/wallet-sdk/facade';
 import {
   makeDefaultSubmissionService,
   type SubmissionService,
 } from '@midnightntwrk/wallet-sdk/capabilities/submission';
-// CustomDustWallet/CustomShieldedWallet let v8's dedup builders wrap the sync
-// pipeline (see sdk-dedup); the plain wallets remain for non-deduped paths.
-import {DustWallet, CustomDustWallet} from '@midnightntwrk/wallet-sdk/dust';
-import {ShieldedWallet, CustomShieldedWallet} from '@midnightntwrk/wallet-sdk/shielded';
+import {DustWallet} from '@midnightntwrk/wallet-sdk/dust';
+import {ShieldedWallet} from '@midnightntwrk/wallet-sdk/shielded';
 import {UnshieldedWallet, PublicKey, createKeystore} from '@midnightntwrk/wallet-sdk/unshielded';
-import {InMemoryTransactionHistoryStorage} from '@midnightntwrk/wallet-sdk';
+import {InMemoryTransactionHistoryStorage, type FinalizedTx} from '@midnightntwrk/wallet-sdk';
 import {WalletEntrySchema, mergeWalletEntries} from '@midnightntwrk/wallet-sdk/facade';
-import {HDWallet, Roles} from '@midnightntwrk/wallet-sdk/hd';
 import {setNetworkId} from '@midnight-ntwrk/midnight-js/network-id';
 import {resolveProverConfig, type NetworkConfig} from '../types/network.js';
 import {createWalletProvingService} from '../proof/provider.js';
@@ -26,7 +22,7 @@ import {NIGHT_TOKEN_ID, formatNight} from '../types/tokens.js';
 import {formatDustBalance} from '../wallet/balance-format.js';
 import {ensureEmptyRefCache, preSeedNewWallet} from './preseed.js';
 import {InMemorySyncStateStore, syncStateKey, type SyncStateStore, type WalletPart} from './sync-store.js';
-import {dedupingShieldedBuilder, dedupingDustBuilder} from './sdk-dedup.js';
+import {initialDustParameters} from './ledger-routing.js';
 import {overallSyncProgress, type SubWallet} from './progress.js';
 import {partsToSeed} from './preseed-parts.js';
 import type {WalletKeys} from './operations.js';
@@ -53,13 +49,11 @@ export {NIGHT_TOKEN_ID, formatNight};
  * transaction around this call (optimistic balances) and reverts it if
  * submission is rejected.
  */
-function makeSubmittedOnlySubmissionService(
-  relayURL: URL,
-): SubmissionService<ledger.FinalizedTransaction> {
-  const inner = makeDefaultSubmissionService<ledger.FinalizedTransaction>({relayURL});
+function makeSubmittedOnlySubmissionService(relayURL: URL): SubmissionService<FinalizedTx> {
+  const inner = makeDefaultSubmissionService<FinalizedTx>({relayURL});
   return {
-    submitTransaction: ((tx: ledger.FinalizedTransaction) =>
-      inner.submitTransaction(tx, 'Submitted')) as SubmissionService<ledger.FinalizedTransaction>['submitTransaction'],
+    submitTransaction: ((tx: FinalizedTx) =>
+      inner.submitTransaction(tx, 'Submitted')) as SubmissionService<FinalizedTx>['submitTransaction'],
     close: () => inner.close(),
   };
 }
@@ -404,9 +398,13 @@ const STOP_TIMEOUT_MS = 5_000;
 
 /**
  * Bring up the WalletFacade (shielded + unshielded + dust) and start syncing.
- * Takes `walletKeys` (the typed bundle derived once at unlock — Option A, the
- * raw seed is never threaded here). Pre-seed of brand-new wallets derives the
+ * Takes `walletKeys` (the per-role seeds derived once at unlock — Option A, the
+ * master seed is never threaded here). Pre-seed of brand-new wallets derives the
  * bundle up front (see preseed.ts) and calls this directly.
+ *
+ * The SDK's forking wallets run ledger-v8 below the chain's fork version and
+ * ledger-v9 from it, and cross on their own; seeds are what lets them, because
+ * each ledger version derives its own key objects from the same seed.
  */
 /** A sub-wallet's own fraction, for the progress line. `done` wins over the
  *  counters: a sub-wallet with nothing to apply is complete, not stalled. */
@@ -434,10 +432,8 @@ export async function startWalletSync(
 
   const name = walletName ?? 'default';
 
-  // Option A: keys arrive pre-derived; the seed was dropped at unlock.
-  const shieldedSecretKeys = keys.shieldedSecretKeys;
-  const dustSecretKey = keys.dustSecretKey;
-  const keystore = createKeystore(keys.nightExternalKey, network.id);
+  // Option A: the per-role seeds arrive pre-derived; the master seed was dropped at unlock.
+  const keystore = createKeystore({kind: 'schnorr', secret: keys.unshielded}, network.id);
 
   const indexerHttpUrl = network.indexerUrl;
   const indexerWsUrl = toWsUrl(indexerHttpUrl) + '/ws';
@@ -449,14 +445,14 @@ export async function startWalletSync(
   // only fills in what happened since.
   const txHistoryStorage = await loadHistoryStorage(store, name, network.id, onProgress);
 
-  // Cast confined to the SDK's config intersection: the literal can't satisfy
-  // DefaultTransactionHistoryConfiguration structurally, so it's typed as the
-  // factory's config type, matching the prior runtime behaviour.
-  const walletCfg: DefaultConfiguration = {
+  // Resolved once so the wallets built here, outside the facade's factories, are
+  // handed the same `forks` the facade presets: where the chain hands over to
+  // ledger-v9 is a fact about the chain, and every component must read one value.
+  const walletCfg = WalletFacade.resolveConfiguration<DefaultConfiguration>({
     networkId: network.id,
     indexerClientConnection: {indexerHttpUrl, indexerWsUrl},
     relayURL,
-    // Shared transaction history storage for all sub-wallets (v4 SDK requirement)
+    // Shared transaction history storage for all sub-wallets.
     txHistoryStorage,
     costParameters: DUST_COST_PARAMETERS,
     batchUpdates: {
@@ -464,7 +460,7 @@ export async function startWalletSync(
       timeout: options?.batchUpdates?.timeout ?? 500,
       spacing: options?.batchUpdates?.spacing ?? 50,
     },
-  };
+  });
 
   // --- Pre-seed: fill in whichever sub-wallet caches are missing ---
   //
@@ -541,75 +537,69 @@ export async function startWalletSync(
     }
   }
 
+  // A restored snapshot carries no key material and sits on whichever variant
+  // wrote it, so it is started from the seed, which answers for either side of
+  // the fork; a fresh wallet asks the chain which side to begin on.
+
   // --- Shielded wallet: try restore from cache ---
-  // Use CustomShieldedWallet with a deduping syncCapability so that
-  // re-sent boundary events from the indexer don't trip the WASM tree
-  // (see sync/sdk-dedup.ts for the upstream bug context).
   onProgress?.('Starting shielded wallet...');
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const shieldedBuilder = dedupingShieldedBuilder() as any;
+  const Shielded = ShieldedWallet(walletCfg);
   let shieldedWallet: ShieldedWallet | undefined;
   let restoredFromCache = false;
   const savedShielded = await loadCachedState(store, name, network.id, 'shielded');
   if (savedShielded) {
     try {
       onProgress?.('Restoring shielded state from cache...');
-      shieldedWallet = CustomShieldedWallet(walletCfg, shieldedBuilder).restore(savedShielded);
+      shieldedWallet = Shielded.restore(savedShielded);
       restoredFromCache = true;
     } catch {
       onProgress?.('Shielded cache corrupted, syncing from genesis...');
       await evictCachedState(store, name, network.id, 'shielded');
     }
   }
-  if (!shieldedWallet) {
-    shieldedWallet = CustomShieldedWallet(walletCfg, shieldedBuilder).startWithSecretKeys(shieldedSecretKeys);
+  if (shieldedWallet) {
+    await shieldedWallet.startWithSeed(keys.shielded);
+  } else {
+    shieldedWallet = await Shielded.startWithSeed(keys.shielded);
   }
 
   // --- Unshielded wallet: try restore from cache ---
   onProgress?.('Starting unshielded wallet...');
+  const Unshielded = UnshieldedWallet(walletCfg);
   let unshieldedWallet: UnshieldedWallet | undefined;
   const savedUnshielded = await loadCachedState(store, name, network.id, 'unshielded');
   if (savedUnshielded) {
     try {
       onProgress?.('Restoring unshielded state from cache...');
-      unshieldedWallet = UnshieldedWallet(walletCfg).restore(savedUnshielded);
+      unshieldedWallet = Unshielded.restore(savedUnshielded);
     } catch {
       onProgress?.('Unshielded cache corrupted, syncing from genesis...');
       await evictCachedState(store, name, network.id, 'unshielded');
     }
   }
   if (!unshieldedWallet) {
-    unshieldedWallet = UnshieldedWallet(walletCfg).startWithPublicKey(PublicKey.fromKeyStore(keystore));
+    unshieldedWallet = await Unshielded.startWithPublicKey(PublicKey.fromKeyStore(keystore));
   }
 
   // --- Dust wallet: try restore from cache ---
-  // Same deduping wrapper as the shielded wallet — the dust SDK has the
-  // same boundary-event off-by-one in its applyUpdate.
   onProgress?.('Starting dust wallet...');
-  const dustCfg = {
-    networkId: network.id,
-    costParameters: DUST_COST_PARAMETERS,
-    indexerClientConnection: {indexerHttpUrl, indexerWsUrl},
-    txHistoryStorage,
-  } as Parameters<typeof DustWallet>[0];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const dustBuilder = dedupingDustBuilder() as any;
+  const Dust = DustWallet(walletCfg);
   let dustWallet: DustWallet | undefined;
   const savedDust = await loadCachedState(store, name, network.id, 'dust');
   if (savedDust) {
     try {
       onProgress?.('Restoring dust state from cache...');
-      dustWallet = CustomDustWallet(dustCfg, dustBuilder).restore(savedDust);
+      dustWallet = Dust.restore(savedDust);
     } catch {
       onProgress?.('Dust cache corrupted, syncing from genesis...');
       await evictCachedState(store, name, network.id, 'dust');
     }
   }
-  if (!dustWallet) {
-    dustWallet = CustomDustWallet(dustCfg, dustBuilder).startWithSecretKey(
-      dustSecretKey,
-      ledger.LedgerParameters.initialParameters().dust
-    );
+  if (dustWallet) {
+    await dustWallet.startWithSeed(keys.dust);
+  } else {
+    // DUST generation parameters default to the ledger's initial ones.
+    dustWallet = await Dust.startWithSeed(keys.dust);
   }
 
   if (restoredFromCache) {
@@ -620,9 +610,9 @@ export async function startWalletSync(
   onProgress?.('Initializing wallet facade...');
   const facade = await WalletFacade.init({
     configuration: walletCfg,
-    // The SDK defaults to a proof server. Supply the service explicitly so
-    // WASM mode follows the documented makeWasmProvingService() path.
-    provingService: () => createWalletProvingService(prover),
+    // The SDK defaults to a proof server. Supply the service explicitly so WASM
+    // mode, and the browser's in-worker prover, route by protocol version too.
+    provingService: (cfg) => createWalletProvingService(prover, cfg.forks),
     // Resolve submissions at 'Submitted' instead of the default 'Finalized' so a
     // send doesn't block its message round-trip on finalization — see
     // makeSubmittedOnlySubmissionService.
@@ -632,7 +622,7 @@ export async function startWalletSync(
     dust: () => dustWallet!,
   });
 
-  await facade.start(shieldedSecretKeys, dustSecretKey);
+  await facade.start(keys);
   onProgress?.('Syncing with network...');
 
   // Subscribe to progressive state updates — don't block on full sync.
@@ -730,19 +720,9 @@ export async function startWalletSync(
       },
     });
 
-  // Wait briefly for first emission so we have something to return
-  await new Promise<void>((resolve) => {
-    const timeout = setTimeout(resolve, 5_000);
-    const earlyCheck = facade
-      .state()
-      .pipe(Rx.first())
-      .subscribe((s: FacadeState) => {
-        latestBalances = extractBalancesPartial(s);
-        clearTimeout(timeout);
-        earlyCheck.unsubscribe();
-        resolve();
-      });
-  });
+  // Wait briefly for the first emission so we have something to return.
+  const first = await firstEmission(facade.state(), 5_000);
+  if (first) latestBalances = extractBalancesPartial(first);
 
   const refresh = async (): Promise<WalletBalances> => {
     return latestBalances;
@@ -795,6 +775,24 @@ export async function startWalletSync(
 }
 
 /**
+ * The first value an observable emits, or undefined after `timeoutMs` without one.
+ *
+ * The facade's state replays its current value synchronously on subscribe, so a
+ * hand-rolled subscription whose handler reaches back for the subscription it is
+ * created by trips over its own `const` before it is initialized. firstValueFrom
+ * owns the subscription itself and needs no such reference.
+ */
+export async function firstEmission<T>(source: Rx.Observable<T>, timeoutMs: number): Promise<T | undefined> {
+  return Rx.firstValueFrom(
+    source.pipe(
+      Rx.timeout(timeoutMs),
+      Rx.catchError(() => Rx.EMPTY),
+    ),
+    {defaultValue: undefined},
+  );
+}
+
+/**
  * Restore the shared transaction history storage from its cached serialization,
  * mirroring the sub-wallet restore path: use the cache when it decodes, evict
  * and start empty when it doesn't (sync rebuilds it from the indexer).
@@ -827,18 +825,9 @@ async function saveCache(
 ): Promise<void> {
   try {
     const [sh, un, du, hi] = await Promise.all([
-      facade.shielded.state
-        .pipe(Rx.first())
-        .toPromise()
-        .then((s) => s?.capabilities?.serialization?.serialize?.(s.state) ?? null),
-      facade.unshielded.state
-        .pipe(Rx.first())
-        .toPromise()
-        .then((s) => s?.capabilities?.serialization?.serialize?.(s.state) ?? null),
-      facade.dust.state
-        .pipe(Rx.first())
-        .toPromise()
-        .then((s) => s?.capabilities?.serialization?.serialize?.(s.state) ?? null),
+      facade.shielded.serializeState().catch(() => null),
+      facade.unshielded.serializeState().catch(() => null),
+      facade.dust.serializeState().catch(() => null),
       history.serialize().catch(() => null),
     ]).catch(() => [null, null, null, null]);
     if (sh) await saveCachedState(store, walletName, networkId, 'shielded', sh);
@@ -1060,7 +1049,7 @@ function extractBalancesPartial(
   // Extract DUST generation info from the facade's dust sub-wallet state.
   // This matches mn-tui's extractDustGeneration pattern.
   try {
-    const nightRatio = ledger.LedgerParameters.initialParameters().dust.nightDustRatio as bigint;
+    const nightRatio = initialDustParameters(state.activeProtocolVersion).nightDustRatio;
     // v4 API: availableCoins is a property returning DustFullInfo[]
     const coins = state.dust.availableCoins.filter((coin) => coin.maxCap > 0n);
 

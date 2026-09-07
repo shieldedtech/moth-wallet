@@ -2,14 +2,14 @@
 // Architecture follows mn-tui's wallet.ts pattern. See NOTICE for attribution.
 
 import * as Rx from 'rxjs';
-import * as ledger from '@midnight-ntwrk/ledger-v8';
+import type {FinalizedTx, UnprovenTx} from '@midnightntwrk/wallet-sdk';
 import {
   MidnightBech32m,
   ShieldedAddress,
   UnshieldedAddress,
   DustAddress,
 } from '@midnightntwrk/wallet-sdk/address-format';
-import {createKeystore} from '@midnightntwrk/wallet-sdk/unshielded';
+import {createKeystore, type UnshieldedKeystore} from '@midnightntwrk/wallet-sdk/unshielded';
 import type {
   WalletFacade,
   UtxoWithMeta,
@@ -22,6 +22,7 @@ import {HDWallet, Roles} from '@midnightntwrk/wallet-sdk/hd';
 import {setNetworkId} from '@midnight-ntwrk/midnight-js/network-id';
 import type {NetworkConfig} from '../types/network.js';
 import {NIGHT_TOKEN_ID} from './wallet-sync.js';
+import {activeProtocolVersion, transactionFromBytes, transactionHashOf} from './ledger-routing.js';
 import {
   estimateRegistrationAffordability,
   DustRegistrationNotYetError,
@@ -33,8 +34,23 @@ import {
 // to catch from the same place — without also reaching for the estimate module.
 export {DustRegistrationNotYetError, type DustRegistrationEstimate};
 
-/** The proven, signed, ready-to-submit transaction produced by the facade. */
-export type FinalizedTransaction = ledger.FinalizedTransaction;
+/**
+ * The proven, signed, ready-to-submit transaction produced by the facade: a
+ * handle stamped with the protocol version that authored it, so it can be
+ * carried around without naming a ledger version. `serialize()` gives the bytes;
+ * see transactionHashOf for the hash.
+ */
+export type FinalizedTransaction = FinalizedTx;
+
+/** An unproven transaction handle, as a swap intent leaves the wallet. */
+export type UnprovenTransaction = UnprovenTx;
+
+export {transactionHashOf, finalizedTransactionFromBytes, activeProtocolVersion} from './ledger-routing.js';
+
+/** The wallet's schnorr signing keystore over its unshielded seed. */
+function unshieldedKeystore(keys: WalletKeys, networkId: string): UnshieldedKeystore {
+  return createKeystore({kind: 'schnorr', secret: keys.unshielded}, networkId);
+}
 
 export type TxStage = 'building' | 'proving' | 'submitting';
 
@@ -83,10 +99,13 @@ export type {WalletKeys} from '../types/wallet.js';
 import type {WalletKeys} from '../types/wallet.js';
 
 /**
- * Derive the typed key bundle from a hex seed. Option A key
- * model (v8's D-KM-3): callers derive once at unlock and discard the raw seed
+ * Derive the per-role seed bundle from a hex master seed. Option A key model
+ * (D-KM-3): callers derive once at unlock and discard the master seed
  * immediately — the bundle holds everything the write paths need, so the seed
  * is never threaded through the daemon or the extension messaging layers.
+ *
+ * Same derivation as the SDK's `WalletSeeds.fromMasterSeed`: account 0, index 0,
+ * roles 0 (unshielded), 2 (DUST) and 3 (shielded).
  */
 export function deriveWalletKeys(seedHex: string): WalletKeys {
   const hdWallet = HDWallet.fromSeed(Buffer.from(seedHex, 'hex'));
@@ -99,9 +118,9 @@ export function deriveWalletKeys(seedHex: string): WalletKeys {
   hdWallet.hdWallet.clear();
 
   return {
-    shieldedSecretKeys: ledger.ZswapSecretKeys.fromSeed(result.keys[Roles.Zswap]),
-    dustSecretKey: ledger.DustSecretKey.fromSeed(result.keys[Roles.Dust]),
-    nightExternalKey: result.keys[Roles.NightExternal],
+    shielded: result.keys[Roles.Zswap],
+    unshielded: result.keys[Roles.NightExternal],
+    dust: result.keys[Roles.Dust],
   };
 }
 
@@ -158,9 +177,9 @@ async function submitWithRetry(
       // (WalletEntry.hash), explorers, and the activity feed's pending-row
       // reconciliation — is keyed by the transaction hash. Return that.
       await facade.submitTransaction(finalized);
-      return finalized.transactionHash();
+      return transactionHashOf(finalized);
     } catch (e) {
-      if (isAlreadyImported(e)) return finalized.transactionHash();
+      if (isAlreadyImported(e)) return transactionHashOf(finalized);
       if (attempt === attempts || !isTransient(e)) throw e;
       await new Promise((r) => setTimeout(r, delayMs));
     }
@@ -182,19 +201,15 @@ export async function buildTransferTransaction(
   onProgress?: (stage: TxStage) => void
 ): Promise<FinalizedTransaction> {
   setNetworkId(networkId);
-  const ks = createKeystore(keys.nightExternalKey, networkId);
+  const ks = unshieldedKeystore(keys, networkId);
   const transfers = combinedTransfers(networkId, requests);
   const ttl = new Date(Date.now() + 30 * 60_000);
 
   onProgress?.('building');
-  const recipe = await facade.transferTransaction(
-    transfers,
-    {shieldedSecretKeys: keys.shieldedSecretKeys, dustSecretKey: keys.dustSecretKey},
-    {ttl}
-  );
+  const recipe = await facade.transferTransaction(transfers, {ttl});
 
   onProgress?.('proving');
-  const signed = await facade.signRecipe(recipe, (payload: Uint8Array) => ks.signData(payload));
+  const signed = await facade.signRecipe(recipe, ks.signDataAsync);
 
   return facade.finalizeRecipe(signed);
 }
@@ -207,21 +222,17 @@ export async function buildTransferTransaction(
  */
 export async function estimateTransferFee(
   facade: WalletFacade,
-  keys: WalletKeys,
+  _keys: WalletKeys,
   networkId: string,
   requests: SendRequest[]
 ): Promise<bigint> {
   setNetworkId(networkId);
   const transfers = combinedTransfers(networkId, requests);
   const ttl = new Date(Date.now() + 30 * 60_000);
-  const recipe = await facade.transferTransaction(
-    transfers,
-    {shieldedSecretKeys: keys.shieldedSecretKeys, dustSecretKey: keys.dustSecretKey},
-    {ttl, payFees: false}
-  );
+  const recipe = await facade.transferTransaction(transfers, {ttl, payFees: false});
 
   try {
-    return await facade.estimateTransactionFee(recipe.transaction, keys.dustSecretKey, {ttl});
+    return await facade.estimateTransactionFee(recipe.transaction, {ttl});
   } finally {
     await facade.revertTransaction(recipe.transaction);
   }
@@ -261,8 +272,12 @@ export async function sendTokensWithKeys(
  * remove imbalances, then prove + bind into a submit-ready FinalizedTransaction.
  *
  * `sealed` selects the input stage:
- * - sealed   → Transaction<SignatureEnabled, Proof, Binding>    (FinalizedTransaction)
- * - unsealed → Transaction<SignatureEnabled, Proof, PreBinding> (UnboundTransaction)
+ * - sealed   → Transaction<SignatureEnabled, Proof, Binding>    (Finalized)
+ * - unsealed → Transaction<SignatureEnabled, Proof, PreBinding> (Unbound)
+ *
+ * The dApp's bytes carry no protocol version, so they are read with the ledger
+ * the wallets are acting at; a dApp that authored for the other side of the
+ * fork fails here rather than at submission.
  *
  * The prove/finalize tail is the same as {@link buildTransferTransaction}.
  */
@@ -275,35 +290,17 @@ export async function balanceTransaction(
   onProgress?: (stage: TxStage) => void
 ): Promise<FinalizedTransaction> {
   setNetworkId(networkId);
-  const ks = createKeystore(keys.nightExternalKey, networkId);
-  const secretKeys = {shieldedSecretKeys: keys.shieldedSecretKeys, dustSecretKey: keys.dustSecretKey};
+  const ks = unshieldedKeystore(keys, networkId);
   const ttl = new Date(Date.now() + 30 * 60_000);
 
   onProgress?.('building');
+  const version = await activeProtocolVersion(facade);
   const recipe = sealed
-    ? await facade.balanceFinalizedTransaction(
-        ledger.Transaction.deserialize<ledger.SignatureEnabled, ledger.Proof, ledger.Binding>(
-          'signature',
-          'proof',
-          'binding',
-          txBytes
-        ),
-        secretKeys,
-        {ttl}
-      )
-    : await facade.balanceUnboundTransaction(
-        ledger.Transaction.deserialize<ledger.SignatureEnabled, ledger.Proof, ledger.PreBinding>(
-          'signature',
-          'proof',
-          'pre-binding',
-          txBytes
-        ),
-        secretKeys,
-        {ttl}
-      );
+    ? await facade.balanceFinalizedTransaction(transactionFromBytes(txBytes, 'Finalized', version), {ttl})
+    : await facade.balanceUnboundTransaction(transactionFromBytes(txBytes, 'Unbound', version), {ttl});
 
   onProgress?.('proving');
-  const signed = await facade.signRecipe(recipe, (payload: Uint8Array) => ks.signData(payload));
+  const signed = await facade.signRecipe(recipe, ks.signDataAsync);
   return facade.finalizeRecipe(signed);
 }
 
@@ -320,13 +317,13 @@ export async function balanceTransaction(
  */
 export async function buildSwapIntent(
   facade: WalletFacade,
-  keys: WalletKeys,
+  _keys: WalletKeys,
   networkId: string,
   inputs: SwapInput[],
   outputs: SendRequest[],
   payFees: boolean,
   onProgress?: (stage: TxStage) => void
-): Promise<ledger.UnprovenTransaction> {
+): Promise<UnprovenTransaction> {
   setNetworkId(networkId);
 
   const swapInputs: CombinedSwapInputs = {};
@@ -350,12 +347,7 @@ export async function buildSwapIntent(
 
   const ttl = new Date(Date.now() + 30 * 60_000);
   onProgress?.('building');
-  const recipe = await facade.initSwap(
-    swapInputs,
-    swapOutputs,
-    {shieldedSecretKeys: keys.shieldedSecretKeys, dustSecretKey: keys.dustSecretKey},
-    {ttl, payFees}
-  );
+  const recipe = await facade.initSwap(swapInputs, swapOutputs, {ttl, payFees});
   return recipe.transaction;
 }
 
@@ -420,7 +412,7 @@ export async function designateForDustWithKeys(
   selectedUtxos?: NightUtxo[],
 ): Promise<string | null> {
   setNetworkId(networkId);
-  const ks = createKeystore(keys.nightExternalKey, networkId);
+  const ks = unshieldedKeystore(keys, networkId);
 
   return designateForDustImpl(facade, ks, networkId, receiver, onProgress, selectedUtxos);
 }
@@ -439,8 +431,7 @@ export async function designateForDust(
   selectedUtxos?: NightUtxo[]
 ): Promise<string | null> {
   setNetworkId(networkId);
-  const keys = deriveKeysFromSeed(seedHex);
-  const ks = createKeystore(keys.nightExternalKey, networkId);
+  const ks = unshieldedKeystore(deriveKeysFromSeed(seedHex), networkId);
   return designateForDustImpl(facade, ks, networkId, receiver, onProgress, selectedUtxos);
 }
 
@@ -497,7 +488,7 @@ async function unregisteredNightUtxos(facade: WalletFacade): Promise<UtxoWithMet
 // designateForDustWithKeys(walletKeys).
 async function designateForDustImpl(
   facade: WalletFacade,
-  ks: ReturnType<typeof createKeystore>,
+  ks: UnshieldedKeystore,
   networkId: string,
   receiver: string | undefined,
   onProgress: ((stage: TxStage) => void) | undefined,
@@ -537,7 +528,7 @@ async function designateForDustImpl(
     recipe = await facade.registerNightUtxosForDustGeneration(
       utxos,
       ks.getPublicKey(),
-      (payload: Uint8Array) => ks.signData(payload),
+      ks.signDataAsync,
       dustReceiver
     );
   } catch (e) {
@@ -574,8 +565,8 @@ export async function dedesignateFromDustWithKeys(
   selectedUtxos?: NightUtxo[],
 ): Promise<string> {
   setNetworkId(networkId);
-  const ks = createKeystore(keys.nightExternalKey, networkId);
-  return dedesignateFromDustImpl(facade, ks, keys, onProgress, selectedUtxos);
+  const ks = unshieldedKeystore(keys, networkId);
+  return dedesignateFromDustImpl(facade, ks, onProgress, selectedUtxos);
 }
 
 /**
@@ -591,15 +582,13 @@ export async function dedesignateFromDust(
   selectedUtxos?: NightUtxo[]
 ): Promise<string> {
   setNetworkId(networkId);
-  const keys = deriveKeysFromSeed(seedHex);
-  const ks = createKeystore(keys.nightExternalKey, networkId);
-  return dedesignateFromDustImpl(facade, ks, keys, onProgress, selectedUtxos);
+  const ks = unshieldedKeystore(deriveKeysFromSeed(seedHex), networkId);
+  return dedesignateFromDustImpl(facade, ks, onProgress, selectedUtxos);
 }
 
 async function dedesignateFromDustImpl(
   facade: WalletFacade,
-  ks: ReturnType<typeof createKeystore>,
-  keys: WalletKeys,
+  ks: UnshieldedKeystore,
   onProgress: ((stage: TxStage) => void) | undefined,
   selectedUtxos: NightUtxo[] | undefined,
 ): Promise<string> {
@@ -620,15 +609,11 @@ async function dedesignateFromDustImpl(
   if (utxos.length === 0) throw new Error('No registered NIGHT UTXOs to deregister');
 
   onProgress?.('building');
-  const recipe = await facade.deregisterFromDustGeneration(utxos, ks.getPublicKey(), (payload: Uint8Array) =>
-    ks.signData(payload)
-  );
+  const recipe = await facade.deregisterFromDustGeneration(utxos, ks.getPublicKey(), ks.signDataAsync);
 
-  const balancedRecipe = await facade.balanceUnprovenTransaction(
-    recipe.transaction,
-    {shieldedSecretKeys: keys.shieldedSecretKeys, dustSecretKey: keys.dustSecretKey},
-    {ttl: new Date(Date.now() + 30 * 60_000)}
-  );
+  const balancedRecipe = await facade.balanceUnprovenTransaction(recipe.transaction, {
+    ttl: new Date(Date.now() + 30 * 60_000),
+  });
 
   onProgress?.('submitting');
   const finalized = await facade.finalizeRecipe(balancedRecipe);

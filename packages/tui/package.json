@@ -27,7 +27,7 @@
   },
   "dependencies": {
     "@midnight-ntwrk/ledger-v8": "8.1.0",
-    "@midnightntwrk/wallet-sdk": "^1.2.0",
+    "@midnightntwrk/wallet-sdk": "2.0.0-canary.20260906003330-56a7ac5",
     "@shieldedtech/moth-wallet": "^0.13.0",
     "ink": "^7.0.1",
     "ink-spinner": "^5.0.0",
