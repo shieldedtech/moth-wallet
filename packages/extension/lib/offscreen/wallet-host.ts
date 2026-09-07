@@ -17,6 +17,10 @@ import {
   designateForDust as coreDesignateForDust,
   dedesignateFromDust as coreDedesignateFromDust,
   submitFinalizedTransaction,
+  transactionHashOf,
+  finalizedTransactionFromBytes,
+  activeProtocolVersion,
+  protocolStatus as coreProtocolStatus,
   deriveShieldedPublicKeys,
   deriveWalletKeys,
   clearSyncCache,
@@ -47,7 +51,6 @@ import {
   diagnoseSubmissionFailure,
 } from '@shieldedtech/moth-browser';
 import { deriveAllAddressesFromSeed } from '@shieldedtech/moth-wallet/wallet/address';
-import * as ledger from '@midnight-ntwrk/ledger-v8';
 import type { HistoryEntry } from '@midnight-ntwrk/dapp-connector-api';
 import { serializeBalances } from '../messaging/balances-json';
 import { serializeActivity } from '../messaging/activity-json';
@@ -69,6 +72,7 @@ import type {
   UnlockedWallet,
   ProvingKeyMaterialDTO,
   TxSummaryDTO,
+  ProtocolStatusDTO,
 } from './messaging';
 import type { DustNotYet } from '../messaging/protocol';
 import type { HostEvent, HostEventData } from './worker-rpc';
@@ -438,6 +442,41 @@ export function requestStats(): MeterSnapshot {
   return requestMeter.snapshot();
 }
 
+/**
+ * Where the synced wallets stand on the protocol version line, read from the
+ * wallet SDK's facade state — the authority on which ledger this wallet is
+ * acting on. Null when no sync session is up: the version is a fact about the
+ * running wallets, not about the network configuration.
+ */
+export async function protocolStatus(): Promise<ProtocolStatusDTO | null> {
+  if (!current) return null;
+  let wallet: SyncedWallet;
+  try {
+    wallet = await current.synced;
+  } catch {
+    return null;
+  }
+  const status = await coreProtocolStatus(wallet.facade);
+  return {
+    version: Number(status.version),
+    ledger: status.ledger,
+    phase:
+      status.phase.kind === 'settled'
+        ? { kind: 'settled' }
+        : {
+            kind: 'crossing',
+            from: Number(status.phase.from),
+            to: Number(status.phase.to),
+            behind: [...status.phase.behind],
+          },
+    wallets: {
+      shielded: Number(status.wallets.shielded),
+      unshielded: Number(status.wallets.unshielded),
+      dust: Number(status.wallets.dust),
+    },
+  };
+}
+
 /** Zero the counters. The lifetime figures are kept precisely so nothing else
  *  drops them, so clearing has to be something the user asks for. */
 export function resetRequestStats(): void {
@@ -667,7 +706,7 @@ export function sendTokens(
     const single = requests.length === 1 ? requests[0] : undefined;
     await noteSubmitted(network.id, walletName, {
       hash: txHash,
-      transactionHash: finalized.transactionHash(),
+      transactionHash: transactionHashOf(finalized),
       submittedAt: Date.now(),
       kind: 'send',
       to: single?.to,
@@ -792,13 +831,24 @@ export async function transferBuild(
   });
 }
 
+/** The protocol version the live sync session is acting at, when one is up for
+ *  this network. The approval prompt can run before any wallet is synced, and
+ *  then the summary decides the ledger version from the bytes alone. */
+async function activeVersionIfSynced(network: NetworkConfig) {
+  if (!current?.key.startsWith(`${network.id}/`)) return undefined;
+  try {
+    return await activeProtocolVersion((await current.synced).facade);
+  } catch {
+    return undefined;
+  }
+}
+
 // What balancing a dApp-supplied transaction would take from the wallet, for the
 // approval prompt that precedes balanceTransaction below. Reads the transaction's
 // own per-segment imbalances, so it needs neither keys nor a synced wallet, and
 // never books or spends anything.
 export async function txSummary(network: NetworkConfig, txHex: string, sealed: boolean): Promise<TxSummaryDTO> {
-  void network; // same signature as the other host methods; the ledger is fixed on this build
-  const summary = summarizeConnectorTransaction(fromHex(txHex), sealed);
+  const summary = summarizeConnectorTransaction(fromHex(txHex), sealed, await activeVersionIfSynced(network));
   const dto = (entries: typeof summary.spends) =>
     entries.map((entry) => ({ kind: entry.kind, tokenId: entry.tokenId, amount: entry.amount.toString() }));
   return { spends: dto(summary.spends), receives: dto(summary.receives), contractActions: summary.contractActions };
@@ -862,26 +912,29 @@ export async function transferSubmit(
 ): Promise<void> {
   return trackOp(async () => {
     const wallet = await syncEnsure(seedHex, walletName, network);
-    const transaction = ledger.Transaction.deserialize<ledger.SignatureEnabled, ledger.Proof, ledger.Binding>(
-      'signature',
-      'proof',
-      'binding',
-      fromHex(txHex),
-    );
+    // The hex carries no protocol version; read it with the ledger the wallets are acting at.
+    const transaction = await finalizedTransactionFromBytes(wallet.facade, fromHex(txHex));
     await submitTracked(network, walletName, () => submitFinalizedTransaction(wallet.facade, transaction));
   });
 }
 
 // --- Transaction history ---------------------------------------------------
 
-// The wallet's applied history is on-chain, so we report it as `finalized`. The
-// SDK gives one coarse status per entry, not per-segment data, so we surface it
-// as the transaction's guaranteed section (segment 0). Moth only ever creates
+// Applied history is on-chain, so it is reported as `finalized`. The SDK gives
+// one coarse status per entry, not per-segment data, so we surface it as the
+// transaction's guaranteed section (segment 0). Moth only ever creates
 // single-section transfers, so SUCCESS/FAILURE is exact for those;
 // PARTIAL_SUCCESS (only reachable via external contract calls with fallible
-// sections) reports the guaranteed section as applied. Pending (submitted but
-// unconfirmed) transactions are not included yet.
-function toHistoryEntry(entry: { hash: string; status: 'SUCCESS' | 'FAILURE' | 'PARTIAL_SUCCESS' }): HistoryEntry {
+// sections) reports the guaranteed section as applied. The SDK also records a
+// transaction the wallet submitted itself, as `pending` until the chain applies
+// it and `rejected` if it never does; those map onto the connector's own words.
+function toHistoryEntry(entry: {
+  hash: string;
+  status?: 'SUCCESS' | 'FAILURE' | 'PARTIAL_SUCCESS';
+  lifecycle?: { status: 'pending' | 'finalized' | 'rejected' };
+}): HistoryEntry {
+  if (entry.lifecycle?.status === 'pending') return { txHash: entry.hash, txStatus: { status: 'pending' } };
+  if (entry.lifecycle?.status === 'rejected') return { txHash: entry.hash, txStatus: { status: 'discarded' } };
   return {
     txHash: entry.hash,
     txStatus: { status: 'finalized', executionStatus: { 0: entry.status === 'FAILURE' ? 'Failure' : 'Success' } },

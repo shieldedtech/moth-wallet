@@ -29,6 +29,9 @@ vi.mock('@shieldedtech/moth-browser', () => ({
   designateForDust: vi.fn(),
   dedesignateFromDust: vi.fn(),
   submitFinalizedTransaction: vi.fn(),
+  transactionHashOf: vi.fn(),
+  finalizedTransactionFromBytes: vi.fn(),
+  activeProtocolVersion: vi.fn(),
   deriveWalletKeys: vi.fn(),
   clearSyncCache: vi.fn(),
   clearDustSyncCache: vi.fn(),
@@ -51,7 +54,7 @@ const seedFreeUnlocked = (lock = vi.fn()) => ({
   address: 'mn_unshielded_devnet',
   addresses: { nightExternal: { bech32m: { devnet: 'mn_unshielded_devnet' } } },
   // Option A: walletKeys present, seedHex ABSENT.
-  walletKeys: { shieldedSecretKeys: {}, dustSecretKey: {}, nightExternalKey: new Uint8Array() },
+  walletKeys: { shielded: new Uint8Array(), unshielded: new Uint8Array(), dust: new Uint8Array() },
   keys: {},
   lock,
 });

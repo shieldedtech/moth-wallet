@@ -2,7 +2,7 @@
 // Uses the same derivation as mn-tui and the official wallet SDK.
 // See NOTICE for attribution to mn-tui (Apache-2.0).
 
-import {HDWallet, Roles} from '@midnightntwrk/wallet-sdk/hd';
+import {HDWallet, Roles as SdkRoles} from '@midnightntwrk/wallet-sdk/hd';
 import {ZswapSecretKeys, DustSecretKey} from '@midnight-ntwrk/ledger-v8';
 import {
   ShieldedAddress,
@@ -27,7 +27,13 @@ import type {WalletAddresses} from '../types/wallet.js';
  */
 const ALL_NETWORKS = ['mainnet', 'devnet', 'preview', 'preprod', 'qanet', 'stagenet', 'local', 'undeployed'] as const;
 
-export {Roles};
+/**
+ * The SDK's HD roles plus moth's `Metadata` name for role 4. The SDK repurposed
+ * that role as `EcdsaUnshielded`; moth keeps deriving its schnorr "metadata"
+ * address and the app-secret material from the same index, so stored address
+ * bundles and derived secrets stay byte-identical.
+ */
+export const Roles = {...SdkRoles, Metadata: SdkRoles.EcdsaUnshielded} as const;
 
 /**
  * Derive raw HD keys from a hex seed using the wallet SDK's HDWallet.
@@ -55,18 +61,22 @@ function toHex(bytes: Uint8Array): string {
 /**
  * Derive proper Midnight addresses for a specific network.
  *
- * - Unshielded: createKeystore(secretKey) → Ed25519 public key → bech32m
+ * - Unshielded: createKeystore(schnorr secret) → verifying key → bech32m
  * - Shielded: ZswapSecretKeys.fromSeed() → coin + encryption public keys
  * - DUST: DustSecretKey.fromSeed() → public key → DustAddress
  */
 function deriveForNetwork(keys: Record<number, Uint8Array>, network: string) {
   setNetworkId(network);
 
-  const unshielded: string = (createKeystore(keys[Roles.NightExternal], network).getBech32Address() as any).toString();
+  const unshielded: string = createKeystore(
+    {kind: 'schnorr', secret: keys[Roles.NightExternal]},
+    network,
+  ).getBech32Address().toString();
 
-  const unshieldedInternal: string = (
-    createKeystore(keys[Roles.NightInternal], network).getBech32Address() as any
-  ).toString();
+  const unshieldedInternal: string = createKeystore(
+    {kind: 'schnorr', secret: keys[Roles.NightInternal]},
+    network,
+  ).getBech32Address().toString();
 
   const zswapKeys = ZswapSecretKeys.fromSeed(keys[Roles.Zswap]);
   const shielded: string = (
@@ -82,7 +92,10 @@ function deriveForNetwork(keys: Record<number, Uint8Array>, network: string) {
   const dustKey = DustSecretKey.fromSeed(keys[Roles.Dust]);
   const dust: string = DustAddress.encodePublicKey(network, dustKey.publicKey);
 
-  const metadata: string = (createKeystore(keys[Roles.Metadata], network).getBech32Address() as any).toString();
+  const metadata: string = createKeystore(
+    {kind: 'schnorr', secret: keys[Roles.Metadata]},
+    network,
+  ).getBech32Address().toString();
 
   return {unshielded, unshieldedInternal, shielded, dust, metadata};
 }

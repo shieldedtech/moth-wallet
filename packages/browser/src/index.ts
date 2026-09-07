@@ -29,6 +29,7 @@ export type {
   SendRequest,
   TxStage,
   FinalizedTransaction,
+  UnprovenTransaction,
 } from '@shieldedtech/moth-wallet/sync/operations';
 
 export {
@@ -106,8 +107,12 @@ export {
   DustRegistrationNotYetError,
   dedesignateFromDust,
   deriveWalletKeys,
+  transactionHashOf,
+  finalizedTransactionFromBytes,
+  activeProtocolVersion,
+  protocolStatus,
 } from '@shieldedtech/moth-wallet/sync/operations';
-export type { SwapInput, WalletKeys } from '@shieldedtech/moth-wallet/sync/operations';
+export type { SwapInput, WalletKeys, ProtocolStatus, LedgerVersion } from '@shieldedtech/moth-wallet/sync/operations';
 export {
   summarizeTransaction,
   summarizeConnectorTransaction,
