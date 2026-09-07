@@ -6,7 +6,7 @@
 '@shieldedtech/moth-cli': minor
 ---
 
-Upgrade to `@midnightntwrk/wallet-sdk` 2.0.0 (canary `20260906003330-56a7ac5`). The SDK now
+Upgrade to `@midnightntwrk/wallet-sdk` 2.0.0-beta.3. The SDK now
 runs ledger-v8 below the chain's v9 fork and ledger-v9 from it, and its wallets follow a live
 chain across the boundary, so moth reaches networks on either side with one build.
 
