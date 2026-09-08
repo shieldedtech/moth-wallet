@@ -40,7 +40,7 @@
     "@noble/ciphers": "^2.2.0",
     "@noble/hashes": "^2.2.0",
     "@scure/bip39": "^2.2.0",
-    "effect": "^3.20.0",
+    "effect": "^3.19.19",
     "graphql": "^16.10.0",
     "graphql-request": "^7.4.0",
     "graphql-ws": "^6.0.0",

@@ -9,6 +9,7 @@ import {
   type DustFeePass,
   type FeeCoin,
 } from '../../../src/sync/dust-transacting.js';
+import {largestDustCoinFirst} from '../../../src/sync/dust-coin-selection.js';
 
 type Coin = {value: bigint; token: {nonce: string}};
 const coin = (value: bigint, n: number): Coin => ({value, token: {nonce: String(n).padStart(64, '0')}});
@@ -144,6 +145,50 @@ describe('balanceDustFee', () => {
     expect(() =>
       balanceDustFee({coins: [coin(1n, 0), coin(2n, 1)], initialImbalance: -feeFor([]), feeFor, coinSelection: smallestFirst}),
     ).toThrowError(/dust/i);
+  });
+
+  // A pool whose coins together meet the initial fee exactly, so pass 1 selects
+  // all of them and prices them, but the fee those spends cost then exceeds what
+  // they cover and nothing is left to add. Unaffordable under every order.
+  const exhausting = Array.from({length: 4}, (_, k) => coin(350_000_000_000_000n, k));
+
+  it('skips the fallback when the configured selector already is largest-first', () => {
+    // wallet-sync.ts configures largest-first, so this is the common insufficient-
+    // funds path. Retrying would select the same coins in the same order, re-run
+    // the fee model for the same answer, and report every pass twice.
+    const feeSpy = vi.fn(feeFor);
+    const passes: DustFeePass[] = [];
+    expect(() =>
+      balanceDustFee({
+        coins: exhausting,
+        initialImbalance: -feeFor([]),
+        feeFor: feeSpy,
+        coinSelection: largestDustCoinFirst,
+        onPass: (p) => passes.push(p),
+      }),
+    ).toThrowError(/dust/i);
+
+    expect(passes.map((p) => p.selector)).toEqual(['configured']);
+    expect(feeSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('still runs the fallback for a selector that is not largest-first', () => {
+    // The guard above must be specific to the identical-selector case, not a
+    // blanket disable: the same pool under smallest-first still gets its retry.
+    const feeSpy = vi.fn(feeFor);
+    const passes: DustFeePass[] = [];
+    expect(() =>
+      balanceDustFee({
+        coins: exhausting,
+        initialImbalance: -feeFor([]),
+        feeFor: feeSpy,
+        coinSelection: smallestFirst,
+        onPass: (p) => passes.push(p),
+      }),
+    ).toThrowError(/dust/i);
+
+    expect(passes.map((p) => p.selector)).toEqual(['configured', 'largest-first-fallback']);
+    expect(feeSpy).toHaveBeenCalledTimes(2);
   });
 
   it('converges on the first pass when one coin covers the fee', () => {

@@ -82,8 +82,9 @@ const sumValues = (coins: ReadonlyArray<FeeCoin>): bigint => coins.reduce((sum, 
  * of coins surfaces as the balancer's own `InsufficientFundsError`.
  *
  * Runs the configured selector first and, only if that ends in insufficient
- * funds, retries largest-first — see the note inside on why the additive loop
- * is complete only from the top.
+ * funds and the configured selector is not already largest-first, retries
+ * largest-first — see the note inside on why the additive loop is complete only
+ * from the top.
  *
  * WASM-free: `feeFor` is injected, so tests drive this with an analytic fee
  * model and the wallet drives it with the SDK's `dryRunFee`.
@@ -109,6 +110,11 @@ export function balanceDustFee<C extends FeeCoin>(args: BalanceDustFeeArgs<C>): 
     return attemptBalance(coins, initialImbalance, feeFor, coinSelection, 'configured', onPass);
   } catch (err) {
     if (!(err instanceof BalancingInsufficientFundsError)) throw err;
+    // Nothing to retry when the configured selector already is largest-first —
+    // which is what wallet-sync.ts wires, so this is the common case. A second
+    // attempt would select the same coins in the same order, re-run `dryRunFee`
+    // once per pass for the same answer, and report every pass twice.
+    if (coinSelection === largestDustCoinFirst) throw err;
     return attemptBalance(coins, initialImbalance, feeFor, largestDustCoinFirst, 'largest-first-fallback', onPass);
   }
 }
