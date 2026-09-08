@@ -1,7 +1,7 @@
 ---
 status: draft — ready to file
 target-repos: midnightntwrk/midnight-wallet
-last-updated: 2026-09-06
+last-updated: 2026-09-08
 ---
 
 # Draft upstream issue: DUST fee balancing cannot terminate, and only its first iteration can ever converge
@@ -163,23 +163,23 @@ reaching the defect, which is all a client can do from outside.
 
 ## What Moth changed on the client side in the meantime
 
-`shieldedtech/moth-wallet` sets largest-first fee-coin selection on its dust
-wallet, via the documented `V1Builder.withCoinSelection` extension point
-(`packages/core/src/sync/dust-coin-selection.ts`). Transaction construction,
-signing, and proving are untouched.
+`shieldedtech/moth-wallet` replaces the loop through the documented
+`V1Builder.withTransacting` seam
+(`packages/core/src/sync/dust-transacting.ts`). It keeps `dryRunFee` and
+`calculateFee` and changes only the control flow — each pass covers the
+outstanding deficit from coins not yet selected, then re-prices with everything
+selected so far — so every non-converging pass strictly grows the input set and
+the loop is bounded by the coin count. The same file can serve as the reference
+implementation for asks 1 and 2 above; the loop itself is about forty lines.
 
-**This is a mitigation, not a fix, and its limit is known.** Largest-first
-converges because the biggest coin overshoots the fee in a single pass. A
-wallet whose dust is spread evenly across coins that are *all* far below fee
-size has no such coin, needs several, and spins exactly as the default does —
-pinned as a test in the file above:
+With that loop, the SDK's own smallest-first selection converges on the wallet
+above in two passes (pass 1 selects eight coins and under-covers; pass 2 adds
+one more), and a wallet whose coins are *all* far below fee size converges too
+— the case no selection order can rescue.
 
-```
-=== uniformly tiny wallet + largest-first -> never-converged ===
-  iter 1: inputs=8 coverage=1410000000000000 newFee=1430000000000000 converged=false
-  iter 2: inputs=0 coverage=0               newFee=1400000000000000 converged=false
-  …identical forever…
-```
-
-Only the progress check in ask 1 closes that case, which is why this report is
-filed rather than left as a client-side workaround.
+Moth also sets largest-first fee-coin selection
+(`packages/core/src/sync/dust-coin-selection.ts`), which on its own converts
+most affected wallets into the one-pass case but cannot fix the loop: a
+uniformly tiny wallet still spins under any selection order when the loop is
+the SDK's. That is why this report asks for the loop change and not the
+default.
