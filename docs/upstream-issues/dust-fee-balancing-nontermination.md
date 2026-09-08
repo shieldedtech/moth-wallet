@@ -49,10 +49,13 @@ unrecoverable:
 
 The result is a loop that never exits and never fails. Each pass deserialises
 and `eraseProofs()` a fresh WASM transaction on the calling thread, so the
-process stops responding and its WASM heap grows until it is killed. Field
-reports on affected wallets put that growth at roughly 16 MB/s until process
-death; the traces in this report were produced with an analytic fee model, so
-that figure is reported rather than measured here.
+process stops responding and its memory grows until it is killed. Measured on
+a live devnet (node 1.0.1, ledger 8.1.0) with the process RSS sampled from
+outside every 5 s: **16.2 MB/s for the first two minutes, then a sustained
+~1.2 MB/s with no plateau** — 424 MB at the call, 2.3 GB after 2 min, 3.4 GB
+after 15 min when the run was killed. A moth wallet daemon idling beside it
+held 227–231 MB throughout. On a machine or worker with a smaller ceiling this
+is death within minutes; here it is unbounded growth.
 
 ## Mechanism, precisely
 
@@ -116,6 +119,13 @@ fee.
 This trace is reproducible as a unit test, no devnet required:
 `packages/core/tests/unit/sync/dust-coin-selection.test.ts` in
 [`shieldedtech/moth-wallet`](https://github.com/shieldedtech/moth-wallet).
+
+The same shape was then reproduced against a live devnet through the real WASM
+`dryRunFee`, with the real fee model of that chain (base 3.66e14, +3.36e14 per
+dust input). On a wallet holding 7.2e13, 1.9e14, 2.9e14, 1.0e15 and 8.5e15,
+the SDK loop never returned; a loop that seeds each pass with the outstanding
+deficit converged in three passes (51 ms), and with largest-first selection in
+one pass (13 ms). The full traces are in shieldedtech/moth-wallet#142.
 
 ## Why smallest-first is the wrong default for DUST
 
