@@ -14,6 +14,7 @@ describe('setup PasswordStep', () => {
         name=""
         onNameChange={() => {}}
         defaultName="Account 3"
+        recoveredBy="phrase"
         onBack={() => {}}
         onSubmit={() => {}}
       />,
@@ -33,6 +34,7 @@ describe('setup PasswordStep', () => {
         name="Savings"
         onNameChange={() => {}}
         defaultName="Account 3"
+        recoveredBy="phrase"
         onBack={() => {}}
         onSubmit={() => {}}
       />,

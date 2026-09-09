@@ -22,6 +22,34 @@ export const setup = {
   setup_continue: 'Continue',
   setup_settingUp: 'Setting up…',
   setup_passwordTitle: 'Create a password',
+  // Restore-from-seed. A wallet created from a raw hex seed has no mnemonic and
+  // cannot be given one, so these sit alongside the phrase copy rather than
+  // replacing it. The no-checksum warning is load-bearing: it is the only thing
+  // standing between a mistyped seed and a silently different, empty wallet.
+  setup_importKindPhrase:
+    'Recovery phrase',
+  setup_importKindSeed:
+    'Hex seed',
+  setup_importSeedSubtitle:
+    'Paste the hex seed for this wallet. It stays visible so you can read it back against your backup.',
+  setup_importSeedLabel:
+    'Hex seed',
+  setup_importSeedPlaceholder:
+    '64 hexadecimal characters, or 128 for a seed derived from a recovery phrase',
+  setup_importSeedNoChecksum:
+    'A seed has no built-in check, unlike a recovery phrase. One wrong character restores a different, empty wallet and reports no error, so compare it against your backup before continuing.',
+  setup_importSeedUnusualLength:
+    'This seed is $1 bytes. Tools produce 32 or 64, so check the paste is complete — an incomplete seed restores a different wallet.',
+  setup_importSeedErrNotHex:
+    'A seed uses hexadecimal only: digits 0-9 and letters a-f.',
+  setup_importSeedErrOddLength:
+    'This seed has an odd number of characters, so one is missing.',
+  setup_importSeedErrTooShort:
+    'Too short at $1 bytes. A seed is 16 to 64 bytes — 64 hexadecimal characters, or 128 for one derived from a recovery phrase.',
+  setup_importSeedErrTooLong:
+    'Too long at $1 bytes. A seed is 16 to 64 bytes — 64 hexadecimal characters, or 128 for one derived from a recovery phrase.',
+  setup_passwordSubtitleSeed:
+    "It unlocks Moth on this device. It can't recover your wallet, only your seed can.",
   setup_passwordSubtitle: "It unlocks Moth on this device. It can't recover your wallet, only your 24 words can.",
   setup_accountNameLabel: 'Account name',
   setup_accountNameHint: 'Optional, shown only in this wallet. You can change it later.',

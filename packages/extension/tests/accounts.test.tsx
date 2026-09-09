@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { WalletInfo } from '@shieldedtech/moth-browser';
 import { Accounts, RevealedSecretView } from '../components/screens/Accounts';
+import { hasNoRecoveryPhrase } from '../lib/ui/backup';
 
 const preprodAccount = {
   name: 'Sable',
@@ -64,5 +65,26 @@ describe('RevealedSecretView', () => {
     expect(html).toContain('abcd1234'.repeat(8));
     expect(html).toContain('imported from a raw hex seed');
     expect(html).toContain('Anyone with these words can spend your tokens');
+  });
+});
+
+// The reveal dialog's body renders through a Radix portal, which
+// renderToStaticMarkup does not reach, so the decision it turns on is asserted
+// here instead. Reveal used to offer "recovery phrase" for every account and
+// then hand back the seed for accounts that have none, which read as the tab
+// selection being ignored.
+describe('hasNoRecoveryPhrase', () => {
+  it('is true for a seed-restored account, which has no phrase to reveal', () => {
+    expect(hasNoRecoveryPhrase({ backupKind: 'seed' })).toBe(true);
+  });
+
+  it('is false for a phrase-backed account', () => {
+    expect(hasNoRecoveryPhrase({ backupKind: 'mnemonic' })).toBe(false);
+  });
+
+  it('is false when unknown, so an existing phrase is never greyed out', () => {
+    // Accounts written before backupKind existed. Treating unknown as seed-only
+    // would hide a phrase that does exist; unlock backfills the field anyway.
+    expect(hasNoRecoveryPhrase({})).toBe(false);
   });
 });

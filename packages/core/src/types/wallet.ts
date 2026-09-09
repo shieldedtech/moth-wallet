@@ -49,7 +49,23 @@ export interface WalletInfo {
   readonly birthday?: number;
   /** User-chosen display label; `name` remains the immutable storage key. */
   readonly label?: string;
+  /**
+   * Which backup artifact this account actually has, so a UI can say so before
+   * asking for a password.
+   *
+   * `'mnemonic'` accounts can reveal either their 24 words or the seed those
+   * words expand to. `'seed'` accounts have no phrase and never will — BIP-39's
+   * phrase-to-seed step is one-way — so offering to reveal one is offering
+   * something that cannot be produced.
+   *
+   * `undefined` means the account predates this field. Unknown, not 'mnemonic':
+   * guessing would tell a seed-imported account it has a phrase.
+   */
+  readonly backupKind?: BackupKind;
 }
+
+/** What an account can be restored from. */
+export type BackupKind = 'mnemonic' | 'seed';
 
 export interface UnlockedWallet {
   readonly name: string;

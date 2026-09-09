@@ -1,6 +1,6 @@
 {
   "name": "@shieldedtech/moth-wallet",
-  "version": "0.12.1",
+  "version": "0.13.0",
   "description": "Core library for Midnight Network deployments and contract interactions. USE AT YOUR OWN RISK. This is experimental software provided AS-IS with no warranty. Not audited. For development and testing purposes only.",
   "license": "Apache-2.0",
   "type": "module",
@@ -40,6 +40,7 @@
     "@noble/ciphers": "^2.2.0",
     "@noble/hashes": "^2.2.0",
     "@scure/bip39": "^2.2.0",
+    "effect": "^3.19.19",
     "graphql": "^16.10.0",
     "graphql-request": "^7.4.0",
     "graphql-ws": "^6.0.0",

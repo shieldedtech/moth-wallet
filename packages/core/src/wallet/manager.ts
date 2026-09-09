@@ -2,6 +2,8 @@ import type { StorageAdapter } from '../storage/adapter.js';
 import type { WalletInfo, UnlockedWallet, DerivedKeys, WalletAddresses, AddressEncoding } from '../types/wallet.js';
 import { WalletError } from '../types/errors.js';
 import { generateMnemonic24, validateMnemonic, mnemonicToSeed, hexSeedToUint8Array } from './mnemonic.js';
+import { assertHexSeed } from './hex-seed.js';
+import type { BackupKind } from '../types/wallet.js';
 import { encryptKeystore, decryptKeystore, keystoreNeedsUpgrade, type EncryptedKeystore } from './keystore.js';
 import { deriveAllAddressesFromSeed, deriveRawKeys, Roles } from './address.js';
 import { deriveWalletKeys, type WalletKeys } from '../sync/operations.js';
@@ -43,6 +45,16 @@ interface WalletMeta {
   name: string;
   network: string;
   createdAt: string;
+  /**
+   * Which artifact this wallet's keystore holds, recorded at creation so a UI
+   * can tell before decrypting anything. The keystore itself distinguishes them
+   * (a hex import is stored as `seed:<hex>`), but only the password reveals
+   * that, which is too late to grey out an option.
+   *
+   * Absent on wallets written before this field: unknown, and deliberately not
+   * defaulted — see WalletInfo.backupKind.
+   */
+  backupKind?: BackupKind;
   /** Public night receive address (bech32m). Absent for wallets created before this field existed. */
   address?: string;
   /**
@@ -253,6 +265,7 @@ export class WalletManager {
       createdAt: new Date().toISOString(),
       address,
       createdHere: true,
+      backupKind: 'mnemonic',
       ...(birthday !== undefined ? { birthdays: { [network]: birthday } } : {}),
     };
     await this.saveMeta(meta);
@@ -289,7 +302,10 @@ export class WalletManager {
     const keystore = await encryptKeystore(mnemonic, passphrase);
     await this.storage.write(walletKey(name), encoder.encode(JSON.stringify(keystore)));
 
-    const meta: WalletMeta = { name, network, createdAt: new Date().toISOString(), address, createdHere: false };
+    const meta: WalletMeta = {
+      name, network, createdAt: new Date().toISOString(), address,
+      createdHere: false, backupKind: 'mnemonic',
+    };
     await this.saveMeta(meta);
 
     config.wallets.push(name);
@@ -302,6 +318,13 @@ export class WalletManager {
   }
 
   async importFromSeed(name: string, hexSeed: string, passphrase: string, network = 'devnet'): Promise<WalletInfo> {
+    // Shape-checked before anything is derived or written. There was no
+    // validation here at all: a malformed seed reached the SDK and surfaced as
+    // a bare 'Invalid seed', and one that was merely the wrong *length* was
+    // accepted outright — silently producing a different wallet. A hex seed has
+    // no checksum, so shape is the only thing that can be checked; that makes
+    // checking it worth more here, not less. See wallet/hex-seed.ts.
+    hexSeed = assertHexSeed(hexSeed);
     // A caller-supplied id (a --network flag, a picker selection) is about to be
     // persisted, so a retired name is resolved here rather than written back out.
     network = canonicalNetworkId(network);
@@ -317,7 +340,10 @@ export class WalletManager {
     }
 
     await this.storage.write(walletKey(name), encoder.encode(JSON.stringify(keystore)));
-    const meta: WalletMeta = { name, network, createdAt: new Date().toISOString(), address, createdHere: false };
+    const meta: WalletMeta = {
+      name, network, createdAt: new Date().toISOString(), address,
+      createdHere: false, backupKind: 'seed',
+    };
     await this.saveMeta(meta);
 
     config.wallets.push(name);
@@ -398,7 +424,8 @@ export class WalletManager {
     // function — never escapes to the UnlockedWallet object.
     // See docs/spec/wallet-service/05-key-management.md D-KM-3.
     let seedHex: string;
-    if (decrypted.startsWith('seed:')) {
+    const backupKind: BackupKind = decrypted.startsWith('seed:') ? 'seed' : 'mnemonic';
+    if (backupKind === 'seed') {
       seedHex = decrypted.slice(5);
     } else {
       const seed = await mnemonicToSeed(decrypted);
@@ -413,8 +440,15 @@ export class WalletManager {
     // Backfill the public address for wallets created before it was stored (or
     // re-derive it after a network change), so the account list can show it
     // without another unlock.
-    if (meta && meta.address !== address) {
-      await this.saveMeta({ ...meta, address });
+    //
+    // backupKind rides along on the same write. It is recorded at creation for
+    // new wallets, but an existing wallet has no way to learn it without the
+    // password — the keystore is what distinguishes a `seed:` payload from a
+    // mnemonic. Unlock is the one moment that knowledge exists, so it is
+    // persisted here rather than left unknown for ever. Written only when
+    // missing or wrong, so a normal unlock does not touch storage.
+    if (meta && (meta.address !== address || meta.backupKind !== backupKind)) {
+      await this.saveMeta({ ...meta, address, backupKind });
     }
     const rawKeys = deriveRawKeys(seedHex);
     const keys: DerivedKeys = {
@@ -580,6 +614,7 @@ export class WalletManager {
         active: config.activeWallet === name,
         birthday: meta ? birthdayFor(meta, meta.network) : undefined,
         label: meta?.label,
+        backupKind: meta?.backupKind,
       });
     }
     return wallets;

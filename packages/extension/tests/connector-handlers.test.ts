@@ -11,6 +11,7 @@ const transferSubmit = vi.fn();
 const txHistoryGet = vi.fn();
 const signData = vi.fn();
 const balanceTransaction = vi.fn();
+const txSummary = vi.fn();
 const makeIntent = vi.fn();
 const provingProviderCheck = vi.fn();
 const provingProviderProve = vi.fn();
@@ -22,6 +23,7 @@ vi.mock('../lib/background/offscreen-client', () => ({
     txHistoryGet: (...a: unknown[]) => txHistoryGet(...(a as [])),
     signData: (...a: unknown[]) => signData(...(a as [])),
     balanceTransaction: (...a: unknown[]) => balanceTransaction(...(a as [])),
+    txSummary: (...a: unknown[]) => txSummary(...(a as [])),
     makeIntent: (...a: unknown[]) => makeIntent(...(a as [])),
     provingProviderCheck: (...a: unknown[]) => provingProviderCheck(...(a as [])),
     provingProviderProve: (...a: unknown[]) => provingProviderProve(...(a as [])),
@@ -83,6 +85,13 @@ function sampleBalances(): WalletBalances {
   } as unknown as WalletBalances;
 }
 
+/** What the offscreen summary reports for a dApp tx one NIGHT short. */
+const NIGHT_SPEND = {
+  spends: [{ kind: 'unshielded', tokenId: '0'.repeat(64), amount: '1000000' }],
+  receives: [],
+  contractActions: 0,
+};
+
 async function connect() {
   await grant(ORIGIN, 'devnet');
   await saveSession(SESSION);
@@ -97,6 +106,7 @@ describe('connector dispatch', () => {
     txHistoryGet.mockReset();
     signData.mockReset();
     balanceTransaction.mockReset();
+    txSummary.mockReset();
     makeIntent.mockReset();
     provingProviderCheck.mockReset();
     provingProviderProve.mockReset();
@@ -364,11 +374,59 @@ describe('connector dispatch', () => {
   it('balances a sealed transaction after approval', async () => {
     await connect();
     requestApproval.mockResolvedValue(true);
+    txSummary.mockResolvedValue(NIGHT_SPEND);
     balanceTransaction.mockResolvedValue({ txHex: 'beef' });
     const res = await dispatch(ORIGIN, 'balanceSealedTransaction', ['abcd']);
     expect(res).toEqual({ tx: 'beef' });
-    expect(requestApproval).toHaveBeenCalledWith('balance', ORIGIN, { sealed: true }, undefined, preparedPanel);
+    expect(requestApproval).toHaveBeenCalledWith(
+      'balance',
+      ORIGIN,
+      { sealed: true, summary: NIGHT_SPEND },
+      undefined,
+      preparedPanel,
+    );
     expect(balanceTransaction).toHaveBeenCalledWith(expect.objectContaining({ txHex: 'abcd', sealed: true }));
+  });
+
+  // The user is authorizing a spend, so what the transaction takes from the
+  // wallet is read off the transaction and shown BEFORE the prompt — not after
+  // balancing, when the funds are already committed.
+  it('summarizes the transaction before asking for approval, at the requested stage', async () => {
+    await connect();
+    const order: string[] = [];
+    txSummary.mockImplementation(async () => {
+      order.push('summary');
+      return NIGHT_SPEND;
+    });
+    requestApproval.mockImplementation(async () => {
+      order.push('approval');
+      return true;
+    });
+    balanceTransaction.mockResolvedValue({ txHex: 'beef' });
+
+    await dispatch(ORIGIN, 'balanceUnsealedTransaction', ['abcd']);
+    expect(order).toEqual(['summary', 'approval']);
+    expect(txSummary).toHaveBeenCalledWith(expect.objectContaining({ txHex: 'abcd', sealed: false }));
+  });
+
+  // A transaction the ledger will not decode is still surfaced — with the summary
+  // absent, which the screen renders as an explicit warning — rather than the
+  // request failing before the user ever sees it.
+  it('still prompts when the transaction cannot be summarized, marking the summary unknown', async () => {
+    await connect();
+    txSummary.mockRejectedValue(new Error('unexpected end of input'));
+    requestApproval.mockResolvedValue(true);
+    balanceTransaction.mockResolvedValue({ txHex: 'beef' });
+
+    const res = await dispatch(ORIGIN, 'balanceSealedTransaction', ['abcd']);
+    expect(res).toEqual({ tx: 'beef' });
+    expect(requestApproval).toHaveBeenCalledWith(
+      'balance',
+      ORIGIN,
+      { sealed: true, summary: null },
+      undefined,
+      preparedPanel,
+    );
   });
 
   it('rejects balanceSealedTransaction when the user declines', async () => {
@@ -403,10 +461,17 @@ describe('connector dispatch', () => {
   it('balances an unsealed transaction after approval (sealed: false)', async () => {
     await connect();
     requestApproval.mockResolvedValue(true);
+    txSummary.mockResolvedValue(NIGHT_SPEND);
     balanceTransaction.mockResolvedValue({ txHex: 'cafe' });
     const res = await dispatch(ORIGIN, 'balanceUnsealedTransaction', ['abcd']);
     expect(res).toEqual({ tx: 'cafe' });
-    expect(requestApproval).toHaveBeenCalledWith('balance', ORIGIN, { sealed: false }, undefined, preparedPanel);
+    expect(requestApproval).toHaveBeenCalledWith(
+      'balance',
+      ORIGIN,
+      { sealed: false, summary: NIGHT_SPEND },
+      undefined,
+      preparedPanel,
+    );
     expect(balanceTransaction).toHaveBeenCalledWith(expect.objectContaining({ txHex: 'abcd', sealed: false }));
   });
 

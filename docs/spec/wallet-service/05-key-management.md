@@ -22,7 +22,7 @@ This section answers: **where do the keys live at rest, in flight, and at runtim
 
 ### During unlock
 
-- `WalletManager.unlock(name, passphrase)` reads the keystore, runs Argon2id KDF, decrypts the ciphertext, and yields an `UnlockedWallet` object whose closure holds the plaintext `seedHex` (a 64-char hex string — the BIP-39 seed).
+- `WalletManager.unlock(name, passphrase)` reads the keystore, runs Argon2id KDF, decrypts the ciphertext, and yields an `UnlockedWallet` object whose closure holds the plaintext `seedHex` (a hex string: 128 chars for a BIP-39 seed, 64 for a seed imported directly — see `wallet/hex-seed.ts` for the accepted range).
 - The seed and its derivatives sit in V8 heap memory as JavaScript strings / `Uint8Array`. No `mlock`, no special protection.
 - `UnlockedWallet.lock()` sets the closure variable to the empty string. V8 garbage collects the previous string eventually; the exact moment isn't observable.
 
@@ -101,7 +101,7 @@ sequenceDiagram
   Mgr->>FS: read keystore (encrypted)
   FS-->>Mgr: ciphertext + KDF params
   Mgr->>Mgr: Argon2id KDF + AES-256-GCM decrypt
-  Note over Mgr: local var: seedHex (BIP-39 64-char hex)<br>SCOPE: inside unlock()
+  Note over Mgr: local var: seedHex (hex: 128 chars from BIP-39,<br>64 if imported directly)<br>SCOPE: inside unlock()
   Mgr->>Derive: deriveWalletKeys(seedHex)
   Derive-->>Mgr: { shieldedSecretKeys,<br>  dustSecretKey, nightExternalKey }
   Mgr->>Mgr: seedHex = '' (overwrite local)

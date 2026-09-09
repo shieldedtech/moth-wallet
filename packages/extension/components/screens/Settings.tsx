@@ -15,6 +15,7 @@ import { cn } from '../../lib/ui/cn';
 import { Card, Separator } from '../ui/card';
 import { Input } from '../ui/input';
 import { Button } from '../ui/button';
+import { DialogShell } from '../ui/dialog';
 import { PanelScreen, PanelHeader } from '../moth/panel';
 import { networkLabel } from './NetworkConfig';
 import { preseedControl } from '../../lib/ui/preseed-control';
@@ -57,6 +58,27 @@ export function Settings({ onBack, navigate }: { onBack: () => void; navigate: (
   const [resolverDraft, setResolverDraft] = useState('');
   const [appearance, setAppearance] = useState<Appearance>(() => loadAppearance());
   const [copiedDiagnostics, setCopiedDiagnostics] = useState(false);
+  // "Clear cache and resync": confirm first, because it discards an hour of
+  // sync on a slow network even though it moves no funds.
+  const [confirmingResync, setConfirmingResync] = useState(false);
+  const [resyncing, setResyncing] = useState(false);
+  const [resyncError, setResyncError] = useState<string | null>(null);
+
+  const resync = async () => {
+    setResyncing(true);
+    setResyncError(null);
+    try {
+      await sendMessage('resyncFromScratch', undefined);
+      setConfirmingResync(false);
+      // The background dropped the snapshot, so the router shows the loading
+      // screen for the fresh sync as soon as we leave Settings.
+      navigate('home');
+    } catch {
+      setResyncError(t('settings_resyncError'));
+    } finally {
+      setResyncing(false);
+    }
+  };
 
   const updateAppearance = (patch: Partial<Appearance>) => {
     const next = { ...appearance, ...patch };
@@ -274,6 +296,17 @@ export function Settings({ onBack, navigate }: { onBack: () => void; navigate: (
         )}
         <div className="flex items-center justify-between px-4 py-[13px]">
           <span className="min-w-0 pr-3">
+            <span className="block text-sm font-medium">{t('settings_resync')}</span>
+            <span className="block text-[12.5px] text-muted-foreground">
+              {t('settings_resyncDescription')}
+            </span>
+          </span>
+          <Button size="sm" variant="secondary" className="shrink-0" onClick={() => setConfirmingResync(true)}>
+            {t('settings_resyncButton')}
+          </Button>
+        </div>
+        <div className="flex items-center justify-between px-4 py-[13px]">
+          <span className="min-w-0 pr-3">
             <span className="block text-sm font-medium">{t('settings_developerMode')}</span>
             <span className="block text-[12.5px] text-muted-foreground">
               {t('settings_developerModeDescription')}
@@ -401,6 +434,31 @@ export function Settings({ onBack, navigate }: { onBack: () => void; navigate: (
       <p className="m-0 pb-2 text-center text-xs text-muted-foreground">
         {t('settings_version', [browser.runtime.getManifest().version])}
       </p>
+
+      <DialogShell
+        open={confirmingResync}
+        onOpenChange={(open) => {
+          if (!resyncing) setConfirmingResync(open);
+        }}
+        title={t('settings_resyncTitle')}
+        actions={
+          <>
+            <Button variant="outline" disabled={resyncing} onClick={() => setConfirmingResync(false)}>
+              {t('common_cancel')}
+            </Button>
+            <Button loading={resyncing} onClick={() => void resync()}>
+              {resyncing ? t('settings_resyncWorking') : t('settings_resyncConfirm')}
+            </Button>
+          </>
+        }
+      >
+        <p className="m-0">{t('settings_resyncBody', [networkLabel(settings.network)])}</p>
+        {resyncError && (
+          <p className="mb-0 mt-3 text-destructive" role="alert">
+            {resyncError}
+          </p>
+        )}
+      </DialogShell>
     </PanelScreen>
   );
 }

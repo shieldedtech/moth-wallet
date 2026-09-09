@@ -11,6 +11,7 @@ import {
   NIGHT_TOKEN_ID,
   InvalidAmountError,
   parseNightAmount,
+  submitWithHealthTracking,
   type SendRequest,
   type SyncedWallet,
   type WalletBalances,
@@ -151,9 +152,15 @@ export default class Transfer extends BaseCommand {
 
       let txHash: string;
       try {
-        txHash = await sendTokensWithKeys(syncedWallet.facade, wallet.walletKeys, network.id, [req], (stage) => {
-          process.stderr.write(`Transfer: ${stage}\n`);
-        });
+        // Reclassifies a persistent run of InvalidDustSpendProof rejections as a
+        // wedged devnet dust ledger instead of a normal failure retried forever —
+        // see core/sync/dust-ledger-health.ts.
+        txHash = await submitWithHealthTracking(
+          () => sendTokensWithKeys(syncedWallet.facade, wallet.walletKeys, network.id, [req], (stage) => {
+            process.stderr.write(`Transfer: ${stage}\n`);
+          }),
+          {network, walletName},
+        );
       } catch (err) {
         // "Insufficient funds" on a wallet that just reported a sufficient
         // balance is not a contradiction: the balance counts coins reserved by
