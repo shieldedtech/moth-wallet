@@ -50,6 +50,9 @@
     },
     "topicSeparator": " ",
     "topics": {
+      "maintenance": {
+        "description": "Contract maintenance updates: verifier keys, and the authority that can change them"
+      },
       "preseed": {
         "description": "Inspect and maintain this machine's pre-seed reference: one empty wallet synced to chain tip, which lets a new wallet start from its state instead of walking the chain."
       }
