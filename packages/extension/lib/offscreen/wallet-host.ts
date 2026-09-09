@@ -104,6 +104,19 @@ function serializeForClients(balances: WalletBalances): string {
   return serializeBalances({ ...balances, coins: EMPTY_COINS });
 }
 
+// The one-shot counterpart, for callers that DO need the per-coin breakdown.
+//
+// The stripping above is a streaming optimisation: it runs on every ~1s
+// emission, so the cost it avoids is paid continuously. `balancesGet` is a
+// single request made when a dApp asks, and since `getShieldedCoins` a coin's
+// nonce and mt_index are exactly what the caller wants — stripping them there
+// returned a wallet holding four shielded tokens as "no shielded coins", with
+// no error anywhere, because the data was discarded in transit rather than
+// failing to be built.
+function serializeWithCoins(balances: WalletBalances): string {
+  return serializeBalances(balances);
+}
+
 // --- WalletManager, cached per network ------------------------------------
 
 type Moth = ReturnType<typeof createMothBrowser>;
@@ -587,7 +600,7 @@ export async function balancesGet(
   network: NetworkConfig,
 ): Promise<string> {
   const wallet = await syncEnsure(seedHex, walletName, network);
-  return serializeForClients(await waitForSyncedBalances(wallet, SYNC_WAIT_MS));
+  return serializeWithCoins(await waitForSyncedBalances(wallet, SYNC_WAIT_MS));
 }
 
 /**
