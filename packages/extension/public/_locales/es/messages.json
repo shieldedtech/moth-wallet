@@ -1639,5 +1639,17 @@
   },
   "accounts_revealNoPhraseReason": {
     "message": "Esta cuenta se restauró desde un seed hexadecimal, así que no tiene frase de recuperación — una frase no puede deducirse de un seed. Su seed es la copia de seguridad."
+  },
+  "settings_rebuildShielded": {
+    "message": "Reconstruir registros de monedas shielded"
+  },
+  "settings_rebuildShieldedDesc": {
+    "message": "Vuelve a escanear las monedas shielded desde la cadena. Úsalo si un saldo shielded parece incorrecto o desactualizado. No gasta nada y no toca DUST, que tarda mucho más en sincronizarse."
+  },
+  "settings_rebuildShieldedAction": {
+    "message": "Reconstruir"
+  },
+  "settings_rebuildShieldedBusy": {
+    "message": "Reconstruyendo…"
   }
 }

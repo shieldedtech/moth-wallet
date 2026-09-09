@@ -59,6 +59,43 @@ function toWsUrl(url: string): string {
 }
 
 /** Walk an error's cause chain and Effect TaggedError fields to find the real reason */
+/**
+ * Exhaustive error dump for diagnosis, behind MOTH_DEBUG_ERR=1. Effect's
+ * FiberFailure keeps the real failure behind a SYMBOL-keyed property, so a
+ * walker that only follows `.cause` reports nothing but the outer message.
+ * Long byte arrays are truncated so the useful part is not buried.
+ */
+function deepDumpError(err: unknown, label = 'error', depth = 0, seen = new Set<unknown>()): void {
+  const pad = '  '.repeat(depth);
+  if (depth > 6 || err === null || err === undefined) return;
+  if (typeof err !== 'object') { console.error(`${pad}${label}: ${String(err)}`); return; }
+  if (seen.has(err)) { console.error(`${pad}${label}: <circular>`); return; }
+  seen.add(err);
+
+  const o = err as Record<PropertyKey, unknown>;
+  const n = (o as { length?: number }).length;
+  if (typeof n === 'number' && n > 32) {
+    console.error(`${pad}${label}: <${(err as object).constructor?.name ?? 'array-like'} length=${n}, elided>`);
+    return;
+  }
+
+  console.error(`${pad}${label}: <${(err as object).constructor?.name ?? typeof err}>`);
+  for (const k of ['message', '_tag', 'name', 'reason'] as const) {
+    if (typeof o[k] === 'string') console.error(`${pad}  ${k}: ${o[k] as string}`);
+  }
+  for (const k of Object.getOwnPropertyNames(o)) {
+    if (['message', 'stack', 'name', '_tag', 'reason'].includes(k)) continue;
+    const v = o[k];
+    if (v && typeof v === 'object') deepDumpError(v, `.${k}`, depth + 1, seen);
+    else if (v !== undefined) console.error(`${pad}  ${k}: ${String(v).slice(0, 300)}`);
+  }
+  for (const sym of Object.getOwnPropertySymbols(o)) {
+    const v = o[sym];
+    if (v && typeof v === 'object') deepDumpError(v, `[${String(sym)}]`, depth + 1, seen);
+    else if (v !== undefined) console.error(`${pad}  [${String(sym)}]: ${String(v).slice(0, 300)}`);
+  }
+}
+
 function extractErrorDetails(err: unknown, depth = 0): string {
   if (!err || depth > 5) return '';
   const parts: string[] = [];
@@ -423,6 +460,11 @@ export async function deployContract(options: DeployOptions): Promise<Transactio
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     // Surface the full error chain — SDK errors (Effect TaggedErrors, nested causes) bury details
+    if (process.env.MOTH_DEBUG_ERR) {
+      console.error('--- MOTH_DEBUG_ERR: full deploy error tree ---');
+      deepDumpError(err, 'deployError');
+      console.error('--- end ---');
+    }
     const details = extractErrorDetails(err);
     const detail = details ? `Deploy failed: ${msg} — ${details}` : `Deploy failed: ${msg}`;
     const walletErr = new WalletError('WALLET_ERROR', detail);

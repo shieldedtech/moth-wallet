@@ -219,6 +219,11 @@ export const offscreen = {
     await ensureOffscreen();
     return offscreenSend('os/relayRetry', undefined);
   },
+  async shieldedRebuild(data: SyncTarget) {
+    await ensureOffscreen();
+    return offscreenSend('os/shieldedRebuild', data);
+  },
+
   async dustRebuild(data: SyncTarget) {
     await ensureOffscreen();
     return offscreenSend('os/dustRebuild', data);
