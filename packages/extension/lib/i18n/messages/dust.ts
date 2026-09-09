@@ -102,6 +102,7 @@ export const dust = {
   dust_notYetNeedMore:
     'Registering pays its own fee from the $1 your $2 earns, and this balance is too small to ever cover it. Add more $2, then try again.',
   dust_paysYourFees: 'Pays your fees',
+  dust_capacityUnknown: 'Capacity unknown',
   dust_ofMax: 'of $1',
   dust_ofMaxWithLabel: 'of $1 $2',
   dust_etaWaitingFor: 'Waiting for $1',
@@ -109,12 +110,21 @@ export const dust = {
   // and is not using. 'Waiting' would be wrong: nothing is being waited for.
   dust_etaNotRegistered: '$1 not registered yet',
   dust_etaSyncing: 'Syncing…',
+  // Registered and holding value, but the generation records that define the cap
+  // have not been applied locally. The balance is real; the cap is unknown.
+  // Never say "not registered yet" here — that is the one thing known to be false.
+  dust_etaRecordsMissing: 'Generation records missing',
   dust_etaFullyGenerated: 'Fully generated',
   dust_etaFullInMin: 'Full in about $1 min',
   dust_etaFullInHour: 'Full in about 1 hour',
   dust_etaFullInHours: 'Full in about $1 hours',
   dust_etaFullInDays: 'Full in about $1 days',
   dust_rebuildRecords: 'Rebuild $1 records',
+  // Timing is deliberately the pessimistic case. A rebuild clears the dust cache
+  // and resyncs; whether that re-seeds from the local reference or walks the
+  // chain from genesis depends on the wallet's birthday, and the genesis walk is
+  // ~1.4M events. Promising "several minutes" to a wallet facing the second is
+  // how a user leaves, thinking it hung.
   dust_rebuildNote:
-    "Some registered $1 still isn't generating $2. Rebuilding rescans your records from the chain — it spends nothing, but takes several minutes.",
+    "Some registered $1 still isn't generating $2. Rebuilding rescans your records from the chain — it spends nothing, but can take up to an hour. Leave the wallet open.",
 } as const;

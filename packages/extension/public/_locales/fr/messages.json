@@ -587,6 +587,9 @@
   "dust_paysYourFees": {
     "message": "Paie vos frais"
   },
+  "dust_capacityUnknown": {
+    "message": "Capacité inconnue"
+  },
   "dust_ofMax": {
     "message": "sur $1"
   },
@@ -598,6 +601,9 @@
   },
   "dust_etaSyncing": {
     "message": "Synchronisation…"
+  },
+  "dust_etaRecordsMissing": {
+    "message": "Enregistrements de génération manquants"
   },
   "dust_etaFullyGenerated": {
     "message": "Entièrement généré"
@@ -618,7 +624,7 @@
     "message": "Reconstruire les enregistrements $1"
   },
   "dust_rebuildNote": {
-    "message": "Une partie de votre $1 enregistré ne génère pas encore de $2. La reconstruction relit vos enregistrements depuis la chaîne — cela ne coûte rien, mais prend plusieurs minutes."
+    "message": "Une partie du $1 enregistré ne génère toujours pas de $2. La reconstruction relit vos enregistrements depuis la chaîne — cela ne coûte rien, mais peut prendre jusqu'à une heure. Laissez le portefeuille ouvert."
   },
   "formatErrors_wholeNumber": {
     "message": "Le montant doit être un nombre entier"
