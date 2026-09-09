@@ -1589,6 +1589,18 @@
   "dust_etaNotRegistered": {
     "message": "$1 pas encore enregistré"
   },
+  "settings_rebuildShielded": {
+    "message": "Reconstruire les données des pièces shielded"
+  },
+  "settings_rebuildShieldedDesc": {
+    "message": "Réanalyse les pièces shielded depuis la chaîne. À utiliser si un solde shielded semble incorrect ou obsolète. Ne dépense rien et ne touche pas au DUST, beaucoup plus lent à synchroniser."
+  },
+  "settings_rebuildShieldedAction": {
+    "message": "Reconstruire"
+  },
+  "settings_rebuildShieldedBusy": {
+    "message": "Reconstruction…"
+  },
   "setup_importKindPhrase": {
     "message": "Phrase de récupération"
   },

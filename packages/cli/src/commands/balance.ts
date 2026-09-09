@@ -15,36 +15,79 @@ import {
   NIGHT_TOKEN_ID,
   NIGHT_DENOMINATION,
   formatBalance,
+  formatDustBalance,
   type SyncedWallet,
   type WalletBalances,
 } from '@shieldedtech/moth-wallet';
+
+interface TokenRow {
+  readonly tokenId: string;
+  /** Protocol name where one exists ("NIGHT"); absent for contract-issued tokens. */
+  readonly name?: string;
+  /** Raw smallest-unit amount. */
+  readonly amount: string;
+  /**
+   * Major-unit amount, present ONLY for tokens with a protocol denomination.
+   * Contract-issued tokens have no decimals, so a "decimal" form would be a
+   * fiction — see the note on `unit`.
+   */
+  readonly decimal?: string;
+  /**
+   * Name of the smallest unit ("STARS"), present only where one exists.
+   * Deliberately absent for contract-issued tokens: STARS is the base unit of
+   * NIGHT specifically, and labelling any other token's raw amount in STARS is
+   * simply wrong.
+   */
+  readonly unit?: string;
+}
 
 interface BalanceResult {
   readonly wallet: string;
   readonly network: string;
   readonly synced: boolean;
+  /**
+   * Grouped by what the ledger actually distinguishes: unshielded, shielded,
+   * DUST. NIGHT is a token, not a category, so it appears as a row under
+   * unshielded rather than heading a section.
+   *
+   * No per-category total: different tokens are not summable, so a total is
+   * only ever meaningful per token id.
+   */
   readonly balances: {
-    readonly night: {
-      readonly unshielded: string; // raw STARS
-      readonly shielded: string; // raw STARS
-      readonly total: string; // raw STARS
-      readonly totalDecimal: string; // major units, formatted
-      /**
-       * What a transfer can actually use. The figures above count coins
-       * reserved by transactions in flight, because dropping them would flash
-       * the balance to zero mid-send — but the SDK spends from available coins
-       * alone, so a wallet can report a balance it cannot spend (#72).
-       */
-      readonly unshieldedAvailable: string; // raw STARS
-      readonly unshieldedReserved: string; // raw STARS
+    readonly unshielded: readonly TokenRow[];
+    readonly shielded: readonly TokenRow[];
+    readonly dust: {
+      readonly speck: string;
+      readonly dust: string;
     };
-    readonly dust: string; // raw SPECK
-    readonly otherTokens: ReadonlyArray<{
-      readonly tokenId: string;
-      readonly type: 'unshielded' | 'shielded';
-      readonly amount: string; // raw smallest units
-    }>;
   };
+  /**
+   * NIGHT spendability. Separate from the rows because it is a property of the
+   * UTxO set, not of the balance: a wallet can show NIGHT it cannot currently
+   * spend because a transaction in flight reserves it.
+   */
+  readonly nightSpendable?: {
+    readonly available: string;
+    readonly reserved: string;
+  };
+  /**
+   * Individual spendable shielded coins, present only with --coins.
+   *
+   * These are what a Compact circuit needs to SPEND a coin: `nonce`, `type`,
+   * `value` and `mtIndex` together form a `QualifiedShieldedCoinInfo`. A DApp
+   * cannot derive them — the DApp connector exposes no coin enumeration, and
+   * the indexer's contract-filtered Zswap state cannot yield a global Merkle
+   * index — so the wallet has to report them.
+   */
+  readonly shieldedCoins?: ReadonlyArray<{
+    readonly nonce: string | null;
+    readonly type: string;
+    readonly value: string;
+    readonly mtIndex: string | null;
+    readonly commitment: string | null;
+    readonly nullifier: string | null;
+    readonly status: 'available' | 'pending';
+  }>;
 }
 
 export default class Balance extends BaseCommand {
@@ -53,6 +96,14 @@ export default class Balance extends BaseCommand {
 
   static override flags = {
     ...BaseCommand.baseFlags,
+    coins: Flags.boolean({
+      description:
+        'Also list individual shielded coins with the fields needed to spend them ' +
+        '(nonce, type, value, Merkle index, commitment, nullifier). Required when ' +
+        'passing a coin to a Compact circuit as a QualifiedShieldedCoinInfo — for ' +
+        'example `moth call unwrap --args` on a contract that takes a coin.',
+      default: false,
+    }),
     'wait-timeout-ms': Flags.integer({
       description:
         'How long to wait for the sync to reach synced=true before reading balances. Default 5 minutes. After timeout the command emits whatever the latest snapshot showed (likely 0s if sync was still catching up) with synced=false.',
@@ -93,38 +144,88 @@ export default class Balance extends BaseCommand {
       await this.timings.record('marker', 'balance: synced (balances readable)');
 
       const b = synced.balances;
-      const unshNight = (b.unshielded[NIGHT_TOKEN_ID] ?? 0n) as bigint;
-      const shNight = (b.shielded[NIGHT_TOKEN_ID] ?? 0n) as bigint;
-      const totalNight = unshNight + shNight;
-
-      const otherTokens: BalanceResult['balances']['otherTokens'][number][] = [];
-      for (const [tokenId, amount] of Object.entries(b.unshielded)) {
-        if (tokenId === NIGHT_TOKEN_ID) continue;
-        otherTokens.push({tokenId, type: 'unshielded', amount: amount.toString()});
-      }
-      for (const [tokenId, amount] of Object.entries(b.shielded)) {
-        if (tokenId === NIGHT_TOKEN_ID) continue;
-        otherTokens.push({tokenId, type: 'shielded', amount: amount.toString()});
-      }
-
       const split = unshieldedSplit(b.coins, NIGHT_TOKEN_ID);
+
+      // NIGHT is an UNSHIELDED token. There is no shielded NIGHT, so it is not
+      // read from b.shielded and no permanently-zero "shielded NIGHT" line is
+      // printed. token-list.ts, dust-view.ts and dust/register.ts already treat
+      // it this way.
+      const unshNight = (b.unshielded[NIGHT_TOKEN_ID] ?? 0n) as bigint;
+
+      const nightRow = (amount: bigint): TokenRow => ({
+        tokenId: NIGHT_TOKEN_ID,
+        name: 'NIGHT',
+        amount: amount.toString(),
+        decimal: formatBalance(amount, NIGHT_DENOMINATION),
+        unit: 'STARS',
+      });
+      // Contract-issued tokens have no protocol decimals, so they carry a raw
+      // amount and no unit — anything else would invent a denomination.
+      const tokenRow = (tokenId: string, amount: bigint): TokenRow => ({
+        tokenId,
+        amount: amount.toString(),
+      });
+
+      const unshielded: TokenRow[] = [
+        ...(unshNight > 0n || Object.keys(b.unshielded).length === 0 ? [nightRow(unshNight)] : [nightRow(unshNight)]),
+        ...Object.entries(b.unshielded)
+          .filter(([tokenId]) => tokenId !== NIGHT_TOKEN_ID)
+          .map(([tokenId, amount]) => tokenRow(tokenId, amount as bigint)),
+      ];
+      const shielded: TokenRow[] = Object.entries(b.shielded)
+        // Defensive: a shielded NIGHT entry would be meaningless, and some
+        // callers still synthesise one.
+        .filter(([tokenId]) => tokenId !== NIGHT_TOKEN_ID)
+        .map(([tokenId, amount]) => tokenRow(tokenId, amount as bigint));
+
+      // Individual shielded coins, only when asked for: this is the spendable
+      // detail (nonce + Merkle index) that a circuit needs and that nothing
+      // outside the wallet can reconstruct.
+      const shieldedCoins = flags.coins
+        ? [
+            ...b.coins.shielded.available.map((c) => ({
+              nonce: c.nonce ?? null,
+              type: c.type,
+              value: c.value.toString(),
+              mtIndex: c.mtIndex?.toString() ?? null,
+              commitment: c.commitment ?? null,
+              nullifier: c.nullifier ?? null,
+              status: 'available' as const,
+            })),
+            ...b.coins.shielded.pending.map((c) => ({
+              nonce: c.nonce ?? null,
+              type: c.type,
+              value: c.value.toString(),
+              // Pending coins are not in the commitment tree yet.
+              mtIndex: null,
+              commitment: c.commitment ?? null,
+              nullifier: c.nullifier ?? null,
+              status: 'pending' as const,
+            })),
+          ]
+        : undefined;
 
       const result: BalanceResult = {
         wallet: walletName,
         network: network.id,
         synced: b.synced,
         balances: {
-          night: {
-            unshielded: unshNight.toString(),
-            shielded: shNight.toString(),
-            total: totalNight.toString(),
-            totalDecimal: formatBalance(totalNight, NIGHT_DENOMINATION),
-            unshieldedAvailable: split.available.toString(),
-            unshieldedReserved: split.reserved.toString(),
+          unshielded,
+          shielded,
+          dust: {
+            speck: b.dust.toString(),
+            dust: formatDustBalance(b.dust),
           },
-          dust: b.dust.toString(),
-          otherTokens,
         },
+        ...(split.reserved > 0n
+          ? {
+              nightSpendable: {
+                available: split.available.toString(),
+                reserved: split.reserved.toString(),
+              },
+            }
+          : {}),
+        ...(shieldedCoins ? {shieldedCoins} : {}),
       };
 
       if (this.outputFormat === 'json') {
@@ -132,27 +233,57 @@ export default class Balance extends BaseCommand {
         return;
       }
 
+      const idCol = (row: TokenRow) => (row.name ?? `${row.tokenId.slice(0, 16)}…`).padEnd(18);
+
       this.log(`Wallet:  ${walletName}`);
       this.log(`Network: ${network.id}`);
       this.log(`Synced:  ${b.synced ? 'yes' : 'no (snapshot may be incomplete)'}`);
+
+      // Three categories, each listing every token it holds in its own correct
+      // unit. No cross-token totals: different tokens are not summable.
       this.log('');
-      this.log('NIGHT:');
-      this.log(`  unshielded: ${formatBalance(unshNight, NIGHT_DENOMINATION)}  (${unshNight.toString()} STARS)`);
-      // Only when it matters. On a wallet with nothing reserved this line is
-      // noise; on one that cannot spend what it shows, it is the whole story.
-      if (split.reserved > 0n) {
-        this.log(`    available:  ${formatBalance(split.available, NIGHT_DENOMINATION)}  ← what a transfer can use`);
-        this.log(`    reserved:   ${formatBalance(split.reserved, NIGHT_DENOMINATION)}  (a transaction in flight holds these)`);
+      this.log('Unshielded:');
+      for (const row of unshielded) {
+        const suffix = row.unit ? `  (${row.amount} ${row.unit})` : '  (raw)';
+        this.log(`  ${idCol(row)}${row.decimal ?? row.amount}${suffix}`);
       }
-      this.log(`  shielded:   ${formatBalance(shNight, NIGHT_DENOMINATION)}  (${shNight.toString()} STARS)`);
-      this.log(`  total:      ${formatBalance(totalNight, NIGHT_DENOMINATION)}  (${totalNight.toString()} STARS)`);
+      // Only when it matters. On a wallet with nothing reserved this is noise;
+      // on one that cannot spend what it shows, it is the whole story.
+      if (split.reserved > 0n) {
+        this.log(`    NIGHT available:  ${formatBalance(split.available, NIGHT_DENOMINATION)}  ← what a transfer can use`);
+        this.log(`    NIGHT reserved:   ${formatBalance(split.reserved, NIGHT_DENOMINATION)}  (a transaction in flight holds these)`);
+      }
+
       this.log('');
-      this.log(`DUST:     ${b.dust.toString()} SPECK`);
-      if (otherTokens.length > 0) {
+      this.log('Shielded:');
+      if (shielded.length === 0) {
+        this.log('  (none)');
+      } else {
+        for (const row of shielded) {
+          this.log(`  ${idCol(row)}${row.amount}  (raw)`);
+        }
+      }
+
+      this.log('');
+      this.log('DUST:');
+      this.log(`  ${formatDustBalance(b.dust)} DUST  (${b.dust.toString()} SPECK)`);
+
+      if (shieldedCoins) {
         this.log('');
-        this.log('Other tokens:');
-        for (const t of otherTokens) {
-          this.log(`  ${t.tokenId.slice(0, 16)}…  ${t.type.padEnd(10)}  ${t.amount}`);
+        if (shieldedCoins.length === 0) {
+          this.log('Shielded coins: none');
+        } else {
+          this.log(`Shielded coins (${shieldedCoins.length}):`);
+          for (const c of shieldedCoins) {
+            this.log(`  ${c.value}  type ${c.type}`);
+            this.log(`    nonce      ${c.nonce ?? '(unknown)'}`);
+            this.log(`    mt_index   ${c.mtIndex ?? '(pending — not in the tree yet)'}`);
+            this.log(`    commitment ${c.commitment ?? '(unknown)'}`);
+            this.log(`    status     ${c.status}`);
+          }
+          this.log('');
+          this.log('  To spend one in a circuit taking a QualifiedShieldedCoinInfo, pass');
+          this.log('  {nonce, color/type, value, mt_index} — hex as "0x…", numbers as "123n".');
         }
       }
     } finally {

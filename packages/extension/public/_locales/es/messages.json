@@ -1589,6 +1589,18 @@
   "dust_etaNotRegistered": {
     "message": "$1 aún no registrado"
   },
+  "settings_rebuildShielded": {
+    "message": "Reconstruir registros de monedas shielded"
+  },
+  "settings_rebuildShieldedDesc": {
+    "message": "Vuelve a escanear las monedas shielded desde la cadena. Úsalo si un saldo shielded parece incorrecto o desactualizado. No gasta nada y no toca DUST, que tarda mucho más en sincronizarse."
+  },
+  "settings_rebuildShieldedAction": {
+    "message": "Reconstruir"
+  },
+  "settings_rebuildShieldedBusy": {
+    "message": "Reconstruyendo…"
+  },
   "setup_importKindPhrase": {
     "message": "Frase de recuperación"
   },
