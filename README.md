@@ -143,16 +143,41 @@ For end-to-end verification of every mode (in-process CLI, TUI host, daemon Unix
 
 The extension is not on the Chrome Web Store. Build it and load it unpacked.
 
+Run `yarn build` from the repo root first — the extension consumes `core`'s compiled output, and `wxt build` does not build `core`.
+
 ```bash
 yarn workspace @shieldedtech/moth-extension build          # -> packages/extension/.output/chrome-mv3
 yarn workspace @shieldedtech/moth-extension build:firefox  # -> packages/extension/.output/firefox-mv2
 ```
 
-In Chrome, open `chrome://extensions`, turn on **Developer mode**, choose **Load unpacked**, and select `packages/extension/.output/chrome-mv3`. After a rebuild, press the reload icon on the extension's card — Chrome does not pick up a new build on its own.
+### Building to a fixed directory
 
-In Firefox, open `about:debugging#/runtime/this-firefox`, choose **Load Temporary Add-on**, and select the `manifest.json` inside `packages/extension/.output/firefox-mv2`. Temporary add-ons are removed when Firefox restarts.
+Chrome derives an unpacked extension's ID from the absolute path it was loaded from, so a build in a new directory is a different extension: new ID, empty storage, a new wallet and a full re-sync.
 
-To hand a build to someone else, `yarn workspace @shieldedtech/moth-extension zip` writes a store-shaped archive to `.output/`. They still load it unpacked, so they will need to unzip it first.
+`MOTH_EXT_OUT_DIR` sets where the extension build writes, and affects no other package. Point it at a fixed location outside the repo and the output path stops following the source directory, so Chrome loads it once and you only press reload afterwards.
+
+It applies to every extension command — `build`, `build:firefox` and `zip`. Each build keeps its own leaf, `chrome-mv3` or `firefox-mv2`, under the base you set, and wipes only that leaf.
+
+```bash
+export MOTH_EXT_OUT_DIR=~/.moth-ext-build
+yarn workspace @shieldedtech/moth-extension build   # -> ~/.moth-ext-build/chrome-mv3
+```
+
+If you use direnv (see [CONTRIBUTING.md](CONTRIBUTING.md#auto-enable-in-this-repo)), copy `envrc.local.example` to `.envrc.local` and set it there. `.envrc` sources `.envrc.local`, and git ignores it, so your path never shows up in a diff:
+
+```bash
+cp envrc.local.example .envrc.local
+# edit MOTH_EXT_OUT_DIR, then:
+direnv allow
+```
+
+Turbo cannot cache a directory outside the repo, so once `MOTH_EXT_OUT_DIR` is set, build the extension with `yarn workspace @shieldedtech/moth-extension build` rather than a root `yarn build`. It runs `wxt build` directly, never consults turbo's cache, and so rebuilds every time. A root build can instead report a cache hit having written nothing, and `--force` is no answer there — it invalidates all six packages, not just the extension.
+
+In Chrome, open `chrome://extensions`, turn on **Developer mode**, choose **Load unpacked**, and select `packages/extension/.output/chrome-mv3` — or your `MOTH_EXT_OUT_DIR` path's `chrome-mv3`. After a rebuild, press the reload icon on the extension's card — Chrome does not pick up a new build on its own.
+
+In Firefox, open `about:debugging#/runtime/this-firefox`, choose **Load Temporary Add-on**, and select the `manifest.json` inside `packages/extension/.output/firefox-mv2`, or your `MOTH_EXT_OUT_DIR` path's `firefox-mv2`. Temporary add-ons are removed when Firefox restarts.
+
+To hand a build to someone else, `yarn workspace @shieldedtech/moth-extension zip` writes a store-shaped archive to `.output/`, or to your `MOTH_EXT_OUT_DIR` if set. They still load it unpacked, so they will need to unzip it first.
 
 A fresh install creates its wallet on preprod, not mainnet. That is deliberate — see [Status](#status-experimental-and-unsupported) — and you can change it in Settings once you understand what you are changing it to.
 
