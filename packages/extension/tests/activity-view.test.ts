@@ -244,3 +244,47 @@ describe('activityRowView', () => {
     expect(older.sub).toBe('20 Jun');
   });
 });
+
+describe('activityRowView token names', () => {
+  const ST = '24419f0942ff3630a8f0703e9a2430856b9a50c0e6b5f1422ed152bf6ec558fe';
+  const names = { [ST]: 'stNIGHT' };
+  const shielded = (tokenType: string, amount: bigint) => ({
+    tokenType,
+    kind: 'shielded' as const,
+    amount,
+  });
+  const sentOf = (tokenType: string, amount: bigint) =>
+    entry({ kind: 'sent', counterparty: OTHER, deltas: [shielded(tokenType, amount)] });
+
+  it('uses the user-assigned name instead of the raw token id', () => {
+    const view = activityRowView(sentOf(ST, -2n), labels, NOW, names);
+    expect(view.amount).toContain('stNIGHT');
+    expect(view.amount).not.toContain('24419f09');
+  });
+
+  it('matches ignoring case and a 0x prefix', () => {
+    const view = activityRowView(sentOf(`0x${ST.toUpperCase()}`, -2n), labels, NOW, names);
+    expect(view.amount).toContain('stNIGHT');
+  });
+
+  it('falls back to a truncated id when the token is unnamed', () => {
+    const other = 'abcdef01'.repeat(8);
+    const view = activityRowView(sentOf(other, -1n), labels, NOW, names);
+    expect(view.amount).toContain('abcdef01…');
+  });
+
+  it('leaves NIGHT alone', () => {
+    const view = activityRowView(
+      entry({ kind: 'sent', counterparty: OTHER, deltas: [night(-1_000_000n)] }),
+      labels,
+      NOW,
+      names,
+    );
+    expect(view.amount).toContain(labels.night);
+  });
+
+  it('renders the raw id when no names are supplied at all', () => {
+    const view = activityRowView(sentOf(ST, -2n), labels, NOW);
+    expect(view.amount).toContain('24419f09');
+  });
+});

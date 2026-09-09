@@ -204,7 +204,7 @@ export function Home({
             </button>
           </div>
           {activity.slice(0, 2).map((entry) => (
-            <ActivityRow key={entry.hash} view={activityRowView(entry, labels)} />
+            <ActivityRow key={entry.hash} view={activityRowView(entry, labels, undefined, tokenNames)} />
           ))}
         </div>
       )}
