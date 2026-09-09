@@ -797,11 +797,17 @@ export async function transferBuild(
 // own per-segment imbalances, so it needs neither keys nor a synced wallet, and
 // never books or spends anything.
 export async function txSummary(network: NetworkConfig, txHex: string, sealed: boolean): Promise<TxSummaryDTO> {
-  void network; // same signature as the other host methods; the ledger is fixed on this build
-  const summary = summarizeConnectorTransaction(fromHex(txHex), sealed);
+  const summary = summarizeConnectorTransaction(fromHex(txHex), sealed, network.id);
   const dto = (entries: typeof summary.spends) =>
     entries.map((entry) => ({ kind: entry.kind, tokenId: entry.tokenId, amount: entry.amount.toString() }));
-  return { spends: dto(summary.spends), receives: dto(summary.receives), contractActions: summary.contractActions };
+  return {
+    spends: dto(summary.spends),
+    receives: dto(summary.receives),
+    contractActions: summary.contractActions,
+    // isSelf is filled in by the background, which holds the session addresses;
+    // this host deliberately has no view of which address is the user's.
+    recipients: summary.recipients.map((address) => ({ address, isSelf: false })),
+  };
 }
 
 // Balance a dApp-supplied transaction (connector balance*Transaction). Needs a

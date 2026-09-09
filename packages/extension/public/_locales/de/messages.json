@@ -303,7 +303,13 @@
     "message": "Bezahlt in $1"
   },
   "approval_balanceNote": {
-    "message": "Deine Wallet kann eigene Mittel beisteuern, um diese Transaktion auszugleichen. Genehmige nur Transaktionen von Seiten, denen du vertraust."
+    "message": "Deine Wallet steuert eigene Mittel bei, um zu decken, was dieser Transaktion fehlt, und sendet sie an die Adressen oben. Genehmige nur Transaktionen von Seiten, denen du vertraust."
+  },
+  "approval_toLabel": {
+    "message": "An"
+  },
+  "approval_recipientSelf": {
+    "message": "Deine Wallet"
   },
   "approval_youPay": {
     "message": "Du zahlst"
@@ -316,9 +322,6 @@
   },
   "approval_spendsNothing": {
     "message": "Diese Transaktion entnimmt deiner Wallet nichts außer der Netzwerkgebühr."
-  },
-  "approval_summaryUnavailable": {
-    "message": "Moth konnte nicht lesen, was diese Transaktion ausgibt. Genehmige sie nur, wenn du $1 vertraust und weißt, was sie tut."
   },
   "approval_transferSubtitle": {
     "message": "Nichts wird bewegt, bis du genehmigst."

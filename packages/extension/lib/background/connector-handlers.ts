@@ -146,11 +146,12 @@ function addressFor(session: Session, role: keyof Session['addresses'], networkI
   return encoded[networkId] ?? Object.values(encoded)[0] ?? '';
 }
 
-/** Display data for a `balance` approval. `summary` is null when the transaction
- *  could not be read; the screen then says so instead of showing nothing. */
+/** Display data for a `balance` approval. A transaction whose summary cannot be
+ *  produced is refused before it reaches here, so this is never null: the screen
+ *  always has amounts and destinations to show. */
 export interface BalanceApprovalPayload {
   sealed: boolean;
-  summary: TxSummaryDTO | null;
+  summary: TxSummaryDTO;
 }
 
 // Shared by balanceSealedTransaction / balanceUnsealedTransaction: validate the
@@ -172,17 +173,44 @@ async function balance(
     throw connectorError('InvalidRequest', 'Moth always pays fees; payFees: false is unsupported');
   }
   const network = await getNetworkConfig();
-  // The user is about to authorize spending, so the approval must say what
-  // leaves the wallet. A summary that cannot be produced (a stage the ledger
-  // won't decode) is not a reason to hide the request: the screen states
-  // plainly that the amounts are unknown, and balancing itself will surface
-  // the underlying error if the user goes ahead.
-  let summary: TxSummaryDTO | null = null;
+  // The user is about to authorize spending, and balancing covers every deficit
+  // the transaction carries — so this approval is the ONLY thing standing
+  // between a hostile dApp and the wallet's funds (core balanceTransaction
+  // applies no cap and no destination check).
+  //
+  // It therefore fails CLOSED. A summary that cannot be produced used to prompt
+  // anyway, with the screen saying the amounts were unknown; that turned the one
+  // control on this path into a warning a habituated user clicks through. It
+  // costs nothing legitimate to refuse instead: the summary decodes with exactly
+  // the markers core's balancing path uses, so a transaction this cannot read is
+  // one balancing could not have processed either.
+  const unreadable = (detail: string) =>
+    connectorError('InvalidRequest', `Moth could not read what this transaction spends, so it will not balance it: ${detail}`);
+
+  let summary: TxSummaryDTO;
   try {
     summary = await offscreen.txSummary({ network, txHex: tx, sealed });
-  } catch {
-    summary = null;
+  } catch (err) {
+    throw unreadable(err instanceof Error ? err.message : 'unreadable transaction');
   }
+  // A summary that resolves but is not shaped like one is the same failure as a
+  // thrown one: the screen would have nothing to show. Fail closed rather than
+  // trusting it and rendering blanks.
+  if (!summary || !Array.isArray(summary.spends) || !Array.isArray(summary.recipients)) {
+    throw unreadable('the transaction summary was incomplete');
+  }
+  // The host has no view of the session, so it marks every destination as a
+  // third party. Resolve the wallet's own addresses here, so change is not
+  // presented to the user as an outgoing recipient.
+  const ownAddresses = new Set(
+    (['nightExternal', 'nightInternal'] as const)
+      .map((role) => addressFor(session, role, network.id))
+      .filter(Boolean),
+  );
+  summary = {
+    ...summary,
+    recipients: summary.recipients.map((r) => ({ ...r, isSelf: ownAddresses.has(r.address) })),
+  };
   const payload: BalanceApprovalPayload = { sealed, summary };
   const approved = await requestApproval('balance', origin, payload, senderTabId, preparedPanel);
   if (!approved) throw connectorError('Rejected', 'User rejected the transaction');
