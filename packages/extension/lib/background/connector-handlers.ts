@@ -11,7 +11,7 @@ import type { WalletBalances } from '@shieldedtech/moth-browser';
 import { resolveProverConfig } from '@shieldedtech/moth-wallet/types/network';
 import { onMessage, deserializeBalances } from '../messaging/protocol';
 import { encodeBigintJson, decodeBigintJson } from '../messaging/bigint-json';
-import { connectorError, serializeError, type ErrorCode } from '../connector/errors';
+import { connectorError, describeErrorFields, serializeError, type ErrorCode } from '../connector/errors';
 import { NOT_IMPLEMENTED_METHODS, type ConnectorMethod } from '../connector/constants';
 import type { TransferRequestDTO, SwapInputDTO, ProvingKeyMaterialDTO, TxSummaryDTO } from '../offscreen/messaging';
 import { getSettings, getNetworkConfig } from './settings';
@@ -565,7 +565,12 @@ export function registerConnectorHandlers(): void {
       return { ok: true as const, resultJson: encodeBigintJson(result ?? null) };
     } catch (err) {
       const code: ErrorCode = (err as { code?: ErrorCode }).code ?? 'InternalError';
-      const reason = (err as { reason?: string; message?: string }).reason ?? (err as Error).message ?? String(err);
+      const base = (err as { reason?: string; message?: string }).reason ?? (err as Error).message ?? String(err);
+      // Fold the error's structured fields into the reason. Without this a DApp
+      // only ever sees the message, and SDK errors keep the useful part (e.g.
+      // InsufficientFundsError's tokenType and amount) in their fields.
+      const detail = describeErrorFields(err);
+      const reason = detail ? `${base} [${detail}]` : base;
       return { ok: false as const, error: serializeError(code, reason) };
     }
   });
