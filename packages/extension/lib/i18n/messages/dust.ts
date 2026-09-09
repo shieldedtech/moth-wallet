@@ -34,6 +34,9 @@ export const dust = {
   dust_generateBody: 'This registers your $1 so it starts generating $2. Any $1 you receive later registers automatically.',
   dust_generateBodyReceiver:
     'This registers your unregistered $1 so it starts generating $2. You can do this again whenever you receive more $1.',
+  dust_receiveRegisterNudge: 'Received $1 — register it now so it starts generating $2 right away.',
+  dust_staleRegisterWarning:
+    "Some of this $1 has been sitting unregistered for a while. On some networks, registering $1 long after receiving it — rather than right away — has been linked to a rare, serious network fault with no fix but a network reset. It's safest to register $1 as soon as it arrives.",
   dust_deregisterBody:
     "This deregisters your $1 from $2 generation. The $2 you have stays and still pays fees, but it won't refill. You can register again anytime.",
   dust_addressLabel: '$1 address',

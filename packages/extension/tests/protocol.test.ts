@@ -33,7 +33,7 @@ function sampleBalances(): WalletBalances {
     coins: {
       shielded: { available: [{ value: 10n, type: NIGHT }], pending: [] },
       unshielded: {
-        available: [{ value: 42n, type: NIGHT, registeredForDustGeneration: true }],
+        available: [{ value: 42n, type: NIGHT, registeredForDustGeneration: true, ctimeMs: 1_752_753_600_000 }],
         pending: [],
       },
       dust: {

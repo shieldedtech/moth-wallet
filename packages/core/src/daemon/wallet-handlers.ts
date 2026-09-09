@@ -42,6 +42,7 @@ import type {
 } from './wallet-rpc-types.js';
 
 import {sendTokensWithKeys, designateForDustWithKeys, dedesignateFromDustWithKeys} from '../sync/operations.js';
+import {submitWithHealthTracking} from '../sync/dust-ledger-health.js';
 import type {WalletKeys} from '../sync/operations.js';
 import {callCircuit} from '../contract/call.js';
 import {deployContract} from '../contract/deploy.js';
@@ -344,17 +345,23 @@ export function buildWalletHandlers(deps: WalletHandlerDeps): Record<string, Rpc
               `transfer of ${amountLabel} exceeds the --max-spend cap of ${formatBalance(deps.maxSpendRaw, NIGHT_DENOMINATION)} NIGHT`,
             );
           }
-          const txId = await sendTokensWithKeys(
-            facade,
-            walletKeys,
-            network.id,
-            [{
-              type: params.type,
-              tokenId: params.tokenId,
-              amount: amountBig,
-              to: params.to,
-            }],
-            (stage) => log('info', `[transferTokens] ${stage}`),
+          // Reclassifies a persistent run of InvalidDustSpendProof rejections as
+          // a wedged devnet dust ledger instead of a normal failure the operator
+          // retries forever — see sync/dust-ledger-health.ts.
+          const txId = await submitWithHealthTracking(
+            () => sendTokensWithKeys(
+              facade,
+              walletKeys,
+              network.id,
+              [{
+                type: params.type,
+                tokenId: params.tokenId,
+                amount: amountBig,
+                to: params.to,
+              }],
+              (stage) => log('info', `[transferTokens] ${stage}`),
+            ),
+            {network, walletName},
           );
           return {txId: String(txId)};
         },
@@ -525,12 +532,15 @@ export function buildWalletHandlers(deps: WalletHandlerDeps): Record<string, Rpc
         ],
         ctx,
         async () => {
-          const txId = await designateForDustWithKeys(
-            facade,
-            walletKeys,
-            network.id,
-            params.receiver,
-            (stage) => log('info', `[dustRegister] ${stage}`),
+          const txId = await submitWithHealthTracking(
+            () => designateForDustWithKeys(
+              facade,
+              walletKeys,
+              network.id,
+              params.receiver,
+              (stage) => log('info', `[dustRegister] ${stage}`),
+            ),
+            {network, walletName},
           );
           return {txId, registered: txId !== null};
         },
@@ -554,11 +564,14 @@ export function buildWalletHandlers(deps: WalletHandlerDeps): Record<string, Rpc
         ctx,
         async () => {
           try {
-            const txId = await dedesignateFromDustWithKeys(
-              facade,
-              walletKeys,
-              network.id,
-              (stage) => log('info', `[dustDeregister] ${stage}`),
+            const txId = await submitWithHealthTracking(
+              () => dedesignateFromDustWithKeys(
+                facade,
+                walletKeys,
+                network.id,
+                (stage) => log('info', `[dustDeregister] ${stage}`),
+              ),
+              {network, walletName},
             );
             return {txId};
           } catch (err) {

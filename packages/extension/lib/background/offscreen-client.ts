@@ -113,7 +113,13 @@ export const offscreen = {
     await ensureOffscreen();
     return offscreenSend('os/walletCreate', data);
   },
-  async walletImport(data: { name: string; mnemonic: string; passphrase: string; network: string }) {
+  async walletImport(data: {
+    name: string;
+    mnemonic?: string;
+    seed?: string;
+    passphrase: string;
+    network: string;
+  }) {
     await ensureOffscreen();
     return offscreenSend('os/walletImport', data);
   },
@@ -129,9 +135,14 @@ export const offscreen = {
     await ensureOffscreen();
     return offscreenSend('os/walletSetLabel', { name, label, network });
   },
-  async walletExportPhrase(name: string, passphrase: string, network: string) {
+  async walletExportPhrase(
+    name: string,
+    passphrase: string,
+    network: string,
+    as?: 'backup' | 'seed',
+  ) {
     await ensureOffscreen();
-    return offscreenSend('os/walletExportPhrase', { name, passphrase, network });
+    return offscreenSend('os/walletExportPhrase', { name, passphrase, network, as });
   },
   async walletSetNetwork(data: {
     name: string;
@@ -159,6 +170,10 @@ export const offscreen = {
   async syncCacheClear(data: { walletName: string; networkIds: string[] }) {
     await ensureOffscreen();
     return offscreenSend('os/syncCacheClear', data);
+  },
+  async syncCacheReset(data: { walletName: string; network: NetworkConfig }) {
+    await ensureOffscreen();
+    return offscreenSend('os/syncCacheReset', data);
   },
   async balancesGet(data: SyncTarget) {
     await ensureOffscreen();
@@ -260,6 +275,10 @@ export const offscreen = {
       payloadJson: encodeBigintJson(payload satisfies ProvingProviderProvePayload),
     });
     return decodeBigintJson<Uint8Array>(resultJson);
+  },
+  async txSummary(data: { network: NetworkConfig; txHex: string; sealed: boolean }) {
+    await ensureOffscreen();
+    return offscreenSend('os/txSummary', data);
   },
   async balanceTransaction(data: SyncTarget & { txHex: string; sealed: boolean }) {
     await ensureOffscreen();

@@ -2,8 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from 'node:assert/strict';
+import {mkdtempSync, readFileSync, rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
 import {resolve} from 'node:path';
 
+import * as releasePackages from './release-packages.mjs';
 import {
   createReleasePlan,
   fetchGitHubReleaseTags,
@@ -74,6 +77,31 @@ assert.deepEqual(createReleasePlan(workspaces, releaseState()), {
 const core = workspaces.find((workspace) => workspace.name === '@shieldedtech/moth-wallet');
 const tui = workspaces.find((workspace) => workspace.name === '@shieldedtech/moth-tui');
 const cli = workspaces.find((workspace) => workspace.name === '@shieldedtech/moth-cli');
+
+const changesetsOutputDirectory = mkdtempSync(resolve(tmpdir(), 'moth-changesets-output-'));
+const changesetsOutputPath = resolve(changesetsOutputDirectory, 'events.ndjson');
+try {
+  assert.equal(
+    typeof releasePackages.writeChangesetsOutput,
+    'function',
+    'the custom publisher must expose Changesets action v2 output',
+  );
+  releasePackages.writeChangesetsOutput(
+    [
+      {name: '@shieldedtech/example-core', releaseTag: '@shieldedtech/example-core@1.2.3'},
+      {name: '@shieldedtech/example-cli', releaseTag: '@shieldedtech/example-cli@1.2.3'},
+    ],
+    changesetsOutputPath,
+  );
+  assert.equal(
+    readFileSync(changesetsOutputPath, 'utf8'),
+    '{"type":"git-tag","tag":"@shieldedtech/example-core@1.2.3","packageName":"@shieldedtech/example-core"}\n' +
+      '{"type":"git-tag","tag":"@shieldedtech/example-cli@1.2.3","packageName":"@shieldedtech/example-cli"}\n',
+    'the custom publisher must emit the NDJSON contract consumed by Changesets action v2',
+  );
+} finally {
+  rmSync(changesetsOutputDirectory, {recursive: true, force: true});
+}
 
 const unpublishedCorePlan = createReleasePlan(
   workspaces,
