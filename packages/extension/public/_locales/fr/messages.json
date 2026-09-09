@@ -1639,5 +1639,17 @@
   },
   "accounts_revealNoPhraseReason": {
     "message": "Ce compte a été restauré depuis un seed hexadécimal : il n’a donc pas de phrase de récupération, et une phrase ne peut pas être déduite d’un seed. Son seed est la sauvegarde."
+  },
+  "settings_rebuildShielded": {
+    "message": "Reconstruire les données des pièces shielded"
+  },
+  "settings_rebuildShieldedDesc": {
+    "message": "Réanalyse les pièces shielded depuis la chaîne. À utiliser si un solde shielded semble incorrect ou obsolète. Ne dépense rien et ne touche pas au DUST, beaucoup plus lent à synchroniser."
+  },
+  "settings_rebuildShieldedAction": {
+    "message": "Reconstruire"
+  },
+  "settings_rebuildShieldedBusy": {
+    "message": "Reconstruction…"
   }
 }

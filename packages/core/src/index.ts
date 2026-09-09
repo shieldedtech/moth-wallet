@@ -67,7 +67,8 @@ export {
 
 // Sync
 export {
-  startWalletSync, applyNetworkId, formatNight, NIGHT_TOKEN_ID, clearSyncCache, clearDustSyncCache, resolveSyncStore,
+  startWalletSync, applyNetworkId, formatNight, NIGHT_TOKEN_ID, clearSyncCache, clearDustSyncCache,
+  clearShieldedSyncCache, clearSyncCacheParts, resolveSyncStore,
   EMPTY_COINS, EMPTY_SUB_PROGRESS, type WalletSyncOptions,
   type WalletBalances, type SyncedWallet, type DustGeneration, type SyncProgress,
   type SubWalletSyncProgress, type SubWalletProgress, type WalletCoinDetails,

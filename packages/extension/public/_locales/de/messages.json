@@ -1639,5 +1639,17 @@
   },
   "accounts_revealNoPhraseReason": {
     "message": "Dieses Konto wurde aus einem Hex-Seed wiederhergestellt und hat daher keine Wiederherstellungsphrase — eine Phrase lässt sich aus einem Seed nicht ermitteln. Der Seed ist das Backup."
+  },
+  "settings_rebuildShielded": {
+    "message": "Shielded-Coin-Daten neu aufbauen"
+  },
+  "settings_rebuildShieldedDesc": {
+    "message": "Shielded-Coins erneut von der Chain einlesen. Nutze dies, wenn ein Shielded-Guthaben falsch oder veraltet aussieht. Kostet nichts und lässt DUST unberührt — DUST synchronisiert deutlich langsamer."
+  },
+  "settings_rebuildShieldedAction": {
+    "message": "Neu aufbauen"
+  },
+  "settings_rebuildShieldedBusy": {
+    "message": "Wird aufgebaut…"
   }
 }
