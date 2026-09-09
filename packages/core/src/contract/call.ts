@@ -213,9 +213,29 @@ async function callViaSDK(options: CallOptions): Promise<TransactionResult> {
         {ttl: ttl ?? new Date(Date.now() + 30 * 60_000)}
       );
       const signFn = (payload: Uint8Array) => keystore.signData(payload);
-      signTransactionIntents(recipe.baseTransaction, signFn, 'proof');
-      if (recipe.balancingTransaction) {
-        signTransactionIntents(recipe.balancingTransaction, signFn, 'pre-proof');
+      // `recipe.baseTransaction` / `recipe.balancingTransaction` are WASM-backed
+      // accessors. signTransactionIntents mutates the JS wrapper it is handed via
+      // `tx.intents.set(...)`, so signing `recipe.baseTransaction` inline signs a
+      // value that finalizeRecipe never reads: the finalized transaction comes back
+      // with the unshielded inputs intact but ZERO signatures, and the node rejects
+      // it with error 192 InputsSignaturesLengthMismatch. Hold each transaction in a
+      // local, sign that, and write it back before finalizing.
+      //
+      // Signing must stay BEFORE finalizeRecipe: finalize performs the binding step
+      // (the intent header becomes `pedersen-schnorr`), and signTransactionIntents
+      // deserializes intents as `pre-binding`.
+      // Only touch transactions that actually have unshielded inputs. Deploy-shaped
+      // transactions have none, and writing back a transaction they never needed
+      // signed risks disturbing a path that already worked.
+      const base = recipe.baseTransaction;
+      if (hasUnshieldedInputs(base)) {
+        signTransactionIntents(base, signFn, 'proof');
+        recipe.baseTransaction = base;
+      }
+      const balancing = recipe.balancingTransaction;
+      if (balancing && hasUnshieldedInputs(balancing)) {
+        signTransactionIntents(balancing, signFn, 'pre-proof');
+        recipe.balancingTransaction = balancing;
       }
       return (facade as any).finalizeRecipe(recipe);
     },
@@ -289,6 +309,22 @@ async function callViaSDK(options: CallOptions): Promise<TransactionResult> {
     contractAddress,
     fees: null,
   };
+}
+
+/**
+ * True when a transaction actually carries unshielded inputs needing signatures.
+ * Deploy-shaped transactions have none, so the signing/write-back below must be
+ * skipped entirely for them — see the comment in balanceTx.
+ */
+function hasUnshieldedInputs(tx: any): boolean {
+  if (!tx?.intents || tx.intents.size === 0) return false;
+  for (const segment of tx.intents.keys()) {
+    const intent = tx.intents.get(segment);
+    const g = intent?.guaranteedUnshieldedOffer;
+    const f = intent?.fallibleUnshieldedOffer;
+    if ((g?.inputs?.length ?? 0) > 0 || (f?.inputs?.length ?? 0) > 0) return true;
+  }
+  return false;
 }
 
 /** Sign unshielded transaction intents (same as deploy.ts / mn-tui) */

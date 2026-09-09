@@ -22,6 +22,7 @@ import {
   clearSyncCache,
   clearDustSyncCache,
   clearEmptyRefCache,
+  clearShieldedSyncCache,
   warmEmptyRefCache,
   preseedReferenceStatus,
   DustRegistrationNotYetError,
@@ -101,6 +102,19 @@ const MAIN_THREAD_BATCH = { size: 50, timeout: 100, spacing: 20 };
 // the wallet's own state (with coins) stays intact inside the offscreen document.
 function serializeForClients(balances: WalletBalances): string {
   return serializeBalances({ ...balances, coins: EMPTY_COINS });
+}
+
+// The one-shot counterpart, for callers that DO need the per-coin breakdown.
+//
+// The stripping above is a streaming optimisation: it runs on every ~1s
+// emission, so the cost it avoids is paid continuously. `balancesGet` is a
+// single request made when a dApp asks, and since `getShieldedCoins` a coin's
+// nonce and mt_index are exactly what the caller wants — stripping them there
+// returned a wallet holding four shielded tokens as "no shielded coins", with
+// no error anywhere, because the data was discarded in transit rather than
+// failing to be built.
+function serializeWithCoins(balances: WalletBalances): string {
+  return serializeBalances(balances);
 }
 
 // --- WalletManager, cached per network ------------------------------------
@@ -375,6 +389,7 @@ export async function syncEnsure(
 // the deficit is already displayed; shouldRepairDustView only decides whether to
 // offer it (see dustView().canRebuild).
 let dustRebuildInFlight = false;
+let shieldedRebuildInFlight = false;
 
 // Transaction work in flight (building/proving/balancing/submitting). The
 // rebuild restarts the sync engine, which must NEVER happen underneath one of
@@ -462,6 +477,30 @@ export async function preseedWarm(network: NetworkConfig): Promise<{ started: bo
     return { started: false };
   } finally {
     refWarmInFlight = null;
+  }
+}
+
+/** Evict ONLY the shielded cache and restart sync so the shielded sub-wallet
+ *  rescans. Deliberately separate from dustRebuild and from a full cache clear:
+ *  DUST is the slowest sub-wallet to resync, so rebuilding shielded coin state
+ *  must not force a DUST rescan.
+ *
+ *  `started: false` means a transaction was in flight and nothing was touched. */
+export async function shieldedRebuild(
+  seedHex: string,
+  walletName: string,
+  network: NetworkConfig,
+): Promise<{ started: boolean }> {
+  if (shieldedRebuildInFlight || inFlightOps > 0) return { started: false };
+  shieldedRebuildInFlight = true;
+  try {
+    emit('os/eventSyncMessage', 'Rebuilding shielded coin records…');
+    await syncStop();
+    await clearShieldedSyncCache(walletName, network.id, new IdbSyncStateStore());
+    await syncEnsure(seedHex, walletName, network);
+    return { started: true };
+  } finally {
+    shieldedRebuildInFlight = false;
   }
 }
 
@@ -561,7 +600,7 @@ export async function balancesGet(
   network: NetworkConfig,
 ): Promise<string> {
   const wallet = await syncEnsure(seedHex, walletName, network);
-  return serializeForClients(await waitForSyncedBalances(wallet, SYNC_WAIT_MS));
+  return serializeWithCoins(await waitForSyncedBalances(wallet, SYNC_WAIT_MS));
 }
 
 /**

@@ -154,6 +154,18 @@ function FungibleBalanceBlock({
             <Box key={`g${row.group}c${row.coin}`} marginLeft={2}>
               <Text dimColor>· </Text>
               <Text>{formatBalanceForToken(coin.value, coin.type, tokenType)}</Text>
+              {/*
+                Shielded coins show their Merkle index and a nonce prefix: those
+                identify the coin well enough to pick it out, and are what a
+                circuit needs in order to spend it. Full values come from
+                `moth balance --coins`; this is a dashboard, so keep it short.
+              */}
+              {'mtIndex' in coin && coin.mtIndex != null && (
+                <Text dimColor>  #{String(coin.mtIndex)}</Text>
+              )}
+              {'nonce' in coin && typeof coin.nonce === 'string' && (
+                <Text dimColor>  {coin.nonce.slice(0, 8)}…</Text>
+              )}
               {coin.registered && <Text color="yellow"> [Registered for Dust]</Text>}
               {coin.booked && <Text color="cyan"> [in flight]</Text>}
             </Box>

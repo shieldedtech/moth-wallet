@@ -317,6 +317,36 @@ async function dispatchMethod(
       return (await syncedBalances(session)).shielded;
     }
 
+    case 'getShieldedCoins': {
+      const session = await requireConnected(origin);
+      const balances = await syncedBalances(session);
+      const coins = balances.coins.shielded;
+      return [
+        ...coins.available.map((c) => ({
+          nonce: c.nonce ?? null,
+          type: c.type,
+          value: c.value,
+          // Field named mt_index to match the QualifiedShieldedCoinInfo a
+          // circuit expects, so a DApp can pass it straight through.
+          mt_index: c.mtIndex ?? null,
+          commitment: c.commitment ?? null,
+          nullifier: c.nullifier ?? null,
+          status: 'available' as const,
+        })),
+        ...coins.pending.map((c) => ({
+          nonce: c.nonce ?? null,
+          type: c.type,
+          value: c.value,
+          // Pending coins are not in the commitment tree yet, so they cannot
+          // be spent and deliberately carry no index.
+          mt_index: null,
+          commitment: c.commitment ?? null,
+          nullifier: c.nullifier ?? null,
+          status: 'pending' as const,
+        })),
+      ];
+    }
+
     case 'getUnshieldedBalances': {
       const session = await requireConnected(origin);
       return (await syncedBalances(session)).unshielded;
