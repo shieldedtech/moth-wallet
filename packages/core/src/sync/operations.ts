@@ -145,6 +145,26 @@ function isTransient(e: unknown): boolean {
  * - Any other error is the node's deterministic rejection: surface it at once,
  *   without burning retries the user has to wait through.
  */
+/**
+ * Flatten an error's cause chain into readable lines.
+ *
+ * Effect-based SDK failures nest the useful text several levels down, and each
+ * level's own message is usually generic. Builtin-free on purpose: this module
+ * is bundled for the browser (see the note at the call site).
+ */
+function describeCauseChain(err: unknown, limit = 12): string {
+  const lines: string[] = [];
+  let cur: unknown = err;
+  for (let depth = 0; depth < limit && cur; depth++) {
+    const node = cur as {message?: unknown; defect?: {message?: unknown; cause?: unknown}; cause?: unknown};
+    const message = typeof node?.defect?.message === 'string' ? node.defect.message : node?.message;
+    const text = typeof message === 'string' && message.length > 0 ? message : String(cur);
+    if (!lines.includes(text)) lines.push(`${'  '.repeat(depth)}${depth > 0 ? '<- ' : ''}${text}`);
+    cur = node?.cause ?? node?.defect?.cause;
+  }
+  return lines.join('\n');
+}
+
 async function submitWithRetry(
   facade: WalletFacade,
   finalized: FinalizedTransaction,
@@ -160,6 +180,23 @@ async function submitWithRetry(
       await facade.submitTransaction(finalized);
       return finalized.transactionHash();
     } catch (e) {
+      // The node's reason for refusing lives several levels inside an Effect
+      // failure, and every layer above this one renders only the top-level
+      // message ("Transaction submission error"), which says nothing. Opt-in
+      // rather than always-on: the chain can carry transaction detail that does
+      // not belong in normal output.
+      //
+      // Written by hand rather than with `util.inspect`, because core is bundled
+      // into the browser extension and must import no platform builtin — the
+      // boundary test enforces that, and dynamically importing `node:util` here
+      // broke it. The CLI's own catch handler, where builtins are fine, renders
+      // the same chain for the final failure; this covers the retries it never
+      // sees.
+      if (typeof process !== 'undefined' && process.env?.MOTH_DEBUG_ERRORS === '1') {
+        process.stderr.write(
+          `--- submit attempt ${attempt} failed ---\n${describeCauseChain(e)}\n`,
+        );
+      }
       if (isAlreadyImported(e)) return finalized.transactionHash();
       if (attempt === attempts || !isTransient(e)) throw e;
       await new Promise((r) => setTimeout(r, delayMs));
@@ -422,7 +459,7 @@ export async function designateForDustWithKeys(
   setNetworkId(networkId);
   const ks = createKeystore(keys.nightExternalKey, networkId);
 
-  return designateForDustImpl(facade, ks, networkId, receiver, onProgress, selectedUtxos);
+  return designateForDustImpl(facade, ks, networkId, receiver, onProgress, selectedUtxos, keys.dustSecretKey);
 }
 
 /**
@@ -441,7 +478,7 @@ export async function designateForDust(
   setNetworkId(networkId);
   const keys = deriveKeysFromSeed(seedHex);
   const ks = createKeystore(keys.nightExternalKey, networkId);
-  return designateForDustImpl(facade, ks, networkId, receiver, onProgress, selectedUtxos);
+  return designateForDustImpl(facade, ks, networkId, receiver, onProgress, selectedUtxos, keys.dustSecretKey);
 }
 
 /**
@@ -502,6 +539,7 @@ async function designateForDustImpl(
   receiver: string | undefined,
   onProgress: ((stage: TxStage) => void) | undefined,
   selectedUtxos: NightUtxo[] | undefined,
+  dustSecretKey?: ledger.DustSecretKey,
 ): Promise<string | null> {
   let utxos: UtxoWithMeta[];
   if (selectedUtxos && selectedUtxos.length > 0) {
@@ -520,6 +558,23 @@ async function designateForDustImpl(
   onProgress?.('building');
 
   let dustReceiver: DustAddress | undefined;
+  // No explicit receiver means "my own DUST address", and leaving it undefined
+  // makes the SDK derive that itself. It derives it for the wrong network when
+  // the wallet was created against a different one -- the same root cause as
+  // #107, but reaching transaction construction instead of a query: preview's
+  // node refuses a devnet-encoded receiver, and the refusal arrives as a bare
+  // "Transaction submission error" with nothing to read. Deriving it here, from
+  // the keys in hand and the network this registration is actually for, removes
+  // the guess. Verified against preview: six failures with the SDK's default,
+  // immediate success with this address passed explicitly.
+  if (!receiver && dustSecretKey) {
+    try {
+      receiver = DustAddress.encodePublicKey(networkId, dustSecretKey.publicKey).toString();
+    } catch {
+      // Fall through to the SDK's default rather than fail outright: a derivation
+      // that cannot be encoded is not worse than what happened before this fix.
+    }
+  }
   if (receiver) {
     try {
       dustReceiver = MidnightBech32m.parse(receiver).decode(DustAddress, networkId);

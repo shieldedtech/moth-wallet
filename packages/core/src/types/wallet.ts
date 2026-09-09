@@ -41,8 +41,26 @@ export interface WalletAddresses {
 
 export interface WalletInfo {
   readonly name: string;
+  /**
+   * The wallet's unshielded receive address, encoded for {@link addressNetwork}.
+   *
+   * By default this is the address recorded at create/import time. Pass a network
+   * to `WalletManager.list()` to get it encoded for that network instead — the
+   * payload is key material and the prefix is metadata, so this needs no keys.
+   */
   readonly address: string;
+  /**
+   * Which network `address` is encoded for.
+   *
+   * Present because the two can differ: a wallet created on devnet and since used
+   * on preprod has one set of keys and two valid encodings, and a caller that
+   * assumed `address` matched the network it was working with sent a
+   * wrong-network address to the indexer (#107).
+   */
+  readonly addressNetwork?: string;
   readonly addresses: WalletAddresses;
+  /** The network recorded when this wallet was created or imported — where it
+   *  started, not a restriction on where it can be used. */
   readonly network: string;
   readonly active: boolean;
   /** Chain tip block height at wallet creation time. Used to skip scanning older blocks on first sync. */
