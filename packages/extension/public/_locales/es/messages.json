@@ -587,6 +587,9 @@
   "dust_paysYourFees": {
     "message": "Paga tus comisiones"
   },
+  "dust_capacityUnknown": {
+    "message": "Capacidad desconocida"
+  },
   "dust_ofMax": {
     "message": "de $1"
   },
@@ -598,6 +601,9 @@
   },
   "dust_etaSyncing": {
     "message": "Sincronizando…"
+  },
+  "dust_etaRecordsMissing": {
+    "message": "Faltan los registros de generación"
   },
   "dust_etaFullyGenerated": {
     "message": "Generación completa"
@@ -618,7 +624,7 @@
     "message": "Reconstruir registros de $1"
   },
   "dust_rebuildNote": {
-    "message": "Parte de tu $1 registrado todavía no genera $2. La reconstrucción vuelve a leer tus registros de la cadena: no gasta nada, pero tarda varios minutos."
+    "message": "Parte del $1 registrado sigue sin generar $2. La reconstrucción vuelve a leer tus registros desde la cadena — no gasta nada, pero puede tardar hasta una hora. Deja la billetera abierta."
   },
   "formatErrors_wholeNumber": {
     "message": "El monto debe ser un número entero"

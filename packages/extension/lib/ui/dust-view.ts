@@ -14,6 +14,17 @@ export interface DustView {
   etaText: string;
   /** True while the dust sub-wallet is still syncing — amounts are provisional. */
   syncing: boolean;
+  /**
+   * Registered, holding value, but the local generation records that define the
+   * cap have not been applied — so the cap is UNKNOWN, not zero.
+   *
+   * The balance and the cap come from different places: the balance is applied
+   * dust events, the cap is generation records. Losing the records while keeping
+   * the balance renders as "3,301.04 of 0" at "0% generated", which tells a user
+   * whose DUST is intact that it is gone. Callers show this state instead of a
+   * percentage of nothing.
+   */
+  capacityUnknown: boolean;
   /** The wallet holds NIGHT, but none of it is registered for generation — so
    *  it has capacity available to it and is not using it. Distinct from holding
    *  no NIGHT at all, which is what the "waiting" copy is for. */
@@ -45,10 +56,22 @@ export function dustView(
   const registered = generation?.registered === true;
   const unregisteredNight = night > 0n && !registered;
 
+  // A cap of zero on a registered wallet that holds value is missing records,
+  // not an empty allowance. Distinguished here so nothing downstream reports a
+  // real balance as 0% of 0.
+  const capacityUnknown = registered && max === 0n && (current > 0n || night > 0n);
+
   // Mid-sync amounts move as coins apply, so never claim "Fully generated"
   // (or an ETA) until the dust sub-wallet has caught up.
-  let etaText = night > 0n ? t('dust_etaNotRegistered', [labels.night]) : t('dust_etaWaitingFor', [labels.night]);
+  //
+  // Ordered so the fallback is reached only when nothing better applies. It used
+  // to be the initial value with every override gated on `max > 0n`, which meant
+  // a registered wallet with no cap kept the "not registered yet" text — the one
+  // statement that was certainly false, and contradicted by the detail screen's
+  // own "Registered — generating" two rows above it.
+  let etaText: string;
   if (syncing) etaText = t('dust_etaSyncing');
+  else if (capacityUnknown) etaText = t('dust_etaRecordsMissing');
   else if (max > 0n && percent >= 100) etaText = t('dust_etaFullyGenerated');
   else if (max > 0n && generation) {
     const fill = generation.fillTime;
@@ -68,6 +91,10 @@ export function dustView(
       const days = Math.round(ms / 86_400_000);
       etaText = t('dust_etaFullInDays', [days]);
     }
+  } else if (night > 0n && !registered) {
+    etaText = t('dust_etaNotRegistered', [labels.night]);
+  } else {
+    etaText = t('dust_etaWaitingFor', [labels.night]);
   }
 
   // lastHealAt is null: the old cooldown existed to stop an automatic repair
@@ -80,5 +107,14 @@ export function dustView(
   // guards still apply to running one.
   const canRebuild = shouldRepairDustView(balances, Date.now(), null);
 
-  return { current: formatDust(current), max: formatDust(max), percent, etaText, syncing, unregisteredNight, canRebuild };
+  return {
+    current: formatDust(current),
+    max: formatDust(max),
+    percent,
+    etaText,
+    syncing,
+    capacityUnknown,
+    unregisteredNight,
+    canRebuild,
+  };
 }

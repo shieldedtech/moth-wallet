@@ -587,6 +587,9 @@
   "dust_paysYourFees": {
     "message": "Bezahlt deine Gebühren"
   },
+  "dust_capacityUnknown": {
+    "message": "Kapazität unbekannt"
+  },
   "dust_ofMax": {
     "message": "von $1"
   },
@@ -598,6 +601,9 @@
   },
   "dust_etaSyncing": {
     "message": "Sync läuft…"
+  },
+  "dust_etaRecordsMissing": {
+    "message": "Generierungsdaten fehlen"
   },
   "dust_etaFullyGenerated": {
     "message": "Vollständig generiert"
@@ -618,7 +624,7 @@
     "message": "$1-Einträge neu aufbauen"
   },
   "dust_rebuildNote": {
-    "message": "Ein Teil deines registrierten $1 erzeugt noch kein $2. Beim Neuaufbau werden deine Einträge erneut von der Chain gelesen — das kostet nichts, dauert aber einige Minuten."
+    "message": "Ein Teil des registrierten $1 erzeugt weiterhin kein $2. Beim Neuaufbau werden deine Daten von der Chain neu eingelesen — das kostet nichts, kann aber bis zu einer Stunde dauern. Lass die Wallet geöffnet."
   },
   "formatErrors_wholeNumber": {
     "message": "Der Betrag muss eine ganze Zahl sein"

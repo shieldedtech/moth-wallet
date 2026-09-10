@@ -138,6 +138,70 @@ describe('dustView registration state', () => {
     expect(view.etaText).not.toContain('Waiting');
   });
 
+  // The reported bug: a wallet showing "3,301.04 of 0", "0% generated" and
+  // "tNIGHT not registered yet" on the same card its detail screen labelled
+  // "Registered — generating". Every override of the ETA used to be gated on a
+  // non-zero cap, so a registered wallet whose generation records were missing
+  // kept the one line that was certainly false.
+  describe('registered, holding value, but no generation records', () => {
+    // The reported wallet exactly: 3,301.04 tDUST held (DUST_UNIT is 1e15),
+    // 944 tNIGHT registered, and a cap of zero.
+    const REPORTED_DUST = 3_301_040n * 10n ** 12n;
+    const missingRecords = () =>
+      dustView(
+        makeBalances({
+          dust: REPORTED_DUST,
+          limit: 0n,
+          night: 944n * 10n ** 6n,
+          registered: true,
+          dustSynced: true,
+        }),
+        labels,
+      );
+
+    it('does not claim the NIGHT is unregistered', () => {
+      const view = missingRecords();
+      expect(view.etaText).not.toContain('not registered');
+      expect(view.unregisteredNight).toBe(false);
+    });
+
+    it('reports the capacity as unknown rather than as zero', () => {
+      const view = missingRecords();
+      expect(view.capacityUnknown).toBe(true);
+      expect(view.etaText).toBe('Generation records missing');
+    });
+
+    it('leaves the real balance intact — it is the cap that is missing, not the DUST', () => {
+      expect(missingRecords().current).toBe('3,301.04');
+    });
+
+    it('is not claimed while the dust sub-wallet is still syncing', () => {
+      const view = dustView(
+        makeBalances({ dust: REPORTED_DUST, limit: 0n, night: 944n * 10n ** 6n, registered: true, dustSynced: false }),
+        labels,
+      );
+      expect(view.etaText).toBe('Syncing…');
+    });
+
+    it('is not claimed for an unregistered wallet, which has a different remedy', () => {
+      const view = dustView(
+        makeBalances({ dust: 0n, limit: 0n, night: 944n * 10n ** 6n, registered: false, dustSynced: true }),
+        labels,
+      );
+      expect(view.capacityUnknown).toBe(false);
+      expect(view.etaText).toBe('tNIGHT not registered yet');
+    });
+
+    it('is not claimed for an empty wallet with nothing to account for', () => {
+      const view = dustView(
+        makeBalances({ dust: 0n, limit: 0n, night: 0n, registered: true, dustSynced: true }),
+        labels,
+      );
+      expect(view.capacityUnknown).toBe(false);
+      expect(view.etaText).toBe('Waiting for tNIGHT');
+    });
+  });
+
   it('reports an ETA once NIGHT is registered and generating', () => {
     const view = dustView(
       makeBalances({

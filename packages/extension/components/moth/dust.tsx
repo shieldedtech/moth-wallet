@@ -45,7 +45,8 @@ export function DustMeterCard({
           <span className="block text-xs text-white/60">{t('dust_paysYourFees')}</span>
         </span>
         <span className="text-sm font-semibold">
-          {view.current} <span className="text-white/50">{t('dust_ofMax', [view.max])}</span>
+          {view.current}
+          {!view.capacityUnknown && <span className="text-white/50"> {t('dust_ofMax', [view.max])}</span>}
         </span>
         <ChevronRight
           size={16}
@@ -56,7 +57,7 @@ export function DustMeterCard({
         <div className="h-full rounded-full bg-primary" style={{ width: `${view.percent}%` }} />
       </div>
       <div className="mt-2 flex justify-between text-xs text-white/60">
-        <span>{t('dust_percentGenerated', [view.percent])}</span>
+        <span>{view.capacityUnknown ? t('dust_capacityUnknown') : t('dust_percentGenerated', [view.percent])}</span>
         <span>{view.etaText}</span>
       </div>
     </button>
@@ -96,7 +97,9 @@ export function DustRingGauge({
         >
           {view.current}
         </span>
-        <span className="max-w-full text-center text-[12.5px] text-muted-foreground">{t('dust_ofMaxWithLabel', [view.max, labels.dust])}</span>
+        <span className="max-w-full text-center text-[12.5px] text-muted-foreground">
+          {view.capacityUnknown ? t('dust_capacityUnknown') : t('dust_ofMaxWithLabel', [view.max, labels.dust])}
+        </span>
       </div>
     </div>
   );
