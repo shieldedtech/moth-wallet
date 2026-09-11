@@ -1,5 +1,74 @@
 # @shieldedtech/moth-wallet
 
+## 0.13.1
+
+### Patch Changes
+
+- 77edf22: Replace the wallet SDK's DUST fee-balancing loop with one that terminates.
+
+  The SDK's `computeBalancingRecipe` (`wallet-sdk-dust-wallet` 4.2.0) re-selects
+  dust coins until they cover the fee of the transaction they produce, with no
+  iteration cap and no progress check. It also seeds its first pass with a
+  negative dust imbalance and every later pass with a positive fee; the balancer
+  reads the positive seed as a surplus, adds an output and selects nothing, so
+  only the first pass can ever converge. A wallet holding several part-drained
+  dust coins under-covers on that first pass and the loop then spins forever,
+  building and proof-erasing a WASM transaction on the calling thread each time
+  until the process runs out of memory.
+
+  Moth now supplies its own transacting capability through the SDK's documented
+  `V1Builder.withTransacting` seam (`sync/dust-transacting.ts`). It keeps the
+  SDK's fee arithmetic — `dryRunFee` and `calculateFee`, the WASM parts — and
+  replaces only the control flow: each pass covers the outstanding deficit from
+  coins not yet selected, then re-prices the transaction with everything selected
+  so far. A pass that does not converge has strictly grown the input set, so the
+  loop is bounded by the number of coins; running out surfaces as the SDK's own
+  `InsufficientFundsError`. Both `estimateFee` and `balanceTransactions` route
+  through the replaced method, so the fee preview and the real spend take the
+  same path. Coin selection order is unchanged.
+
+  Trade-off: this couples Moth to the SDK's exported implementation class and
+  three of its methods. The test suite pins that surface so an SDK upgrade that
+  changes it fails in CI rather than silently reverting to the non-terminating
+  loop. `effect` becomes a direct dependency of `@shieldedtech/moth-wallet` (it
+  was already in the tree via the SDK) because the capability returns the SDK's
+  `Either` values. The same loop is proposed upstream in
+  `docs/upstream-issues/dust-fee-balancing-nontermination.md`.
+- aa3c276: Pay DUST fees from the largest coin first, so fee balancing terminates.
+
+  The wallet SDK's dust fee balancer (`wallet-sdk-dust-wallet` 4.2.0,
+  `computeBalancingRecipe`) loops until the coins it selected cover the fee that
+  selecting them produced, with no iteration cap and no progress check. Its
+  default selector takes the smallest coin first, so a wallet holding several
+  part-drained DUST coins spends a handful of them, which enlarges the
+  transaction, which raises the fee past what those coins cover — and the loop
+  never exits. It also never fails: only the first pass can converge, because
+  that pass is seeded with a negative dust imbalance while every later pass is
+  seeded with a positive fee, which sends the balancer down its add-an-output
+  branch and selects no inputs at all. Each pass deserialises and erases proofs
+  on a fresh WASM transaction while holding the thread, so the wallet stops
+  responding and its WASM heap grows until the process dies.
+
+  Moth now sets largest-first selection on the dust wallet through the SDK's
+  documented `V1Builder.withCoinSelection` extension point
+  (`sync/dust-coin-selection.ts`), on both the restore-from-cache and
+  start-from-secret-key paths. One coin near its generation cap covers a fee
+  outright, so the first pass converges — which is the only pass that can.
+
+  This costs nothing in DUST fragmentation: a dust spend is one-in-one-out (the
+  ledger nullifies the coin and mints a successor worth the remainder), coin
+  count is pinned to the number of registered NIGHT UTXOs, and a coin's value
+  regenerates toward its cap. Draining the fullest coin therefore rotates across
+  backing UTXOs on its own as the drained ones refill, and produces a smaller
+  transaction than spending eight coins to reach the same fee.
+
+  **This is a mitigation, not a fix.** A wallet whose dust is spread evenly
+  across coins that are all far below fee size still spins, because no single
+  coin covers the fee — pinned as a test, and filed upstream with the iteration
+  traces in `docs/upstream-issues/dust-fee-balancing-nontermination.md`, which
+  asks for the progress check that would close it. Transaction construction,
+  signing, and proving are unchanged.
+
 ## 0.13.0
 
 ### Minor Changes

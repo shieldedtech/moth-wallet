@@ -1,5 +1,13 @@
 # @shieldedtech/moth-tui
 
+## 0.13.1
+
+### Patch Changes
+
+- Updated dependencies [77edf22]
+- Updated dependencies [aa3c276]
+  - @shieldedtech/moth-wallet@0.13.1
+
 ## 0.13.0
 
 ### Patch Changes

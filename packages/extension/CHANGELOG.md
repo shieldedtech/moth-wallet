@@ -1,5 +1,50 @@
 # @shieldedtech/moth-extension
 
+## 0.13.1
+
+### Patch Changes
+
+- 8cd2eae: Keep the underscores in an address visible, by naming a real monospace face
+  ahead of the generic one.
+
+  `--font-mono` ended in `ui-monospace, 'SF Mono', Menlo, monospace`, which lists
+  only faces that exist on macOS. Everywhere else it fell through to the generic
+  `monospace`, which on most Linux desktops resolves to DejaVu Sans Mono — and
+  inside an `<input>` at 14px Chromium renders that face's underscore as no
+  pixels at all, so `mn_addr_undeployed1…` read as `mn addr undeployed1…`. An
+  address is exactly the string where a silently dropped character matters.
+
+  The loss is specific to the combination: the same face renders the underscore
+  in a plain element, and at 13px or 15px in the same input. Line-height,
+  padding and box height do not move it, so the font stack is the only lever.
+  Consolas covers Windows and Liberation Mono and Noto Sans Mono cover Linux,
+  each of which renders the underscore at every size in the 12–16px range.
+- 320b6c5: Declare `clipboardRead`, so the Paste button on a recipient address works
+  outside Chrome.
+
+  Both Paste affordances — the one on the recipient field in Send and the DUST
+  designation dialog (`components/moth/address-picker.tsx`), and the seed-phrase
+  one in setup — call `navigator.clipboard.readText()`, but the manifest never
+  asked for the permission that read requires. Chrome serves the read to an
+  extension page off a user gesture regardless of whether it was declared, so the
+  omission was invisible there and the buttons worked. Stricter Chromium builds
+  enforce the declaration: on Brave the promise rejected, and the picker's
+  `catch` discarded the rejection without touching the field or saying anything,
+  so Paste was a button that did nothing.
+
+  The rejection is now logged rather than swallowed. It still leaves the field
+  alone — a keyboard paste was never affected and remains the fallback — but a
+  refused read raises no UI of its own, so silence made a permission problem
+  indistinguishable from a dead button.
+
+  A guard test resolves the manifest for both targets and asserts the permission
+  is present, since the only builds that would otherwise notice its absence are
+  the ones we do not test on.
+- Updated dependencies [77edf22]
+- Updated dependencies [aa3c276]
+  - @shieldedtech/moth-wallet@0.13.1
+  - @shieldedtech/moth-browser@0.13.1
+
 ## 0.13.0
 
 ### Minor Changes
