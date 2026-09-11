@@ -466,7 +466,12 @@ export function App({ networkId: networkIdProp }: AppProps) {
                 }
               })();
             }}
-            onLock={(name) => {
+            onLock={async (name) => {
+              // Stop any background sync engine cached for this wallet BEFORE
+              // zeroing its keys — otherwise a batch still in flight inside a
+              // facade the user isn't even looking at throws "secret key was
+              // cleared" (see useBalance's dropWallet doc comment).
+              await balance.dropWallet(name);
               wallet.lockOne(name);
               logs.info(`Wallet locked: ${name}`);
             }}
@@ -480,13 +485,19 @@ export function App({ networkId: networkIdProp }: AppProps) {
               }
             }}
             onRemove={async (name) => {
+              // Same ordering as onLock: stop its sync engine before the
+              // keystore/meta/sync-cache files it's still writing to are deleted.
+              await balance.dropWallet(name);
               await wallet.removeWallet(name);
               logs.info(`Wallet removed: ${name}`);
             }}
-            onClearCache={(name) => {
-              void clearSyncCache(name, network.id).then(() => {
-                logs.info(`Sync cache cleared for ${name} on ${network.id}`);
-              });
+            onClearCache={async (name) => {
+              // A cached facade for this wallet would otherwise keep running
+              // and re-write the very cache files this is about to delete on
+              // its next autosave — silently undoing the clear.
+              await balance.dropWallet(name);
+              await clearSyncCache(name, network.id);
+              logs.info(`Sync cache cleared for ${name} on ${network.id}`);
             }}
             onCreateNew={() => {
               nav.push('onboarding-network', { onComplete: onboardingCompleteStable, partial: {} });

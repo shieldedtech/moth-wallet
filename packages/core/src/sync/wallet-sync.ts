@@ -353,6 +353,24 @@ function saveCachedState(
   return store.put(syncStateKey(networkId, walletName, part), state);
 }
 
+/**
+ * Give the event loop one turn. `setTimeout(…, 0)` rather than a
+ * `Promise.resolve()` microtask or Node's `setImmediate`: a microtask runs
+ * before the host gets to do anything else (no good here — the whole point is
+ * to let a pending render/paint through), and `setImmediate` doesn't exist in
+ * browsers, which this module has to stay safe for (see the module comment).
+ *
+ * Used to open a gap before each sub-wallet's synchronous `.restore()` call
+ * below, so a caller's `onProgress` message posted just before it (e.g.
+ * "Restoring shielded state from cache...") has a chance to actually be
+ * rendered before the thread goes busy — otherwise, on a single-threaded host
+ * like the TUI, that call can block long enough to look like a hang rather
+ * than a slow-but-visible step.
+ */
+function yieldToEventLoop(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 // Store-based (async) — keeps the browser (IndexedDB) path working; the Node
 // filesystem cache is a concrete SyncStateStore behind resolveSyncStore. v8's
 // sync fs-based readWalletCacheState/pre-seed bridge is re-expressed against
@@ -487,11 +505,20 @@ export async function startWalletSync(
   // while shielded and unshielded resume at tip and each catches up on its own
   // stream. Measured on preview: dust rewound to the reference (64,771) alongside
   // shielded at tip (64,982) reached fully synced in 1.0s with identical balances.
-  const cached = {
-    shielded: await loadCachedState(store, name, network.id, 'shielded'),
-    unshielded: await loadCachedState(store, name, network.id, 'unshielded'),
-    dust: await loadCachedState(store, name, network.id, 'dust'),
-  };
+  //
+  // Read in parallel (three independent keys in the store) rather than one
+  // await at a time — pure I/O latency, nothing here depends on another part's
+  // result. `cached` stays the one read of each part for the rest of this
+  // function: the restore blocks below reuse these values instead of asking
+  // the store again, and the pre-seed step (right below) writes straight into
+  // this object when it fills a gap, so a freshly-seeded part is visible to
+  // its own restore without a second round-trip either.
+  const [shieldedRead, unshieldedRead, dustRead] = await Promise.all([
+    loadCachedState(store, name, network.id, 'shielded'),
+    loadCachedState(store, name, network.id, 'unshielded'),
+    loadCachedState(store, name, network.id, 'dust'),
+  ]);
+  const cached = { shielded: shieldedRead, unshielded: unshieldedRead, dust: dustRead };
   const missingParts = partsToSeed(cached);
 
   if (missingParts.length > 0) {
@@ -526,14 +553,17 @@ export async function startWalletSync(
             const seeded: string[] = [];
             if (allowed.includes('shielded') && !cached.shielded) {
               await saveCachedState(store, name, network.id, 'shielded', preSeeded.shielded);
+              cached.shielded = preSeeded.shielded;
               seeded.push('shielded');
             }
             if (allowed.includes('unshielded') && !cached.unshielded) {
               await saveCachedState(store, name, network.id, 'unshielded', preSeeded.unshielded);
+              cached.unshielded = preSeeded.unshielded;
               seeded.push('unshielded');
             }
             if (allowed.includes('dust') && !cached.dust && preSeeded.dust) {
               await saveCachedState(store, name, network.id, 'dust', preSeeded.dust);
+              cached.dust = preSeeded.dust;
               seeded.push('dust');
             }
             onProgress?.(
@@ -558,10 +588,17 @@ export async function startWalletSync(
   const shieldedBuilder = dedupingShieldedBuilder() as any;
   let shieldedWallet: ShieldedWallet | undefined;
   let restoredFromCache = false;
-  const savedShielded = await loadCachedState(store, name, network.id, 'shielded');
+  const savedShielded = cached.shielded;
   if (savedShielded) {
     try {
       onProgress?.('Restoring shielded state from cache...');
+      // Yield before the deserialize: `.restore()` below is a synchronous WASM
+      // call that can run for a while against a large cache, and without this
+      // the progress message above would never actually reach the terminal —
+      // it would sit queued behind the very call it describes, on a
+      // single-threaded host (e.g. the TUI) making that host look frozen
+      // rather than busy.
+      await yieldToEventLoop();
       shieldedWallet = CustomShieldedWallet(walletCfg, shieldedBuilder).restore(savedShielded);
       restoredFromCache = true;
     } catch {
@@ -576,10 +613,12 @@ export async function startWalletSync(
   // --- Unshielded wallet: try restore from cache ---
   onProgress?.('Starting unshielded wallet...');
   let unshieldedWallet: UnshieldedWallet | undefined;
-  const savedUnshielded = await loadCachedState(store, name, network.id, 'unshielded');
+  const savedUnshielded = cached.unshielded;
   if (savedUnshielded) {
     try {
       onProgress?.('Restoring unshielded state from cache...');
+      // See the matching comment on the shielded restore above.
+      await yieldToEventLoop();
       unshieldedWallet = UnshieldedWallet(walletCfg).restore(savedUnshielded);
     } catch {
       onProgress?.('Unshielded cache corrupted, syncing from genesis...');
@@ -610,10 +649,12 @@ export async function startWalletSync(
     .withCoinSelection(() => largestDustCoinFirst)
     .withTransacting(terminatingDustTransacting());
   let dustWallet: DustWallet | undefined;
-  const savedDust = await loadCachedState(store, name, network.id, 'dust');
+  const savedDust = cached.dust;
   if (savedDust) {
     try {
       onProgress?.('Restoring dust state from cache...');
+      // See the matching comment on the shielded restore above.
+      await yieldToEventLoop();
       dustWallet = CustomDustWallet(dustCfg, dustBuilder).restore(savedDust);
     } catch {
       onProgress?.('Dust cache corrupted, syncing from genesis...');
