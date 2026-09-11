@@ -184,7 +184,6 @@ export function Approval({
           </div>
           <BalanceSummary
             payload={approval.payload as BalanceApprovalPayload}
-            host={host}
             labels={labels}
             tokenNames={tokenNames}
           />
@@ -192,11 +191,11 @@ export function Approval({
             rows={[
               { label: t('approval_fromLabel'), value: shownName ?? '—' },
               { label: t('approval_networkFeeLabel'), value: t('approval_paidIn', [labels.dust]) },
-              ...((approval.payload as BalanceApprovalPayload).summary?.contractActions
+              ...((approval.payload as BalanceApprovalPayload).summary.contractActions
                 ? [
                     {
                       label: t('approval_contractCallsLabel'),
-                      value: String((approval.payload as BalanceApprovalPayload).summary?.contractActions),
+                      value: String((approval.payload as BalanceApprovalPayload).summary.contractActions),
                     },
                   ]
                 : []),
@@ -253,33 +252,58 @@ export function Approval({
  * stay quiet: no summary means a visible warning, and a summary with nothing in
  * it says so in words.
  */
+/** Middle-truncated address: enough of both ends to compare against what the
+ *  user expects, without wrapping to three lines in a 272px panel. */
+function shortAddress(address: string): string {
+  return address.length <= 26 ? address : `${address.slice(0, 14)}…${address.slice(-8)}`;
+}
+
+/** Where the tokens go. Without this the screen cannot distinguish a contract
+ *  call the user meant to make from a transfer to an attacker of the same size. */
+function RecipientList({ recipients }: { recipients: BalanceApprovalPayload['summary']['recipients'] }) {
+  if (recipients.length === 0) return null;
+  return (
+    <Card className="p-0">
+      {recipients.map((recipient, index) => (
+        <div key={recipient.address}>
+          {index > 0 && <Separator />}
+          <div className="flex items-baseline gap-3 px-4 py-[13px]">
+            <span className="text-[12px] text-muted-foreground">{t('approval_toLabel')}</span>
+            <span className="flex-1 break-all font-mono text-[12.5px]" title={recipient.address}>
+              {shortAddress(recipient.address)}
+            </span>
+            {recipient.isSelf && (
+              <span className="shrink-0 text-[11.5px] text-muted-foreground">{t('approval_recipientSelf')}</span>
+            )}
+          </div>
+        </div>
+      ))}
+    </Card>
+  );
+}
+
 function BalanceSummary({
   payload,
-  host,
   labels,
   tokenNames,
 }: {
   payload: BalanceApprovalPayload;
-  host: string;
   labels: ReturnType<typeof nativeAssetLabelsForNetwork>;
   tokenNames: Record<string, string>;
 }) {
-  if (!payload.summary) {
-    return (
-      <NoteCard icon={TriangleAlert}>
-        {t('approval_summaryUnavailable', [host])}
-      </NoteCard>
-    );
-  }
   const rows = txSummaryRows(payload.summary, labels, tokenNames);
   if (rows.length === 0) {
     return (
-      <Card className="p-4">
-        <p className="m-0 text-[13.5px] text-muted-foreground">{t('approval_spendsNothing')}</p>
-      </Card>
+      <>
+        <Card className="p-4">
+          <p className="m-0 text-[13.5px] text-muted-foreground">{t('approval_spendsNothing')}</p>
+        </Card>
+        <RecipientList recipients={payload.summary.recipients} />
+      </>
     );
   }
   return (
+    <>
     <Card className="p-0">
       {rows.map((row, index) => (
         <div key={`${row.direction}-${row.symbol}-${index}`}>
@@ -299,6 +323,8 @@ function BalanceSummary({
         </div>
       ))}
     </Card>
+    <RecipientList recipients={payload.summary.recipients} />
+    </>
   );
 }
 

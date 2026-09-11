@@ -57,6 +57,20 @@ export interface TxSummaryDTO {
   receives: TxTokenAmountDTO[];
   /** Contract calls, deploys and maintenance updates in the transaction. */
   contractActions: number;
+  /**
+   * Unshielded destinations the transaction pays. Amounts alone cannot tell a
+   * legitimate transaction from a drain — the address is what separates them.
+   * `isSelf` marks the wallet's own change so it is not read as a third party.
+   */
+  recipients: TxRecipientDTO[];
+}
+
+/** One unshielded destination shown on the balance approval. */
+export interface TxRecipientDTO {
+  /** bech32m address, or raw hex owner when it could not be encoded. */
+  address: string;
+  /** True when this is one of the connected wallet's own addresses. */
+  isSelf: boolean;
 }
 
 /** Contract circuit material supplied by a connected dApp for one proof call. */
