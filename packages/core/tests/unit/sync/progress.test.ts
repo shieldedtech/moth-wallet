@@ -6,7 +6,7 @@
 // slowest sub-wallet — it is not; dust is, by two orders of magnitude.
 
 import {describe, expect, it} from 'vitest';
-import {overallSyncProgress} from '../../../src/sync/progress.js';
+import {formatSubProgress, overallSyncProgress, subProgressPercent} from '../../../src/sync/progress.js';
 
 const complete = {applied: 1_395_558, total: 1_395_558};
 
@@ -216,5 +216,64 @@ describe('ETA on a resumed sync', () => {
       synced: true, elapsedMs: 5_000, baseline: {fraction: 0.9, elapsedMs: 0},
     });
     expect(r.etaSeconds).toBe(0);
+  });
+});
+
+// Per-part figures must obey the same "never overstate" rule as the total.
+//
+// These lived as a private helper in wallet-sync.ts, which imports WASM and so
+// could not be unit-tested; the copy in the extension's sync-view.ts drifted
+// from it. Both now call these, so the log line and the popover rows cannot
+// disagree again.
+describe('subProgressPercent', () => {
+  it('does not round a near-complete part up to 100', () => {
+    // 99.96% — the case that read "100%" beside an overall clamped to 99%.
+    expect(subProgressPercent({applied: 9_996, total: 10_000}, false)).toBe(99);
+  });
+
+  it('does not report 100 when the counters are level but the part is not done', () => {
+    expect(subProgressPercent({applied: 1_453_699, total: 1_453_699}, false)).toBe(99);
+  });
+
+  it('does not report 100 when applied exceeds total', () => {
+    // Observed on preprod: unshielded 567046/567016. The overshoot is a separate
+    // defect; what matters here is that it cannot read as complete.
+    expect(subProgressPercent({applied: 567_046, total: 567_016}, false)).toBe(99);
+  });
+
+  it('treats a part with nothing to apply as complete', () => {
+    // A fresh wallet's unshielded progress is legitimately 0/0. Core has always
+    // read this as complete; the extension used to read it as 0%.
+    expect(subProgressPercent({applied: 0, total: 0}, false)).toBe(100);
+  });
+
+  it('reports 100 once the part is genuinely done', () => {
+    expect(subProgressPercent({applied: 1, total: 10}, true)).toBe(100);
+  });
+
+  it('floors rather than rounds, so it never overstates mid-sync', () => {
+    expect(subProgressPercent({applied: 129, total: 200}, false)).toBe(64); // 64.5%
+  });
+});
+
+describe('formatSubProgress', () => {
+  it('prints the raw indices once the percentage stops carrying information', () => {
+    // The line that exposed a dust cursor frozen 6,401 events short.
+    expect(formatSubProgress({applied: 1_447_298, total: 1_453_699}, false)).toBe(
+      '99%+ (1447298/1453699)'
+    );
+  });
+
+  it('prints plain percentages below that threshold', () => {
+    expect(formatSubProgress({applied: 178_029, total: 1_395_558}, false)).toBe('12%');
+  });
+
+  it('prints 100% only when the part is done or has nothing to apply', () => {
+    expect(formatSubProgress({applied: 1, total: 10}, true)).toBe('100%');
+    expect(formatSubProgress({applied: 0, total: 0}, false)).toBe('100%');
+  });
+
+  it('never prints a bare 100% for an incomplete part', () => {
+    expect(formatSubProgress({applied: 567_046, total: 567_016}, false)).not.toBe('100%');
   });
 });
