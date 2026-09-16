@@ -1645,5 +1645,8 @@
   },
   "accounts_revealNoPhraseReason": {
     "message": "Dieses Konto wurde aus einem Hex-Seed wiederhergestellt und hat daher keine Wiederherstellungsphrase — eine Phrase lässt sich aus einem Seed nicht ermitteln. Der Seed ist das Backup."
+  },
+  "dust_etaRecordsSettling": {
+    "message": "Erzeugungsdatensätze werden erstellt"
   }
 }

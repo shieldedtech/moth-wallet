@@ -110,9 +110,11 @@ export const dust = {
   // and is not using. 'Waiting' would be wrong: nothing is being waited for.
   dust_etaNotRegistered: '$1 not registered yet',
   dust_etaSyncing: 'Syncing…',
-  // Registered and holding value, but the generation records that define the cap
-  // have not been applied locally. The balance is real; the cap is unknown.
-  // Never say "not registered yet" here — that is the one thing known to be false.
+  // Registered with no cap yet, inside the window where that is expected — the
+  // ledger takes a while to produce the first generation record.
+  dust_etaRecordsSettling: 'Generation records settling',
+  // The same state once it has outlived the grace period, where it is a stale
+  // local view rather than normal settling, and a rebuild is offered.
   dust_etaRecordsMissing: 'Generation records missing',
   dust_etaFullyGenerated: 'Fully generated',
   dust_etaFullInMin: 'Full in about $1 min',

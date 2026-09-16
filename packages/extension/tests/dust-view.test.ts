@@ -146,7 +146,13 @@ describe('dustView registration state', () => {
   describe('registered, holding value, but no generation records', () => {
     // The reported wallet exactly: 3,301.04 tDUST held (DUST_UNIT is 1e15),
     // 944 tNIGHT registered, and a cap of zero.
+    //
+    // `generatingNight: 0n` and a registration older than the grace period are
+    // what make it a STALE view rather than a settling one — core reports the
+    // same registered/limit-0 shape for the whole normal gap after registering,
+    // and only the aged, deficit-bearing case is an error worth naming.
     const REPORTED_DUST = 3_301_040n * 10n ** 12n;
+    const STALE = new Date(Date.now() - 5 * 3_600_000);
     const missingRecords = () =>
       dustView(
         makeBalances({
@@ -154,6 +160,8 @@ describe('dustView registration state', () => {
           limit: 0n,
           night: 944n * 10n ** 6n,
           registered: true,
+          generatingNight: 0n,
+          newestRegisteredAt: STALE,
           dustSynced: true,
         }),
         labels,
@@ -165,14 +173,40 @@ describe('dustView registration state', () => {
       expect(view.unregisteredNight).toBe(false);
     });
 
-    it('reports the capacity as unknown rather than as zero', () => {
+    it('reports the capacity as unknown rather than as zero, and keeps the balance', () => {
       const view = missingRecords();
       expect(view.capacityUnknown).toBe(true);
       expect(view.etaText).toBe('Generation records missing');
+      // The cap is what went missing, not the DUST.
+      expect(view.current).toBe('3,301.04');
     });
 
-    it('leaves the real balance intact — it is the cap that is missing, not the DUST', () => {
-      expect(missingRecords().current).toBe('3,301.04');
+    it('offers the rebuild alongside the message that names the problem', () => {
+      // An error-sounding line with no action is the worst of both.
+      expect(missingRecords().canRebuild).toBe(true);
+    });
+
+    // The same registered/limit-0 shape, inside the window where it is expected:
+    // core reports it for the whole gap between registering and the first dust
+    // coin applying. Calling that "records missing" — with no rebuild offered,
+    // beside a note saying generation starts on its own — is the contradiction
+    // this block exists to remove, relocated.
+    it('calls the same state settling, not missing, inside the grace period', () => {
+      const view = dustView(
+        makeBalances({
+          dust: 0n,
+          limit: 0n,
+          night: 944n * 10n ** 6n,
+          registered: true,
+          generatingNight: 0n,
+          newestRegisteredAt: new Date(Date.now() - 60_000),
+          dustSynced: true,
+        }),
+        labels,
+      );
+      expect(view.capacityUnknown).toBe(true);
+      expect(view.etaText).toBe('Generation records settling');
+      expect(view.canRebuild).toBe(false);
     });
 
     it('is not claimed while the dust sub-wallet is still syncing', () => {
@@ -192,7 +226,9 @@ describe('dustView registration state', () => {
       expect(view.etaText).toBe('tNIGHT not registered yet');
     });
 
-    it('is not claimed for an empty wallet with nothing to account for', () => {
+    // Pins the defensive value clause, not a state core can reach: `registered`
+    // is derived from a registered NIGHT UTXO, so it already implies night > 0n.
+    it('holds the defensive guard: registered but holding nothing is not unknown', () => {
       const view = dustView(
         makeBalances({ dust: 0n, limit: 0n, night: 0n, registered: true, dustSynced: true }),
         labels,

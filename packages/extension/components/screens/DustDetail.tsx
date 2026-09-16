@@ -243,7 +243,9 @@ export function DustDetail({
       <div className="relative flex flex-col gap-4" aria-busy={view.syncing}>
         <div className="pt-4">
           <DustRingGauge view={view} labels={labels} />
-          <p className="m-0 mt-4 text-center text-sm font-semibold">{t('dust_percentGenerated', [view.percent])}</p>
+          <p className="m-0 mt-4 text-center text-sm font-semibold">
+            {view.capacityUnknown ? t('dust_capacityUnknown') : t('dust_percentGenerated', [view.percent])}
+          </p>
           <p className="m-0 text-center text-[12.5px] text-muted-foreground">{view.etaText}</p>
         </div>
         <DetailCard
@@ -252,11 +254,15 @@ export function DustDetail({
             {
               label: t('dust_totalPossible'),
               // The cap comes from the NIGHT generating right now — attributing
-              // it to the whole balance would misstate what generates.
-              sub: registered
-                ? t('dust_fromYourNightGenerating', [formatTokenBalance(generating, 6), labels.night])
-                : t('dust_fromYourNight', [formatTokenBalance(night, 6), labels.night]),
-              value: t('dust_amountLabel', [view.max, labels.dust]),
+              // it to the whole balance would misstate what generates. With the
+              // records unavailable there is no figure for either: `generating`
+              // is 0 too, so the caption would read "from your 0 NIGHT".
+              sub: view.capacityUnknown
+                ? undefined
+                : registered
+                  ? t('dust_fromYourNightGenerating', [formatTokenBalance(generating, 6), labels.night])
+                  : t('dust_fromYourNight', [formatTokenBalance(night, 6), labels.night]),
+              value: view.capacityUnknown ? '—' : t('dust_amountLabel', [view.max, labels.dust]),
             },
             { label: t('dust_generationRate'), sub: t('dust_setByNetwork'), value: t('dust_variable') },
             {
