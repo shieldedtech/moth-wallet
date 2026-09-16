@@ -303,7 +303,7 @@
     "message": "Pagada en $1"
   },
   "approval_balanceNote": {
-    "message": "Tu billetera aporta fondos propios para cubrir lo que le falta a esta transacción y los envía a las direcciones de arriba. Aprueba solo transacciones de sitios en los que confíes."
+    "message": "Su billetera añade sus propios fondos para cubrir lo que le falta a esta transacción y los envía a los destinos indicados arriba. Apruebe únicamente transacciones de sitios en los que confíe."
   },
   "approval_toLabel": {
     "message": "Para"
@@ -1642,5 +1642,11 @@
   },
   "accounts_revealNoPhraseReason": {
     "message": "Esta cuenta se restauró desde un seed hexadecimal, así que no tiene frase de recuperación — una frase no puede deducirse de un seed. Su seed es la copia de seguridad."
+  },
+  "approval_destinationHidden": {
+    "message": "Esta transacción retira fondos de su billetera, pero su destino es shielded y no puede mostrarse. Apruébela solo si confía en este sitio y sabe lo que hace."
+  },
+  "approval_contractLabel": {
+    "message": "Contrato"
   }
 }

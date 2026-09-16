@@ -63,7 +63,9 @@ describe('summarizeConnectorTransaction', () => {
       spends: [{kind: 'unshielded', tokenId: nativeToken().raw, amount: 1_000_000n}],
       receives: [],
       contractActions: 0,
-      recipients: [OWNER_ADDRESS],
+      recipients: [
+        {address: OWNER_ADDRESS, kind: 'user', amounts: [{kind: 'unshielded', tokenId: nativeToken().raw, amount: 1_000_000n}]},
+      ],
     });
   });
 
@@ -91,7 +93,9 @@ describe('summarizeConnectorTransaction', () => {
       spends: [],
       receives: [{kind: 'unshielded', tokenId: nativeToken().raw, amount: 2_000_000n}],
       contractActions: 0,
-      recipients: [OWNER_ADDRESS],
+      recipients: [
+        {address: OWNER_ADDRESS, kind: 'user', amounts: [{kind: 'unshielded', tokenId: nativeToken().raw, amount: 1_000_000n}]},
+      ],
     });
   });
 
@@ -104,7 +108,9 @@ describe('summarizeConnectorTransaction', () => {
       contractActions: 0,
       // Balanced for the WALLET, but it still pays someone: a screen that showed
       // only amounts would render this as "takes nothing" with no destination.
-      recipients: [OWNER_ADDRESS],
+      recipients: [
+        {address: OWNER_ADDRESS, kind: 'user', amounts: [{kind: 'unshielded', tokenId: nativeToken().raw, amount: 1_000_000n}]},
+      ],
     });
   });
 
@@ -119,7 +125,9 @@ describe('summarizeConnectorTransaction', () => {
   it('encodes every unshielded destination as a bech32m address', async () => {
     const bytes = await unsealedTx([], [{owner: OWNER, type: nativeToken().raw, value: 1n}]);
 
-    expect(summarizeConnectorTransaction(bytes, false, 'preprod').recipients).toEqual([OWNER_ADDRESS]);
+    expect(summarizeConnectorTransaction(bytes, false, 'preprod').recipients).toEqual([
+      {address: OWNER_ADDRESS, kind: 'user', amounts: [{kind: 'unshielded', tokenId: nativeToken().raw, amount: 1n}]},
+    ]);
   });
 
   it('encodes for the network it is told about, not a fixed one', async () => {
@@ -127,9 +135,9 @@ describe('summarizeConnectorTransaction', () => {
 
     const [preprod] = summarizeConnectorTransaction(bytes, false, 'preprod').recipients;
     const [undeployed] = summarizeConnectorTransaction(bytes, false, 'undeployed').recipients;
-    expect(preprod).toMatch(/^mn_addr_preprod1/);
-    expect(undeployed).toMatch(/^mn_addr_undeployed1/);
-    expect(preprod).not.toEqual(undeployed);
+    expect(preprod.address).toMatch(/^mn_addr_preprod1/);
+    expect(undeployed.address).toMatch(/^mn_addr_undeployed1/);
+    expect(preprod.address).not.toEqual(undeployed.address);
   });
 
   it('deduplicates repeated destinations but keeps distinct ones', async () => {
@@ -145,6 +153,51 @@ describe('summarizeConnectorTransaction', () => {
 
     const {recipients} = summarizeConnectorTransaction(bytes, false, 'preprod');
     expect(recipients).toHaveLength(2);
-    expect(recipients[0]).toEqual(OWNER_ADDRESS);
+    expect(recipients[0].address).toEqual(OWNER_ADDRESS);
+    // Repeated outputs to one destination total, rather than collapsing to a
+    // bare address that says nothing about how much went there.
+    expect(recipients[0].amounts).toEqual([{kind: 'unshielded', tokenId: nativeToken().raw, amount: 3n}]);
+    expect(recipients[1].amounts).toEqual([{kind: 'unshielded', tokenId: nativeToken().raw, amount: 3n}]);
+  });
+
+  // The decoy: a net total cannot separate these two outputs, and the larger is
+  // what a drain hides behind. Per-destination amounts are what make it visible.
+  it('attributes each amount to its own destination', async () => {
+    const attacker = 'ce'.repeat(32);
+    const bytes = await unsealedTx(
+      [],
+      [
+        {owner: attacker, type: nativeToken().raw, value: 2_999_000_000n},
+        {owner: OWNER, type: nativeToken().raw, value: 1_000_000n},
+      ]
+    );
+
+    const {spends, recipients} = summarizeConnectorTransaction(bytes, false, 'preprod');
+    // One total, which is all an amounts-only screen could ever show.
+    expect(spends).toEqual([{kind: 'unshielded', tokenId: nativeToken().raw, amount: 3_000_000_000n}]);
+    // The ledger orders the outputs, so look each destination up by address.
+    const amountFor = (address: string) =>
+      recipients.find((r) => r.address === address)?.amounts[0]?.amount;
+    expect(amountFor(OWNER_ADDRESS)).toBe(1_000_000n);
+    expect(recipients).toHaveLength(2);
+    expect(recipients.map((r) => r.amounts[0].amount).reduce((a, b) => a + b)).toBe(3_000_000_000n);
+    expect(amountFor(recipients.find((r) => r.address !== OWNER_ADDRESS)!.address)).toBe(2_999_000_000n);
+  });
+
+  it('keeps a destination amounts split by token', async () => {
+    const other = 'ff'.repeat(32);
+    const bytes = await unsealedTx(
+      [],
+      [
+        {owner: OWNER, type: nativeToken().raw, value: 5n},
+        {owner: OWNER, type: other, value: 7n},
+      ]
+    );
+
+    const [recipient] = summarizeConnectorTransaction(bytes, false, 'preprod').recipients;
+    expect(recipient.amounts).toEqual([
+      {kind: 'unshielded', tokenId: nativeToken().raw, amount: 5n},
+      {kind: 'unshielded', tokenId: other, amount: 7n},
+    ]);
   });
 });

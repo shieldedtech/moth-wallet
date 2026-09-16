@@ -114,7 +114,7 @@ describe('drain-shape probe: an unfunded output must always show as a spend', ()
       Transaction.fromParts('preprod', undefined, undefined, drainIntent('fallible'))
     ));
     expect(s.spends).toEqual([{kind: 'unshielded', tokenId: nativeToken().raw, amount: DRAIN}]);
-    expect(s.recipients).toEqual([DRAIN_ADDRESS]);
+    expect(s.recipients).toEqual([{address: DRAIN_ADDRESS, kind: 'user', amounts: [{kind: 'unshielded', tokenId: nativeToken().raw, amount: DRAIN}]}]);
   });
 
   it('names the destination even when the wallet pays nothing extra', async () => {
@@ -126,6 +126,6 @@ describe('drain-shape probe: an unfunded output must always show as a spend', ()
     const s = report('no-deficit-still-pays', await ser(
       Transaction.fromParts('preprod', undefined, undefined, intent)
     ));
-    expect(s.recipients).toEqual([DRAIN_ADDRESS]);
+    expect(s.recipients).toEqual([{address: DRAIN_ADDRESS, kind: 'user', amounts: [{kind: 'unshielded', tokenId: nativeToken().raw, amount: DRAIN}]}]);
   });
 });

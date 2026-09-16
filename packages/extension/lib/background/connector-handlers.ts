@@ -191,6 +191,14 @@ async function balance(
   try {
     summary = await offscreen.txSummary({ network, txHex: tx, sealed });
   } catch (err) {
+    // Only a decode failure is the dApp's fault. Everything else here is a
+    // wallet-side outage — the offscreen document not starting, a messaging
+    // failure, a locked host — and telling a site its transaction was malformed
+    // sends it to fix something that is not broken. Its own message is not
+    // forwarded: "Offscreen document did not become ready" is our internal.
+    if (!(err as { txUnreadable?: boolean })?.txUnreadable) {
+      throw connectorError('InternalError', 'Moth could not read this transaction right now. Try again.');
+    }
     throw unreadable(err instanceof Error ? err.message : 'unreadable transaction');
   }
   // A summary that resolves but is not shaped like one is the same failure as a

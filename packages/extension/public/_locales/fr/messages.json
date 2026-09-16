@@ -303,7 +303,7 @@
     "message": "Payés en $1"
   },
   "approval_balanceNote": {
-    "message": "Votre portefeuille ajoute ses propres fonds pour couvrir ce qui manque à cette transaction et les envoie aux adresses ci-dessus. N'approuvez que les transactions de sites de confiance."
+    "message": "Votre portefeuille ajoute ses propres fonds pour couvrir ce qui manque à cette transaction et les envoie aux destinations ci-dessus. N'approuvez que les transactions provenant de sites de confiance."
   },
   "approval_toLabel": {
     "message": "À"
@@ -1642,5 +1642,11 @@
   },
   "accounts_revealNoPhraseReason": {
     "message": "Ce compte a été restauré depuis un seed hexadécimal : il n’a donc pas de phrase de récupération, et une phrase ne peut pas être déduite d’un seed. Son seed est la sauvegarde."
+  },
+  "approval_destinationHidden": {
+    "message": "Cette transaction prélève des fonds sur votre portefeuille, mais sa destination est shielded et ne peut pas être affichée. Ne l'approuvez que si vous faites confiance à ce site et savez ce qu'il fait."
+  },
+  "approval_contractLabel": {
+    "message": "Contrat"
   }
 }

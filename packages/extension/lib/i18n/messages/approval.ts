@@ -29,8 +29,11 @@ export const approval = {
   approval_networkFeeLabel: 'Network fee',
   approval_paidIn: 'Paid in $1',
   approval_balanceNote:
-    'Your wallet adds its own funds to cover whatever this transaction is short of, and sends them to the addresses above. Only approve transactions from sites you trust.',
+    'Your wallet adds its own funds to cover whatever this transaction is short of, and sends them to the destinations above. Only approve transactions from sites you trust.',
+  approval_destinationHidden:
+    'This transaction takes funds from your wallet, but its destination is shielded and cannot be shown. Only approve it if you trust this site and know what it does.',
   approval_toLabel: 'To',
+  approval_contractLabel: 'Contract',
   approval_recipientSelf: 'Your wallet',
   approval_youPay: 'You pay',
   approval_youGetBack: 'You get back',

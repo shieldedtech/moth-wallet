@@ -36,18 +36,41 @@ export interface TransactionSummary {
   /** Contract calls, deploys and maintenance updates across all intents. */
   contractActions: number;
   /**
-   * Every unshielded destination the transaction pays, bech32m-encoded.
+   * Every destination the transaction pays, with what each one receives.
    *
    * Amounts alone cannot distinguish a legitimate transaction from a drain:
    * "You pay 3000 NIGHT" reads identically whether the tokens go to a contract
    * the user meant to call or to an attacker's address. The destination is the
    * only field that separates them, so the approval must show it.
    *
-   * Deduplicated, in first-seen order. This module holds no keys, so it cannot
-   * tell the wallet's own change output from a third party's — the caller,
-   * which does know the session's addresses, marks that.
+   * In first-seen order. This module holds no keys, so it cannot tell the
+   * wallet's own change output from a third party's — the caller, which does
+   * know the session's addresses, marks that.
    */
-  recipients: string[];
+  recipients: TxRecipient[];
+}
+
+/** One destination a transaction pays, and what it receives. */
+export interface TxRecipient {
+  /**
+   * bech32m address for a user destination, the raw contract address for a
+   * contract action. Falls back to the raw hex owner when encoding fails.
+   */
+  address: string;
+  /** Which kind of destination this is; they need different words on screen. */
+  kind: 'user' | 'contract';
+  /**
+   * What this destination receives, totalled per token across every intent.
+   *
+   * Per destination rather than per transaction, because a net total cannot say
+   * which share goes where: outputs of 2999 to one address and 1 to another
+   * render as a single "you pay 3000" beside two addresses, and the larger of
+   * the two is exactly what a drain hides behind.
+   *
+   * Empty for a contract action, whose value moves through its transcripts
+   * rather than a UTXO output, so there is no per-destination amount to read.
+   */
+  amounts: TxTokenAmount[];
 }
 
 type AnyTransaction = ledger.Transaction<ledger.Signaturish, ledger.Proofish, ledger.Bindingish>;
@@ -101,15 +124,39 @@ function encodeOwner(owner: string, networkId: string): string {
   }
 }
 
-/** Unshielded destinations across every intent, guaranteed and fallible. */
-function unshieldedRecipients(tx: AnyTransaction, networkId: string): string[] {
-  const seen = new Set<string>();
+/** Destinations across every intent, guaranteed and fallible. */
+function transactionRecipients(tx: AnyTransaction, networkId: string): TxRecipient[] {
+  const byOwner = new Map<string, Map<string, {type: ledger.TokenType; amount: bigint}>>();
   for (const intent of tx.intents?.values() ?? []) {
     for (const offer of [intent.guaranteedUnshieldedOffer, intent.fallibleUnshieldedOffer]) {
-      for (const output of offer?.outputs ?? []) seen.add(encodeOwner(output.owner, networkId));
+      for (const output of offer?.outputs ?? []) {
+        const address = encodeOwner(output.owner, networkId);
+        let totals = byOwner.get(address);
+        if (!totals) byOwner.set(address, (totals = new Map()));
+        const type: ledger.TokenType = {tag: 'unshielded', raw: output.type};
+        const key = tokenKey(type);
+        totals.set(key, {type, amount: (totals.get(key)?.amount ?? 0n) + output.value});
+      }
     }
   }
-  return [...seen];
+  const recipients: TxRecipient[] = [...byOwner].map(([address, totals]) => ({
+    address,
+    kind: 'user' as const,
+    amounts: [...totals.values()].map(({type, amount}) => toTokenAmount(type, amount)),
+  }));
+
+  // Contract actions produce no UTXO output, so without this a transaction
+  // whose only destination is a contract shows an amount leaving the wallet and
+  // no destination at all — the screen then has nothing to point the user at.
+  for (const intent of tx.intents?.values() ?? []) {
+    for (const action of intent.actions) {
+      const address = (action as {address?: string}).address;
+      if (address && !recipients.some((existing) => existing.address === address)) {
+        recipients.push({address, kind: 'contract', amounts: []});
+      }
+    }
+  }
+  return recipients;
 }
 
 function toTokenAmount(type: ledger.TokenType, amount: bigint): TxTokenAmount {
@@ -144,7 +191,7 @@ export function summarizeTransaction(tx: AnyTransaction, networkId: string): Tra
   let contractActions = 0;
   for (const intent of tx.intents?.values() ?? []) contractActions += intent.actions.length;
 
-  return {spends, receives, contractActions, recipients: unshieldedRecipients(tx, networkId)};
+  return {spends, receives, contractActions, recipients: transactionRecipients(tx, networkId)};
 }
 
 /** Decode + summarize in one step, for the connector's approval prompt. */

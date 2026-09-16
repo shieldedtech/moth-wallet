@@ -65,10 +65,14 @@ export interface TxSummaryDTO {
   recipients: TxRecipientDTO[];
 }
 
-/** One unshielded destination shown on the balance approval. */
+/** One destination shown on the balance approval. */
 export interface TxRecipientDTO {
-  /** bech32m address, or raw hex owner when it could not be encoded. */
+  /** bech32m address, contract address, or raw hex owner when unencodable. */
   address: string;
+  /** Which kind of destination this is; they read differently on screen. */
+  kind: 'user' | 'contract';
+  /** What this destination receives. Empty for a contract action. */
+  amounts: TxTokenAmountDTO[];
   /** True when this is one of the connected wallet's own addresses. */
   isSelf: boolean;
 }

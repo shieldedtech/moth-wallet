@@ -303,7 +303,7 @@
     "message": "Bezahlt in $1"
   },
   "approval_balanceNote": {
-    "message": "Deine Wallet steuert eigene Mittel bei, um zu decken, was dieser Transaktion fehlt, und sendet sie an die Adressen oben. Genehmige nur Transaktionen von Seiten, denen du vertraust."
+    "message": "Ihre Wallet fügt eigene Mittel hinzu, um zu decken, was dieser Transaktion fehlt, und sendet sie an die oben genannten Ziele. Genehmigen Sie nur Transaktionen von Websites, denen Sie vertrauen."
   },
   "approval_toLabel": {
     "message": "An"
@@ -1642,5 +1642,11 @@
   },
   "accounts_revealNoPhraseReason": {
     "message": "Dieses Konto wurde aus einem Hex-Seed wiederhergestellt und hat daher keine Wiederherstellungsphrase — eine Phrase lässt sich aus einem Seed nicht ermitteln. Der Seed ist das Backup."
+  },
+  "approval_destinationHidden": {
+    "message": "Diese Transaktion entnimmt Ihrer Wallet Mittel, aber ihr Ziel ist shielded und kann nicht angezeigt werden. Genehmigen Sie sie nur, wenn Sie dieser Website vertrauen und wissen, was sie tut."
+  },
+  "approval_contractLabel": {
+    "message": "Vertrag"
   }
 }
