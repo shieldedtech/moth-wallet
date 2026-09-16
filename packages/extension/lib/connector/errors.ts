@@ -24,32 +24,50 @@ export function serializeError(code: ErrorCode, reason: string): SerializedConne
 }
 
 /**
- * Scalar detail carried by an error and its `cause` chain, as `k=v` pairs.
+ * Fields a dApp is allowed to see, by name.
  *
- * Wallet SDK errors say far more in their fields than in their message —
+ * An allowlist, not a denylist, because this crosses into an untrusted page: a
+ * field is exposed only once someone has decided it should be. The denylist
+ * this replaced forwarded every scalar own property, which on a probe meant a
+ * cause's `url` (credentials and query string included), its `status` and its
+ * response `body`, and would have carried the `originalStack` that
+ * core/contract/deploy.ts attaches to a failed deploy.
+ */
+const EXPOSED_FIELDS = ['tokenType', 'amount'] as const;
+
+/** Per-value and total caps. A field is diagnostic detail, not a payload; the
+ *  200 KB `responseText` the previous version copied whole was neither. */
+const MAX_VALUE_CHARS = 128;
+const MAX_TOTAL_CHARS = 512;
+
+/**
+ * Allowlisted detail carried by an error and its `cause` chain, as `k=v` pairs.
+ *
+ * Wallet SDK errors say more in their fields than in their message —
  * `InsufficientFundsError` has `tokenType` and `amount`, i.e. exactly which
  * token is short and by how much. The connector reduces errors to
  * `{code, reason}` where reason is a plain string, so without folding these in
- * a DApp sees "Insufficient funds for fallible segment 31897" and has no way to
- * tell WHICH token was short. That makes an otherwise one-step diagnosis
- * impossible from the page.
+ * a dApp sees "Insufficient funds for fallible segment 31897" and cannot tell
+ * WHICH token was short — the contract's or the fee token, which need
+ * different fixes.
  *
- * Scalars only, and a bounded depth, so nothing large or circular is copied and
- * no object graph leaks to the page.
+ * Only `cause` values that are themselves Errors are followed. The previous
+ * version walked plain objects too, which is how an HTTP context hung off a
+ * cause reached the page.
  */
 export function describeErrorFields(err: unknown, depth = 0): string {
-  if (!err || typeof err !== 'object' || depth > 3) return '';
-  const SKIP = new Set(['message', 'stack', 'name', 'code', 'reason', 'type', 'cause']);
+  if (!(err instanceof Error) || depth > 3) return '';
   const parts: string[] = [];
-  for (const key of Object.getOwnPropertyNames(err)) {
-    if (SKIP.has(key)) continue;
-    const value = (err as Record<string, unknown>)[key];
+  for (const key of EXPOSED_FIELDS) {
+    const value = (err as unknown as Record<string, unknown>)[key];
     const kind = typeof value;
-    if (kind === 'string' || kind === 'number' || kind === 'boolean' || kind === 'bigint') {
-      parts.push(`${key}=${String(value)}`);
-    }
+    if (kind !== 'string' && kind !== 'number' && kind !== 'boolean' && kind !== 'bigint') continue;
+    // bigint has no JSON form; String() is what the reason line wants anyway.
+    const text = String(value);
+    parts.push(`${key}=${text.length > MAX_VALUE_CHARS ? `${text.slice(0, MAX_VALUE_CHARS)}…` : text}`);
   }
-  const nested = describeErrorFields((err as { cause?: unknown }).cause, depth + 1);
+  const nested = describeErrorFields(err.cause, depth + 1);
   if (nested) parts.push(nested);
-  return parts.join(', ');
+  const joined = parts.join(', ');
+  return joined.length > MAX_TOTAL_CHARS ? `${joined.slice(0, MAX_TOTAL_CHARS)}…` : joined;
 }
