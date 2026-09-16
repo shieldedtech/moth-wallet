@@ -321,11 +321,11 @@ export async function deployContract(options: DeployOptions): Promise<Transactio
       );
       // Sign unshielded transaction intents
       const signFn = (payload: Uint8Array) => keystore.signData(payload);
-      signTransactionIntents(recipe.baseTransaction, signFn, 'proof');
-      if (recipe.balancingTransaction) {
-        signTransactionIntents(recipe.balancingTransaction, signFn, 'pre-proof');
-      }
-      return (facade as any).finalizeRecipe(recipe);
+      // `Transaction.intents` is a WASM getter returning a fresh Map per read, so
+      // signing in place loses the signature and the node rejects with error 192.
+      // `signRecipe` returns a new recipe, as moth's transfer path already relies on.
+      const signed = await (facade as any).signRecipe(recipe, signFn);
+      return (facade as any).finalizeRecipe(signed);
     },
     submitTx: async (tx: any) => {
       return (facade as any).submitTransaction(tx);
@@ -437,29 +437,5 @@ export async function deployContract(options: DeployOptions): Promise<Transactio
         /* best effort */
       }
     }
-  }
-}
-
-/** Sign unshielded transaction intents (same as mn-tui's signTransactionIntents) */
-function signTransactionIntents(tx: any, signFn: (p: Uint8Array) => any, proofMarker: 'proof' | 'pre-proof'): void {
-  if (!tx.intents || tx.intents.size === 0) return;
-  for (const segment of tx.intents.keys()) {
-    const intent = tx.intents.get(segment);
-    if (!intent) continue;
-    const cloned = (ledger as any).Intent.deserialize('signature', proofMarker, 'pre-binding', intent.serialize());
-    const signature = signFn(cloned.signatureData(segment));
-    if (cloned.fallibleUnshieldedOffer) {
-      const sigs = cloned.fallibleUnshieldedOffer.inputs.map(
-        (_: any, i: number) => cloned.fallibleUnshieldedOffer.signatures.at(i) ?? signature
-      );
-      cloned.fallibleUnshieldedOffer = cloned.fallibleUnshieldedOffer.addSignatures(sigs);
-    }
-    if (cloned.guaranteedUnshieldedOffer) {
-      const sigs = cloned.guaranteedUnshieldedOffer.inputs.map(
-        (_: any, i: number) => cloned.guaranteedUnshieldedOffer.signatures.at(i) ?? signature
-      );
-      cloned.guaranteedUnshieldedOffer = cloned.guaranteedUnshieldedOffer.addSignatures(sigs);
-    }
-    tx.intents.set(segment, cloned);
   }
 }
