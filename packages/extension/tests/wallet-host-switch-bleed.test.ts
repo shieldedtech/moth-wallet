@@ -11,7 +11,7 @@
 // knew `current` could change; the emission itself was never guarded, and the
 // unsubscribe handle is dropped rather than called when the guard fails.
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const { startWalletSync, deriveWalletKeys, walletsList } = vi.hoisted(() => ({
   startWalletSync: vi.fn(),
@@ -68,8 +68,14 @@ vi.mock('./../lib/messaging/balances-json', () => ({
 
 const NETWORK = { id: 'preprod', nodeUrl: 'https://rpc.preprod.example', indexerUrl: 'https://ix.example' } as never;
 
-/** A controllable stand-in for core's SyncedWallet, matching the two behaviours
- *  that matter: subscribe() emits immediately, stop() kills the feed. */
+/** A controllable stand-in for core's SyncedWallet, matching the three
+ *  behaviours that matter: subscribe() emits immediately, stop() kills the feed,
+ *  and stop() does NOT clear the subscriber list.
+ *
+ *  That last one is load-bearing. Core's stop (sync/wallet-sync.ts) unsubscribes
+ *  the Rx source and nothing else — `subscribers` survives for the lifetime of
+ *  the document. A fake that empties the list on stop can never observe a leaked
+ *  callback, which would make the leak assertion below vacuous. */
 function fakeWallet(night: bigint) {
   const subscribers: Array<(b: unknown) => void> = [];
   let stopped = false;
@@ -78,7 +84,7 @@ function fakeWallet(night: bigint) {
     wallet: {
       facade: {},
       balances,
-      stop: vi.fn(async () => { stopped = true; subscribers.length = 0; }),
+      stop: vi.fn(async () => { stopped = true; }),
       refresh: vi.fn(async () => balances),
       subscribe: (cb: (b: unknown) => void) => {
         subscribers.push(cb);
@@ -92,6 +98,9 @@ function fakeWallet(night: bigint) {
     /** A later sync update, as the live engine would produce. */
     push: () => { if (!stopped) for (const cb of [...subscribers]) cb(balances); },
     isStopped: () => stopped,
+    /** Callbacks still registered with this engine — core leaves these in place
+     *  across stop(), so anything left here outlives the wallet's turn. */
+    subscriberCount: () => subscribers.length,
   };
 }
 
@@ -106,6 +115,10 @@ describe('balance emissions across a mid-start wallet switch', () => {
     emitted = [];
     host = await import('../lib/offscreen/wallet-host');
     host.setHostEmit((event, data) => emitted.push({ event, data }));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   const nights = () =>
@@ -153,15 +166,22 @@ describe('balance emissions across a mid-start wallet switch', () => {
     await consumerStart;
     await vi.waitFor(() => expect(treasury.wallet.stop).toHaveBeenCalled());
 
-    const before = nights().length;
-    treasury.push(); // a further update from the superseded engine
-    expect(nights().length).toBe(before);
+    // The superseded start's handle is stored nowhere, so syncStop cannot reach
+    // it and core's stop() will not clear it. Unless syncEnsure calls it on the
+    // spot, the callback stays in core's subscriber list for the lifetime of the
+    // offscreen document.
+    expect(treasury.subscriberCount()).toBe(0);
   });
 
-  // The user-visible shape. A synced, idle wallet emits rarely (core audits
-  // facade.state() at 1s and only on change), so whichever balance lands LAST
-  // is what the panel keeps showing — for minutes, not milliseconds.
-  it('leaves the active wallet balance as the last one the panel sees', async () => {
+  // The user-visible window, and the reason this is not a flicker.
+  //
+  // syncStop blocks on the superseded start, so the stale emission always lands
+  // BEFORE the new wallet's own start is even issued. What the user then looks
+  // at is the new wallet's start window — a cold start scans from the birthday —
+  // and for the whole of it the panel is showing the previous wallet's balance
+  // under the new wallet's name. Nothing corrects it until the new engine
+  // produces its first emission.
+  it('publishes nothing for the new wallet while its own start is still running', async () => {
     const treasury = fakeWallet(944n);
     const consumer = fakeWallet(942n);
 
@@ -170,40 +190,61 @@ describe('balance emissions across a mid-start wallet switch', () => {
     const treasuryStart = host.syncEnsure('aa'.repeat(32), 'treasury', NETWORK);
     await vi.waitFor(() => expect(startWalletSync).toHaveBeenCalledTimes(1));
 
-    startWalletSync.mockImplementationOnce(async () => consumer.wallet);
+    // Consumer's own start is slow — this is the window that matters.
+    let releaseConsumer!: (w: unknown) => void;
+    startWalletSync.mockImplementationOnce(() => new Promise((res) => { releaseConsumer = res; }));
     const consumerStart = host.syncEnsure('bb'.repeat(32), 'consumer', NETWORK);
 
     releaseTreasury(treasury.wallet);
     await treasuryStart.catch(() => {});
-    await consumerStart;
-    await vi.waitFor(() => expect(treasury.wallet.stop).toHaveBeenCalled());
+    await vi.waitFor(() => expect(startWalletSync).toHaveBeenCalledTimes(2));
 
-    const seen = nights();
-    expect(seen.at(-1)).toBe('942');
+    // The user has switched and the new engine is still coming up. An empty
+    // panel is correct here; the previous wallet's balance is not.
+    expect(nights()).toEqual([]);
+
+    releaseConsumer(consumer.wallet);
+    await consumerStart;
+    expect(nights()).toEqual(['942']);
   });
 
   // Separate defect on the same await. The rejection handler nulls `current`
   // without checking whose it is, so a superseded wallet that FAILS to start
   // tears down the session of the wallet the user actually switched to — every
   // later op then throws "No unlocked wallet is currently synced".
-  it('does not tear down the active session when a superseded start fails', async () => {
+  //
+  // Reaching it needs the rejection to land AFTER the switch has completed, and
+  // syncStop normally blocks on the superseded start settling either way. The
+  // one interleaving that gets past it is a start that hangs longer than
+  // syncStop's own bound, STOP_TIMEOUT_MS: the wait is abandoned, the new wallet
+  // becomes `current`, and only then does the old start fail. Hence fake timers.
+  it('does not tear down the active session when a superseded start fails late', async () => {
+    vi.useFakeTimers();
     const consumer = fakeWallet(942n);
 
     let failTreasury!: (e: Error) => void;
     startWalletSync.mockImplementationOnce(() => new Promise((_res, rej) => { failTreasury = rej; }));
     const treasuryStart = host.syncEnsure('aa'.repeat(32), 'treasury', NETWORK);
+    void treasuryStart.catch(() => {}); // rejects much later; do not trip the unhandled-rejection guard
     await vi.waitFor(() => expect(startWalletSync).toHaveBeenCalledTimes(1));
 
     startWalletSync.mockImplementationOnce(async () => consumer.wallet);
     const consumerStart = host.syncEnsure('bb'.repeat(32), 'consumer', NETWORK);
 
+    // Treasury's start never settles, so consumer is stuck in syncStop until the
+    // STOP_TIMEOUT_MS bound gives up on it.
+    await vi.advanceTimersByTimeAsync(30_000);
+    await consumerStart;
+    expect(startWalletSync).toHaveBeenCalledTimes(2);
+
+    // Only now does the abandoned start fail — with consumer already `current`.
     failTreasury(new Error('indexer unreachable'));
     await treasuryStart.catch(() => {});
-    await consumerStart;
 
     // `current` must still be consumer's. syncEnsure short-circuits on
     // `if (current?.key === key)`, so a repeat call starts no new engine — if
     // the failed start had nulled `current`, this would be a third start.
+    startWalletSync.mockImplementation(async () => fakeWallet(1n).wallet);
     await host.syncEnsure('bb'.repeat(32), 'consumer', NETWORK);
     expect(startWalletSync).toHaveBeenCalledTimes(2);
   });
