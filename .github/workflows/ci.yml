@@ -124,7 +124,7 @@ jobs:
       # Codecov's tokenless GitHub Actions upload path. The artifact above
       # remains the local evidence path in either case.
       - name: Publish coverage to Codecov
-        uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238  # v4.6.0
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
         with:
           files: coverage/lcov.info
           flags: unittests

@@ -8,6 +8,7 @@ import {
   describeWait,
   DustRegistrationNotYetError,
   startWalletSync,
+  submitWithHealthTracking,
 } from '@shieldedtech/moth-wallet';
 
 export default class DustRegister extends BaseCommand {
@@ -58,7 +59,7 @@ export default class DustRegister extends BaseCommand {
     process.stderr.write('Syncing wallet before registration...\n');
     const syncedWallet = await startWalletSync(wallet.walletKeys, network, (msg) => {
       this.log_verbose(msg);
-    }, walletName);
+    }, walletName, false, await this.syncBirthday(walletName, network.id));
 
     try {
       // Ask before building. The estimate is the only place the wait is
@@ -110,12 +111,18 @@ export default class DustRegister extends BaseCommand {
         }
       }
 
-      const txHash = await designateForDustWithKeys(
-        syncedWallet.facade,
-        wallet.walletKeys,
-        network.id,
-        flags.receiver,
-        (stage) => { process.stderr.write(`DUST register: ${stage}\n`); },
+      // Reclassifies a persistent run of InvalidDustSpendProof rejections as a
+      // wedged devnet dust ledger instead of a normal failure the operator
+      // retries forever — see core/sync/dust-ledger-health.ts.
+      const txHash = await submitWithHealthTracking(
+        () => designateForDustWithKeys(
+          syncedWallet.facade,
+          wallet.walletKeys,
+          network.id,
+          flags.receiver,
+          (stage) => { process.stderr.write(`DUST register: ${stage}\n`); },
+        ),
+        {network, walletName},
       );
 
       if (txHash) {

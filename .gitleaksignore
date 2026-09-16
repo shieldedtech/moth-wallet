@@ -1,0 +1,13 @@
+# gitleaks fingerprints for false positives: path:rule:line.
+# A committed secret fails the Scan workflow regardless of fail_severity, so
+# deliberate test fixtures have to be listed here explicitly.
+#
+# Fingerprints are line-anchored on purpose. If one of these lines moves the
+# finding comes back and gets looked at again, rather than silently staying
+# suppressed.
+
+# A fake secret in a test asserting that parse errors do not echo input back.
+packages/core/tests/unit/contract/args-parser.test.ts:generic-api-key:26
+
+# A 64-hex token type id used as a display fixture, not a credential.
+packages/tui/tests/unit/state-view-rows.test.ts:generic-api-key:23

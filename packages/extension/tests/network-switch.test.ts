@@ -170,6 +170,33 @@ describe('saveNetworkConfig', () => {
     );
   });
 
+  it('persists the edit before stopping the engine, so a slow stop cannot lose it', async () => {
+    // The regression. A node URL is edited precisely because it does not answer,
+    // and the write used to sit behind a stop that never returned against one.
+    let endpointsAtStop: NetworkEndpoints | null | undefined;
+    stopSync.mockImplementation(async () => {
+      endpointsAtStop = (await getSettings()).customEndpoints;
+    });
+    const changed = { ...endpoints('devnet'), nodeUrl: 'ws://localhost:9933' };
+
+    await saveNetworkConfig({ network: 'devnet', endpoints: changed, resyncApproved: false });
+
+    expect(endpointsAtStop).toEqual(changed);
+  });
+
+  it('rolls the edit back when the switch itself fails', async () => {
+    walletSetNetwork.mockRejectedValue(new Error('setNetwork exploded'));
+
+    await expect(
+      saveNetworkConfig({ network: 'preview', endpoints: endpoints('preview'), resyncApproved: true }),
+    ).rejects.toThrow('setNetwork exploded');
+
+    expect(await getSettings()).toEqual(
+      expect.objectContaining({ network: 'devnet', customEndpoints: null }),
+    );
+    expect(await getSession()).toEqual(expect.objectContaining({ network: 'devnet' }));
+  });
+
   it('does not reset or restart sync when the saved config is unchanged', async () => {
     const status = await saveNetworkConfig({
       network: 'devnet',

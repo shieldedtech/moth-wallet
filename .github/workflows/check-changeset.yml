@@ -38,5 +38,9 @@ jobs:
         run: yarn install --immutable
 
       # Fails if packages changed without a changeset, prompting the author to add one.
+      # BASE_REF goes through env: rather than ${{ }} in run: — github context data
+      # is untrusted input and expanding it inline is a script-injection sink.
       - name: Verify a changeset exists
-        run: yarn changeset status --since=origin/${{ github.base_ref }}
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: yarn changeset status --since="origin/$BASE_REF"

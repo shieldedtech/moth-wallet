@@ -209,7 +209,15 @@ export async function startDaemon(walletName: string, network: string): Promise<
  * stop the pre-seed daemon; the per-test daemon spawned later
  * restores from that cache and observes NIGHT immediately.
  */
-export async function setupTestWallet(prefix: string, network: string): Promise<string> {
+export async function setupTestWallet(
+  prefix: string,
+  network: string,
+  /** NIGHT to airdrop; defaults to AIRDROP_NIGHT (env-overridable). Callers
+   *  investigating the DUST-registration wedge (docs/bugs-found #15) pin this
+   *  explicitly so wallet size is a controlled variable, not an env default
+   *  that could silently change between runs. */
+  nightAmount: string = AIRDROP_NIGHT,
+): Promise<string> {
   if (network !== 'undeployed') {
     throw new Error(`setupTestWallet only supports 'undeployed' (genesis airdrop scope); got ${network}`);
   }
@@ -256,7 +264,7 @@ export async function setupTestWallet(prefix: string, network: string): Promise<
 
     // Phase 2 — fund via the midnight CLI (waits for finalization).
     const air = await runMidnight([
-      'airdrop', AIRDROP_NIGHT,
+      'airdrop', nightAmount,
       '--wallet', bech32m,
     ]);
     if (air.exitCode !== 0) {
@@ -384,8 +392,11 @@ export function getReceiveAddress(walletName: string, network: string): string {
 }
 
 /** Spawn `npx midnight-wallet-cli@latest midnight <args>` and collect
- *  stdout/stderr. Used for funding via the genesis wallet. */
-async function runMidnight(args: string[]): Promise<CliResult> {
+ *  stdout/stderr. Used for funding via the genesis wallet — and, in the
+ *  dust-wedge repro, as the only available way to make the genesis wallet
+ *  spend on demand (a second `airdrop` to a throwaway address is a genesis
+ *  wallet transaction like any other). */
+export async function runMidnight(args: string[]): Promise<CliResult> {
   return new Promise((resolveOuter) => {
     const child = spawn('npx', ['-y', '-p', 'midnight-wallet-cli@latest', 'midnight', ...args], {
       env: process.env,

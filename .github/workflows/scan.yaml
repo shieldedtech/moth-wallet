@@ -43,7 +43,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Scan and upload SARIF
-        uses: midnightntwrk/upload-sarif-github-action@f3d27fb4eb89c36506ca4c1ec5ff476a567b3542  # SHA-pinned; dependabot bumps
+        uses: midnightntwrk/upload-sarif-github-action@362d0346b194663004cb371e8e8523bd1c910917  # SHA-pinned; dependabot bumps
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           fail_severity: critical

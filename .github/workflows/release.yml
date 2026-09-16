@@ -91,23 +91,25 @@ jobs:
       # maintainer approves those runs before the version PR can merge.
       - name: Create or update version PR
         if: ${{ steps.releases.outputs.hasReleases == 'true' }}
-        uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d  # v1.9.0
+        uses: changesets/action@8488615a623b1b9c987934bb89eae8af6a946ac1  # v2.1.1
         with:
           # Keep the compound command in a package script; the action does not
           # invoke shell operators when it executes its input.
-          version: yarn run version-release
-          commitMode: github-api
+          version-script: yarn run version-release
           github-token: ${{ github.token }}
-          title: "chore: version packages"
-          commit: "chore: version packages"
+          pr-title: "chore: version packages"
+          commit-message: "chore: version packages"
 
       # With no Changesets left, publish through npm Trusted Publishing (OIDC),
       # then recover or create tags and GitHub Releases through Changesets.
       - name: Publish stable release
         if: ${{ steps.releases.outputs.hasReleases == 'false' && steps.package_changes.outputs.hasReleaseWork == 'true' }}
-        uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d  # v1.9.0
+        uses: changesets/action@8488615a623b1b9c987934bb89eae8af6a946ac1  # v2.1.1
         with:
-          publish: yarn run release
+          publish-script: yarn run release
+          # Preserve the annotated tag and target commit created by the
+          # idempotent publisher, including recovery of older releases.
+          push-with-git-cli: true
         env:
           GITHUB_TOKEN: ${{ github.token }}
 

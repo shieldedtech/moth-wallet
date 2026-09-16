@@ -85,6 +85,8 @@ After cloning, run:
 direnv allow        # if you use direnv; .envrc enables signing locally
 ```
 
+`.envrc` is tracked, so leave it alone. It sources `.envrc.local` for anything personal — copy `envrc.local.example` to `.envrc.local` and edit that instead; git ignores it.
+
 or apply it manually one-off:
 
 ```bash

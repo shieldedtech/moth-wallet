@@ -1,5 +1,33 @@
 # @shieldedtech/moth-browser
 
+## 0.13.0
+
+### Patch Changes
+
+- Updated dependencies [a17b719]
+- Updated dependencies [b49c96d]
+- Updated dependencies [f736ebd]
+- Updated dependencies [b49c96d]
+- Updated dependencies [0508a38]
+- Updated dependencies [2dabc50]
+- Updated dependencies [426b757]
+- Updated dependencies [eb4d56a]
+- Updated dependencies [3e131e2]
+- Updated dependencies [9afd580]
+- Updated dependencies [b49c96d]
+- Updated dependencies [e31eaf8]
+- Updated dependencies [c2f8b73]
+- Updated dependencies [b49c96d]
+- Updated dependencies [b49c96d]
+- Updated dependencies [b49c96d]
+- Updated dependencies [c1c462e]
+- Updated dependencies [9be5669]
+- Updated dependencies [ea1793d]
+- Updated dependencies [316ca82]
+- Updated dependencies [89f34aa]
+- Updated dependencies [04f1aa4]
+  - @shieldedtech/moth-wallet@0.13.0
+
 ## 0.12.1
 
 ### Patch Changes
