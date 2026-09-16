@@ -62,12 +62,25 @@ export interface CreateWalletRequest {
   mnemonic?: string;
 }
 
-export interface ImportWalletRequest {
+/**
+ * Restore an existing account from either backup artifact. Exactly one of
+ * `mnemonic` / `seed` is required, enforced by the union rather than by a
+ * runtime check, so a caller cannot send both or neither.
+ *
+ * The seed arm exists because a wallet created from a raw hex seed has no
+ * mnemonic and never will — BIP-39's phrase-to-seed step is a one-way KDF, so
+ * there is nothing to type into a word grid. Before this, such an account could
+ * be created in the TUI and CLI but was unreachable from the extension, even
+ * though the extension's own session model is seed-based throughout.
+ */
+export type ImportWalletRequest = {
   name: string;
-  mnemonic: string;
   passphrase: string;
   network?: string;
-}
+} & (
+  | {mnemonic: string; seed?: never}
+  | {seed: string; mnemonic?: never}
+);
 
 export interface SendTokensRequest {
   type: 'shielded' | 'unshielded';
@@ -194,6 +207,11 @@ export interface NightCoinRow {
    *  count toward the displayed balance but cannot be registered, which is how a
    *  wallet shows 500 NIGHT and still reports nothing to register. */
   booked: boolean;
+  /** When this UTXO arrived, epoch ms — null if unknown. Powers the "register
+   *  promptly" warning: a devnet defect (docs/upstream-issues) has so far only
+   *  ever been triggered by registering NIGHT that sat unregistered for
+   *  minutes, never by registering within seconds of it arriving. */
+  ctimeMs: number | null;
 }
 
 interface ProtocolMap {
@@ -208,7 +226,17 @@ interface ProtocolMap {
   /** Reveal an account's backup secret after re-entering its password: the
    *  original mnemonic, or the raw hex seed for accounts imported from hex.
    *  Rejects on a wrong password. */
-  walletExportPhrase(data: { name: string; passphrase: string }): {
+  walletExportPhrase(data: {
+    name: string;
+    passphrase: string;
+    /**
+     * Which artifact to reveal. `backup` (the default) is whatever this account
+     * was created from. `seed` is the hex seed regardless — for a phrase-backed
+     * account that is the 64-byte seed its 24 words expand to, which some
+     * tooling wants and which cannot be reconstructed from the phrase by hand.
+     */
+    as?: 'backup' | 'seed';
+  }): {
     kind: 'mnemonic' | 'seed';
     value: string;
   };
@@ -285,6 +313,13 @@ interface ProtocolMap {
   /** Deregister all registered NIGHT from DUST generation. Stage updates
    *  stream over the port. */
   deregisterDust(): { txHash: string };
+
+  /** Forget everything synced for the unlocked account on its network — sync
+   *  state, cached balances, pending activity, and the network's prepared
+   *  reference — and sync again from the start of the chain. For a local
+   *  network that was brought back up from genesis, where the cached state
+   *  describes a chain that no longer exists. Spends nothing. */
+  resyncFromScratch(): void;
 
   /** Rebuild the local DUST view: evict the dust sync cache and rescan. Spends
    *  nothing. `started` is false when a transaction was in flight. */

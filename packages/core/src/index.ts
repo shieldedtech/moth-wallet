@@ -23,6 +23,16 @@ export {
   formatDustBalance,
 } from './wallet/balance-format.js';
 export { generateMnemonic24, validateMnemonic, mnemonicToSeed, hexSeedToUint8Array } from './wallet/mnemonic.js';
+export {
+  checkHexSeed,
+  assertHexSeed,
+  describeHexSeedProblem,
+  MIN_SEED_BYTES,
+  MAX_SEED_BYTES,
+  CANONICAL_SEED_BYTES,
+  type HexSeedCheck,
+  type HexSeedProblem,
+} from './wallet/hex-seed.js';
 export { Roles } from './wallet/address.js';
 export { encryptKeystore, decryptKeystore, type EncryptedKeystore } from './wallet/keystore.js';
 export {
@@ -64,6 +74,10 @@ export {
   type ShieldedCoinInfo, type UnshieldedCoinInfo, type DustCoinInfo,
 } from './sync/wallet-sync.js';
 export {
+  summarizeTransaction, summarizeConnectorTransaction, decodeConnectorTransaction,
+  type TransactionSummary, type TxTokenAmount,
+} from './sync/tx-summary.js';
+export {
   // Union of both lines: main's build/estimate/submit + batch types the
   // extension imports, plus v8's derive-and-drop walletKeys write paths.
   sendTokens, sendTokensWithKeys, deriveWalletKeys,
@@ -88,6 +102,12 @@ export {
   type DustGenerationSlice,
   type DustRegistrationEstimate,
 } from './sync/dust-registration-estimate.js';
+export {
+  isDustSpendProofRejection, diagnoseSubmissionFailure, dustSpendHealthTracker,
+  resetDustSpendHealthTrackers, DustSpendHealthTracker, DustLedgerWedgedError,
+  DEFAULT_WEDGE_THRESHOLD, submitWithHealthTracking,
+  type DustLedgerHealthContext, type SubmitHealthContext,
+} from './sync/dust-ledger-health.js';
 export {
   readEventWitness,
   compareWitness,
@@ -115,7 +135,7 @@ export {
   type ReferenceManifest,
 } from './sync/preseed-portable.js';
 export { chainTip } from './sync/chain-tip.js';
-export { ensureEmptyRefCache, warmEmptyRefCache, refreshEmptyRefCache, preseedReferenceStatus, preSeedNewWallet, type WarmProgress } from './sync/preseed.js';
+export { ensureEmptyRefCache, warmEmptyRefCache, clearEmptyRefCache, refreshEmptyRefCache, preseedReferenceStatus, preSeedNewWallet, type WarmProgress } from './sync/preseed.js';
 
 // Contract
 export { loadContractArtifact, type ContractArtifact } from './contract/artifact-loader.js';

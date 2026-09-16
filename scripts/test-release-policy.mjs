@@ -1,7 +1,11 @@
 // SPDX-FileCopyrightText: Copyright (C) Shielded Technologies
 // SPDX-License-Identifier: Apache-2.0
 
-import {readFileSync} from 'node:fs';
+import assert from 'node:assert/strict';
+import {spawnSync} from 'node:child_process';
+import {mkdirSync,mkdtempSync,readFileSync,rmSync,writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {resolve} from 'node:path';
 
 const workflow = readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
 const rootPackage = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
@@ -11,6 +15,28 @@ const changesetsActionMajors = [
   ...workflow.matchAll(/uses:\s+changesets\/action@[0-9a-f]{40}\s+#\s+v(\d+)\.\d+\.\d+/g),
 ].map((match) => Number(match[1]));
 const changesetsCliMajor = Number(rootPackage.devDependencies['@changesets/cli'].match(/\d+/)?.[0]);
+
+const changelogFixtureRoot = mkdtempSync(resolve(tmpdir(), 'moth-release-changelogs-'));
+try {
+  const packageDirectory = resolve(changelogFixtureRoot, 'packages/example');
+  const changelogPath = resolve(packageDirectory, 'CHANGELOG.md');
+  mkdirSync(packageDirectory, {recursive: true});
+  writeFileSync(changelogPath, '# Changelog\n\n- First paragraph.\n  \n  Continued paragraph.\n\t\n');
+
+  const normalization = spawnSync(
+    process.execPath,
+    [resolve(import.meta.dirname, 'release-changelogs.mjs'), changelogFixtureRoot],
+    {encoding: 'utf8'},
+  );
+  assert.equal(normalization.status, 0, normalization.stderr || normalization.stdout);
+  assert.equal(
+    readFileSync(changelogPath, 'utf8'),
+    '# Changelog\n\n- First paragraph.\n\n  Continued paragraph.\n\n',
+    'release changelog normalization must remove whitespace-only lines without flattening content',
+  );
+} finally {
+  rmSync(changelogFixtureRoot, {recursive: true, force: true});
+}
 
 function requirePolicy(condition, message) {
   if (!condition) {
@@ -114,8 +140,8 @@ requirePolicy(
 );
 requirePolicy(
   rootPackage.scripts['version-release'] ===
-    'yarn run version && yarn install --mode=update-lockfile --no-immutable',
-  'version PR creation must regenerate the lockfile when CI immutable mode is enabled',
+    'yarn run version && node scripts/release-changelogs.mjs && yarn install --mode=update-lockfile --no-immutable',
+  'version PR creation must normalize changelogs before regenerating the lockfile',
 );
 requirePolicy(
   publishingRunbook.includes('Approve workflows') &&
