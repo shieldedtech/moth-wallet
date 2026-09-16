@@ -507,7 +507,7 @@ In terminal A:
 
 ## Running the integration test suite
 
-Beyond manual smokes, the daemon has a vitest integration suite at `packages/cli/tests/integration/daemon/`. Six test files, ~17 tests total.
+Beyond manual smokes, the daemon has a vitest integration suite at `packages/cli/tests/integration/daemon/`. Eight test files, 20 tests total.
 
 ### Setup
 
@@ -521,8 +521,19 @@ yarn build
 export MOTH_DEVNET_URL=http://localhost:8088
 export MOTH_PASSPHRASE='integration-test-passphrase'
 export MOTH_DAEMON_AUTO_APPROVE=1
-export COUNTER_ARTIFACT_PATH=/Users/robertblessing-hartley/code/firstperson/compiled/fpc-registry
+export COUNTER_ARTIFACT_PATH=/path/to/compiled/fpc-registry
 ```
+
+If the stack's indexer is not on 8088, point the CLI at it with
+`export MOTH_INDEXER_URL=http://localhost:<port>/api/v4/graphql` — the tests
+inherit the environment, and `undeployed` otherwise defaults to 8088.
+
+`daemon-call-unshielded.test.ts` needs no `COUNTER_ARTIFACT_PATH`. It uses the
+committed fixture at `packages/core/contracts/receive-unshielded/managed`, which
+takes no witnesses and no constructor arguments, so it is the one contract test
+that runs unattended. Keep it that way: it is the regression test for unshielded
+input signing (node error 192), and only a circuit calling `receiveUnshielded`
+produces the unshielded inputs that expose the bug.
 
 ### Run
 
@@ -530,14 +541,20 @@ export COUNTER_ARTIFACT_PATH=/Users/robertblessing-hartley/code/firstperson/comp
 yarn workspace @shieldedtech/moth-cli test tests/integration/daemon/
 ```
 
-**Expected scoreboard** (as of feat/tui-daemon):
+**Expected scoreboard.** How many run depends on which variables are set:
+without `COUNTER_ARTIFACT_PATH` three files skip cleanly, and a handful of tests
+are hard-skipped regardless. Those are documented in
+[01-architecture.md Open Q §6, §7, §8](spec/wallet-service/01-architecture.md#open-questions)
+— they need either contract authorship (stub artifact) or core fixes (dust
+maturity, witness fixtures) outside the daemon's surface.
+
+`daemon-call-unshielded.test.ts` is the exception and should always be green
+with only `MOTH_DEVNET_URL` set:
 
 ```
-Test Files  6 passed (6)
-     Tests  13 passed | 4 skipped (17)
+Test Files  1 passed (1)
+     Tests  2 passed (2)
 ```
-
-The four skipped tests are documented in [01-architecture.md Open Q §6, §7, §8](spec/wallet-service/01-architecture.md#open-questions) — they need either contract authorship (stub artifact) or core fixes (dust maturity, witness fixtures) outside the daemon's surface.
 
 ### Diagnose failures
 
