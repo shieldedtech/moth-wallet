@@ -9,7 +9,7 @@ import { NIGHT_TOKEN_ID } from '@shieldedtech/moth-wallet/types/tokens';
 import type { WalletBalances } from '@shieldedtech/moth-browser';
 import { t } from '../../lib/i18n';
 import { formatTokenBalance } from '../../lib/ui/format';
-import { nativeAssetLabelsForNetwork } from '../../lib/ui/token-labels';
+import { nativeAssetLabelsForNetwork, shortTokenId, tokenDisplayName } from '../../lib/ui/token-labels';
 import { useActivity, useTokenNames } from '../../lib/ui/client';
 import { activityRowView } from '../../lib/ui/activity-view';
 import { Button } from '../ui/button';
@@ -145,8 +145,8 @@ export function Home({
                   <Separator />
                   <AssetRow
                     kind="unshielded"
-                    name={tokenNames[id] ?? `${id.slice(0, 8)}…`}
-                    sub={tokenNames[id] ? t('home_unshieldedTokenWithId', [`${id.slice(0, 8)}…`]) : t('home_unshieldedToken')}
+                    name={tokenDisplayName(id, tokenNames)}
+                    sub={tokenNames[id] ? t('home_unshieldedTokenWithId', [shortTokenId(id)]) : t('home_unshieldedToken')}
                     amount={formatTokenBalance(value, 0)}
                     onClick={() => setNamingToken(id)}
                   />
@@ -167,8 +167,8 @@ export function Home({
                     {index > 0 && <Separator />}
                     <AssetRow
                       kind="shielded"
-                      name={tokenNames[id] ?? `${id.slice(0, 8)}…`}
-                      sub={tokenNames[id] ? t('home_shieldedTokenWithId', [`${id.slice(0, 8)}…`]) : t('home_shieldedToken')}
+                      name={tokenDisplayName(id, tokenNames)}
+                      sub={tokenNames[id] ? t('home_shieldedTokenWithId', [shortTokenId(id)]) : t('home_shieldedToken')}
                       amount={formatTokenBalance(value, 0)}
                       onClick={() => setNamingToken(id)}
                     />
@@ -204,7 +204,7 @@ export function Home({
             </button>
           </div>
           {activity.slice(0, 2).map((entry) => (
-            <ActivityRow key={entry.hash} view={activityRowView(entry, labels, undefined, tokenNames)} />
+            <ActivityRow key={entry.hash} view={activityRowView(entry, labels, { tokenNames })} />
           ))}
         </div>
       )}

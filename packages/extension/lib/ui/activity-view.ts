@@ -6,6 +6,7 @@ import type { ActivityEntry, ActivityDelta } from '@shieldedtech/moth-browser';
 import { NIGHT_TOKEN_ID } from '@shieldedtech/moth-wallet/types/tokens';
 import { t } from '../i18n';
 import { formatDust, formatNightAmount, formatTokenBalance } from './format';
+import { shortTokenId, tokenDisplayName } from './token-labels';
 import type { NativeAssetLabels } from './token-labels';
 
 export type ActivityFilter = 'all' | 'sent' | 'received' | 'dust';
@@ -73,6 +74,14 @@ export interface ActivityRowView {
   sub: string;
   /** Signed display amount ("+120 NIGHT"), or null when nothing moved. */
   amount: string | null;
+  /**
+   * Full token id behind `amount`, when that amount is labelled with a name the
+   * user chose.
+   *
+   * A renamed token otherwise renders as "-2 tNIGHT", indistinguishable from a
+   * real NIGHT send; every other screen keeps the id visible beside the name.
+   */
+  amountTokenId: string | null;
   tone: 'positive' | 'negative' | 'muted';
 }
 
@@ -81,40 +90,17 @@ function shortAddress(address: string): string {
   return `${address.slice(0, 8)}…${address.slice(-4)}`;
 }
 
-/**
- * Display name for a token.
- *
- * Prefers the name the user gave it. A raw token id is meaningless to read —
- * "-2 24419f09…" in a feed says nothing about what moved — and the wallet
- * already knows the name because the user typed it. Falls back to a truncated
- * id when unnamed, which is the best available handle.
- *
- * `names` is keyed by token id. Lookup is case-insensitive and ignores a `0x`
- * prefix, since ids reach us from several sources with inconsistent formatting.
- */
-function tokenName(
-  delta: ActivityDelta,
-  labels: NativeAssetLabels,
-  names?: Record<string, string>,
-): string {
+/** The user's name for a token, or a short id. NIGHT is named per network. */
+function tokenName(delta: ActivityDelta, labels: NativeAssetLabels, names?: Record<string, string>): string {
   if (delta.kind === 'unshielded' && delta.tokenType === NIGHT_TOKEN_ID) return labels.night;
-  const named = lookupTokenName(delta.tokenType, names);
-  if (named) return named;
-  return `${delta.tokenType.slice(0, 8)}…`;
+  return tokenDisplayName(delta.tokenType, names);
 }
 
-function lookupTokenName(
-  tokenType: string,
-  names?: Record<string, string>,
-): string | undefined {
-  if (!names) return undefined;
-  const direct = names[tokenType];
-  if (direct) return direct;
-  const wanted = tokenType.replace(/^0x/i, '').toLowerCase();
-  for (const [id, name] of Object.entries(names)) {
-    if (id.replace(/^0x/i, '').toLowerCase() === wanted && name) return name;
-  }
-  return undefined;
+/** True when the name on screen is the user's, so the id is no longer visible
+ *  in it — the feed then shows the id alongside, as the asset list does. */
+function isUserNamed(delta: ActivityDelta, names?: Record<string, string>): boolean {
+  if (delta.kind === 'unshielded' && delta.tokenType === NIGHT_TOKEN_ID) return false;
+  return Boolean(names?.[delta.tokenType]);
 }
 
 function magnitude(delta: ActivityDelta): string {
@@ -150,14 +136,19 @@ function subFor(entry: ActivityEntry, now: Date): string {
   return base;
 }
 
+export interface ActivityRowOptions {
+  /** Injected for deterministic relative times. */
+  now?: Date;
+  /** User-assigned token names, keyed by token id. */
+  tokenNames?: Record<string, string>;
+}
+
 export function activityRowView(
   entry: ActivityEntry,
   labels: NativeAssetLabels,
-  now = new Date(),
-  /** User-assigned token names, keyed by token id. Optional so existing
-   *  callers and tests keep working; without it ids render as before. */
-  tokenNames?: Record<string, string>,
+  options: ActivityRowOptions = {},
 ): ActivityRowView {
+  const { now = new Date(), tokenNames } = options;
   const failed = entry.status === 'FAILURE';
   const positives = entry.deltas.filter((delta) => delta.amount > 0n);
   const negatives = entry.deltas.filter((delta) => delta.amount < 0n);
@@ -218,6 +209,7 @@ export function activityRowView(
     }
   }
 
+  const named = Boolean(amountDelta && isUserNamed(amountDelta, tokenNames));
   let amount: string | null = null;
   if (amountDelta) amount = signedAmount(amountDelta, labels, tokenNames);
   else if (entry.dustDelta !== 0n) {
@@ -231,8 +223,9 @@ export function activityRowView(
     key: entry.hash,
     icon: failed ? 'failed' : entry.pending ? 'pending' : entry.kind,
     title,
-    sub: subFor(entry, now),
+    sub: named && amountDelta ? `${subFor(entry, now)} · ${shortTokenId(amountDelta.tokenType)}` : subFor(entry, now),
     amount,
+    amountTokenId: named && amountDelta ? amountDelta.tokenType : null,
     tone: entry.pending || failed ? 'muted' : gained ? 'positive' : 'negative',
   };
 }

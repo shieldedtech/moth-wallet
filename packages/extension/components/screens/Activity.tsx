@@ -79,7 +79,7 @@ export function Activity({
             <div key={group.label}>
               <p className="section-label mb-1">{group.label}</p>
               {group.entries.map((entry) => (
-                <ActivityRow key={entry.hash} view={activityRowView(entry, labels, undefined, tokenNames)} />
+                <ActivityRow key={entry.hash} view={activityRowView(entry, labels, { tokenNames })} />
               ))}
             </div>
           ))}
