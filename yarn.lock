@@ -2915,6 +2915,7 @@ __metadata:
     "@scure/bip39": "npm:^2.2.0"
     "@types/node": "npm:^25.6.0"
     "@types/ws": "npm:^8"
+    effect: "npm:^3.19.19"
     fast-check: "npm:3.23.2"
     graphql: "npm:^16.10.0"
     graphql-request: "npm:^7.4.0"
