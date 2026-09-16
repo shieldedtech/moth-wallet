@@ -15,13 +15,43 @@ export interface TuiSettings {
   lastNetwork: string;
   lastWallet: string | null;
   networkOverrides: Record<string, NetworkOverrides>;
+  /**
+   * How many previously-used wallets keep a live sync in memory, so switching
+   * back to one is instant instead of a full facade rebuild.
+   *
+   * 0 (the default) disables it. Each warm wallet holds its full WASM sync state
+   * resident and keeps its indexer subscription open, so the cost is roughly a
+   * second wallet syncing per entry — which is why this is opt-in rather than a
+   * tuned default. 1 covers the common "toggling between two accounts" case.
+   *
+   * Overridable per-run with MOTH_WARM_WALLETS.
+   */
+  warmWallets: number;
 }
 
 const DEFAULTS: TuiSettings = {
   lastNetwork: 'devnet',
   lastWallet: null,
   networkOverrides: {},
+  warmWallets: 0,
 };
+
+/** Hard ceiling on warm entries — a typo in the settings file should not exhaust memory. */
+const MAX_WARM_WALLETS = 5;
+
+/**
+ * Resolve the warm-wallet capacity: env override, then settings, then off.
+ *
+ * Anything unparseable resolves to 0. This trades a silently-ignored setting for
+ * a silently-unbounded one, which is the right way round for a memory knob.
+ */
+export function resolveWarmWallets(settings: Pick<TuiSettings, 'warmWallets'>, env = process.env): number {
+  const raw = env.MOTH_WARM_WALLETS;
+  const fromEnv = raw !== undefined && raw !== '' ? Number(raw) : Number.NaN;
+  const value = Number.isFinite(fromEnv) ? fromEnv : Number(settings.warmWallets);
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  return Math.min(Math.floor(value), MAX_WARM_WALLETS);
+}
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
