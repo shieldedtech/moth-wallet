@@ -21,20 +21,51 @@ export interface SyncStatusView {
 
 const clamp = (value: number) => Math.max(0, Math.min(100, Math.round(value)));
 
+/** A coarse ETA, as a unit and a value the caller localises. */
+export type EtaDisplay =
+  | { unit: 'seconds'; value: number }
+  | { unit: 'minutes'; value: number }
+  | { unit: 'hours'; value: number }
+  | { unit: 'hoursMinutes'; value: number; minutes: number };
+
 /**
  * Coarse duration for an ETA. Deliberately rounded: the estimate is a rate
- * extrapolation, so minute-level precision would imply accuracy it does not
- * have. Returns null when there is nothing worth showing, so callers render
- * nothing rather than a misleading "0s".
+ * extrapolation, so finer precision would imply accuracy it does not have.
+ *
+ * Returns null when there is nothing worth showing, so callers render nothing
+ * rather than a misleading "0s". The unit is returned rather than a formatted
+ * string because the caller has the message catalog — a hard-coded "min" inside
+ * a localised sentence reaches de/es/fr as English.
+ *
+ * Seconds hand over to minutes at 60, and are capped at 55, so the scale never
+ * reads "~60s" one tick before "~1 min". Rounding minutes at a 90s cutoff put
+ * "~90s" next to "~2 min" for a one-second difference.
  */
-function formatEta(seconds: number | null | undefined): string | null {
+export function etaDisplay(seconds: number | null | undefined): EtaDisplay | null {
   if (seconds === null || seconds === undefined || seconds <= 0) return null;
-  if (seconds < 90) return `~${Math.max(5, Math.round(seconds / 5) * 5)}s`;
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `~${minutes} min`;
+  if (seconds < 60) {
+    return { unit: 'seconds', value: Math.max(5, Math.min(55, Math.round(seconds / 5) * 5)) };
+  }
+  const minutes = Math.max(1, Math.round(seconds / 60));
+  if (minutes < 60) return { unit: 'minutes', value: minutes };
   const hours = Math.floor(minutes / 60);
   const rem = minutes % 60;
-  return rem === 0 ? `~${hours} h` : `~${hours} h ${rem} min`;
+  return rem === 0 ? { unit: 'hours', value: hours } : { unit: 'hoursMinutes', value: hours, minutes: rem };
+}
+
+/** The same value as a localised string. */
+function etaText(eta: EtaDisplay | null): string | null {
+  if (!eta) return null;
+  switch (eta.unit) {
+    case 'seconds':
+      return t('syncStatus_etaSeconds', [eta.value]);
+    case 'minutes':
+      return t('syncStatus_etaMinutes', [eta.value]);
+    case 'hours':
+      return t('syncStatus_etaHours', [eta.value]);
+    case 'hoursMinutes':
+      return t('syncStatus_etaHoursMinutes', [eta.value, eta.minutes]);
+  }
 }
 
 /**
@@ -50,7 +81,7 @@ export interface SyncDisplayState {
 }
 
 export type SyncDisplayAction =
-  | { type: 'source'; synced: boolean }
+  | { type: 'source'; synced: boolean; fraction?: number }
   | { type: 'regressionGraceElapsed' }
   | { type: 'reset' };
 
@@ -82,6 +113,14 @@ export function syncDisplayReducer(
       : state;
   }
 
+  // A large drop is a rebuild or a genuine resync, not a tip advance: report it
+  // at once rather than waiting out the grace. Decided here rather than in the
+  // hook's effect so it is pure — and so the fraction never has to be an effect
+  // dependency, which would re-arm the grace timer on every emission.
+  if (action.fraction !== undefined && action.fraction < REAL_REGRESSION_BELOW) {
+    return initialSyncDisplayState(false);
+  }
+
   return state.waitingForRegression
     ? state
     : { ...state, waitingForRegression: true };
@@ -97,7 +136,7 @@ export function syncDisplayReducer(
  * the opposite of what the user needs: they asked for the rebuild and have no
  * other signal for how long it will take.
  */
-const REAL_REGRESSION_BELOW = 0.9;
+export const REAL_REGRESSION_BELOW = 0.9;
 
 /**
  * Show a newly synced state immediately, but delay regressions after the first
@@ -116,6 +155,8 @@ export function useSyncRegressionGrace(
     rawSynced,
     initialSyncDisplayState,
   );
+  const fractionRef = useRef(rawPercentage);
+  fractionRef.current = rawPercentage;
 
   useEffect(() => {
     if (!active) {
@@ -123,22 +164,20 @@ export function useSyncRegressionGrace(
       return;
     }
 
-    dispatchDisplay({ type: 'source', synced: rawSynced });
+    dispatchDisplay({ type: 'source', synced: rawSynced, fraction: fractionRef.current });
     if (rawSynced || !displayState.hasSynced) return;
-
-    // A big drop is a rebuild or a genuine resync, not a tip advance: report it
-    // immediately rather than waiting out the grace.
-    if (rawPercentage !== undefined && rawPercentage < REAL_REGRESSION_BELOW) {
-      dispatchDisplay({ type: 'reset' });
-      return;
-    }
 
     const timeout = setTimeout(
       () => dispatchDisplay({ type: 'regressionGraceElapsed' }),
       SYNC_REGRESSION_GRACE_MS,
     );
     return () => clearTimeout(timeout);
-  }, [active, rawSynced, displayState.hasSynced, rawPercentage]);
+    // `rawPercentage` is read through a ref and deliberately absent here. As a
+    // dependency it re-ran this effect on every ~1s emission, clearing the
+    // pending timeout and arming a fresh one, so a regression that kept making
+    // progress never reached regressionGraceElapsed and the wallet showed
+    // "Synced" for the whole catch-up.
+  }, [active, rawSynced, displayState.hasSynced]);
 
   return active && (rawSynced || displayState.synced);
 }
@@ -177,7 +216,7 @@ export function SyncStatus({
   const overall = synced && !rawSynced ? 100 : rawOverall;
   // Suppressed during the grace period: an ETA beside a "Synced" pill reads as
   // a contradiction.
-  const eta = synced ? null : formatEta(view.etaSeconds);
+  const eta = synced ? null : etaText(etaDisplay(view.etaSeconds));
 
   useEffect(() => {
     if (!open) return;
@@ -216,7 +255,7 @@ export function SyncStatus({
               <span className="text-[12.5px] text-muted-foreground">
                 {t('syncStatus_percent', [overall])}
                 {/* Only while genuinely syncing, and only when estimable. */}
-                {eta && <span className="ml-1.5">{t('syncStatus_etaRemaining', [eta])}</span>}
+                {eta && <span className="ml-1.5">{eta}</span>}
               </span>
             )}
           </div>

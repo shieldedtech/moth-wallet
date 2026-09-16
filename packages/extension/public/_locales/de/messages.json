@@ -1589,9 +1589,6 @@
   "dust_etaNotRegistered": {
     "message": "$1 noch nicht registriert"
   },
-  "syncStatus_etaRemaining": {
-    "message": "$1 übrig"
-  },
   "setup_importKindPhrase": {
     "message": "Wiederherstellungsphrase"
   },
@@ -1642,5 +1639,17 @@
   },
   "accounts_revealNoPhraseReason": {
     "message": "Dieses Konto wurde aus einem Hex-Seed wiederhergestellt und hat daher keine Wiederherstellungsphrase — eine Phrase lässt sich aus einem Seed nicht ermitteln. Der Seed ist das Backup."
+  },
+  "syncStatus_etaSeconds": {
+    "message": "noch ca. $1 s"
+  },
+  "syncStatus_etaMinutes": {
+    "message": "noch ca. $1 Min."
+  },
+  "syncStatus_etaHours": {
+    "message": "noch ca. $1 Std."
+  },
+  "syncStatus_etaHoursMinutes": {
+    "message": "noch ca. $1 Std. $2 Min."
   }
 }

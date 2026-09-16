@@ -18,6 +18,7 @@ import {
   type RegisterOutcome,
 } from '../../lib/ui/dust-register-outcome';
 import { waitPhrase } from '../../lib/ui/wait-phrase';
+import { dustFraction } from '../../lib/ui/sync-view';
 import type { DustNotYet, NightCoinRow } from '../../lib/messaging/protocol';
 import { isStaleUnregistered, oldestUnregisteredCoinAge } from '../../lib/ui/dust-register-timing';
 
@@ -101,11 +102,7 @@ export function DustDetail({
   const dustSynced = useSyncRegressionGrace(
     balances?.syncProgress.dustSynced ?? false,
     balances !== null,
-    // Raw dust fraction: a rebuild drops this far enough to bypass the grace,
-    // so an explicit rescan is reported instead of being smoothed over.
-    balances && balances.subProgress.dust.total > 0
-      ? balances.subProgress.dust.applied / balances.subProgress.dust.total
-      : undefined,
+    dustFraction(balances),
   );
 
   useEffect(() => {

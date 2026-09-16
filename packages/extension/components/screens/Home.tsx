@@ -24,7 +24,7 @@ import { SyncStatus, useSyncRegressionGrace } from '../moth/sync-status';
 import { RelayStatus } from '../moth/relay-status';
 import type { RelayState } from '../../lib/messaging/protocol';
 import { dustView } from '../../lib/ui/dust-view';
-import { syncStatusView } from '../../lib/ui/sync-view';
+import { dustFraction, syncStatusView } from '../../lib/ui/sync-view';
 import type { Screen } from './navigation';
 import { networkLabel } from './NetworkConfig';
 
@@ -58,11 +58,7 @@ export function Home({
   const dustSynced = useSyncRegressionGrace(
     balances?.syncProgress.dustSynced ?? false,
     balances !== null,
-    // Raw dust fraction: a rebuild drops this far enough to bypass the grace,
-    // so an explicit rescan is reported instead of being smoothed over.
-    balances && balances.subProgress.dust.total > 0
-      ? balances.subProgress.dust.applied / balances.subProgress.dust.total
-      : undefined,
+    dustFraction(balances),
   );
 
   return (
