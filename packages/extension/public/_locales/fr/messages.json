@@ -1182,7 +1182,7 @@
     "message": "Le portefeuille ne se verrouille jamais tout seul."
   },
   "settings_autoLockDescription": {
-    "message": "Lock and require your password after inactivity."
+    "message": "Lock and require your password after inactivity. A sync you are watching counts as activity."
   },
   "settings_autoLockAria": {
     "message": "Délai de verrouillage automatique"
@@ -1639,5 +1639,38 @@
   },
   "accounts_revealNoPhraseReason": {
     "message": "Ce compte a été restauré depuis un seed hexadécimal : il n’a donc pas de phrase de récupération, et une phrase ne peut pas être déduite d’un seed. Son seed est la sauvegarde."
+  },
+  "status_provingLocal": {
+    "message": "Proving on this device — a few minutes is normal."
+  },
+  "status_provingLocalDetail": {
+    "message": "Your transaction details never leave this browser."
+  },
+  "status_provingServer": {
+    "message": "S'exécute sur votre serveur de preuve, les détails n'en sortent jamais"
+  },
+  "status_provingLoading": {
+    "message": "Chargement de la méthode de preuve…"
+  },
+  "status_pendingLocalTime": {
+    "message": "Local proving usually takes a few minutes."
+  },
+  "status_elapsed": {
+    "message": "$1 écoulées"
+  },
+  "status_backgroundTitle": {
+    "message": "Transaction en cours"
+  },
+  "status_backgroundBuilding": {
+    "message": "Création de la transaction…"
+  },
+  "status_backgroundProving": {
+    "message": "Génération de la preuve…"
+  },
+  "status_backgroundSubmitting": {
+    "message": "Envoi au réseau…"
+  },
+  "status_backgroundHint": {
+    "message": "Continue même si vous fermez ce panneau."
   }
 }

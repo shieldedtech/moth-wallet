@@ -38,6 +38,7 @@ import {
   beginOp,
   endOp,
   hasOpenPorts,
+  syncInProgress,
   hasWorkInFlight,
   broadcastSessionLocked,
   getSetupTabIds,
@@ -121,6 +122,11 @@ export async function enforceAutoLock(): Promise<void> {
   const { autoLockMinutes } = await getSettings();
   if (autoLockMinutes === null) return; // demo mode — never expires
   if (hasWorkInFlight()) return; // don't lock mid-operation; wait for the next tick
+  // A watched sync is activity: hold the lock and restart the clock (syncHoldsAutoLock).
+  if (syncInProgress()) {
+    await recordActivity(Date.now());
+    return;
+  }
   const lastActivityAt = await getLastActivity();
   if (!isAutoLockExpired(lastActivityAt, autoLockMinutes, Date.now())) return;
   await lockNow();

@@ -42,7 +42,7 @@ export const settings = {
   settings_sectionSecurity: 'Security',
   settings_autoLock: 'Auto-lock',
   settings_autoLockDemo: 'The wallet never locks itself on its own.',
-  settings_autoLockDescription: 'Lock and require your password after inactivity.',
+  settings_autoLockDescription: 'Lock and require your password after inactivity. A sync you are watching counts as activity.',
   settings_autoLockAria: 'Auto-lock timeout',
   settings_autoLock1Minute: '1 minute',
   settings_autoLock5Minutes: '5 minutes',

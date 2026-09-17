@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { serializeHostError, deserializeHostError } from '../lib/offscreen/worker-rpc';
-import { HOST_METHODS } from '../lib/offscreen/host-dispatch';
+import { HOST_METHODS, FAST_LANE_METHODS, laneFor } from '../lib/offscreen/host-dispatch';
 
 // worker-bridge.ts is deliberately not unit-tested: its `?worker` import doesn't
 // resolve under vitest, and it's a thin id-correlation/relay layer covered by
@@ -100,5 +100,26 @@ describe('HOST_METHODS', () => {
     for (const excluded of ['os/ping', 'os/eventBalances', 'os/eventSyncMessage', 'os/eventTxStage']) {
       expect(HOST_METHODS).not.toContain(excluded);
     }
+  });
+});
+
+// The sync engine's cache restore is one long synchronous WASM call; the fast
+// lane exists so the panel's first paint and a dApp approval's summary never
+// queue behind it. Pin the lane split: widening it needs a deliberate decision,
+// since the fast worker holds its own copy of every module-level variable.
+describe('host lanes', () => {
+  it('routes exactly the sync-independent methods to the fast lane', () => {
+    expect([...FAST_LANE_METHODS].sort()).toEqual(['os/txSummary', 'os/walletList']);
+    expect(laneFor('os/walletList')).toBe('fast');
+    expect(laneFor('os/txSummary')).toBe('fast');
+  });
+
+  it('keeps everything that touches the sync session on the sync lane', () => {
+    for (const method of HOST_METHODS) {
+      if (!FAST_LANE_METHODS.has(method)) expect(laneFor(method), method).toBe('sync');
+    }
+    expect(laneFor('os/syncEnsure')).toBe('sync');
+    expect(laneFor('os/balanceTransaction')).toBe('sync');
+    expect(laneFor('os/requestStats')).toBe('sync'); // the meter is per-worker state
   });
 });

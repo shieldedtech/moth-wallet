@@ -1182,7 +1182,7 @@
     "message": "Die Wallet sperrt sich nie von selbst."
   },
   "settings_autoLockDescription": {
-    "message": "Lock and require your password after inactivity."
+    "message": "Lock and require your password after inactivity. A sync you are watching counts as activity."
   },
   "settings_autoLockAria": {
     "message": "Zeitlimit für automatische Sperre"
@@ -1639,5 +1639,38 @@
   },
   "accounts_revealNoPhraseReason": {
     "message": "Dieses Konto wurde aus einem Hex-Seed wiederhergestellt und hat daher keine Wiederherstellungsphrase — eine Phrase lässt sich aus einem Seed nicht ermitteln. Der Seed ist das Backup."
+  },
+  "status_provingLocal": {
+    "message": "Proving on this device — a few minutes is normal."
+  },
+  "status_provingLocalDetail": {
+    "message": "Your transaction details never leave this browser."
+  },
+  "status_provingServer": {
+    "message": "Läuft auf deinem Proof-Server, Details verlassen ihn nie"
+  },
+  "status_provingLoading": {
+    "message": "Beweismethode wird geladen…"
+  },
+  "status_pendingLocalTime": {
+    "message": "Local proving usually takes a few minutes."
+  },
+  "status_elapsed": {
+    "message": "$1 vergangen"
+  },
+  "status_backgroundTitle": {
+    "message": "Transaktion in Arbeit"
+  },
+  "status_backgroundBuilding": {
+    "message": "Transaktion wird erstellt…"
+  },
+  "status_backgroundProving": {
+    "message": "Beweis wird erzeugt…"
+  },
+  "status_backgroundSubmitting": {
+    "message": "Wird ans Netzwerk gesendet…"
+  },
+  "status_backgroundHint": {
+    "message": "Läuft weiter, auch wenn du dieses Panel schließt."
   }
 }

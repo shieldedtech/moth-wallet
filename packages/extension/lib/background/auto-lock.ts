@@ -64,3 +64,12 @@ export function armAutoLock(autoLockMinutes: number | null): void {
 export function clearAutoLock(): void {
   void browser.alarms.clear(AUTO_LOCK_ALARM);
 }
+
+/**
+ * Whether a sync the user is watching holds off the auto-lock: panel open, engine
+ * running, not yet synced (`null` = no balances yet, still restoring). With the panel
+ * closed the idle teardown stops the engine, so an unattended wallet is never held.
+ */
+export function syncHoldsAutoLock(panelOpen: boolean, syncActive: boolean, synced: boolean | null): boolean {
+  return panelOpen && syncActive && synced !== true;
+}
