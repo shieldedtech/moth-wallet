@@ -54,6 +54,24 @@ export class IndexerClient {
     return result.block;
   }
 
+  /**
+   * Size of the DUST generation tree after the block at `height`, or null when the
+   * block is unknown or the indexer predates the field (4.2). Its own query, so an
+   * indexer without the field cannot break `getBlock`.
+   */
+  async getDustGenerationEndIndex(height: number): Promise<number | null> {
+    try {
+      const result = await this.query<{ block: { dustGenerationEndIndex: number | null } | null }>(
+        `query ($offset: BlockOffset) { block(offset: $offset) { dustGenerationEndIndex } }`,
+        { offset: { height } },
+      );
+      const size = result.block?.dustGenerationEndIndex;
+      return typeof size === 'number' ? size : null;
+    } catch {
+      return null;
+    }
+  }
+
   async getTransactions(offset: { hash?: string; identifier?: string }): Promise<TransactionInfo[]> {
     const query = `
       query ($offset: TransactionOffset!) {
