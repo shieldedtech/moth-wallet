@@ -22,6 +22,22 @@ function proofRejection(): Error {
   return new Error('1010: Invalid Transaction: Custom error: 170');
 }
 
+/** The same rejection as it actually arrives through the facade: the wallet
+ *  SDK's submission service replaces the node's message with the constant
+ *  "Transaction submission error" and keeps the verdict two `cause` levels
+ *  down. This detector is wired onto that path, so this — not the flat error
+ *  above — is the shape it has to recognise. */
+function wrappedProofRejection(): Error {
+  const nodeClient = Object.assign(new Error('Transaction submission failed'), {
+    _tag: 'SubmissionError',
+    cause: proofRejection(),
+  });
+  return Object.assign(new Error('Transaction submission error'), {
+    _tag: 'SubmissionError',
+    cause: nodeClient,
+  });
+}
+
 function probeAt(height: number) {
   return async () => ({height});
 }
@@ -38,6 +54,19 @@ describe('isDustSpendProofRejection', () => {
   it('does not match an unrelated rejection', () => {
     expect(isDustSpendProofRejection(new Error('1010: Invalid Transaction: Custom error: 231'))).toBe(false);
     expect(isDustSpendProofRejection(new Error('socket hang up'))).toBe(false);
+  });
+
+  it('matches through the wallet SDK wrappers the facade actually throws', () => {
+    // Without the cause walk this returns false, and the whole detector below
+    // is unreachable in production however many times a chain wedges.
+    expect(isDustSpendProofRejection(wrappedProofRejection())).toBe(true);
+  });
+
+  it('still does not match an unrelated rejection under the same wrappers', () => {
+    const wrapped = Object.assign(new Error('Transaction submission error'), {
+      cause: new Error('1010: Invalid Transaction: Custom error: 231'),
+    });
+    expect(isDustSpendProofRejection(wrapped)).toBe(false);
   });
 });
 

@@ -43,6 +43,7 @@ import type {
 
 import {sendTokensWithKeys, designateForDustWithKeys, dedesignateFromDustWithKeys} from '../sync/operations.js';
 import {submitWithHealthTracking} from '../sync/dust-ledger-health.js';
+import {errorChainMessage, TransactionSubmissionError} from '../types/errors.js';
 import type {WalletKeys} from '../sync/operations.js';
 import {callCircuit} from '../contract/call.js';
 import {deployContract} from '../contract/deploy.js';
@@ -293,7 +294,14 @@ export function buildWalletHandlers(deps: WalletHandlerDeps): Record<string, Rpc
             const msg = err instanceof Error ? err.message : String(err);
             throw new DaemonProtocolError('INVALID_PARAMS', `failed to deserialize hex as FinalizedTransaction: ${msg}`);
           }
-          const txId = await facade.submitTransaction(tx);
+          // This escape hatch submits pre-built bytes, so it deliberately
+          // skips the retry/classification of submitFinalizedTransaction —
+          // but a caller still has to be told what the network said, and the
+          // SDK's own message for every failure here is the fixed string
+          // "Transaction submission error".
+          const txId = await facade.submitTransaction(tx).catch((err: unknown) => {
+            throw new TransactionSubmissionError(errorChainMessage(err), err);
+          });
           return {txId: String(txId)};
         },
         (r) => ({txHash: r.txId}),
