@@ -29,7 +29,7 @@ import {InMemorySyncStateStore, syncStateKey, type SyncStateStore, type WalletPa
 import {dedupingShieldedBuilder, dedupingDustBuilder} from './sdk-dedup.js';
 import {largestDustCoinFirst} from './dust-coin-selection.js';
 import {terminatingDustTransacting} from './dust-transacting.js';
-import {overallSyncProgress, type SubWallet} from './progress.js';
+import {formatSubProgress, overallSyncProgress, type SubWallet} from './progress.js';
 import {partsToSeed} from './preseed-parts.js';
 import type {WalletKeys} from './operations.js';
 
@@ -431,13 +431,6 @@ const STOP_TIMEOUT_MS = 5_000;
  * raw seed is never threaded here). Pre-seed of brand-new wallets derives the
  * bundle up front (see preseed.ts) and calls this directly.
  */
-/** A sub-wallet's own fraction, for the progress line. `done` wins over the
- *  counters: a sub-wallet with nothing to apply is complete, not stalled. */
-function subPct(sub: {applied: number; total: number}, done: boolean): string {
-  if (done) return '100%';
-  return sub.total > 0 ? `${Math.round(Math.min(1, sub.applied / sub.total) * 100)}%` : '100%';
-}
-
 /**
  * Re-assert the SDK's global network id.
  *
@@ -746,7 +739,7 @@ export async function startWalletSync(
           onProgress?.(
             balances.synced
               ? `● synced — NIGHT: ${formatNight(nightTotal)}, DUST: ${formatDustBalance(balances.dust)}`
-              : `○ syncing ${pct}%${slowestLabel} — shielded ${subPct(balances.subProgress.shielded, balances.syncProgress.shieldedSynced)}, unshielded ${subPct(balances.subProgress.unshielded, balances.syncProgress.unshieldedSynced)}, dust ${subPct(balances.subProgress.dust, balances.syncProgress.dustSynced)}${etaStr ? ` (${etaStr} remaining)` : ''}`
+              : `○ syncing ${pct}%${slowestLabel} — shielded ${formatSubProgress(balances.subProgress.shielded, balances.syncProgress.shieldedSynced)}, unshielded ${formatSubProgress(balances.subProgress.unshielded, balances.syncProgress.unshieldedSynced)}, dust ${formatSubProgress(balances.subProgress.dust, balances.syncProgress.dustSynced)}${etaStr ? ` (${etaStr} remaining)` : ''}`
           );
         }
 

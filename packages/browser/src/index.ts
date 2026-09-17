@@ -32,6 +32,10 @@ export type {
 } from '@shieldedtech/moth-wallet/sync/operations';
 
 export {
+  subProgressPercent,
+  formatSubProgress,
+} from '@shieldedtech/moth-wallet/sync/progress';
+export {
   warmEmptyRefCache,
   preseedReferenceStatus,
   clearEmptyRefCache,
