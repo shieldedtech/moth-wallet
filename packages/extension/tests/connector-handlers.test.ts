@@ -30,11 +30,12 @@ vi.mock('../lib/background/offscreen-client', () => ({
   },
 }));
 
-const requestApproval = vi.fn<() => Promise<boolean>>();
+const requestApproval =
+  vi.fn<(kind: string, origin: string, payload: unknown, tabId?: number, prepared?: Promise<boolean>) => Promise<boolean>>();
 const preparedPanel = Promise.resolve(true);
 const prepareApprovalPanel = vi.fn<(tabId?: number) => Promise<boolean>>(() => preparedPanel);
 vi.mock('../lib/background/approvals', () => ({
-  requestApproval: (...a: unknown[]) => requestApproval(...(a as [])),
+  requestApproval: (...a: Parameters<typeof requestApproval>) => requestApproval(...a),
   prepareApprovalPanel: (tabId?: number) => prepareApprovalPanel(tabId),
   getApproval: vi.fn(),
   getPendingApproval: vi.fn(),
@@ -86,10 +87,35 @@ function sampleBalances(): WalletBalances {
 }
 
 /** What the offscreen summary reports for a dApp tx one NIGHT short. */
+const THIRD_PARTY = 'mn_addr_devnet1attacker';
 const NIGHT_SPEND = {
   spends: [{ kind: 'unshielded', tokenId: '0'.repeat(64), amount: '1000000' }],
   receives: [],
   contractActions: 0,
+  // The host cannot know which destination is the user's own, so it reports
+  // every one as a third party; the handler resolves isSelf from the session.
+  recipients: [
+    {
+      address: THIRD_PARTY,
+      kind: 'user',
+      amounts: [{ kind: 'unshielded', tokenId: '0'.repeat(64), amount: '999000000' }],
+      isSelf: false,
+    },
+    {
+      address: 'mn_unshield_devnet',
+      kind: 'user',
+      amounts: [{ kind: 'unshielded', tokenId: '0'.repeat(64), amount: '1000000' }],
+      isSelf: false,
+    },
+  ],
+};
+/** What the approval should receive: the wallet's own address marked as such. */
+const NIGHT_SPEND_APPROVED = {
+  ...NIGHT_SPEND,
+  recipients: [
+    { ...NIGHT_SPEND.recipients[0], isSelf: false },
+    { ...NIGHT_SPEND.recipients[1], isSelf: true },
+  ],
 };
 
 async function connect() {
@@ -381,7 +407,7 @@ describe('connector dispatch', () => {
     expect(requestApproval).toHaveBeenCalledWith(
       'balance',
       ORIGIN,
-      { sealed: true, summary: NIGHT_SPEND },
+      { sealed: true, summary: NIGHT_SPEND_APPROVED },
       undefined,
       preparedPanel,
     );
@@ -409,28 +435,92 @@ describe('connector dispatch', () => {
     expect(txSummary).toHaveBeenCalledWith(expect.objectContaining({ txHex: 'abcd', sealed: false }));
   });
 
-  // A transaction the ledger will not decode is still surfaced — with the summary
-  // absent, which the screen renders as an explicit warning — rather than the
-  // request failing before the user ever sees it.
-  it('still prompts when the transaction cannot be summarized, marking the summary unknown', async () => {
+  // Balancing covers every deficit the transaction carries, so this approval is
+  // the only thing between a hostile dApp and the wallet's funds. A transaction
+  // whose cost cannot be read must therefore be REFUSED, not shown with the
+  // amounts blank: prompting anyway turns the one control on this path into a
+  // warning a habituated user clicks through. It costs nothing legitimate —
+  // the summary decodes with the same markers balancing uses.
+  it('refuses to balance a transaction it cannot summarize, without prompting', async () => {
     await connect();
-    txSummary.mockRejectedValue(new Error('unexpected end of input'));
+    txSummary.mockRejectedValue(Object.assign(new Error('unexpected end of input'), { txUnreadable: true }));
     requestApproval.mockResolvedValue(true);
     balanceTransaction.mockResolvedValue({ txHex: 'beef' });
 
-    const res = await dispatch(ORIGIN, 'balanceSealedTransaction', ['abcd']);
-    expect(res).toEqual({ tx: 'beef' });
-    expect(requestApproval).toHaveBeenCalledWith(
-      'balance',
-      ORIGIN,
-      { sealed: true, summary: null },
-      undefined,
-      preparedPanel,
-    );
+    await expect(dispatch(ORIGIN, 'balanceSealedTransaction', ['abcd'])).rejects.toMatchObject({
+      code: 'InvalidRequest',
+    });
+    expect(requestApproval).not.toHaveBeenCalled();
+    expect(balanceTransaction).not.toHaveBeenCalled();
+  });
+
+  // The reason the summary failed reaches the caller instead of a bare catch,
+  // so a dApp (and a bug report) can say WHY rather than "unknown".
+  it('reports why the summary failed', async () => {
+    await connect();
+    txSummary.mockRejectedValue(Object.assign(new Error('unexpected end of input'), { txUnreadable: true }));
+
+    await expect(dispatch(ORIGIN, 'balanceSealedTransaction', ['abcd'])).rejects.toMatchObject({
+      reason: expect.stringContaining('unexpected end of input'),
+    });
+  });
+
+  // Failing closed is right; blaming the dApp for it is not. A wallet-side
+  // outage is not a malformed transaction, and a site told InvalidRequest will
+  // go and fix something that was never broken.
+  it('reports a wallet-side failure as InternalError, not the dApp fault', async () => {
+    await connect();
+    txSummary.mockRejectedValue(new Error('Offscreen document did not become ready'));
+    requestApproval.mockResolvedValue(true);
+
+    await expect(dispatch(ORIGIN, 'balanceSealedTransaction', ['abcd'])).rejects.toMatchObject({
+      code: 'InternalError',
+    });
+    expect(requestApproval).not.toHaveBeenCalled();
+    expect(balanceTransaction).not.toHaveBeenCalled();
+  });
+
+  it('does not forward the internal reason for a wallet-side failure', async () => {
+    await connect();
+    txSummary.mockRejectedValue(new Error('Offscreen document did not become ready'));
+
+    await expect(dispatch(ORIGIN, 'balanceSealedTransaction', ['abcd'])).rejects.toMatchObject({
+      reason: expect.not.stringContaining('Offscreen'),
+    });
+  });
+
+  it('refuses a summary that resolves but is not shaped like one', async () => {
+    await connect();
+    txSummary.mockResolvedValue({ spends: [], receives: [], contractActions: 0 } as never);
+
+    await expect(dispatch(ORIGIN, 'balanceSealedTransaction', ['abcd'])).rejects.toMatchObject({
+      code: 'InvalidRequest',
+    });
+    expect(requestApproval).not.toHaveBeenCalled();
+  });
+
+  // Amounts alone cannot separate a legitimate transaction from a drain of the
+  // same size; the destination is what distinguishes them, and the wallet's own
+  // change must not be presented as an outgoing recipient.
+  it('marks the wallet own addresses among the destinations shown', async () => {
+    await connect();
+    txSummary.mockResolvedValue(NIGHT_SPEND);
+    requestApproval.mockResolvedValue(true);
+    balanceTransaction.mockResolvedValue({ txHex: 'beef' });
+
+    await dispatch(ORIGIN, 'balanceSealedTransaction', ['abcd']);
+
+    const payload = requestApproval.mock.calls[0][2] as { summary: typeof NIGHT_SPEND_APPROVED };
+    expect(payload.summary.recipients).toEqual(NIGHT_SPEND_APPROVED.recipients);
+    // The split is the point: a net total of 1,000 NIGHT reads the same whether
+    // it all goes to the user or nearly all of it leaves.
+    expect(payload.summary.recipients[0].amounts[0].amount).toBe('999000000');
+    expect(payload.summary.recipients[1].amounts[0].amount).toBe('1000000');
   });
 
   it('rejects balanceSealedTransaction when the user declines', async () => {
     await connect();
+    txSummary.mockResolvedValue(NIGHT_SPEND);
     requestApproval.mockResolvedValue(false);
     await expect(dispatch(ORIGIN, 'balanceSealedTransaction', ['abcd'])).rejects.toMatchObject({ code: 'Rejected' });
     expect(balanceTransaction).not.toHaveBeenCalled();
@@ -468,7 +558,7 @@ describe('connector dispatch', () => {
     expect(requestApproval).toHaveBeenCalledWith(
       'balance',
       ORIGIN,
-      { sealed: false, summary: NIGHT_SPEND },
+      { sealed: false, summary: NIGHT_SPEND_APPROVED },
       undefined,
       preparedPanel,
     );
