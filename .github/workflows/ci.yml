@@ -72,6 +72,49 @@ jobs:
       - name: Run tests
         run: yarn turbo run test
 
+  extension-e2e:
+    name: Extension e2e
+    # Pinned image rather than ubuntu-latest: the browser's system libraries
+    # come from the runner image, so image migrations must be deliberate here.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: yarn
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      # The e2e tests load an unpacked extension, which the default
+      # chromium-headless-shell cannot do: they run headless on the full
+      # Chromium build (channel 'chromium' in playwright.config.ts), so that
+      # build and its OS libraries must both be installed — never --only-shell.
+      - name: Install Playwright Chromium
+        run: yarn workspace @shieldedtech/moth-extension exec playwright install --with-deps chromium
+
+      - name: Build packages
+        run: yarn build
+
+      - name: Run extension e2e tests
+        run: yarn workspace @shieldedtech/moth-extension test:e2e
+
+      - name: Upload Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: extension-e2e-results
+          path: packages/extension/test-results/
+          if-no-files-found: ignore
+
   # Reported, not enforced: there are no thresholds yet, so this job exists to
   # publish a number and make the trend visible. Once thresholds are set from
   # this baseline, they become a floor, at which point this stops being advisory

@@ -10,4 +10,6 @@ export default defineConfig({
   workers: 1,
   reporter: 'list',
   timeout: 30_000,
+  // Traces make headless CI failures debuggable; a passing run stores nothing.
+  use: { trace: 'retain-on-failure' },
 });
