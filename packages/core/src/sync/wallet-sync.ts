@@ -27,6 +27,8 @@ import {formatDustBalance} from '../wallet/balance-format.js';
 import {ensureEmptyRefCache, preSeedNewWallet} from './preseed.js';
 import {InMemorySyncStateStore, syncStateKey, type SyncStateStore, type WalletPart} from './sync-store.js';
 import {dedupingShieldedBuilder, dedupingDustBuilder} from './sdk-dedup.js';
+import {largestDustCoinFirst} from './dust-coin-selection.js';
+import {terminatingDustTransacting} from './dust-transacting.js';
 import {overallSyncProgress, type SubWallet} from './progress.js';
 import {partsToSeed} from './preseed-parts.js';
 import type {WalletKeys} from './operations.js';
@@ -239,6 +241,12 @@ export interface UnshieldedCoinInfo {
   value: bigint;
   type: string;
   registeredForDustGeneration: boolean;
+  /** When this UTXO was created, epoch ms — null if the SDK reported none.
+   *  Powers the "register promptly" guidance in dust registration UX: a
+   *  devnet defect (docs/upstream-issues/dust-ledger-wedge-*.md) has been
+   *  triggered by registering NIGHT that sat unregistered for minutes, never
+   *  by registering within seconds of it arriving. */
+  ctimeMs: number | null;
 }
 
 export interface DustCoinInfo {
@@ -586,8 +594,15 @@ export async function startWalletSync(
     indexerClientConnection: {indexerHttpUrl, indexerWsUrl},
     txHistoryStorage,
   } as Parameters<typeof DustWallet>[0];
+  // Two fixes for the SDK's dust fee balancing, both chained onto the one
+  // builder the restore and start-with-secret-key paths below share, and kept
+  // out of dedupingDustBuilder so that module stays about the dedup fix alone:
+  // largest-first coin selection (sync/dust-coin-selection.ts) and a balancing
+  // loop that terminates (sync/dust-transacting.ts).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const dustBuilder = dedupingDustBuilder() as any;
+  const dustBuilder = (dedupingDustBuilder() as any)
+    .withCoinSelection(() => largestDustCoinFirst)
+    .withTransacting(terminatingDustTransacting());
   let dustWallet: DustWallet | undefined;
   const savedDust = await loadCachedState(store, name, network.id, 'dust');
   if (savedDust) {
@@ -948,6 +963,7 @@ function extractBalancesPartial(
         value: c.utxo?.value ?? 0n,
         type: c.utxo?.type ?? '',
         registeredForDustGeneration: c.meta?.registeredForDustGeneration === true,
+        ctimeMs: c.meta?.ctime ? c.meta.ctime.getTime() : null,
       });
     }
     for (const c of state.unshielded?.pendingCoins ?? []) {
@@ -957,6 +973,7 @@ function extractBalancesPartial(
         value,
         type,
         registeredForDustGeneration: c.meta?.registeredForDustGeneration === true,
+        ctimeMs: c.meta?.ctime ? c.meta.ctime.getTime() : null,
       });
       // Count booked inputs toward the displayed balance. A send or DUST
       // registration reserves its own NIGHT UTxOs (moved available→pending)

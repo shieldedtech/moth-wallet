@@ -376,6 +376,40 @@ export function warmEmptyRefCache(
  * Lets a UI distinguish "not started" from "in progress" from "done" — a build
  * runs for an hour, so reporting it as perpetually in progress is misleading.
  */
+/**
+ * Forget the pre-seed reference for a network: its three state parts, its
+ * height, its cursor witnesses, the reference mnemonic, and the in-process memo
+ * `ensureEmptyRefCache` hands out.
+ *
+ * For a chain that restarted from genesis. The reference is chain state, so on a
+ * new chain it is wrong in every part, and the wallet-level cache clear does not
+ * reach it: every new sync would be seeded from the old chain's tip. Deleting
+ * the memo matters as much as the store — a verified reference is memoised per
+ * process, so without it the next sync in the same worker would still get the
+ * stale one. A network whose reference ships in the package reinstalls it on the
+ * next sync; its witnesses are then checked against the chain, and a reset chain
+ * refuses them, so the wallet walks from genesis rather than trusting it.
+ */
+export async function clearEmptyRefCache(networkId: string, store?: SyncStateStore): Promise<void> {
+  refCache.delete(networkId);
+  const resolved = await resolveSyncStore(store);
+  const keys = [
+    ...REF_PARTS.map(part => emptyRefStateKey(networkId, part)),
+    ...REF_PARTS.map(part => cursorWitnessKey(networkId, EMPTY_REF_WALLET, part)),
+    emptyRefHeightKey(networkId),
+    emptyRefMnemonicKey(networkId),
+  ];
+  for (const key of keys) {
+    try {
+      await resolved.delete(key);
+    } catch {
+      /* absent already */
+    }
+  }
+}
+
+const REF_PARTS: WalletPart[] = ['shielded', 'unshielded', 'dust'];
+
 export async function preseedReferenceStatus(
   network: NetworkConfig,
   store?: SyncStateStore

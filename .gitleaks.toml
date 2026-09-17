@@ -1,0 +1,25 @@
+# gitleaks configuration.
+#
+# The scan workflow (.github/workflows/scan.yaml) runs gitleaks via the shared
+# midnightntwrk/upload-sarif-github-action. A committed secret fails that build
+# regardless of fail_severity, so genuine test fixtures that trip the
+# generic-api-key heuristic (a keyword such as "secret"/"token" sitting next to
+# a high-entropy value) have to be allowlisted explicitly.
+#
+# Allowlist the fixture VALUES, not the paths. A blanket paths = ['tests/']
+# entry would also hide a real credential pasted into a test, which is exactly
+# where one tends to land in a wallet repository.
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Unit-test fixtures: a Midnight token type id and the canary string for the no-leak assertion"
+regexTarget = "match"
+regexes = [
+  # packages/tui/tests/unit/state-view-rows.test.ts - token type id, not a key.
+  '''29ed4a053c1ec576e7f7684832c062bebc5cf67c0a4a9242f4defebd4b112b94''',
+  # packages/core/tests/unit/contract/args-parser.test.ts - the literal the test
+  # asserts is absent from the error message.
+  '''sh0uldNotLeak''',
+]

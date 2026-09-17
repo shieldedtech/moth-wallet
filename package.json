@@ -18,7 +18,7 @@
     "clean": "turbo run clean",
     "changeset": "changeset",
     "version": "changeset version",
-    "version-release": "yarn run version && yarn install --mode=update-lockfile --no-immutable",
+    "version-release": "yarn run version && node scripts/release-changelogs.mjs && yarn install --mode=update-lockfile --no-immutable",
     "release": "node scripts/release-packages.mjs"
   },
   "resolutions": {
