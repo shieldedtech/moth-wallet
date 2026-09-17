@@ -38,6 +38,13 @@ test('extension loads: service worker registers and the side panel renders', asy
     await expect(page.locator('#root > *').first()).toBeVisible();
 
     expect(pageErrors, 'side panel threw during load').toEqual([]);
+
+    // Assertions finish in about a second, so a headed run closes before a
+    // human can look at anything; E2E_HOLD_MS keeps the window open that long.
+    if (process.env.E2E_HOLD_MS) {
+      test.setTimeout(Number(process.env.E2E_HOLD_MS) + 30_000);
+      await page.waitForTimeout(Number(process.env.E2E_HOLD_MS));
+    }
   } finally {
     await context.close();
   }
