@@ -11,6 +11,7 @@ import {
   dedesignateFromDustWithKeys,
   listNightUtxos,
   clearSyncCache,
+  WarmSyncPool,
   NIGHT_TOKEN_ID,
   DustRegistrationNotYetError,
   type SendRequest,
@@ -38,7 +39,7 @@ import { useNetwork } from './hooks/useNetwork.js';
 import { useBalance } from './hooks/useBalance.js';
 import { useLogs } from './hooks/useLogs.js';
 import { useChainStatus } from './hooks/useChainStatus.js';
-import { loadSettings, saveSettings, type TuiSettings } from './settings.js';
+import { loadSettings, saveSettings, resolveWarmWallets, type TuiSettings } from './settings.js';
 
 export interface AppProps {
   walletName?: string;
@@ -71,7 +72,12 @@ export function App({ networkId: networkIdProp }: AppProps) {
   const networkConfig = useMemo(() => network.getConfig(), [network.getConfig]);
   const chain = useChainStatus(networkConfig);
   const activeWalletKeys = wallet.getActiveWalletKeys();
-  const balance = useBalance(activeWalletKeys, networkConfig, logs.info, wallet.activeWallet?.name, wallet.isActiveWalletNew(), wallet.activeWalletBirthdayOn);
+  // Starts disabled and is given its capacity once settings load (below). Held
+  // here rather than inside useBalance because the paths that free key material
+  // or clear stored state — locking, removing, clearing a sync cache, quitting —
+  // all live in this component and must evict from it. See WarmSyncPool.
+  const warmPool = useMemo(() => new WarmSyncPool(0), []);
+  const balance = useBalance(activeWalletKeys, networkConfig, logs.info, wallet.activeWallet?.name, wallet.isActiveWalletNew(), wallet.activeWalletBirthdayOn, warmPool);
   const [lastWalletName, setLastWalletName] = useState<string | null>(null);
 
   // Daemon: keep a ref to the latest WalletBalances snapshot so daemon
@@ -121,8 +127,11 @@ export function App({ networkId: networkIdProp }: AppProps) {
       setInitialNetwork(targetNetwork);
       network.connect(targetNetwork, settings.networkOverrides?.[targetNetwork]);
       setLastWalletName(settings.lastWallet ?? null);
+      const warm = resolveWarmWallets(settings);
+      warmPool.setCapacity(warm);
       setSettingsLoaded(true);
       logs.info(`Session started (network: ${targetNetwork}, wallet: ${settings.lastWallet ?? 'none'})`);
+      if (warm > 0) logs.info(`Keeping up to ${warm} previously-used wallet${warm === 1 ? '' : 's'} warm for instant switching`);
     }).catch(err => {
       // Storage failure (permissions, corrupt file): surface it and still start
       // with defaults so the app never hangs waiting on settingsLoaded.
@@ -132,6 +141,8 @@ export function App({ networkId: networkIdProp }: AppProps) {
       setInitialNetwork(targetNetwork);
       network.connect(targetNetwork);
       setLastWalletName(null);
+      // The env override still applies with no settings file to read.
+      warmPool.setCapacity(resolveWarmWallets({ warmWallets: 0 }));
       setSettingsLoaded(true);
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -163,14 +174,16 @@ export function App({ networkId: networkIdProp }: AppProps) {
   const quit = useCallback(() => {
     void (async () => {
       try {
-        await balance.stop();
+        // Warm facades are still syncing with live keys, so they have to come
+        // down with the foreground one — before lockAll() zeroes anything.
+        await Promise.all([balance.stop(), warmPool.evictAll(3_000)]);
       } catch {
         /* stopping is best-effort; exiting is not optional */
       }
       wallet.lockAll();
       exit();
     })();
-  }, [balance, wallet, exit]);
+  }, [balance, wallet, warmPool, exit]);
 
   useEffect(() => {
     // Unmount that did not come through `quit` — Ctrl-C, a crash, the process
@@ -180,9 +193,10 @@ export function App({ networkId: networkIdProp }: AppProps) {
     // quit path awaits properly.
     return () => {
       void balance.stop().catch(() => {});
+      void warmPool.evictAll().catch(() => {});
       wallet.lockAll();
     };
-  }, [wallet.lockAll]);
+  }, [wallet.lockAll]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Onboarding handler — fired by the wizard's final step. Uses a ref so
   // route params can hold a stable callback while we still see latest state.
@@ -466,7 +480,15 @@ export function App({ networkId: networkIdProp }: AppProps) {
                 }
               })();
             }}
-            onLock={(name) => {
+            onLock={async (name) => {
+              // Take the syncs down FIRST: lockOne zeroes this wallet's keys in
+              // WASM, and anything still syncing with them throws `Dust secret
+              // key was cleared` mid-batch — from a warm facade nobody is
+              // watching, or from the foreground one. Same ordering as quit.
+              await Promise.all([
+                warmPool.evictWallet(name),
+                wallet.activeWallet?.name === name ? balance.stop() : Promise.resolve(),
+              ]);
               wallet.lockOne(name);
               logs.info(`Wallet locked: ${name}`);
             }}
@@ -480,13 +502,19 @@ export function App({ networkId: networkIdProp }: AppProps) {
               }
             }}
             onRemove={async (name) => {
+              await warmPool.evictWallet(name);
               await wallet.removeWallet(name);
               logs.info(`Wallet removed: ${name}`);
             }}
             onClearCache={(name) => {
-              void clearSyncCache(name, network.id).then(() => {
-                logs.info(`Sync cache cleared for ${name} on ${network.id}`);
-              });
+              // A warm facade for this wallet would rewrite the entries on its
+              // next save, so the clear has to take it down first or it silently
+              // does nothing.
+              void warmPool.evictWallet(name, network.id)
+                .then(() => clearSyncCache(name, network.id))
+                .then(() => {
+                  logs.info(`Sync cache cleared for ${name} on ${network.id}`);
+                });
             }}
             onCreateNew={() => {
               nav.push('onboarding-network', { onComplete: onboardingCompleteStable, partial: {} });

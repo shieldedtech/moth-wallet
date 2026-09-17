@@ -67,7 +67,7 @@ export {
 
 // Sync
 export {
-  startWalletSync, formatNight, NIGHT_TOKEN_ID, clearSyncCache, clearDustSyncCache,
+  startWalletSync, applyNetworkId, formatNight, NIGHT_TOKEN_ID, clearSyncCache, clearDustSyncCache,
   clearShieldedSyncCache, clearSyncCacheParts, resolveSyncStore,
   EMPTY_COINS, EMPTY_SUB_PROGRESS, type WalletSyncOptions,
   type WalletBalances, type SyncedWallet, type DustGeneration, type SyncProgress,
@@ -92,6 +92,7 @@ export {
   InMemorySyncStateStore, syncStateKey, emptyRefStateKey, emptyRefMnemonicKey, emptyRefHeightKey,
   type SyncStateStore, type WalletPart,
 } from './sync/sync-store.js';
+export { WarmSyncPool, warmPoolKey } from './sync/warm-pool.js';
 export {
   deriveActivity, deriveActivityEntry, sortActivity,
   type ActivityEntry, type ActivityDelta, type ActivityKind, type ActivityStatus,
@@ -147,6 +148,8 @@ export {
   insertVerifierKey, type InsertVerifierKeyOptions,
   insertVerifierKeys, type InsertVerifierKeysOptions,
   type BatchEntryResult, type BatchInsertResult,
+  replaceAuthority, type ReplaceAuthorityOptions, type ReplaceAuthorityResult,
+  readAuthority, type AuthorityDescription, type AuthoritySigner,
 } from './contract/maintenance.js';
 export { queryContractState, type ContractState } from './contract/state.js';
 export {
