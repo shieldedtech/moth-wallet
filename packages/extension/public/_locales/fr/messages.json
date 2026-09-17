@@ -1182,7 +1182,7 @@
     "message": "Le portefeuille ne se verrouille jamais tout seul."
   },
   "settings_autoLockDescription": {
-    "message": "Lock and require your password after inactivity. A sync you are watching counts as activity."
+    "message": "Lock and require your password after inactivity. A sync you are watching can delay this by up to 30 minutes."
   },
   "settings_autoLockAria": {
     "message": "Délai de verrouillage automatique"

@@ -388,15 +388,18 @@ describe('sync-service transaction stage', () => {
   });
 });
 
-// syncInProgress feeds the auto-lock: a panel watching an engine that has not
-// reported itself synced holds the lock; anything else does not.
-describe('sync-service syncInProgress', () => {
+// syncDefersAutoLock feeds the auto-lock: a panel watching an engine that is still
+// progressing and not yet synced defers the lock; stall, completion, panel close or
+// the cap release it, and the cap runs from the first deferral of each sync.
+describe('sync-service syncDefersAutoLock', () => {
   const session = { seedHex: 'ab'.repeat(32), walletName: 'Account-2' } as never;
   const network = { id: 'preprod' } as never;
+  const MIN = 60_000;
   let sync: typeof import('../lib/background/sync-service');
 
   beforeEach(async () => {
     vi.resetModules();
+    vi.useFakeTimers({ now: Date.parse('2026-07-17T12:00:00Z') });
     offscreenHandlers.clear();
     syncEnsure.mockReset().mockResolvedValue(undefined);
     exists.mockReset().mockResolvedValue(true);
@@ -411,47 +414,81 @@ describe('sync-service syncInProgress', () => {
     vi.useRealTimers();
   });
 
-  const emitBalances = (synced: boolean) =>
-    offscreenHandlers.get('os/eventBalances')!({ data: JSON.stringify({ synced, coins: {} }) });
+  const emitBalances = (synced: boolean, percentage: number) =>
+    offscreenHandlers.get('os/eventBalances')!({ data: JSON.stringify({ synced, coins: {}, syncProgress: { percentage } }) });
 
   it('is false with no panel, and false with a panel but no engine', async () => {
-    expect(sync.syncInProgress()).toBe(false);
+    expect(sync.syncDefersAutoLock()).toBe(false);
     sync.addPort(fakePort().port);
-    expect(sync.syncInProgress()).toBe(false);
+    expect(sync.syncDefersAutoLock()).toBe(false);
   });
 
-  it('holds from sync start (no balances yet) until the engine reports synced', async () => {
+  it('defers from sync start (restoring, nothing emitted) until the engine reports synced', async () => {
     sync.addPort(fakePort().port);
     await sync.startSync(session, network);
-    expect(sync.syncInProgress()).toBe(true); // restoring caches, nothing emitted
+    expect(sync.syncDefersAutoLock()).toBe(true);
 
-    emitBalances(false);
-    expect(sync.syncInProgress()).toBe(true);
+    vi.advanceTimersByTime(2 * MIN);
+    emitBalances(false, 0.4);
+    expect(sync.syncDefersAutoLock()).toBe(true);
 
-    emitBalances(true);
-    expect(sync.syncInProgress()).toBe(false);
+    emitBalances(true, 1);
+    expect(sync.syncDefersAutoLock()).toBe(false);
   });
 
   it('releases when the panel closes even mid-sync (the idle teardown takes over)', async () => {
     const { port, disconnect } = fakePort();
     sync.addPort(port);
     await sync.startSync(session, network);
-    emitBalances(false);
+    emitBalances(false, 0.4);
 
     disconnect();
 
-    expect(sync.syncInProgress()).toBe(false);
+    expect(sync.syncDefersAutoLock()).toBe(false);
   });
 
-  it("forgets the previous account's synced state when a new sync starts", async () => {
-    vi.useFakeTimers();
+  it('releases a sync that stops reporting progress, and resumes deferring when it moves again', async () => {
     sync.addPort(fakePort().port);
     await sync.startSync(session, network);
-    emitBalances(true);
-    expect(sync.syncInProgress()).toBe(false);
+    emitBalances(false, 0.4);
+
+    vi.advanceTimersByTime(2 * MIN);
+    emitBalances(false, 0.4); // same percentage: not progress
+    vi.advanceTimersByTime(1 * MIN + 1);
+    expect(sync.syncDefersAutoLock()).toBe(false);
+
+    emitBalances(false, 0.41);
+    expect(sync.syncDefersAutoLock()).toBe(true);
+  });
+
+  it('never defers past the cap, even with steady progress, and does not restart the cap on release', async () => {
+    sync.addPort(fakePort().port);
+    await sync.startSync(session, network);
+    let pct = 0.1;
+    for (let minute = 0; minute < 30; minute++) {
+      emitBalances(false, (pct += 0.01));
+      expect(sync.syncDefersAutoLock()).toBe(true);
+      vi.advanceTimersByTime(MIN);
+    }
+    emitBalances(false, (pct += 0.01));
+    expect(sync.syncDefersAutoLock()).toBe(false);
+    vi.advanceTimersByTime(MIN);
+    emitBalances(false, (pct += 0.01));
+    expect(sync.syncDefersAutoLock()).toBe(false);
+  });
+
+  it('starts a fresh cap for a new sync', async () => {
+    sync.addPort(fakePort().port);
+    await sync.startSync(session, network);
+    for (let minute = 0; minute < 31; minute++) {
+      emitBalances(false, 0.1 + minute * 0.01);
+      sync.syncDefersAutoLock();
+      vi.advanceTimersByTime(MIN);
+    }
+    expect(sync.syncDefersAutoLock()).toBe(false);
 
     await sync.startSync({ seedHex: 'cd'.repeat(32), walletName: 'Account-3' } as never, network);
 
-    expect(sync.syncInProgress()).toBe(true);
+    expect(sync.syncDefersAutoLock()).toBe(true);
   });
 });

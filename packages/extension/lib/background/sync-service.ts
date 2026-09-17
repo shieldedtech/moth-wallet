@@ -36,9 +36,13 @@ let opsInFlight = 0;
 // The transaction stage in progress, stamped when it began: replayed to each new port
 // and cleared when the last op ends, so a panel opened mid-proof can show progress.
 let lastTxStage: { stage: TxStage; since: number } | null = null;
-// Whether the engine's latest balances emission reported the account synced;
-// null until the first emission of a sync start. Read by syncInProgress().
+// What the auto-lock needs to know about the running sync (syncDefersAutoLock):
+// whether the latest emission reported synced (null before the first), when progress
+// last moved, and when this sync first deferred an expired window.
 let lastBalancesSynced: boolean | null = null;
+let lastProgressAt: number | null = null;
+let lastProgressPct = -1;
+let syncHoldSince: number | null = null;
 
 // When the extension goes fully idle we don't just stop sync — we close the
 // offscreen document too, so the worker + WASM heap exit with it and the SW
@@ -121,6 +125,9 @@ export async function startSync(session: Session, network: NetworkConfig): Promi
   if ((await getSnapshotOwner()) !== key) await clearSnapshot();
   sawBalancesSinceStart = false;
   lastBalancesSynced = null;
+  lastProgressAt = Date.now();
+  lastProgressPct = -1;
+  syncHoldSince = null;
   currentKey = key;
   try {
     await offscreen.syncEnsure({ seedHex: session.seedHex, walletName: session.walletName, network });
@@ -240,10 +247,20 @@ export function hasWorkInFlight(): boolean {
   return opsInFlight > 0 || hasPendingApproval();
 }
 
-/** A sync the user is watching: panel open, engine running, not yet synced.
- *  The auto-lock treats it as activity (see auto-lock.ts syncHoldsAutoLock). */
-export function syncInProgress(): boolean {
-  return syncHoldsAutoLock(ports.size > 0, currentKey !== null, lastBalancesSynced);
+/** Whether a sync the user is watching defers an expired auto-lock right now. Bounded:
+ *  it needs recent progress, and the cap runs from the first deferral of this sync. */
+export function syncDefersAutoLock(now = Date.now()): boolean {
+  const holds = syncHoldsAutoLock({
+    panelOpen: ports.size > 0,
+    syncActive: currentKey !== null,
+    synced: lastBalancesSynced,
+    lastProgressAt,
+    holdSince: syncHoldSince,
+    now,
+  });
+  // Set once per sync and never cleared by a release, or a capped hold could start over.
+  if (holds && syncHoldSince === null) syncHoldSince = now;
+  return holds;
 }
 
 /** Tell every open panel the session was locked out-of-band (auto-lock). */
@@ -329,7 +346,11 @@ export function registerSyncEvents(): void {
       void recordTiming('marker', 'first balances emission (panel can render)');
     }
     try {
-      lastBalancesSynced = deserializeBalances(data).synced === true;
+      const balances = deserializeBalances(data);
+      const percentage = balances.syncProgress?.percentage ?? -1;
+      if (balances.synced !== lastBalancesSynced || percentage !== lastProgressPct) lastProgressAt = Date.now();
+      lastBalancesSynced = balances.synced === true;
+      lastProgressPct = percentage;
     } catch {
       /* an unreadable payload leaves the previous answer standing */
     }

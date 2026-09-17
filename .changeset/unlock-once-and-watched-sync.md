@@ -16,14 +16,16 @@ the seed beside a seed-free `UnlockedWallet` from a single decrypt; the
 extension uses it. `unlock()` is unchanged and stays seed-free for every other
 caller (D-KM-3; the spec's "Concretely" list records the exception).
 
-**A watched sync is activity.** The inactivity clock only advanced on the user's
-own input, so a panel left open to watch a long first sync counted as idle and
-the 15-minute auto-lock fired mid-sync — stopping the engine (its final cache
-write survives, so no progress is lost) and greeting the user with a password
-prompt and a cold restart. `enforceAutoLock` now treats "a panel is open, an
-engine is running, and it has not yet reported itself synced" as activity: it
-holds the lock and resets the clock, so the full window applies again once sync
-completes. With the panel closed the idle teardown stops the engine within
-seconds, so an unattended wallet is never kept open by this. The Settings
-description says so; the README's stale "no inactivity auto-lock" note is
-corrected.
+**A watched sync defers the lock — bounded.** The inactivity clock only advances
+on the user's own input, so a panel left open to watch a long first sync counted
+as idle and the 15-minute auto-lock fired mid-sync — stopping the engine (its
+final cache write survives, so no progress is lost) and greeting the user with a
+password prompt and a cold restart. `enforceAutoLock` now defers the lock while
+a panel is open on an engine that is running, has not yet reported itself
+synced, and has reported progress within the last 3 minutes — for at most 30
+minutes from the first deferral of that sync. It is a deferral, not activity:
+the inactivity clock is never reset, so the lock lands on the next tick after
+the sync completes, stalls, or hits the cap. With the panel closed the idle
+teardown stops the engine within seconds, so an unattended wallet is never
+held open by this. The Settings description says so; the README's stale "no
+inactivity auto-lock" note is corrected.
