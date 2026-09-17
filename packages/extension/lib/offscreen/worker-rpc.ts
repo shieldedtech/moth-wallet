@@ -97,6 +97,43 @@ export function serializeHostError(value: unknown): unknown {
   return isCloneable(value) ? value : String(value);
 }
 
+/**
+ * Make a thrown value safe for the offscreen → service worker hop.
+ *
+ * That hop is @webext-core over `chrome.runtime.sendMessage`, which this
+ * codebase treats as JSON (see the header of ./messaging). @webext-core
+ * serializes an Error by spreading its own enumerable properties, so a bigint
+ * field reaches `JSON.stringify` and throws "Do not know how to serialize a
+ * BigInt" — failing the entire reply rather than dropping one field.
+ *
+ * The wallet SDK's `InsufficientFundsError` carries `amount` as a bigint, so
+ * without this the error a dApp most needs to see is precisely the one that
+ * cannot arrive. Bigints become decimal strings, the same way every other
+ * bigint crosses this channel (TransferRequestDTO.amount and friends).
+ */
+export function jsonSafeError(value: unknown, depth = 0): unknown {
+  if (!(value instanceof Error) || depth > 3) return jsonSafeValue(value, depth);
+  const safe = new Error(value.message, value.cause != null ? { cause: jsonSafeError(value.cause, depth + 1) } : undefined);
+  safe.name = value.name;
+  safe.stack = value.stack;
+  for (const [key, val] of Object.entries(value)) {
+    (safe as unknown as Record<string, unknown>)[key] = jsonSafeValue(val, depth + 1);
+  }
+  return safe;
+}
+
+/** Bigints to decimal strings, anywhere in a bounded walk of a value. The bound
+ *  also caps the work a cyclic structure could cause. */
+function jsonSafeValue(value: unknown, depth: number): unknown {
+  if (typeof value === 'bigint') return String(value);
+  if (value === null || typeof value !== 'object' || depth > 3) return value;
+  if (value instanceof Error) return jsonSafeError(value, depth);
+  if (Array.isArray(value)) return value.map((item) => jsonSafeValue(item, depth + 1));
+  const out: Record<string, unknown> = {};
+  for (const [key, val] of Object.entries(value)) out[key] = jsonSafeValue(val, depth + 1);
+  return out;
+}
+
 /** Inverse of serializeHostError: rebuild an Error (with name/stack/cause and
  *  custom own props restored) so the bridge can reject with it. Non-error
  *  payloads pass through unchanged. */

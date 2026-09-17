@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { serializeHostError, deserializeHostError } from '../lib/offscreen/worker-rpc';
+import { serializeHostError, deserializeHostError, jsonSafeError } from '../lib/offscreen/worker-rpc';
+import { WalletError } from '@midnightntwrk/wallet-sdk-shielded/v1';
 import { HOST_METHODS } from '../lib/offscreen/host-dispatch';
 
 // worker-bridge.ts is deliberately not unit-tested: its `?worker` import doesn't
@@ -100,5 +101,74 @@ describe('HOST_METHODS', () => {
     for (const excluded of ['os/ping', 'os/eventBalances', 'os/eventSyncMessage', 'os/eventTxStage']) {
       expect(HOST_METHODS).not.toContain(excluded);
     }
+  });
+});
+
+// The offscreen → service worker hop is JSON. @webext-core serializes an Error
+// by spreading its own enumerable props, so one bigint field fails the whole
+// reply — and the SDK error a dApp most needs carries `amount` as a bigint.
+describe('jsonSafeError', () => {
+  /** What @webext-core puts on the wire for an Error. */
+  const wire = (err: unknown) => {
+    const e = err as Error;
+    return { name: e.name, message: e.message, stack: e.stack ?? '', ...(e as object) };
+  };
+
+  it("lets the SDK's InsufficientFundsError survive the hop", () => {
+    const err = new WalletError.InsufficientFundsError({
+      message: 'Insufficient funds for fallible segment 31897',
+      tokenType: 'night',
+      amount: 31897n,
+    });
+
+    // Without it, the reply cannot be serialized at all.
+    expect(() => JSON.stringify(wire(err))).toThrow(/BigInt/);
+
+    const safe = jsonSafeError(err) as Error & { tokenType: string; amount: string };
+    expect(() => JSON.stringify(wire(safe))).not.toThrow();
+    expect(safe).toBeInstanceOf(Error);
+    expect(safe.message).toBe('Insufficient funds for fallible segment 31897');
+    expect(safe.tokenType).toBe('night');
+    expect(safe.amount).toBe('31897'); // decimal string, as every bigint crosses this channel
+  });
+
+  it('keeps the name, stack and tag so nothing downstream changes', () => {
+    const err = new WalletError.InsufficientFundsError({
+      message: 'short',
+      tokenType: 'night',
+      amount: 1n,
+    });
+    const safe = jsonSafeError(err) as Error & { _tag: string };
+    expect(safe.name).toBe(err.name);
+    expect(safe.stack).toBe(err.stack);
+    expect(safe._tag).toBe('Wallet.InsufficientFunds');
+  });
+
+  it('converts a bigint nested in a field', () => {
+    const err = new Error('nested');
+    Object.assign(err, { detail: { amounts: [1n, 2n] } });
+    expect(() => JSON.stringify(wire(jsonSafeError(err)))).not.toThrow();
+  });
+
+  it('converts a bigint on a cause', () => {
+    const inner = new Error('inner');
+    Object.assign(inner, { amount: 5n });
+    const err = new Error('outer', { cause: inner });
+    const safe = jsonSafeError(err) as Error & { cause: { amount: string } };
+    expect(safe.cause.amount).toBe('5');
+    expect(() => JSON.stringify(wire(safe))).not.toThrow();
+  });
+
+  it('leaves an error with no bigints alone', () => {
+    const err = new Error('plain');
+    Object.assign(err, { category: 'WALLET_ERROR' });
+    const safe = jsonSafeError(err) as Error & { category: string };
+    expect(safe.message).toBe('plain');
+    expect(safe.category).toBe('WALLET_ERROR');
+  });
+
+  it('passes a non-Error throwable through', () => {
+    expect(jsonSafeError('a string')).toBe('a string');
+    expect(jsonSafeError(7n)).toBe('7');
   });
 });
