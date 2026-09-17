@@ -20,6 +20,7 @@ import { PanelScreen, PanelHeader } from '../moth/panel';
 import { networkLabel } from './NetworkConfig';
 import { preseedControl } from '../../lib/ui/preseed-control';
 import { buildDiagnosticsReport } from '../../lib/ui/diagnostics-report';
+import { formatBuildTime } from '../../lib/ui/build-info';
 import type { Screen } from './navigation';
 
 // Inactivity timeout options. `null` is demo mode (never locks). Kept here (UI
@@ -39,7 +40,17 @@ const THEME_OPTIONS: Array<{ value: ThemePreference; labelKey: MessageKey }> = [
   { value: 'dark', labelKey: 'settings_themeDark' },
 ];
 
-export function Settings({ onBack, navigate }: { onBack: () => void; navigate: (screen: Screen) => void }) {
+export function Settings({
+  onBack,
+  navigate,
+  onLock,
+}: {
+  onBack: () => void;
+  navigate: (screen: Screen) => void;
+  /** Lock the session now. Owned by the shell, which holds the session and
+   *  re-renders to the Unlock screen once the status comes back locked. */
+  onLock: () => void;
+}) {
   const [settings, setSettings] = useState<ExtensionSettings | null>(null);
 
   // Reference readiness + live build progress, polled rather than pushed: the
@@ -196,6 +207,10 @@ export function Settings({ onBack, navigate }: { onBack: () => void; navigate: (
   // Which of the three states this network's row is in — see lib/ui/preseed-control.ts
   // for why an on-device build is not offered everywhere any more.
   const control = preseedControl(preseed);
+
+  // null when the bundle carries no stamp, which hides the line rather than
+  // printing an empty "Built".
+  const buildStamp = formatBuildTime();
 
   if (!settings) {
     return (
@@ -379,6 +394,28 @@ export function Settings({ onBack, navigate }: { onBack: () => void; navigate: (
             />
           </span>
         </div>
+
+        <Separator />
+
+        {/*
+          Manual lock. The background has had `sessionLock` and the client hook
+          has had `lock()` since auto-lock landed, but nothing ever called
+          them — the only way to lock was to wait out the inactivity timer.
+          Locking drops the seed and closes the offscreen host, so the next use
+          costs a full unlock + sync; that is the point, and the description
+          says what is and is not forgotten so it does not read as "delete".
+        */}
+        <div className="flex items-center justify-between px-4 py-[13px]">
+          <span className="min-w-0 pr-3">
+            <span className="block text-sm font-medium">{t('settings_lockNow')}</span>
+            <span className="block text-[12.5px] text-muted-foreground">
+              {t('settings_lockNowDescription')}
+            </span>
+          </span>
+          <Button size="sm" variant="secondary" className="shrink-0" onClick={onLock}>
+            {t('settings_lockNowAction')}
+          </Button>
+        </div>
       </Section>
 
       <Section label={t('settings_sectionAppearance')}>
@@ -469,9 +506,10 @@ export function Settings({ onBack, navigate }: { onBack: () => void; navigate: (
         </div>
       </Section>
 
-      <p className="m-0 pb-2 text-center text-xs text-muted-foreground">
-        {t('settings_version', [browser.runtime.getManifest().version])}
-      </p>
+      <div className="pb-2 text-center text-xs text-muted-foreground">
+        <p className="m-0">{t('settings_version', [browser.runtime.getManifest().version])}</p>
+        {buildStamp && <p className="m-0">{t('settings_buildTime', [buildStamp])}</p>}
+      </div>
 
       <DialogShell
         open={confirmingResync}

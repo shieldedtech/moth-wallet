@@ -1205,6 +1205,15 @@
   "settings_autoLockNever": {
     "message": "Nunca bloquear"
   },
+  "settings_lockNow": {
+    "message": "Bloquear ahora"
+  },
+  "settings_lockNowDescription": {
+    "message": "Lock this account and forget its keys until you enter your password again. Your accounts and settings stay on this device."
+  },
+  "settings_lockNowAction": {
+    "message": "Bloquear"
+  },
   "settings_sectionAppearance": {
     "message": "Apariencia"
   },
@@ -1228,6 +1237,9 @@
   },
   "settings_version": {
     "message": "Versión $1"
+  },
+  "settings_buildTime": {
+    "message": "Compilación $1"
   },
   "setup_taglineLine1": {
     "message": "Tu billetera"

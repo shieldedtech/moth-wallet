@@ -60,6 +60,9 @@ CLAUDE.md
 # WXT (browser extension)
 .output/
 .wxt/
+# Convenience symlink to .output/chrome-mv3 — a non-hidden, stable path to
+# hand Chrome's "Load unpacked" picker. Points into ignored build output.
+packages/extension/latest
 
 # design-sync (machine state, regenerated)
 .ds-sync/

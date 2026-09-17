@@ -461,6 +461,11 @@ export function registerHandlers(): void {
 
   onMessage('sessionLock', async () => {
     await lockNow();
+    // Same broadcast the auto-lock tick sends. The panel that asked for the
+    // lock refreshes its own status, but any other open surface — a second
+    // panel, or the approval window sitting on a pending request — would
+    // otherwise keep rendering an unlocked session that no longer exists.
+    broadcastSessionLocked();
   });
 
   onMessage('activityPing', async () => {

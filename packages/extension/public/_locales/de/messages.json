@@ -1205,6 +1205,15 @@
   "settings_autoLockNever": {
     "message": "Nie sperren"
   },
+  "settings_lockNow": {
+    "message": "Jetzt sperren"
+  },
+  "settings_lockNowDescription": {
+    "message": "Lock this account and forget its keys until you enter your password again. Your accounts and settings stay on this device."
+  },
+  "settings_lockNowAction": {
+    "message": "Sperren"
+  },
   "settings_sectionAppearance": {
     "message": "Darstellung"
   },
@@ -1228,6 +1237,9 @@
   },
   "settings_version": {
     "message": "Version $1"
+  },
+  "settings_buildTime": {
+    "message": "Build $1"
   },
   "setup_taglineLine1": {
     "message": "Deine Wallet"
