@@ -23,6 +23,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          # None of this workflow's jobs push, so no checkout should leave the
+          # token on disk, where an artifact or a compromised step could read it.
+          persist-credentials: false
 
       - name: Install pre-commit
         run: python -m pip install --require-hashes -r .github/requirements-pre-commit.txt
@@ -37,6 +41,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Enable Corepack
         run: corepack enable
@@ -82,6 +88,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Enable Corepack
         run: corepack enable
