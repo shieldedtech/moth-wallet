@@ -32,7 +32,31 @@ yarn install                    # idempotent
 yarn build                      # all 4 workspace packages
 ```
 
-A clean build is mandatory. The smokes invoke `./packages/cli/bin/moth`, which loads from `packages/cli/dist/`. A stale `dist/` will mask real changes.
+A clean build is mandatory. The smokes invoke `./packages/cli/bin/moth`, which loads from `packages/cli/dist/`. A stale `dist/` will mask real changes, and can make a fixed bug look as though it has come back.
+
+#### Forcing a genuine rebuild
+
+Deleting `dist/` is **not** enough, and neither is `yarn clean` on its own. Use:
+
+```bash
+yarn clean && rm -rf .turbo node_modules/.vite && yarn build --force
+```
+
+A build that really started from nothing reports `Cached: 0 cached` and leaves `.d.ts` files under `packages/core/dist/`.
+
+Three caches have to go, and no single step clears all of them:
+
+| cache | location | cleared by `yarn clean`? |
+| --- | --- | --- |
+| compiled output | `packages/*/dist`, and `.output` / `.wxt` for the extension | yes |
+| tsc incremental state | `packages/*/tsconfig.tsbuildinfo` | yes |
+| turbo build cache | `.turbo/cache` at the repo root | **no** |
+| vite dependency cache | `node_modules/.vite` | **no** |
+
+Two traps follow from that split:
+
+- `packages/core` is `composite: true`. Remove `dist/` but leave `tsconfig.tsbuildinfo`, and tsc treats most files as up to date, re-emits only what changed and writes no `.d.ts` at all — which then fails the browser build with a wall of `Cannot find module '@shieldedtech/moth-wallet/...'`.
+- `turbo.json` declares `outputs: ["dist/**"]` and does not include the tsbuildinfo, so a cache hit can restore `dist/` beside a mismatched tsbuildinfo, and can restore files whose source no longer exists.
 
 ### Tools
 
