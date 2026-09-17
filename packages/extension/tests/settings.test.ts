@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { fakeBrowser } from 'wxt/testing';
 import { DEFAULT_NETWORKS, serverProver } from '@shieldedtech/moth-wallet/types/network';
-import { getNetworkConfig, getSettings } from '../lib/background/settings';
+import { DEFAULT_SETTINGS, getNetworkConfig, getSettings, updateSettings } from '../lib/background/settings';
 
 describe('extension settings', () => {
   beforeEach(() => fakeBrowser.reset());
@@ -51,6 +51,24 @@ describe('extension settings', () => {
     await fakeBrowser.storage.local.set({ settings: { network: 'local', customEndpoints } });
 
     expect(await getNetworkConfig()).toEqual({ id: 'undeployed', ...customEndpoints });
+  });
+
+  // A write used to persist the whole resolved object, so the first one — every
+  // unlock saves the account's network — froze the then-current defaults, and a
+  // default could never reach an install that had been unlocked once.
+  it('persists only the keys a caller set, leaving untouched defaults live', async () => {
+    await updateSettings({ developerMode: true });
+
+    const stored = (await fakeBrowser.storage.local.get('settings')).settings as Record<string, unknown>;
+    expect(Object.keys(stored)).toEqual(['developerMode']);
+    expect((await getSettings()).autoLockMinutes).toBe(DEFAULT_SETTINGS.autoLockMinutes);
+  });
+
+  it('keeps an explicit auto-lock choice, demo mode included, across later writes', async () => {
+    await updateSettings({ autoLockMinutes: null });
+    await updateSettings({ developerMode: true });
+
+    expect((await getSettings()).autoLockMinutes).toBeNull();
   });
 
   it('restores WASM proving as part of a network override', async () => {

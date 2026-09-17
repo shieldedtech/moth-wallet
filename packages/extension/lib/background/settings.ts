@@ -110,14 +110,17 @@ export async function getSettings(): Promise<ExtensionSettings> {
 
 export async function updateSettings(patch: Partial<ExtensionSettings>): Promise<ExtensionSettings> {
   const current = await getSettings();
-  const next = { ...current, ...patch };
+  const stored = await browser.storage.local.get(SETTINGS_KEY);
+  // Only what a caller actually set is persisted. Writing the whole resolved
+  // object baked today's defaults into storage, so no default could move again.
+  const next = { ...(stored[SETTINGS_KEY] as Partial<ExtensionSettings> | undefined), ...patch };
   // Endpoint overrides belong to one named network. Callers that change only
   // the id must never carry the previous network's URLs across implicitly.
   if (patch.network && patch.network !== current.network && !('customEndpoints' in patch)) {
     next.customEndpoints = null;
   }
   await browser.storage.local.set({ [SETTINGS_KEY]: next });
-  return next;
+  return getSettings();
 }
 
 /**
