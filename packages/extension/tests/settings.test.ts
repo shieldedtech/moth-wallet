@@ -24,7 +24,7 @@ describe('extension settings', () => {
       indexerUrl: customEndpoints.indexerUrl,
       prover: serverProver(customEndpoints.proofServerUrl),
     };
-    expect(await getSettings()).toEqual({ network: 'preview', customEndpoints: migratedEndpoints, autoLockMinutes: 15, nameResolverUrl: null, preseedWarming: false, developerMode: false });
+    expect(await getSettings()).toEqual({ network: 'preview', customEndpoints: migratedEndpoints, autoLockMinutes: 60, nameResolverUrl: null, preseedWarming: false, developerMode: false });
     expect(await getNetworkConfig()).toEqual({ id: 'preview', ...migratedEndpoints });
   });
 

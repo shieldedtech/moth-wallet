@@ -24,7 +24,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   network: 'preprod',
   customEndpoints: null,
   // A real timeout by default; users opt into "Never (demo mode)" explicitly.
-  autoLockMinutes: 15,
+  autoLockMinutes: 60,
   // Send-to-name is opt-in: no resolver configured until the user sets one.
   nameResolverUrl: null,
   // Opt-in: warming costs a full chain walk in the background (~71 min on

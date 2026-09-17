@@ -25,6 +25,7 @@ import {
   resolveApproval,
 } from './approvals';
 import { beginOp, endOp } from './sync-service';
+import { recordActivity } from './auto-lock';
 import { offscreen } from './offscreen-client';
 
 // These methods can display an approval. Their panel-open attempt starts at
@@ -214,7 +215,11 @@ export async function dispatch(
   const preparedPanel = APPROVAL_METHODS.has(method) ? prepareApprovalPanel(senderTabId) : undefined;
   beginOp();
   try {
-    return await dispatchMethod(origin, method, params, senderTabId, preparedPanel);
+    const result = await dispatchMethod(origin, method, params, senderTabId, preparedPanel);
+    // A connected dApp talking to the wallet is the user at work, even with the
+    // panel closed; without this the auto-lock fires between two dApp requests.
+    if (await isAllowed(origin)) await recordActivity(Date.now());
+    return result;
   } finally {
     endOp();
   }
