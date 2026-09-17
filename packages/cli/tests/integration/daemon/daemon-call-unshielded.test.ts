@@ -28,9 +28,7 @@ const ARTIFACT = resolve(
   __dirname,
   '../../../../core/contracts/receive-unshielded/managed',
 );
-const ARTIFACT_PRESENT = existsSync(ARTIFACT);
-
-describe.skipIf(!DEVNET_URL || !ARTIFACT_PRESENT)(
+describe.skipIf(!DEVNET_URL)(
   'contract call with unshielded inputs — signatures must reach the node (#119)',
   () => {
     let wallet: string;
@@ -38,6 +36,10 @@ describe.skipIf(!DEVNET_URL || !ARTIFACT_PRESENT)(
     let contractAddress: string;
 
     beforeAll(async () => {
+      // The fixture is committed, so a missing one is a repo error, not a reason
+      // to skip: this is the regression test for error 192 and must fail loudly.
+      expect(existsSync(ARTIFACT), `missing fixture: ${ARTIFACT}`).toBe(true);
+
       // Bigger than the harness default: this suite makes two contract calls
       // plus a deploy, and DUST generation is proportional to the NIGHT held.
       // With the default airdrop the second call fails to balance its fee.
