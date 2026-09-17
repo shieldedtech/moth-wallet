@@ -52,6 +52,12 @@ function toHex(bytes: Uint8Array): string {
     .join('');
 }
 
+/** The bech32m DUST address for a dust key on `network`; the seed is not needed. */
+export function dustAddressForKey(dustSecretKey: DustSecretKey, network: string): string {
+  setNetworkId(network);
+  return DustAddress.encodePublicKey(network, dustSecretKey.publicKey);
+}
+
 /**
  * Derive proper Midnight addresses for a specific network.
  *
