@@ -53,6 +53,7 @@ vi.mock('../lib/background/sync-service', () => ({
 }));
 
 import { dispatch } from '../lib/background/connector-handlers';
+import { getLastActivity } from '../lib/background/auto-lock';
 import { grant, isAllowed } from '../lib/background/permissions';
 import { saveSession, type Session } from '../lib/background/session';
 import { updateSettings } from '../lib/background/settings';
@@ -551,5 +552,23 @@ describe('connector dispatch', () => {
     });
     expect(beginOp).toHaveBeenCalledTimes(1);
     expect(endOp).toHaveBeenCalledTimes(1);
+  });
+
+  // The auto-lock clock used to be reset only by the panel, so a session spent in a
+  // dApp with the panel closed locked mid-play. A connected dApp's requests count.
+  it('records auto-lock activity for a successful request from a connected origin', async () => {
+    await connect();
+    balancesGet.mockResolvedValue(serializeBalances(sampleBalances()));
+    expect(await getLastActivity()).toBeNull();
+    await dispatch(ORIGIN, 'getShieldedBalances', []);
+    expect(await getLastActivity()).toEqual(expect.any(Number));
+  });
+
+  it('records no activity for a request that is refused', async () => {
+    await saveSession(SESSION); // unlocked but not connected
+    await expect(dispatch(ORIGIN, 'getShieldedBalances', [])).rejects.toMatchObject({
+      code: 'PermissionRejected',
+    });
+    expect(await getLastActivity()).toBeNull();
   });
 });

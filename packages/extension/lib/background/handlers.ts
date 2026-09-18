@@ -217,8 +217,12 @@ export async function saveNetworkConfig(data: {
     if (restartRequired) void startSync(nextSession, nextConfig).catch(() => {});
     return statusFromSession(nextSession);
   } catch (error) {
-    // The account never moved, so the settings describing it must not claim otherwise.
-    await updateSettings(previousSettings).catch(() => {});
+    // The account never moved, so the settings describing it must not claim
+    // otherwise. Only the two keys the forward write touched are restored.
+    await updateSettings({
+      network: previousSettings.network,
+      customEndpoints: previousSettings.customEndpoints,
+    }).catch(() => {});
     if (restartRequired) void startSync(session, previousConfig).catch(() => {});
     throw error;
   }
