@@ -29,6 +29,9 @@ The English catalog (`messages/`) is the source of truth. Shipped locales live i
     — DUST register/deregister consequences
   - `dust_receiverHint`, `dust_receiverInvalid`, `dust_addressLabel` — where funds go / address validity
   - `addressBook_detected`, `addressBook_notMidnight`, `addressBook_autoRecognized` — address validity
+  - `status_provingLocal`, `status_provingLocalDetail`, `status_pendingLocalTime` — prover
+    guidance (where proving runs, how long local proving takes). The `status_*` chrome
+    keys around them (elapsed clock, background-banner labels) are AI-assisted drafts.
 
 - **Verbatim by design** (correct as English in every locale — do NOT translate):
   protocol terms *Shielded* / *Unshielded* / *WASM* / *NIGHT* / *DUST*, `mn_…` address

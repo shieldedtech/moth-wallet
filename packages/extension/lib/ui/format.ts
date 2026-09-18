@@ -156,3 +156,11 @@ export function displayName(name: string): string {
 export function accountLabel(name: string, label?: string): string {
   return label?.trim() || displayName(name);
 }
+
+/** A running clock for a long operation ("0:07", "1:42"); minutes never roll into hours. */
+export function formatElapsed(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
+}

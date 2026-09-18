@@ -92,21 +92,56 @@ describe('transfer fee estimate UI', () => {
 });
 
 describe('transfer proving status', () => {
+  const outputs = [{ symbol: 'tNIGHT', amount: '1', to: address, kind: 'unshielded' as const }];
+
   it.each([
-    ['wasm', 'Using local WASM proving.'],
-    ['server', 'Using the configured proof server.'],
+    ['wasm', 'Proving on this device — a few minutes is normal.'],
+    ['server', 'Runs on your proof server, details never leave it'],
   ] as const)('shows the selected %s proving method', (proverType, message) => {
     const html = renderToStaticMarkup(
-      <Pending
-        outputs={[{ symbol: 'tNIGHT', amount: '1', to: address, kind: 'unshielded' }]}
-        dustLabel=""
-        txStage="proving"
-        proverType={proverType}
-      />,
+      <Pending outputs={outputs} dustLabel="" txStage="proving" proverType={proverType} />,
     );
 
     expect(html).toContain(message);
     expect(html).not.toContain('selected in Network settings');
+  });
+
+  // Local proving runs for minutes with nothing else to observe, so the note
+  // moves: an elapsed clock (from the stage's start stamp) beside the moth.
+  it('counts elapsed time from when local proving began', () => {
+    const html = renderToStaticMarkup(
+      <Pending outputs={outputs} dustLabel="" txStage="proving" txStageSince={Date.now() - 95_000} proverType="wasm" />,
+    );
+
+    expect(html).toContain('1:35 elapsed');
+    expect(html).toContain('Your transaction details never leave this browser.');
+  });
+
+  it('shows no clock before proving starts, or with a proof server', () => {
+    const building = renderToStaticMarkup(
+      <Pending outputs={outputs} dustLabel="" txStage="building" txStageSince={Date.now()} proverType="wasm" />,
+    );
+    const server = renderToStaticMarkup(
+      <Pending outputs={outputs} dustLabel="" txStage="proving" txStageSince={Date.now()} proverType="server" />,
+    );
+
+    expect(building).not.toContain('elapsed');
+    expect(server).not.toContain('elapsed');
+  });
+
+  // "Under a minute" is the proof-server figure; promising it for WASM makes a
+  // working wallet look stuck.
+  it('sets a minutes-long expectation for local proving instead of "under a minute"', () => {
+    const local = renderToStaticMarkup(
+      <Pending outputs={outputs} dustLabel="" txStage="proving" proverType="wasm" />,
+    );
+    const server = renderToStaticMarkup(
+      <Pending outputs={outputs} dustLabel="" txStage="proving" proverType="server" />,
+    );
+
+    expect(local).toContain('Local proving usually takes a few minutes.');
+    expect(local).not.toContain('under a minute');
+    expect(server).toContain('This usually takes under a minute.');
   });
 });
 

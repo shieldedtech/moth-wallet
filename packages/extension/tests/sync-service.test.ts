@@ -309,3 +309,186 @@ describe('sync-service snapshot ownership during teardown', () => {
     expect((await storage.get(SNAPSHOT))[SNAPSHOT]).toBe('{"dust":"1"}');
   });
 });
+
+// A transaction stage is state, not just an event: a WASM proof runs for
+// minutes, and a panel opened (or a dApp approval closed) mid-way has to learn
+// that the wallet is working, and since when. The background therefore keeps
+// the live stage, replays it to each new port, and clears it when the op ends.
+describe('sync-service transaction stage', () => {
+  let sync: typeof import('../lib/background/sync-service');
+
+  beforeEach(async () => {
+    vi.resetModules();
+    exists.mockReset().mockResolvedValue(true);
+    syncStop.mockReset().mockResolvedValue(undefined);
+    close.mockReset().mockResolvedValue(undefined);
+    hasPendingApproval.mockReset().mockReturnValue(false);
+    offscreenHandlers.clear();
+    sync = await import('../lib/background/sync-service');
+    sync.registerSyncEvents();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const emitStage = (stage: string) => offscreenHandlers.get('os/eventTxStage')!({ data: stage });
+
+  it('stamps each stage with when it began and broadcasts it', () => {
+    vi.useFakeTimers({ now: 1_000 });
+    const { port } = fakePort();
+    sync.addPort(port);
+
+    emitStage('proving');
+
+    expect(port.postMessage).toHaveBeenCalledWith({ kind: 'txStage', stage: 'proving', since: 1_000 });
+  });
+
+  it('replays the stage in progress to a port that connects mid-op', () => {
+    vi.useFakeTimers({ now: 5_000 });
+    sync.beginOp();
+    emitStage('proving');
+    vi.setSystemTime(65_000);
+
+    const { port } = fakePort();
+    sync.addPort(port);
+
+    expect(port.postMessage).toHaveBeenCalledWith({ kind: 'txStage', stage: 'proving', since: 5_000 });
+  });
+
+  it('clears the stage for every port when the last op ends, and not before', () => {
+    vi.useFakeTimers();
+    const { port } = fakePort();
+    sync.addPort(port);
+    sync.beginOp();
+    sync.beginOp(); // a second, overlapping op (a dApp request during a send)
+    emitStage('submitting');
+
+    sync.endOp();
+    expect(port.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'txStage', stage: null }));
+
+    sync.endOp();
+    expect(port.postMessage).toHaveBeenCalledWith({ kind: 'txStage', stage: null, since: null });
+
+    // Nothing to replay any more.
+    const { port: late } = fakePort();
+    sync.addPort(late);
+    expect(late.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'txStage' }));
+  });
+
+  it('does not broadcast a clear when no stage was ever reported', () => {
+    vi.useFakeTimers();
+    const { port } = fakePort();
+    sync.addPort(port);
+
+    sync.beginOp();
+    sync.endOp();
+
+    expect(port.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'txStage' }));
+  });
+});
+
+// syncDefersAutoLock feeds the auto-lock: a panel watching an engine that is still
+// progressing and not yet synced defers the lock; stall, completion, panel close or
+// the cap release it, and the cap runs from the first deferral of each sync.
+describe('sync-service syncDefersAutoLock', () => {
+  const session = { seedHex: 'ab'.repeat(32), walletName: 'Account-2' } as never;
+  const network = { id: 'preprod' } as never;
+  const MIN = 60_000;
+  let sync: typeof import('../lib/background/sync-service');
+
+  beforeEach(async () => {
+    vi.resetModules();
+    vi.useFakeTimers({ now: Date.parse('2026-07-17T12:00:00Z') });
+    offscreenHandlers.clear();
+    syncEnsure.mockReset().mockResolvedValue(undefined);
+    exists.mockReset().mockResolvedValue(true);
+    syncStop.mockReset().mockResolvedValue(undefined);
+    close.mockReset().mockResolvedValue(undefined);
+    hasPendingApproval.mockReset().mockReturnValue(false);
+    sync = await import('../lib/background/sync-service');
+    sync.registerSyncEvents();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const emitBalances = (synced: boolean, percentage: number) =>
+    offscreenHandlers.get('os/eventBalances')!({ data: JSON.stringify({ synced, coins: {}, syncProgress: { percentage } }) });
+
+  it('is false with no panel, and false with a panel but no engine', async () => {
+    expect(sync.syncDefersAutoLock()).toBe(false);
+    sync.addPort(fakePort().port);
+    expect(sync.syncDefersAutoLock()).toBe(false);
+  });
+
+  it('defers from sync start (restoring, nothing emitted) until the engine reports synced', async () => {
+    sync.addPort(fakePort().port);
+    await sync.startSync(session, network);
+    expect(sync.syncDefersAutoLock()).toBe(true);
+
+    vi.advanceTimersByTime(2 * MIN);
+    emitBalances(false, 0.4);
+    expect(sync.syncDefersAutoLock()).toBe(true);
+
+    emitBalances(true, 1);
+    expect(sync.syncDefersAutoLock()).toBe(false);
+  });
+
+  it('releases when the panel closes even mid-sync (the idle teardown takes over)', async () => {
+    const { port, disconnect } = fakePort();
+    sync.addPort(port);
+    await sync.startSync(session, network);
+    emitBalances(false, 0.4);
+
+    disconnect();
+
+    expect(sync.syncDefersAutoLock()).toBe(false);
+  });
+
+  it('releases a sync that stops reporting progress, and resumes deferring when it moves again', async () => {
+    sync.addPort(fakePort().port);
+    await sync.startSync(session, network);
+    emitBalances(false, 0.4);
+
+    vi.advanceTimersByTime(2 * MIN);
+    emitBalances(false, 0.4); // same percentage: not progress
+    vi.advanceTimersByTime(1 * MIN + 1);
+    expect(sync.syncDefersAutoLock()).toBe(false);
+
+    emitBalances(false, 0.41);
+    expect(sync.syncDefersAutoLock()).toBe(true);
+  });
+
+  it('never defers past the cap, even with steady progress, and does not restart the cap on release', async () => {
+    sync.addPort(fakePort().port);
+    await sync.startSync(session, network);
+    let pct = 0.1;
+    for (let minute = 0; minute < 30; minute++) {
+      emitBalances(false, (pct += 0.01));
+      expect(sync.syncDefersAutoLock()).toBe(true);
+      vi.advanceTimersByTime(MIN);
+    }
+    emitBalances(false, (pct += 0.01));
+    expect(sync.syncDefersAutoLock()).toBe(false);
+    vi.advanceTimersByTime(MIN);
+    emitBalances(false, (pct += 0.01));
+    expect(sync.syncDefersAutoLock()).toBe(false);
+  });
+
+  it('starts a fresh cap for a new sync', async () => {
+    sync.addPort(fakePort().port);
+    await sync.startSync(session, network);
+    for (let minute = 0; minute < 31; minute++) {
+      emitBalances(false, 0.1 + minute * 0.01);
+      sync.syncDefersAutoLock();
+      vi.advanceTimersByTime(MIN);
+    }
+    expect(sync.syncDefersAutoLock()).toBe(false);
+
+    await sync.startSync({ seedHex: 'cd'.repeat(32), walletName: 'Account-3' } as never, network);
+
+    expect(sync.syncDefersAutoLock()).toBe(true);
+  });
+});

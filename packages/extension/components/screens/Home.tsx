@@ -6,7 +6,7 @@
 import { useState } from 'react';
 import { ArrowDown, ArrowUp, Settings as SettingsIcon } from 'lucide-react';
 import { NIGHT_TOKEN_ID } from '@shieldedtech/moth-wallet/types/tokens';
-import type { WalletBalances } from '@shieldedtech/moth-browser';
+import type { WalletBalances, TxStage } from '@shieldedtech/moth-browser';
 import { t } from '../../lib/i18n';
 import { formatTokenBalance } from '../../lib/ui/format';
 import { nativeAssetLabelsForNetwork } from '../../lib/ui/token-labels';
@@ -22,6 +22,8 @@ import { DustMeterCard } from '../moth/dust';
 import { ActivityRow } from '../moth/activity';
 import { SyncStatus, useSyncRegressionGrace } from '../moth/sync-status';
 import { RelayStatus } from '../moth/relay-status';
+import { BackgroundActivity } from '../moth/proving';
+import type { ProverType } from '../../lib/ui/proving-method';
 import type { RelayState } from '../../lib/messaging/protocol';
 import { dustView } from '../../lib/ui/dust-view';
 import { syncStatusView } from '../../lib/ui/sync-view';
@@ -34,6 +36,9 @@ export function Home({
   balances,
   syncMessage,
   relayState,
+  txStage = null,
+  txStageSince = null,
+  proverType = null,
   navigate,
 }: {
   /** Resolved display name for the account (label or formatted storage name). */
@@ -42,6 +47,10 @@ export function Home({
   balances: WalletBalances | null;
   syncMessage: string;
   relayState: RelayState | null;
+  /** A transaction op in flight with no screen of its own (see BackgroundActivity). */
+  txStage?: TxStage | null;
+  txStageSince?: number | null;
+  proverType?: ProverType | null;
   navigate: (screen: Screen) => void;
 }) {
   // NIGHT is an unshielded-only token — the shielded wallet never holds it, so
@@ -97,6 +106,10 @@ export function Home({
         </p>
         {!balances && <p className="m-0 text-xs text-muted-foreground">{syncMessage || t('home_connecting')}</p>}
       </div>
+
+      {/* Work running out of view: a dApp's transaction after approval, or a send whose
+          screen was left. A WASM proof runs for minutes and this is where it shows. */}
+      <BackgroundActivity stage={txStage} since={txStageSince} proverType={proverType} />
 
       {/* Above the actions, not below: it is the reason Send will fail, so it
           has to be read before the button is reached. */}
