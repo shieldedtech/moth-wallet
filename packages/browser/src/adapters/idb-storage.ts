@@ -25,9 +25,13 @@ function tx<T>(mode: IDBTransactionMode, fn: (store: IDBObjectStore) => IDBReque
         const transaction = db.transaction(STORE_NAME, mode);
         const store = transaction.objectStore(STORE_NAME);
         const request = fn(store);
-        request.onerror = () => reject(request.error);
-        request.onsuccess = () => resolve(request.result);
-        transaction.oncomplete = () => db.close();
+        let result: T;
+        request.onsuccess = () => { result = request.result; };
+        // Request success precedes transaction commit. In particular, publishing
+        // a reference catalog must not report success if the transaction later
+        // aborts (quota, browser shutdown, etc.).
+        transaction.oncomplete = () => { db.close(); resolve(result); };
+        transaction.onabort = () => { db.close(); reject(transaction.error ?? request.error ?? new Error('IndexedDB transaction aborted')); };
       }),
   );
 }

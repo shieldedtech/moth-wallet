@@ -20,6 +20,12 @@ insist on before trusting it — including the parts we got wrong first.
 > anyone left. For a wallet shipping today it means the light-client route is a
 > roadmap item, and this is what works against the SDK you can actually depend on.
 > See [what survives](#what-survives-the-sdk-catching-up) before building on it.
+>
+> One step is more interim still. Most of a synced dust state is a ledger-v8 8.1.x
+> defect, so the technique now [collapses the reference's dust
+> trees](#collapse-the-references-dust-trees) before any wallet inherits them. That
+> step works around one ledger line specifically; ledger-v9 fixes the underlying
+> re-expansion, so re-evaluate it on upgrade.
 
 ---
 
@@ -79,11 +85,15 @@ wrong belief is why the optimisation went unbuilt for months.
 2. **Record the chain height separately** at build time. You need it for the
    safety rule below, and you cannot derive it from the snapshot — see the units
    trap.
-3. **Seed a new wallet** by parsing the reference snapshots, substituting the new
+3. **Collapse the reference's dust trees**, and verify the result means the same
+   thing. Skip this and every seeded wallet deserializes megabytes of redundant
+   tree on every launch. See [below](#collapse-the-references-dust-trees).
+4. **Seed a new wallet** by parsing the reference snapshots, substituting the new
    wallet's public keys, and keeping `state`, `protocolVersion` and `offset`
-   verbatim. For dust, only the public key changes: an empty wallet has no
-   designations of its own, so there is nothing else that is wallet-specific.
-4. **`restore()`** each sub-wallet from the swapped snapshot instead of
+   otherwise unchanged. For dust, `state` is the collapsed state from step 3, and
+   only the public key changes: an empty wallet has no designations of its own, so
+   there is nothing else that is wallet-specific.
+5. **`restore()`** each sub-wallet from the swapped snapshot instead of
    `startWith*`. Sync then resumes from the reference's cursor.
 
 The reference contains **no user-specific and no secret material** — it is public
@@ -92,6 +102,92 @@ shippable.
 
 > Its *mnemonic*, by contrast, must never be published, and the reference wallet
 > must never be funded. We store it `0600` with a do-not-fund comment.
+
+---
+
+## Collapse the reference's dust trees
+
+Seeding makes the *first* sync fast. It does nothing for each launch after that,
+and on ledger-v8 8.1.x that is where the time went.
+
+A seeded wallet inherits the reference's dust state, and restoring it is one
+`DustLocalState.deserialize` every time the wallet starts. On preprod the
+reference's state was **5,474,535 bytes**, and that one call took **~57s** in Node
+on a developer laptop, on every launch or unlock. Nearly all of it is the DUST
+generation tree, bloated by a ledger defect. Replay collapses each generation the
+wallet does not own, but a later dtime update that lands on an already-collapsed
+leaf re-expands it, and nothing collapses it again. Both shapes hash to the same
+root, so it costs only space and time, and no root comparison will ever show it.
+ledger-v8 8.1.2 still takes ~57s on the same state; ledger-v9 1.0.0-rc.5 takes
+~1.2s.
+
+The fix is to collapse the populated range of both trees, generation and
+commitment, from index 0 to one below each tree's first free index:
+
+| | dust state | deserialize |
+|---|---|---|
+| preprod | 5,474,535 B → **3,666 B** | ~57s → **~7 ms** |
+| preview | 131,427 B → **3,564 B** | 65 ms → **7 ms** |
+
+**Verify before you trust it.** Ours refuses to return a collapsed state unless:
+
+- the roots, balance, UTXO count and sync time are unchanged;
+- serialize → deserialize gives the same values and the same frontiers;
+- appending the next leaf at each frontier gives the same root on both states,
+  which is what sync does next;
+- the snapshot envelope differs from the input only in `state`.
+
+**Only an unfunded state.** On 8.1.x, reading a collapsed leaf the wallet owns
+panics. The reference owns nothing, but check that it holds no DUST UTXOs rather
+than assume it. Do not try this on users' wallets either: the API does not expose
+which generation indices a wallet owns, so you cannot keep them out of the range.
+
+**The frontier has no getter on 8.1.x.** We read it from the ledger's refusal of a
+non-linear insert at index 0 ("expected to insert index N"). That is an error
+message standing in for an API. Contain it in one function, pin the wording with a
+test, and prefer ledger-v9's `generatingTreeFirstFree` / `commitmentTreeFirstFree`
+wherever they exist.
+
+**Collapse wherever a reference is produced or handed out**, not only in what you
+ship. We collapse after a build or refresh reaches tip; when a stored reference is
+handed out (once, for references stored before collapsing existed, recorded by a
+marker holding the dust cursor); on import; and on export. Collapsing only the
+shipped bundle misses locally built references and every reference already
+stored on users' machines. Make it fatal when cutting a bundle, which you can
+re-cut, and best-effort on a user's machine, where an uncollapsed state is still
+correct, only slower.
+
+If your client never overwrites a stored reference, a collapsed bundle never
+reaches existing installs. Ours now replaces a stored reference older than the
+bundled one, and deletes the old height first, so an interrupted replacement is
+ignored rather than trusted.
+
+**Test that it syncs forward identically**, not just that it matches at the moment
+of collapse. The case that matters is a dtime update landing on a leaf the
+collapse removed. We replayed the events that followed each reference against the
+original and the collapsed state:
+
+| | events | dtime updates | inside the collapsed range | result |
+|---|---|---|---|---|
+| preprod | 71,507 | 15,540 | 940 | roots, balance and UTXOs identical after every batch |
+| preview | 52,325 | 6,106 | 93 | identical throughout |
+
+Those were one-off runs. A recorded preview slice of 771 events, five of them
+dtime updates inside the range, keeps the replay in the unit tests, offline.
+
+**Expect regrowth.** The defect is still in the ledger doing the syncing, so a
+collapsed state re-expands as it goes, from a tiny base: 23 KB after the preprod
+replay, against 5.5 MB uncollapsed. Collapse the reference again each time you
+refresh it. Refreshing from a collapsed state is otherwise ordinary: `moth preseed
+refresh` advanced a collapsed preview reference 359,741 blocks in 193s.
+
+**What it does not fix.** A wallet's own dust state is never collapsed. A wallet
+seeded before you started collapsing keeps the state it was seeded with, and a
+wallet holding DUST keeps its bloated state and its per-launch deserialize.
+ledger-v9 is the path for funded wallets.
+
+The decision, the alternatives we rejected and the full evidence are in
+[ADR 0006](../adr/0006-collapse-preseed-dust-trees.md).
 
 ---
 
@@ -203,20 +299,26 @@ mechanism on bad evidence.
 ## Measured results
 
 Preprod, unless noted. Absolute numbers drift with indexer load; the ratios are
-the durable part.
+the durable part. The seeded totals were measured in August 2026, before the
+reference's dust trees were collapsed, and have not been re-measured since.
 
 | scenario | time |
 |---|---|
 | new wallet, no reference | **78.6 min** |
-| new wallet, fresh reference (26 blocks stale) | **29.3s** |
-| new wallet, reference 76,965 blocks stale | 117.5s |
+| new wallet, fresh reference (26 blocks stale, uncollapsed) | **29.3s** |
+| new wallet, reference 76,965 blocks stale (uncollapsed) | 117.5s |
 | building the reference (one-off, per network, per machine) | 53.6–71.3 min |
 | warm reference lookup | 0.02s |
 | DUST rebuild, re-seeded | 1.0s |
+| restoring the reference's dust state, uncollapsed → collapsed | ~57s → **~7 ms** |
+| *preview:* refreshing a collapsed reference 359,741 blocks | 193s |
 | *preview:* no reference / seeded / build | 103.3s / **8.7s** / 96.0s |
 
-Reference sizes: preprod 10.26 MB raw, **4.83 MB gzipped**; preview 171 KB / 83 KB.
-Size tracks chain length, so it grows and mainnet's will be largest.
+Reference sizes before collapsing: preprod 10.26 MB raw, 4.83 MB gzipped; preview
+171 KB / 83 KB. That size tracked chain length, because the dust tree did.
+Collapsed, the dust state is **3,666 B** on preprod and **3,564 B** on preview, and
+the shipped preprod `dust.dat.gz` falls from 5,139,554 B to a few KB. It regrows as
+a reference syncs forward, so collapse again after each refresh.
 
 **Staleness costs time, not correctness.** The same preprod reference cost 29.3s
 at 26 blocks stale and 117.5s at 76,965 — about **half a second per hour of
@@ -263,9 +365,20 @@ bytes come from, not who may use them.
   *before* warming (so Rule 1 refused it). Both modes silently reported the
   unseeded number. Make your benchmark print which path it took, and check for it.
 - **Measuring in the process that just built the reference.** One such run took
-  1052s where two independent fresh-process runs said ~49s. Cause never
-  established — heap pressure, or a facade not fully torn down. Build in one
-  process, measure in another.
+  1052s where two independent fresh-process runs said ~49s (both with an
+  uncollapsed reference, in August 2026). Cause never established — heap
+  pressure, or a facade not fully torn down. Build in one process, measure in
+  another.
+- **A bundle reader that drops the witnesses.** Our `import` read the three state
+  files and nothing else, so every imported reference lost the witnesses that
+  prove its cursors still name the same events, and a reference with no witness
+  is treated as unverifiable but usable. That hid an indexer renumbering until a
+  refresh looped on "values inserted non-linearly". Load the witnesses with the
+  parts, and refuse a bundle that names a witness it does not carry.
+- **Checking a bundle's bytes but not its shape.** An uncollapsed bundle has the
+  same format as a collapsed one and is three orders of magnitude larger, and the
+  only symptom is every new wallet taking a minute to start. A checksum will not
+  catch that. Check the shape in CI, and time the restore end to end.
 - **Projecting from a prefix.** An early four-minute window suggested 419
   events/sec; the full run averaged 293. Rates decay.
 
@@ -293,6 +406,15 @@ is likely to change it. That is a clean retirement rather than a migration: you
 stop shipping the reference and delete the loader. Nothing accumulates that has to
 be unwound.
 
+**The dust-tree collapse has the shortest life of all.** It works around a
+ledger-v8 8.1.x defect, and it reads each tree's frontier out of an error message
+because 8.1.x has no getter. ledger-v9 fixes the re-expansion and exposes the
+frontier as a property, so a ledger upgrade is the moment to delete the message
+workaround and re-measure whether collapsing still earns its place, whatever the
+SDK has done by then. The verification around it (same roots and frontiers, a
+replay to identical state) is worth keeping for any transform you apply to a
+reference.
+
 Watch for a wallet-SDK release that consumes the indexer's collapsed-update
 endpoints, and for those endpoints leaving `@beta`. Either is the signal to
 re-evaluate; both together are the signal to retire this.
@@ -312,18 +434,30 @@ Guard accordingly: treat a reference that fails to parse, or lacks a recorded
 height, as unusable and fall back to a normal sync. A slow wallet is an acceptable
 failure mode. A wallet that starts past its own history is not.
 
-Measurements here were taken against `wallet-sdk@1.2.x` / `ledger-v8@8.1.0` in
-August 2026.
+The collapse adds a version risk of its own. On ledger-v8 8.1.x it reads each
+tree's frontier from the wording of a ledger error. Pin that wording with a test,
+and if it changes, fail the collapse closed: use the reference as it is, slower but
+correct.
+
+The first-sync measurements here were taken against `wallet-sdk@1.2.x` /
+`ledger-v8@8.1.0` in August 2026, before the collapse. The collapse measurements
+were taken in September 2026 against ledger-v8 8.1.x.
 
 ---
 
 ## Reference implementation
 
-- `packages/core/src/sync/preseed.ts` — building, loading and key-swapping
+- `packages/core/src/sync/preseed.ts` — building, loading, collapsing and key-swapping
+- `packages/core/src/sync/dust-reference-collapse.ts` — the dust-tree collapse and its checks
+- `packages/core/src/sync/preseed-portable.ts` — import and export, witnesses included
 - `packages/core/src/sync/preseed-parts.ts` — the per-part seeding decision
 - `packages/core/src/wallet/manager.ts` — per-network birthdays and `createdHere`
 - `packages/extension/lib/offscreen/bundled-preseed.ts` — loading a packaged reference
 - `scripts/sync-benchmark.mjs` — the instrument every number here came from
 - `scripts/dust-proving-check.mjs` — the spend verification
+- `scripts/collapse-preseed.mjs` — collapsing and checking a bundle
+- `packages/core/tests/unit/sync/dust-reference-collapse.test.ts` — the offline replay, with fixtures in `packages/core/tests/fixtures/preseed/`
+- `packages/cli/tests/e2e/preseed-network.test.ts` — the end-to-end test on a live network
 - `docs/adr/0003-preseed-reference.md` — the decision and its safety rules
 - `docs/adr/0004-preseed-distribution.md` — CI, storage and retrieval (proposed)
+- `docs/adr/0006-collapse-preseed-dust-trees.md` — collapsing the dust trees (proposed)

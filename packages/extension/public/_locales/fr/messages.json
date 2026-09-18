@@ -1137,7 +1137,7 @@
     "message": "Préparation $1%"
   },
   "settings_preseedWarmingDescriptionReady": {
-    "message": "$1 est prêt. Les nouveaux comptes se synchronisent en quelques secondes au lieu de parcourir toute la chaîne."
+    "message": "$1 est prêt. Actualisez la préparation pour raccourcir la première synchronisation des futurs comptes."
   },
   "settings_preseedWarmingDescriptionOff": {
     "message": "Les nouveaux comptes parcourent toute la chaîne, ce qui peut prendre une heure. Activez ceci pour préparer $1 une seule fois en arrière-plan afin que les comptes suivants démarrent en quelques secondes."
@@ -1639,5 +1639,11 @@
   },
   "accounts_revealNoPhraseReason": {
     "message": "Ce compte a été restauré depuis un seed hexadécimal : il n’a donc pas de phrase de récupération, et une phrase ne peut pas être déduite d’un seed. Son seed est la sauvegarde."
+  },
+  "settings_preseedRefresh": {
+    "message": "Actualiser"
+  },
+  "settings_preseedRefreshing": {
+    "message": "Actualisation…"
   }
 }

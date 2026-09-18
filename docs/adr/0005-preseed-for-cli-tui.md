@@ -95,7 +95,8 @@ moth preseed export <dir>   # write one out, in the format CI publishes
 
 **Top-level, not under `dust`.** An earlier draft of this ADR proposed `moth dust
 preseed …`, reasoning that DUST is why the pre-seed matters — it is the 4.9 MB
-blob, the ~1.4M events, the tens of minutes, where shielded and unshielded take
+blob (a few KB since [ADR 0006](0006-collapse-preseed-dust-trees.md) collapsed
+its trees), the ~1.4M events, the tens of minutes, where shielded and unshielded take
 seconds. True about the motivation, wrong about the thing: the pre-seed writes
 all three sub-wallet caches, and a reference is per-network machine state in
 `~/.moth` shared by every wallet on the machine, whereas `moth dust` groups
@@ -181,3 +182,36 @@ above. The cost has to be something the operator chooses.
 **Skip birthdays and seed any wallet lacking a cache.** Rejected outright. This is
 the fund-loss bug ADR 0003 exists to prevent: a wallet with no cache may still
 have history, and seeding it past that history hides its coins with no error.
+
+## Addendum, 2026-09-15: import dropped every witness, and a live end-to-end test
+
+**`moth preseed import` silently dropped a bundle's cursor witnesses.** It read
+the three `.dat.gz` files and nothing else, so neither bundle format's witnesses
+arrived: not the `witness-<part>.json` files `moth preseed export` writes, and not
+the inline `manifest.witnesses` objects `scripts/export-preseed.mjs` writes into
+the extension's bundles. `importReference` then cleared the previous reference's
+witness keys as belonging to the old state. Every imported reference was
+therefore unverifiable, and an unverifiable local reference is allowed with a
+warning (ADR 0004, 2026-08-21 addendum).
+
+That hid a real failure. After the preprod indexer renumbered its event ids again,
+a stale preprod bundle imported cleanly, and `refresh` then looped on "values
+inserted non-linearly" instead of being refused. Import now reads both formats —
+core exports `REFERENCE_FILE_NAMES`, the files a bundle reader must load — and
+refuses a malformed inline witness, or a witness file the manifest lists but the
+bundle does not carry.
+
+**The reference commands now collapse the dust trees.** `build`, `refresh`,
+`import` and `export` all collapse the reference's dust state where it can be done
+and verified, and `import` reports the outcome as `dust: 'collapsed' |
+'already-collapsed' | 'as-is'`. See [ADR 0006](0006-collapse-preseed-dust-trees.md).
+
+**The CLI has an end-to-end test against a live network.**
+`packages/cli/tests/e2e/preseed-network.test.ts` runs the built CLI in a throwaway
+`HOME` with a generated, never-funded wallet, so it needs no secrets. It imports a
+bundle, refreshes it, generates a wallet and syncs it seeded, then launches it
+again and asserts, from the timestamped `--verbose` sync log, that the dust restore
+took under 10 s. It reads the log rather than `moth diagnostics timings`, whose
+fire-and-forget appends can drop phases that land milliseconds apart. It runs as an
+advisory job against preprod on every pull request, and in the prepare workflow
+against each exported bundle before upload. See `docs/TESTING.md`.

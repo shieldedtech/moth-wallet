@@ -71,6 +71,11 @@ jobs:
       - name: Typecheck extension
         run: yarn workspace @shieldedtech/moth-extension compile
 
+      # Refuse to package a pre-seed bundle whose dust trees are not collapsed, or
+      # that is invalid: every wallet seeded from it would pay for it on each launch.
+      - name: Check bundled preseeds are collapsed and valid
+        run: node scripts/collapse-preseed.mjs --check
+
       - name: Build extension ZIP
         run: yarn workspace @shieldedtech/moth-extension zip
 

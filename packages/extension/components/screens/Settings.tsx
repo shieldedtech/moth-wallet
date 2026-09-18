@@ -63,6 +63,7 @@ export function Settings({ onBack, navigate }: { onBack: () => void; navigate: (
   const [confirmingResync, setConfirmingResync] = useState(false);
   const [resyncing, setResyncing] = useState(false);
   const [resyncError, setResyncError] = useState<string | null>(null);
+  const [preseedRefreshing, setPreseedRefreshing] = useState(false);
 
   const resync = async () => {
     setResyncing(true);
@@ -115,11 +116,11 @@ export function Settings({ onBack, navigate }: { onBack: () => void; navigate: (
   // interrupted, so the toggle must not wait on it.
   useEffect(() => {
     void refreshPreseed();
-    if (preseedControl(preseed) !== 'offer' || !settings?.preseedWarming) return;
+    if (!preseedRefreshing && !preseed?.building && (preseedControl(preseed) !== 'offer' || !settings?.preseedWarming)) return;
     const id = setInterval(() => void refreshPreseed(), 5_000);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings?.preseedWarming, preseed?.ready]);
+  }, [settings?.preseedWarming, preseed?.ready, preseed?.building, preseedRefreshing]);
 
   const refreshPreseed = async () => {
     try {
@@ -137,6 +138,14 @@ export function Settings({ onBack, navigate }: { onBack: () => void; navigate: (
       void sendMessage('preseedWarm', undefined).catch(() => {});
       void refreshPreseed();
     }
+  };
+
+  const updatePreseed = () => {
+    setPreseedRefreshing(true);
+    void sendMessage('preseedWarm', undefined).catch(() => {}).finally(() => {
+      setPreseedRefreshing(false);
+      void refreshPreseed();
+    });
   };
 
   // Copy an environment summary for bug reports. Built from settings the panel
@@ -261,9 +270,9 @@ export function Settings({ onBack, navigate }: { onBack: () => void; navigate: (
               </span>
             </span>
             {control === 'ready' ? (
-              <span className="shrink-0 rounded-full bg-muted px-3 py-1.5 text-[13px] font-semibold text-success">
-                {t('settings_preseedWarmingReady')}
-              </span>
+              <Button size="sm" variant="secondary" className="shrink-0" disabled={preseedRefreshing || preseed?.building} onClick={updatePreseed}>
+                {t(preseedRefreshing || preseed?.building ? 'settings_preseedRefreshing' : 'settings_preseedRefresh')}
+              </Button>
             ) : control === 'included' ? (
               <span className="shrink-0 rounded-full bg-muted px-3 py-1.5 text-[13px] font-semibold text-muted-foreground">
                 {t('settings_preseedWarmingIncluded')}

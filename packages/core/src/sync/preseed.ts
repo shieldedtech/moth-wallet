@@ -13,9 +13,11 @@ import {createKeystore, PublicKey} from '@midnightntwrk/wallet-sdk/unshielded';
 import {setNetworkId} from '@midnight-ntwrk/midnight-js/network-id';
 import type {NetworkConfig} from '../types/network.js';
 import {startWalletSync, resolveSyncStore} from './wallet-sync.js';
-import {cursorWitnessKey, emptyRefHeightKey, emptyRefMnemonicKey, emptyRefStateKey, EMPTY_REF_WALLET, type SyncStateStore, type WalletPart} from './sync-store.js';
+import {cursorWitnessKey, emptyRefCollapsedKey, emptyRefHeightKey, emptyRefMnemonicKey, emptyRefStateKey, EMPTY_REF_WALLET, type SyncStateStore, type WalletPart} from './sync-store.js';
+import {collapseDustReference} from './dust-reference-collapse.js';
 import {
   compareWitness,
+  isCursorWitness,
   readEventWitness,
   type CursorWitness,
   type WitnessStream,
@@ -143,8 +145,10 @@ async function referenceCursorsStillValid(
     try {
       stored = JSON.parse(raw) as CursorWitness;
     } catch {
-      continue;
+      onProgress?.(`Pre-seed: malformed ${part} witness — refusing the reference`);
+      return false;
     }
+    if (!isCursorWitness(stored, witnessStreamFor(part)!)) return false;
     let observed: CursorWitness | null = null;
     try {
       observed = await readEventWitness(network.indexerUrl, stored.stream, stored.id);
@@ -203,6 +207,49 @@ async function loadUsableRefStates(
   if (!Number.isFinite(height) || height <= 0) return null;
 
   return { shielded, unshielded, dust, height };
+}
+
+/**
+ * Make sure the stored reference's dust trees are collapsed, and return the dust
+ * state to hand out.
+ *
+ * Runs where a reference is finished and where one is handed out, so it reaches
+ * references this code never produced — one built, imported or bundled before
+ * references were collapsed. For those it is a one-off cost on this machine: one
+ * deserialize of the bloated state (about a minute on preprod) instead of one on
+ * every launch of every wallet seeded from it. The marker makes later calls free.
+ *
+ * Best-effort. A collapse that fails leaves the stored reference exactly as it
+ * was: slower to restore, still correct. See dust-reference-collapse.ts.
+ */
+async function collapseStoredReference(
+  store: SyncStateStore,
+  networkId: string,
+  dust: string,
+  onProgress?: (msg: string) => void,
+): Promise<string> {
+  const cursor = String(snapshotOffset(dust));
+  const markerKey = emptyRefCollapsedKey(networkId);
+  if ((await store.get(markerKey))?.trim() === cursor) return dust;
+
+  try {
+    const started = Date.now();
+    const {json, report} = collapseDustReference(dust);
+    if (report.changed) await store.put(emptyRefStateKey(networkId, 'dust'), json);
+    await store.put(markerKey, cursor);
+    onProgress?.(
+      report.changed
+        ? `Pre-seed: collapsed the reference's dust trees — ${report.stateBytesBefore} -> ${report.stateBytesAfter} bytes in ${Date.now() - started} ms`
+        : "Pre-seed: the reference's dust trees are already collapsed",
+    );
+    return json;
+  } catch (err) {
+    onProgress?.(
+      `Pre-seed: could not collapse the reference's dust trees (${err instanceof Error ? err.message : String(err)}) — ` +
+        'using it as it is, which restores slower but correctly',
+    );
+    return dust;
+  }
 }
 
 /** Wait until the wallet reports fully synced, or give up. */
@@ -273,13 +320,16 @@ export async function ensureEmptyRefCache(
     // new wallet on this machine inherits, so using it across a renumbering
     // spreads the skew instead of containing it.
     if (!(await referenceCursorsStillValid(resolved, network, onProgress))) return null;
+    // Collapsed before it is handed out, so the state copied into every new wallet
+    // is the small one. Free once the reference is already collapsed.
+    const usable = {...warm, dust: await collapseStoredReference(resolved, network.id, warm.dust, onProgress)};
     // Memoised after verification, so the check costs one subscription per
     // process rather than one per wallet. The trade is that a renumbering that
     // lands mid-process is not re-detected until the next start; the alternative
     // is a network round trip on every pre-seed, which is the path this whole
     // feature exists to keep cheap.
-    refCache.set(network.id, warm);
-    return warm;
+    refCache.set(network.id, usable);
+    return usable;
   }
 
   if (!opts?.build) {
@@ -398,6 +448,7 @@ export async function clearEmptyRefCache(networkId: string, store?: SyncStateSto
     ...REF_PARTS.map(part => cursorWitnessKey(networkId, EMPTY_REF_WALLET, part)),
     emptyRefHeightKey(networkId),
     emptyRefMnemonicKey(networkId),
+    emptyRefCollapsedKey(networkId),
   ];
   for (const key of keys) {
     try {
@@ -504,12 +555,18 @@ async function buildEmptyRefCache(
       return null;
     }
 
+    // Collapse the dust trees now that nothing is syncing into them. A refresh
+    // replays forward from the collapsed state and regrows only what it adds, so
+    // this keeps the stored reference small across refreshes. The cursor is
+    // untouched, so the witnesses below read the same event either way.
+    const dust = await collapseStoredReference(resolved, network.id, states.dust, onProgress);
+
     // Record what these cursors point at now, so the next renumbering is
     // detectable rather than silent.
     await recordReferenceWitnesses(resolved, network, states, onProgress);
 
     onProgress?.('Pre-seed: reference wallet ready at chain tip');
-    return states;
+    return {...states, dust};
   } catch (err) {
     onProgress?.(`Pre-seed: reference sync failed — ${err}`);
     return null;
@@ -522,6 +579,9 @@ async function buildEmptyRefCache(
  * - Shielded: reference's Zswap tree + offset, new wallet's public keys, empty coins
  * - Unshielded: new wallet's public key, reference's indexer cursor, empty UTXOs
  * - Dust: reference state as-is with the new wallet's dust public key swapped in.
+ *   "As-is" is the collapsed state: ensureEmptyRefCache collapses the reference's
+ *   dust trees before handing it out (see dust-reference-collapse.ts), so the
+ *   state every new wallet inherits, and deserializes on each launch, is small.
  *   Dust ledger events are global (the indexer streams `dustLedgerEvents` keyed
  *   by a global id), and a wallet holding no NIGHT has no designations of its
  *   own to preserve, so the reference's generation tree and cursor transfer

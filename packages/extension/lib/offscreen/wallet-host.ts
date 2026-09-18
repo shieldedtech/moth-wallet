@@ -5,6 +5,9 @@
 
 import { relayRetry, setRelayUrl } from './relay-socket';
 import { installBundledReference, hasBundledReference } from './bundled-preseed';
+import {cancelReferenceJob, runReferenceJob} from './reference-jobs';
+import {finishReferenceContribution, forgetReferenceWallet, referenceContributionToken, referenceEpoch, referenceVersionsStatus, registerReferenceWallet, resetReferenceVersions, saveReferenceVersion, selectReferenceVersion, selectDustReferenceCandidate} from '@shieldedtech/moth-wallet/sync/reference-versions';
+import {syncStateKey} from '@shieldedtech/moth-wallet/sync/sync-store';
 import { requestMeter, type MeterSnapshot } from './request-meter';
 import {
   createMothBrowser,
@@ -22,14 +25,13 @@ import {
   clearSyncCache,
   clearDustSyncCache,
   clearEmptyRefCache,
-  warmEmptyRefCache,
-  preseedReferenceStatus,
   DustRegistrationNotYetError,
   type WarmProgress,
   signMessage,
   deriveAppSecret as coreDeriveAppSecret,
   deriveActivity,
   IdbSyncStateStore,
+  IndexedDbStorageAdapter,
   createProvingProvider,
   ensureProverReady,
   resolveProverConfig,
@@ -74,6 +76,25 @@ import type { DustNotYet } from '../messaging/protocol';
 import type { HostEvent, HostEventData } from './worker-rpc';
 
 const SYNC_WAIT_MS = 60_000;
+// A single writer/lock domain for the version catalog. Optimizer workers return
+// candidates; they never modify versions or wallet assignments themselves.
+const referenceStore = new IdbSyncStateStore();
+
+async function prepareReferences(networkId: string, newlyCreated?: string): Promise<void> {
+  const manager = getMoth(networkId).wallets;
+  const wallets = await manager.list();
+  const eligible = await Promise.all(wallets.filter(wallet => wallet.name !== newlyCreated).map(async wallet => ({
+    name: wallet.name, birthday: await manager.birthdayOn(wallet.name, networkId),
+  })));
+  await installBundledReference(networkId, referenceStore, eligible);
+  // Once archived atomically, legacy singleton files are redundant. Failure to
+  // reclaim them is harmless and must not stop an existing wallet from opening.
+  try {
+    if ((await referenceVersionsStatus(referenceStore, networkId)).ready) {
+      await clearEmptyRefCache(networkId, referenceStore);
+    }
+  } catch { /* retry cleanup on the next preparation */ }
+}
 
 // Events (balances / sync progress / tx stage) reach the SW through an injected
 // emitter: the production worker entry wires it to postMessage; the dev inline
@@ -161,6 +182,12 @@ export async function walletCreate(
     birthday,
     mnemonic,
   );
+  // Reference work is optional; a storage/packaging failure must not turn a
+  // successfully saved wallet into an apparent creation failure.
+  try {
+    await prepareReferences(network, name);
+    await registerReferenceWallet(referenceStore, network, {name, birthday}, true);
+  } catch { /* the wallet can still sync from genesis */ }
   return { info, mnemonic: phrase };
 }
 
@@ -191,6 +218,7 @@ export async function walletImport(
 
 export async function walletRemove(name: string, network: string): Promise<void> {
   await getMoth(network).wallets.remove(name);
+  await forgetReferenceWallet(referenceStore, name);
 }
 
 export async function walletSetActive(name: string, network: string): Promise<void> {
@@ -247,7 +275,13 @@ export async function walletSetNetwork(
   // records it only on first arrival and only for wallets created here — an
   // imported wallet could hold funds on that chain at any height, so it keeps
   // scanning from genesis.
-  await getMoth(fromNetwork).wallets.setNetwork(name, network, address, birthday);
+  const manager = getMoth(fromNetwork).wallets;
+  const previousBirthday = await manager.birthdayOn(name, network);
+  await manager.setNetwork(name, network, address, birthday);
+  try {
+    await prepareReferences(network, previousBirthday === undefined ? name : undefined);
+    await registerReferenceWallet(referenceStore, network, {name, birthday: await manager.birthdayOn(name, network)});
+  } catch { /* Reference preparation must not prevent switching networks. */ }
   return { address, addresses };
 }
 
@@ -321,17 +355,36 @@ export async function syncEnsure(
   // wrapper won't recognise the connection and will pass it straight through.
   setRelayUrl(network.nodeUrl.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:'));
 
-  // Put the packaged reference in place before startWalletSync looks for one.
-  // Only writes when the store has none, so a locally built reference — always
-  // at least as fresh — is never overwritten. A network without a bundled
-  // reference is a no-op and syncs the slow way.
-  await installBundledReference(network.id, new IdbSyncStateStore());
+  // Migrate assignments before importing a newer bundle. Wallet caches remain
+  // untouched; only missing parts can use the selected immutable reference.
+  await prepareReferences(network.id);
 
   // Wallets created by the extension store the chain tip at creation time as
   // their birthday; it lets the first sync pre-seed at tip instead of
-  // scanning from genesis. Imported wallets have none and scan everything.
+  // scanning from genesis. Without one, only DUST can qualify via a history probe.
   const birthday = (await getMoth(network.id).wallets.list())
     .find((wallet) => wallet.name === walletName)?.birthday;
+  const cachedParts = await Promise.all((['shielded', 'unshielded', 'dust'] as const)
+    .map(part => referenceStore.get(syncStateKey(network.id, walletName, part))));
+  const missing = cachedParts.some(state => !state);
+  let reference = missing
+    ? await selectReferenceVersion(referenceStore, network, {name: walletName, birthday}).catch(() => null)
+    : null;
+  if (!reference && !cachedParts[2]) {
+    // Keep birthday-based recovery assignments intact. This candidate may seed
+    // DUST only after core confirms no owned generation history before its height.
+    reference = await selectDustReferenceCandidate(referenceStore, network).catch(() => null);
+  }
+  const epoch = await referenceEpoch(referenceStore, network.id).catch(() => null);
+  let contributionToken = birthday && epoch
+    ? await referenceContributionToken(referenceStore, network.id, walletName).catch(() => null) : null;
+  // An interrupted first sync may leave independently saved caches without
+  // cursor witnesses. Do not promote those into a freshly witnessed reference.
+  if (contributionToken && cachedParts.some(Boolean)) {
+    await finishReferenceContribution(referenceStore, network.id, walletName, epoch!, contributionToken).catch(() => {});
+    contributionToken = null;
+  }
+  const contributor = contributionToken ? {name: walletName, token: contributionToken} : null;
 
   // Derive the key bundle once for this session (Option A derive-and-drop):
   // startWalletSync and every subsequent op take walletKeys, and the raw seed
@@ -344,7 +397,21 @@ export async function syncEnsure(
     walletName,
     false,
     birthday,
-    { syncStore: new IdbSyncStateStore(), ...(ON_MAIN_THREAD ? { batchUpdates: MAIN_THREAD_BATCH } : {}) },
+    {
+      syncStore: referenceStore, reference,
+      ...(ON_MAIN_THREAD ? {batchUpdates: MAIN_THREAD_BATCH} : {}),
+      ...(contributor ? {onInitialSyncSnapshot: (snapshot: {shielded: string; unshielded: string; dust: string}) => {
+        // Heavy work runs separately; the captured strings cannot be
+        // changed by funds arriving later or by further wallet emissions.
+        void (async () => {
+            if (await referenceEpoch(referenceStore, network.id) !== epoch ||
+                await referenceContributionToken(referenceStore, network.id, walletName) !== contributor.token) return;
+            const candidate = await runReferenceJob({kind: 'contribute', network, snapshot, source: reference});
+            if (candidate) await saveReferenceVersion(referenceStore, candidate, {epoch: epoch!, contributor});
+            else await finishReferenceContribution(referenceStore, network.id, walletName, epoch!, contributor.token);
+          })().catch(() => {});
+      }} : {}),
+    },
   );
   current = { key, synced, walletKeys };
 
@@ -398,9 +465,8 @@ async function trackOp<T>(run: () => Promise<T>): Promise<T> {
 //
 // Deliberately fire-and-forget and interruptible. It runs for tens of minutes,
 // far longer than a panel session, and the offscreen document is torn down when
-// the extension goes idle. A killed build persists its progress, so the next
-// attempt resumes rather than restarting; the reference only becomes usable once
-// it actually reaches tip.
+// the extension goes idle. A later attempt starts from the last published
+// reference; partial working files are never trusted as witnessed checkpoints.
 let refWarmInFlight: string | null = null;
 // Last progress seen from an in-flight build, so the UI can poll it. An hour-long
 // job reported as a bare "in progress" is indistinguishable from a stuck one.
@@ -417,7 +483,7 @@ export async function preseedStatus(
   applied: number;
   total: number;
 }> {
-  const status = await preseedReferenceStatus(network, new IdbSyncStateStore());
+  const status = await referenceVersionsStatus(referenceStore, network.id);
   return {
     ...status,
     bundled: await hasBundledReference(network.id),
@@ -446,18 +512,28 @@ export function resetRequestStats(): void {
 
 
 export async function preseedWarm(network: NetworkConfig): Promise<{ started: boolean }> {
-  if (refWarmInFlight === network.id) return { started: false };
+  if (refWarmInFlight !== null) return { started: false };
   refWarmInFlight = network.id;
+  lastWarmProgress = null;
   try {
-    const states = await warmEmptyRefCache(
-      network,
-      (message) => emit('os/eventSyncMessage', message),
-      new IdbSyncStateStore(),
-      (progress) => {
-        lastWarmProgress = progress;
-      },
-    );
-    return { started: states !== null };
+    await prepareReferences(network.id);
+    const epoch = await referenceEpoch(referenceStore, network.id);
+    const reference = await selectReferenceVersion(referenceStore, network);
+    const adapter = new IndexedDbStorageAdapter();
+    // A previous interrupted job has no complete, witnessed checkpoint. Restart
+    // from the retained verified version, never from its partial working files.
+    for (const key of await adapter.list(`preseed-work/${network.id}/`)) await adapter.delete(key);
+    const prefix = `preseed-work/${network.id}/${epoch}/${crypto.randomUUID()}/`;
+    if (await referenceEpoch(referenceStore, network.id) !== epoch) return {started: false};
+    const candidate = await runReferenceJob({kind: 'refresh', network, reference, prefix}, update => {
+      if (update.message) emit('os/eventSyncMessage', update.message);
+      if (update.progress) lastWarmProgress = update.progress;
+    });
+    const saved = candidate && await saveReferenceVersion(referenceStore, candidate, {epoch});
+    if (saved) {
+      for (const key of await adapter.list(prefix)) await adapter.delete(key);
+    }
+    return {started: !!saved};
   } catch {
     return { started: false };
   } finally {
@@ -542,16 +618,20 @@ export async function syncCacheClear(walletName: string, networkIds: string[]): 
   }
 }
 
-// Everything syncCacheClear drops, plus what it deliberately leaves alone: the
-// network's pre-seed reference. A wallet-scoped clear keeps the reference because
+// Everything syncCacheClear drops, plus the network's reference versions and
+// assignments. A wallet-scoped clear keeps the reference because
 // it is still right for the chain — but when a local chain came back from
 // genesis, the reference describes the old chain and every fresh sync would be
 // seeded from it. The DUST-heal stamp goes too, so the rebuild heuristic starts
 // from a clean slate on the new chain.
 export async function syncCacheReset(walletName: string, network: NetworkConfig): Promise<void> {
+  cancelReferenceJob(network.id);
+  await resetReferenceVersions(referenceStore, network.id);
   await syncCacheClear(walletName, [network.id]);
   const store = new IdbSyncStateStore();
   await clearEmptyRefCache(network.id, store);
+  const adapter = new IndexedDbStorageAdapter();
+  for (const key of await adapter.list(`preseed-work/${network.id}/`)) await adapter.delete(key);
   await store.delete(dustHealKey(network.id, walletName)).catch(() => {});
 }
 

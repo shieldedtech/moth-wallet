@@ -92,6 +92,13 @@ Preprod, brand-new empty wallet, cold cache, via `scripts/sync-benchmark.mjs`.
   fully-synced wallet, not a cost pre-seeding adds; it is also the cost behind the
   "Getting things ready" interstitial.
 
+> **Superseded 2026-09-15 — the "floor" was mostly a ledger defect.** The dust
+> state is almost entirely a generation tree bloated by ledger-v8 8.1.x, and
+> collapsing the reference's trees takes preprod's from 5,474,535 bytes to 3,666
+> and its deserialize from ~57s to ~7 ms. The 10.3 MB `dust.dat` and the ~47s
+> figure above are the uncollapsed reference. See the addendum at the end and
+> [ADR 0006](0006-collapse-preseed-dust-trees.md).
+
 Chain rates, for reasoning about reference staleness: ~6.0 s/block, and dust
 events accruing at ~46/hour recently against a ~420/hour lifetime average
 (preprod is bursty — plan against the higher figure). Catch-up cost for a stale
@@ -106,6 +113,12 @@ reference, at ~293 events/sec:
 **Weekly refresh is sufficient; daily is generous.** Anything fresher is wasted
 effort, because the ~47s deserialize floor dominates everything under roughly a
 week of staleness.
+
+> **Superseded 2026-09-15.** The reasoning no longer follows. With the reference's
+> dust trees collapsed ([ADR 0006](0006-collapse-preseed-dust-trees.md)) the
+> deserialize takes milliseconds, so there is no floor for staleness to hide
+> behind, and the catch-up costs in the table above are no longer masked. They are
+> still paid once per new wallet, at its first sync, not on every launch.
 
 ## Safety: the height ≤ birthday rule
 
@@ -153,6 +166,17 @@ nothing proves them safe, and they are cheap (~40 s on preprod). Anything short 
 back to the genesis walk. The decision is `preSeedPlan` in `sync/preseed-parts.ts`;
 the probe is `sync/dust-history.ts`.
 
+The extension first tries its retained, birthday-compatible reference assignment.
+If none is usable and DUST is missing, it selects a fully witnessed reference as
+a candidate for this probe, without assigning it as an all-parts recovery point
+or inventing a birthday. Core applies the same per-part decision to host-selected
+references as to the CLI's legacy reference. Imported and resumed wallets remain
+ineligible to contribute first-sync snapshots.
+
+Malformed subscription data, unknown history event types, mismatched subscription
+IDs and invalid tree sizes produce `unknown`. A later `complete` cannot turn an
+unreadable history response into evidence of absence.
+
 Measured cost of staleness, so it is not guessed at. The same preprod reference,
 at two ages (11 Aug):
 
@@ -164,6 +188,11 @@ at two ages (11 Aug):
 About **half a second per hour of reference age**, against 78.6 min with no
 reference at all. Staleness buys time, never correctness — and 29.3s is the floor,
 being the cost of deserializing a 10.2 MB dust state with nothing to catch up on.
+
+> **Superseded 2026-09-15.** That floor belonged to the uncollapsed reference.
+> Collapsing its dust trees takes the deserialize to milliseconds
+> ([ADR 0006](0006-collapse-preseed-dust-trees.md)). The seeded totals in this table
+> have not been re-measured since, so treat them as history.
 
 **Birthdays are per network** (`birthdays: Record<string, number>`), recorded on
 first arrival at a network and never overwritten on return. A single value was
@@ -196,6 +225,8 @@ and reaching synced in 1.0s with identical balances.
   again. Publishing *dated* references and selecting the newest with
   `height <= birthday` would fix that, and is not built.
 - The reference grows the on-disk footprint (313 bytes → 10.3 MB per network).
+  *Superseded 2026-09-15:* with its dust trees collapsed, preprod's reference dust
+  state is 3,666 bytes ([ADR 0006](0006-collapse-preseed-dust-trees.md)).
 
 ## Does a copied tree spend?
 
@@ -233,6 +264,12 @@ already built rather than built on each device. Preprod's is bundled in the
 extension package today (4.81 MB gzipped; `scripts/export-preseed.mjs` produces
 it, `bundled-preseed.ts` loads it into IndexedDB on first sync).
 
+> **Superseded 2026-09-15.** The `state` kept is now the collapsed dust state:
+> `scripts/export-preseed.mjs` collapses the dust trees on the way out and refuses
+> a reference it cannot collapse and verify, and the shipped preprod `dust.dat.gz`
+> fell from 5,139,554 B to a few KB. See
+> [ADR 0006](0006-collapse-preseed-dust-trees.md).
+
 **How references are built, stored and retrieved is ADR 0004's subject**, not this
 one. What belongs here is the constraint that survives any distribution choice:
 wherever the bytes come from, the `height <= birthday` and `createdHere` rules
@@ -252,8 +289,51 @@ cannot be verified must fail closed to a genesis sync.
   sync, or a reference facade not fully torn down on `stop()`; they have not been
   distinguished. This bears directly on on-device warming, which is exactly that
   shape — and is a further argument for CI-built references.
+  *Note 2026-09-15:* the ~49s comparison was an uncollapsed reference, most of it
+  the dust deserialize that [ADR 0006](0006-collapse-preseed-dust-trees.md)
+  removes. The 1052s run has not been repeated and remains unexplained.
 - **No sync-state export/import.** The `.dat` caches cannot be backed up, moved
   between machines, or shared between the extension (IndexedDB) and CLI
   (`~/.moth`). The pieces exist — one `SyncStateStore` interface, and a
   serialization format the pre-seed already copies — but an export would be
   *sensitive*: the shielded snapshot is a decrypted view of balances and history.
+
+## Addendum, 2026-09-15: the deserialize floor was a ledger defect
+
+This ADR measured ~47s of a seeded wallet's start-up as a single
+`DustLocalState.deserialize`, and called it "a per-launch floor for any
+fully-synced wallet, not a cost pre-seeding adds". Pre-seeding did not add it. It
+was not a floor either.
+
+The reference's dust state is almost entirely the DUST generation tree, and most
+of that tree is a ledger-v8 8.1.x defect. Replay collapses each generation the
+wallet does not own, but a later dtime update that lands on an already-collapsed
+leaf re-expands it, and nothing collapses it again. Both shapes hash to the same
+root, so a check that compares roots cannot see it. Re-measured on the preprod
+reference as shipped: 5,474,535 bytes, ~57s to deserialize in Node on a developer
+laptop.
+
+Collapsing the populated range of the generation and commitment trees takes that
+state to 3,666 bytes and the deserialize to ~7 ms, with the same roots, balance
+and frontiers. A collapsed reference syncs forward identically: replaying the
+71,507 preprod events that followed the reference on both states, 940 of them
+dtime updates inside the collapsed range, gave identical roots, balance and UTXOs
+after every batch. The collapse now runs wherever a reference is built, refreshed,
+imported, exported or handed out, and the preview and preprod bundles are re-cut
+collapsed.
+
+What this changes in this ADR:
+
+- **The measurements that relied on the floor are annotated in place**, not
+  rewritten. The first-sync totals (29.3s, 117.5s) predate the collapse and have
+  not been re-measured.
+- **The safety rules are untouched.** The collapse rewrites the dust `state`, not
+  the height, the cursor or what the cursor's witness names, so `height <= birthday`,
+  `createdHere` and per-part seeding decide exactly what they did before.
+- **It helps new wallets, not existing ones**, in the same way this ADR "helps
+  onboarding, not recovery". A wallet's own dust state is never collapsed. A wallet
+  seeded before this change keeps the state it was seeded with, and for one
+  holding DUST, collapsing is unsafe on 8.1.x.
+
+The decision, the alternatives and the costs are in
+[ADR 0006](0006-collapse-preseed-dust-trees.md).

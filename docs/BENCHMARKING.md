@@ -3,14 +3,15 @@
 How to measure where wall-clock time goes — in the browser extension and in Node —
 and what the numbers should look like.
 
-Three instruments, for three different jobs:
+The instruments, and the job each one is for:
 
 | | use it for | where |
 |---|---|---|
 | **Phase timings** | unlock, account creation, transactions, reference builds | extension: `chrome-extension://<id>/debug.html`; CLI/TUI/daemon: `~/.moth/timings.json` |
 | **`scripts/sync-benchmark.mjs`** | sync throughput, A/B of indexer and batch settings, a clean baseline | Node, against any network |
 | **`scripts/dust-proving-check.mjs`** | whether a reference-seeded wallet can actually *spend*, not just sync | Node, needs a funded account |
-| **`scripts/export-preseed.mjs`** | package a built reference into the extension, and report its size and staleness | Node |
+| **`scripts/export-preseed.mjs`** | package a built reference into the extension (collapsing its dust trees), and report its size and staleness | Node |
+| **`scripts/collapse-preseed.mjs`** | collapse a bundle's dust trees, or with `--check` prove it is collapsed and valid; reports the dust state size before and after | Node, no network |
 
 The browser is the environment users have; Node is the one that gives repeatable
 numbers. Measure in both — they are not interchangeable, and quantifying the gap
@@ -79,16 +80,30 @@ Start recording → lock the wallet → unlock it → read the Δ column.
 unlock: start (keystore decrypt + offscreen + WASM ahead)
 unlock: keys ready (offscreen up, keystore decrypted)
 Starting shielded wallet… / Restoring shielded state from cache…
-Starting dust wallet… / Restoring dust state from cache…    ← usually the big one
+Starting dust wallet… / Restoring dust state from cache…    ← the big one when the dust state is large
 Initializing wallet facade…
 first balances emission (panel can render)                  ← what the user waits for
 ```
 
 The interesting split is between the keystore KDF, offscreen creation plus WASM
-instantiation, and the per-sub-wallet restores. In Node a 5.13 MB dust state
-deserialized in **48.8s**; a 2.33 MB state should land near half that. If the
-dust restore dominates, no amount of UI work will help — that is a state-size and
-SDK cost.
+instantiation, and the per-sub-wallet restores.
+
+The dust restore is one `DustLocalState.deserialize`, and its cost follows the
+size of the dust state, which is mostly the DUST generation tree. A wallet seeded
+from a collapsed reference starts from a state of a few KB: preprod's reference
+state is 3,666 bytes and deserializes in ~7 ms. Before references were collapsed,
+this was the big one: 5,474,535 bytes took ~57s in Node on a developer laptop, an
+earlier measurement here had 5.13 MB at 48.8s, and one extension measurement was
+~38s. See [ADR 0006](./adr/0006-collapse-preseed-dust-trees.md).
+
+If the dust restore still dominates, find out whose state it is:
+
+- **A wallet that holds DUST**, or one seeded before references were collapsed,
+  keeps its own large state; nothing collapses a wallet's own state. No amount of
+  UI work will help — that is a state-size and ledger cost.
+- **A wallet seeded since** should not be slow here. Check the reference was
+  collapsed: `empty-ref/<network>/dust-collapsed.txt` present, and no
+  `could not collapse the reference's dust trees` in the sync progress messages.
 
 Note lock deliberately clears the cached balances snapshot, so unlock cannot use
 the fast path that ordinary cold opens do.
@@ -114,25 +129,35 @@ waiting are throwaway.
 
 Reference for preprod, no reference available: **78.6 min**, of which 99.2% is
 dust. With a **fresh** reference: **29.3s** (11 Aug, reference 26 blocks stale).
-An older reference is slower in proportion — see the staleness figures below. The
-**49.2s** that circulated before 10 Aug came from a benchmark that could not seed
-at all; treat it as unverified.
+That was an uncollapsed reference; the total has not been re-measured since the
+reference's dust trees were collapsed (2026-09-15). An older reference is slower
+in proportion — see the staleness figures below. The **49.2s** that circulated
+before 10 Aug came from a benchmark that could not seed at all; treat it as
+unverified.
 
-Since 2026-08-10 preprod ships a reference in the extension package, so a fresh
-install seeds without any warming step. Verify it landed by looking for
-`Pre-seed complete` in the timings, or `empty-ref/preprod/height.txt` in
+The extension ships references for preview and preprod (preprod since
+2026-08-10), so a fresh install seeds without any warming step. Both bundles were
+re-cut with their dust trees collapsed on 2026-09-15, and the qanet bundle was
+removed then. An install holding a stored reference older than the bundled one
+replaces it with the bundled one. Verify it landed by looking for
+`Pre-seed complete` in the timings, or `empty-ref/<network>/height.txt` in
 IndexedDB.
 
 ### Pre-seed reference build
 
-Settings → Network → "Speed up new accounts" → on. Expect **~71 min on preprod**,
-per network, resuming across sessions. The Settings row shows `Preparing N%` from
-the reference's dust progress, then `Ready`.
+Settings → Network → "Speed up new accounts" → on. The row is offered only for
+networks the release ships no reference for, which includes qanet since
+2026-09-15. Expect **~71 min on preprod**, per network, resuming across sessions.
+The Settings row shows `Preparing N%` from the reference's dust progress, then
+`Ready`.
 
 Confirm completion independently in IndexedDB (`moth` / `kv`):
-`empty-ref/<network>/height.txt` present, and `sync/<network>/__empty_ref__/dust.dat`
-in the megabytes. No height file means it has not finished and the reference stays
-unused.
+`empty-ref/<network>/height.txt` present. No height file means it has not finished
+and the reference stays unused. The build collapses the dust trees once it
+reaches tip, so `sync/<network>/__empty_ref__/dust.dat` should then be a few KB,
+with `empty-ref/<network>/dust-collapsed.txt` holding its dust cursor. A height
+file beside a `dust.dat` in the megabytes means the collapse did not succeed: the
+reference is still used, and wallets seeded from it restore slower.
 
 ### DUST rebuild
 
@@ -253,11 +278,6 @@ number you are about to read is the unseeded path.
 > until the facade itself reports synced. JSON captured before that change is not
 > comparable. The `milestones` timings are unaffected.
 
-> **`percentage` in `--json` changed meaning.** It used to track shielded indices
-> alone; it is now the minimum across all three sub-wallets and is clamped to 99%
-> until the facade itself reports synced. JSON captured before that change is not
-> comparable. The `milestones` timings are unaffected.
-
 ---
 
 ## 5. Node: `scripts/dust-proving-check.mjs`
@@ -307,21 +327,57 @@ whose RPC is refusing connections the script cannot get past step 2.
 ## 6. Interpreting results
 
 **Reference figures, preprod, one machine.** Absolute numbers drift with indexer
-load; ratios are the durable part.
+load; ratios are the durable part. The seeded totals were measured in August 2026
+with uncollapsed references, and have not been re-measured since the reference's
+dust trees were collapsed (2026-09-15).
 
 | phase | measured |
 |---|---|
 | new wallet, no reference | 78.6 min (dust 4715.8s; unshielded 3.4s; shielded 38.6s) |
-| new wallet, fresh reference (26 blocks stale) | **29.3s** |
-| new wallet, reference 76,965 blocks stale | 117.5s |
+| new wallet, fresh reference (26 blocks stale, uncollapsed) | **29.3s** |
+| new wallet, reference 76,965 blocks stale (uncollapsed) | 117.5s |
 | reference build (one-off, per network) | 53.6–71.3 min |
+| warm reference lookup | 0.02s |
+| dust apply rate | ~293 events/sec over 1,382,732 events |
+| chain | ~6.0 s/block; dust events ~46/hour recent, ~420/hour lifetime average |
 
 **Preview, for scale** — same shape, a 5.5× shorter chain (64,771 dust events):
 no reference 103.3s, seeded 8.7s (reference 18,228 blocks stale), reference build
 96.0s. Useful for iterating on the pre-seed path without paying preprod's hour.
 
+### Dust state size and restore time
+
+A seeded wallet restores its dust state with one `DustLocalState.deserialize` on
+every launch or unlock, so this cost recurs far more often than any sync. It
+follows the size of the state, and until 2026-09-15 the reference's state was
+mostly a DUST generation tree bloated by a ledger-v8 8.1.x defect
+([ADR 0006](./adr/0006-collapse-preseed-dust-trees.md)).
+
+| dust state | bytes | deserialize |
+|---|---|---|
+| preprod reference, uncollapsed | 5,474,535 | ~57s (Node, developer laptop) |
+| preprod reference, collapsed | 3,666 | ~7 ms |
+| preview reference, uncollapsed | 131,427 | 65 ms |
+| preview reference, collapsed | 3,564 | 7 ms |
+| preprod, collapsed, after replaying the next 71,507 dust events | ~23 KB | not measured |
+| preprod, uncollapsed, after the same replay | ~5.5 MB | not measured |
+
+The collapsed state regrows as it syncs (the defect is still in the ledger doing
+the syncing), which the last two rows show. Earlier measurements of the
+uncollapsed step put it at 46.7–48.8s in Node (this file used to quote 48.8s for a
+5.13 MB state) and ~38s in the extension. For context only: on the same bloated
+preprod state, ledger-v8 8.1.2 still takes ~57s and ledger-v9 1.0.0-rc.5 takes
+~1.2s. The wallet is on ledger-v8 8.1.x.
+
+The shipped preprod `dust.dat.gz` fell from 5,139,554 B to a few KB. To read a
+bundle's dust state size without a network, run
+`node scripts/collapse-preseed.mjs --check` (add `--json` for a report). It prints
+the size before and after collapsing, and fails if the bundle is not already
+collapsed. Refreshing a collapsed reference is otherwise ordinary: 359,741 preview
+blocks in 193s.
+
 **A stale reference costs time, not correctness.** Measured on preprod against the
-same reference at two ages:
+same reference at two ages (uncollapsed, August 2026):
 
 | reference staleness | seeded total |
 |---|---|
@@ -329,8 +385,10 @@ same reference at two ages:
 | 76,965 blocks | 117.5s |
 
 That is ~1.1ms per block of drift, or roughly **half a second per hour of
-reference age**. The residual 29.3s is the floor — deserializing a 10.2 MB dust
-state with nothing left to catch up on.
+reference age**. At the time, the residual 29.3s was taken as the floor —
+deserializing a 10.2 MB dust state with nothing left to catch up on. Collapsing
+the reference takes that deserialize to milliseconds; the seeded total has not
+been re-measured since.
 
 This is what makes a bundled reference viable: it is stale by definition the
 moment it ships, and a reference cut at release is still under two minutes of
@@ -346,17 +404,16 @@ the pre-seed gate and cost the full walk. Measured after the per-part fix on a
 funded, dust-registered preview wallet: dust resumed at the reference cursor and
 reached synced in **1.0s**, with NIGHT, the registration and the DUST balance all
 preserved.
-| warm reference lookup | 0.02s |
-| `DustLocalState.deserialize`, 5.13 MB | 48.8s |
-| dust apply rate | ~293 events/sec over 1,382,732 events |
-| chain | ~6.0 s/block; dust events ~46/hour recent, ~420/hour lifetime average |
 
 **Compare like with like.** Prefer **dust events/sec** over total wall clock: the
 total folds in reference-build and pre-seed noise, while the rate is comparable
 across runs and between Node and the browser.
 
 **Expect the browser to be slower** than Node — different WASM path, plus
-IndexedDB writes. Treat the Node deserialize figure as a floor, not a target.
+IndexedDB writes. Treat Node figures as a floor, not a target. The uncollapsed dust
+deserialize is one recorded exception: ~38s in the extension against 46.7–57s in
+Node, not measured side by side. So for a single WASM-heavy phase, measure the
+direction rather than assume it.
 
 ---
 
@@ -370,8 +427,8 @@ IndexedDB writes. Treat the Node deserialize figure as a floor, not a target.
   claims a warm reference should be re-measured rather than trusted.
 - **Do not measure immediately after building a reference in the same process.**
   One run that did so took 1052s where two independent fresh-process measurements
-  say ~49s. The cause is not established (heap/GC pressure, or a reference facade
-  not fully torn down). Restart the process, or build the reference in one run and
+  said ~49s (August 2026, uncollapsed reference). The cause is not established
+  (heap/GC pressure, or a reference facade not fully torn down). Restart the process, or build the reference in one run and
   measure in another. This is also the main argument against building references
   on user devices.
 - **Sample long enough.** An early four-minute window suggested 419 events/sec;
@@ -394,6 +451,10 @@ IndexedDB writes. Treat the Node deserialize figure as a floor, not a target.
 
 - `docs/adr/0003-preseed-reference.md` — the pre-seed mechanism, its measurements,
   and the `height <= birthday` safety rule
+- `docs/adr/0006-collapse-preseed-dust-trees.md` — why the reference's dust trees
+  are collapsed, and the evidence that a collapsed reference syncs identically
+- `packages/core/src/sync/dust-reference-collapse.ts` — the collapse and its checks
+- `scripts/collapse-preseed.mjs` — the header documents every flag
 - `packages/core/src/diagnostics/timings.ts` — the recorder, the `TimingStore`
   interface, and what it deliberately does not capture
 - `packages/core/src/diagnostics/fs-timing-store.ts` — the Node/CLI store

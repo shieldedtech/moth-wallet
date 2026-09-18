@@ -83,9 +83,15 @@ jobs:
       - name: Install dependencies
         run: yarn install --immutable
 
-      - name: Build core package
-        run: yarn workspace @shieldedtech/moth-wallet build
+      # Every package, not just core: the prepared bundle is tested below with the
+      # built CLI before it is uploaded.
+      - name: Build packages
+        run: yarn build
 
+      # v2: references are now stored with their dust trees collapsed, and the
+      # preprod indexer renumbered its event ids after the v1 references were
+      # cached, so a v1 preprod reference is refused on refresh. A new key makes the
+      # next run build from genesis instead of restoring state it cannot use.
       - name: Restore public preseed state
         id: restore-preseed
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -93,9 +99,9 @@ jobs:
           path: |
             ~/.moth/sync/${{ matrix.network }}/__empty_ref__
             ~/.moth/empty-ref/${{ matrix.network }}/height.txt
-          key: preseed-v1-${{ matrix.network }}-${{ github.run_id }}
+          key: preseed-v2-${{ matrix.network }}-${{ github.run_id }}
           restore-keys: |
-            preseed-v1-${{ matrix.network }}-
+            preseed-v2-${{ matrix.network }}-
 
       - name: Install preview reference mnemonic
         if: matrix.network == 'preview'
@@ -127,14 +133,35 @@ jobs:
           path: |
             ~/.moth/sync/${{ matrix.network }}/__empty_ref__
             ~/.moth/empty-ref/${{ matrix.network }}/height.txt
-          key: preseed-v1-${{ matrix.network }}-${{ github.run_id }}
+          key: preseed-v2-${{ matrix.network }}-${{ github.run_id }}
 
       - name: Remove reference mnemonic
         if: always()
         run: rm -f "$HOME/.moth/empty-ref/$NETWORK/mnemonic.txt"
 
+      # Collapses the dust trees on the way out, and refuses to export anything it
+      # could not collapse and verify.
       - name: Export preseed files
         run: node scripts/export-preseed.mjs --network "$NETWORK"
+
+      # Independent of the export: re-reads the files as written and proves the
+      # dust state is collapsed, means what the reference meant, and is recorded
+      # correctly in the manifest.
+      - name: Verify the exported bundle is collapsed and valid
+        run: node scripts/collapse-preseed.mjs --dir "$EXPORT_DIR" --check
+
+      # The whole suite runs against the tree the bundle was exported into, so the
+      # shipped-bundle tests see the new files.
+      - name: Run tests
+        run: yarn turbo run test
+
+      # A brand-new CLI wallet seeded from exactly these files, synced to tip on the
+      # live network, and relaunched to prove its dust state restores in seconds.
+      - name: End-to-end test the exported bundle with the CLI
+        env:
+          MOTH_E2E_NETWORK: ${{ matrix.network }}
+          MOTH_E2E_PRESEED_DIR: ${{ github.workspace }}/${{ env.EXPORT_DIR }}
+        run: yarn workspace @shieldedtech/moth-cli test:e2e
 
       - name: Record checksums and job summary
         run: |

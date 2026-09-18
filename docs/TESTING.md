@@ -593,9 +593,60 @@ The daemon subprocess's stderr is plumbed to vitest's stderr with a `[daemon <wa
 
 ---
 
+## Running the pre-seed end-to-end test (live network)
+
+One automated tier runs against a public network instead of the local stack: `packages/cli/tests/e2e/preseed-network.test.ts`. It walks the path a new user takes with a pre-seed bundle, and checks the result is fast as well as correct. A wallet whose dust state takes a minute to restore still works, so nothing else in the suite would notice that coming back.
+
+It runs the built CLI in a throwaway `HOME`, so it never touches `~/.moth`. It needs no secrets: the wallet is generated during the test and never funded.
+
+### Setup and run
+
+```bash
+cd ~/code/moth-wallet
+yarn build
+MOTH_E2E_NETWORK=preprod yarn workspace @shieldedtech/moth-cli test:e2e
+```
+
+| Variable | Purpose |
+|---|---|
+| `MOTH_E2E_NETWORK` | `preview` or `preprod`. Without it the test skips itself. |
+| `MOTH_E2E_PRESEED_DIR` | The bundle directory to import. Defaults to the extension's committed bundle for that network, `packages/extension/public/preseed/<network>/`. |
+| `MOTH_E2E_KEEP_HOME` | Set to keep the temporary `HOME` afterwards, for inspecting its `.moth/` after a failure. |
+
+The test removes `MOTH_INDEXER_URL`, `MOTH_NODE_URL`, `MOTH_PROVER` and `MOTH_PROOF_SERVER_URL` from the environment it gives the CLI, so a shell override cannot point it at a different indexer from the network under test. The sync steps allow up to 40 minutes each.
+
+### What it checks
+
+1. **`preseed import`** — the stored height matches the manifest, the dust state is stored collapsed (`collapsed` or `already-collapsed`), and both cursor witnesses are stored exactly as the manifest carries them.
+2. **`preseed refresh --verbose`** — against the live indexer. Fails on a renumbering refusal or a missing witness. Checks the reference is still collapsed, and that `empty-ref/<network>/dust-collapsed.txt` matches its dust cursor.
+3. **`wallet generate`, then `balance --verbose` until synced** — the sync log shows the wallet was pre-seeded with dust (`Pre-seed complete — … dust`), and its own dust state is under 1 MB.
+4. **A second `balance --verbose` launch** — the gap between the `Restoring dust state from cache...` line and the next sync line is under 10 s, and deserializing the saved dust state directly in the test takes under 10 s too.
+
+Phases are read from the `--verbose` log (`[<ISO time>] [sync] <message>` on stderr) rather than `moth diagnostics timings`. That timeline is written by fire-and-forget read-modify-write appends, so phases milliseconds apart — the fast restore this test checks for — can overwrite each other in it.
+
+**Failure modes**:
+- Step 2 reports a renumbering or refuses the witness → the indexer's event ids have moved since the bundle was cut. The bundle needs re-cutting; this is the failure the test exists to catch.
+- Step 4 over 10 s → the reference, or the wallet seeded from it, is not collapsed. Check `preseed import`'s `dust` outcome and `node scripts/collapse-preseed.mjs --check`.
+- Anything else on a public network → check the indexer is answering before blaming the change.
+
+### In CI
+
+- **`.github/workflows/ci.yml`, job `e2e-preprod`** — every pull request (forks included) and every push to main, with `MOTH_E2E_NETWORK=preprod` against the committed bundle. **Advisory** (`continue-on-error: true`, 45-minute timeout): it depends on the live preprod indexer, so an outage there can fail it with no change in the repo. It reports; it does not block merging.
+- **`.github/workflows/prepare-preseed.yml`** — against each freshly exported bundle (`MOTH_E2E_PRESEED_DIR`), after `collapse-preseed.mjs --check` and the test suite, and before checksums are recorded. Here a failure stops the upload.
+
+### Offline pre-seed tests
+
+The ledger property this depends on, that a collapsed reference syncs forward to the same roots as the original, is also tested offline as part of `yarn test`. `packages/core/tests/unit/sync/dust-reference-collapse.test.ts` replays 771 recorded preview dust events, five of them dtime updates inside the collapsed range, against the original and the collapsed reference. The fixtures are real chain data in `packages/core/tests/fixtures/preseed/`; the README there records where they came from and how to re-record them.
+
+The committed bundles themselves are checked by `node scripts/collapse-preseed.mjs --check` (needs core built), which CI runs in the `test` job and again before packaging the extension.
+
+---
+
 ## Why `undeployed` only?
 
 The smokes target the local docker stack (network id `undeployed`). Public testnets (`preview`, `preprod`) use HTTP faucets that aren't scriptable from this repo's tooling — see [memory/genesis-airdrop-scope](../.claude/projects/.../memory/genesis-airdrop-scope.md) for the full mapping. To smoke a public network, the funding step changes but every other part of the recipes works identically.
+
+The [pre-seed end-to-end test](#running-the-pre-seed-end-to-end-test-live-network) is the exception: its wallet is never funded, so it needs no faucet.
 
 ## Common diagnostic commands
 

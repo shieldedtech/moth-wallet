@@ -131,6 +131,42 @@ describe('probeDustGenerations', () => {
     expect(FakeSocket.all).toHaveLength(0);
   });
 
+  it.each([-1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1])('rejects invalid tree size %s without opening a socket', async (size) => {
+    vi.useFakeTimers();
+    const pending = probeDustGenerations(INDEXER, ADDRESS, size, {socket});
+    await vi.runAllTimersAsync();
+    expect((await pending).kind).toBe('unknown');
+    expect(FakeSocket.all).toHaveLength(0);
+  });
+
+  it.each([
+    'not json',
+    'null',
+    JSON.stringify({type: 'next', id: '1', payload: {data: null}}),
+    JSON.stringify({type: 'next', id: '1', payload: {data: {dustGenerations: {__typename: 'NewHistoryItem'}}}}),
+  ])('does not turn unreadable history into an empty result: %s', async (frame) => {
+    const pending = probeDustGenerations(INDEXER, ADDRESS, 10, {socket});
+    const sock = FakeSocket.all[0]!;
+    sock.handshake();
+    sock.onmessage?.({data: frame});
+    sock.complete();
+    expect((await pending).kind).toBe('unknown');
+  });
+
+  it('does not accept completion for another subscription', async () => {
+    const pending = probeDustGenerations(INDEXER, ADDRESS, 10, {socket});
+    const sock = FakeSocket.all[0]!;
+    sock.handshake();
+    sock.onmessage?.({data: JSON.stringify({type: 'complete', id: 'other'})});
+    expect((await pending).kind).toBe('unknown');
+  });
+
+  it('does not accept completion before subscribing', async () => {
+    const pending = probeDustGenerations(INDEXER, ADDRESS, 10, {socket});
+    FakeSocket.all[0]!.complete();
+    expect((await pending).kind).toBe('unknown');
+  });
+
   it('answers keepalive pings', async () => {
     const pending = probeDustGenerations(INDEXER, ADDRESS, 10, {socket});
     const sock = FakeSocket.all[0]!;
@@ -172,8 +208,8 @@ describe('classifyDustGenerationsMessage', () => {
     expect(classifyDustGenerationsMessage(frame).kind).toBe('error');
   });
 
-  it('ignores frames it does not understand', () => {
-    expect(classifyDustGenerationsMessage('not json').kind).toBe('other');
-    expect(classifyDustGenerationsMessage(JSON.stringify({type: 'next', payload: {data: {dustGenerations: {__typename: 'Something'}}}})).kind).toBe('other');
+  it('rejects history frames it does not understand', () => {
+    expect(classifyDustGenerationsMessage('not json').kind).toBe('error');
+    expect(classifyDustGenerationsMessage(JSON.stringify({type: 'next', id: '1', payload: {data: {dustGenerations: {__typename: 'Something'}}}})).kind).toBe('error');
   });
 });

@@ -40,6 +40,16 @@ export interface CursorWitness {
   readonly digest: string;
 }
 
+/** Validate evidence before storing it, regardless of its transport format. */
+export function isCursorWitness(value: unknown, stream?: WitnessStream): value is CursorWitness {
+  if (typeof value !== 'object' || value === null) return false;
+  const witness = value as Partial<CursorWitness>;
+  return (witness.stream === 'dustLedgerEvents' || witness.stream === 'zswapLedgerEvents') &&
+    (stream === undefined || witness.stream === stream) &&
+    typeof witness.id === 'number' && Number.isSafeInteger(witness.id) && witness.id > 0 &&
+    typeof witness.digest === 'string' && /^[0-9a-f]{16}$/.test(witness.digest);
+}
+
 /** Verdict for a stored witness re-checked against a live indexer. */
 export type WitnessVerdict =
   /** Same event at the same id: the cursor is still valid. */

@@ -5,6 +5,8 @@ import {
   SyncStatus,
   syncDisplayReducer,
 } from '../components/moth/sync-status';
+import { syncStatusView } from '../lib/ui/sync-view';
+import { makeBalances } from './balances-fixture';
 
 describe('SyncStatus', () => {
   it('names the network-independent DUST wallet in sync progress', () => {
@@ -21,8 +23,36 @@ describe('SyncStatus', () => {
       <SyncStatus view={{ shielded: 100, unshielded: 75, dust: 25 }} />,
     );
 
-    expect(html).toContain('aria-label="Syncing, 67%"');
+    expect(html).toContain('aria-label="Syncing, 66%"');
     expect(html).not.toContain('>Synced</span>');
+  });
+
+  it.each([99, 99.9])('keeps the header syncing when DUST is at %s percent', (dust) => {
+    const html = renderToStaticMarkup(
+      <SyncStatus view={{ shielded: 100, unshielded: 100, dust }} defaultOpen />,
+    );
+
+    expect(html).toContain('aria-label="Syncing, 99%"');
+    expect(html).not.toContain('>Synced</span>');
+  });
+
+  it.each([995, 1000, 1001])('waits for DUST completion with %s/1000 applied', (applied) => {
+    const balances = makeBalances({ dustSynced: false });
+    balances.subProgress.dust = { applied, total: 1000 };
+    const syncingHtml = renderToStaticMarkup(
+      <SyncStatus view={syncStatusView(balances)} defaultOpen />,
+    );
+
+    expect(syncingHtml).toContain('aria-label="Syncing, 99%"');
+    expect(syncingHtml).toContain('>99%</span>');
+    expect(syncingHtml).not.toContain('>Synced</span>');
+
+    balances.syncProgress.dustSynced = true;
+    const syncedHtml = renderToStaticMarkup(
+      <SyncStatus view={syncStatusView(balances)} defaultOpen />,
+    );
+    expect(syncedHtml).toContain('aria-label="Synced"');
+    expect(syncedHtml).not.toContain('>99%</span>');
   });
 
   it('keeps a previously synced status during a brief tip regression', () => {

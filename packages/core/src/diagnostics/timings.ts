@@ -5,7 +5,8 @@
 // those at whatever boundary a surface has turns them into a timeline with no
 // further instrumentation: the gap between two labels IS the cost of the phase
 // between them. That technique localised the pre-seed reference cost to a single
-// 46.7s DustLocalState.deserialize with every other startup stage at 0.0s.
+// 46.7s DustLocalState.deserialize with every other startup stage at 0.0s — the
+// cost the reference's collapsed dust trees now remove (sync/dust-reference-collapse.ts).
 //
 // The arithmetic and the policy (enabled/disabled, bounded history, never throw)
 // are identical everywhere; only the persistence differs — storage.local in the

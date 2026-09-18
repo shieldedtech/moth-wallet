@@ -26,10 +26,17 @@
 // blobs are already JSON, and nesting them as JSON string values would escape
 // every quote in a 10 MB document before compression ever saw it.
 //
+// The dust state's Merkle trees are collapsed on the way out (see
+// packages/core/src/sync/dust-reference-collapse.ts): 5.47 MB of preprod dust
+// state becomes ~3.7 KB, and every wallet seeded from the bundle restores it in
+// milliseconds instead of ~57s. An export that cannot be collapsed and verified is
+// refused. `scripts/collapse-preseed.mjs --check` verifies the result independently.
+//
 // Usage:
 //   node scripts/export-preseed.mjs                  # preprod
 //   node scripts/export-preseed.mjs --network preview
 //   node scripts/export-preseed.mjs --check          # report, write nothing
+//   node scripts/export-preseed.mjs --no-collapse    # comparison artifact only; restores slowly
 //
 // Build one first if the network has none:
 //   node scripts/sync-benchmark.mjs --warm-reference --network <net> --timeout 9000
@@ -46,6 +53,7 @@ const { values } = parseArgs({
   options: {
     network: { type: 'string', default: 'preprod' },
     check: { type: 'boolean', default: false },
+    'no-collapse': { type: 'boolean', default: false },
   },
 });
 
@@ -81,6 +89,32 @@ for (const part of PARTS) {
     process.exit(1);
   }
   states[part] = value;
+}
+
+// Collapse the dust trees before anything below measures, witnesses or writes
+// them. A reference straight out of a chain walk carries a generation tree
+// bloated by a ledger-v8 8.1.x defect — 5.47 MB on preprod, ~57s to deserialize
+// on every launch of every wallet seeded from it. See
+// packages/core/src/sync/dust-reference-collapse.ts. The cursor is untouched, so
+// the witnesses below read the same event either way, and the manifest's sizes
+// are measured from the collapsed bytes because those are what ship.
+//
+// Fatal rather than best-effort: a silently uncollapsed export is a regression
+// nothing downstream notices until `collapse-preseed.mjs --check`. --no-collapse
+// exists only to cut a comparison artifact.
+if (!values['no-collapse']) {
+  try {
+    const { json, report } = core.collapseDustReference(states.dust);
+    states.dust = json;
+    console.log(
+      `dust:     ${report.changed ? 'collapsed' : 'already collapsed'} — ` +
+        `${report.stateBytesBefore} B -> ${report.stateBytesAfter} B of state`,
+    );
+  } catch (err) {
+    console.error(`Refusing to export: could not collapse the dust state — ${err.message}`);
+    console.error('Pass --no-collapse to export it uncollapsed (every wallet seeded from it restores slowly).');
+    process.exit(1);
+  }
 }
 
 // How stale the export is, so the number is recorded rather than guessed at

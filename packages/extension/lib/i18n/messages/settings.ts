@@ -18,10 +18,12 @@ export const settings = {
   settings_preseedWarmingOff: 'Off',
   settings_preseedWarmingOn: 'Preparing',
   settings_preseedWarmingReady: 'Ready',
+  settings_preseedRefresh: 'Update',
+  settings_preseedRefreshing: 'Updating…',
   settings_preseedWarmingIncluded: 'Included',
   settings_preseedWarmingProgress: 'Preparing $1%',
   settings_preseedWarmingDescriptionReady:
-    '$1 is prepared. New accounts start syncing in seconds instead of scanning the whole chain.',
+    '$1 is prepared. Update it to shorten the first sync for future accounts.',
   settings_preseedWarmingDescriptionBundled:
     '$1 comes prepared with this release and installs the next time you unlock. There is nothing to do here.',
   settings_preseedWarmingDescriptionOff:

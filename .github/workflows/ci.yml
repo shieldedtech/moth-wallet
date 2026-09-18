@@ -72,6 +72,53 @@ jobs:
       - name: Run tests
         run: yarn turbo run test
 
+      # An uncollapsed pre-seed bundle is the same shape as a collapsed one and
+      # three orders of magnitude larger, and nothing else here would notice — the
+      # symptom is every new wallet taking a minute to start.
+      - name: Check committed preseed bundles are collapsed and valid
+        run: node scripts/collapse-preseed.mjs --check
+
+      - name: Verify production reference worker in Chrome
+        env:
+          CHROME_BIN: google-chrome
+        run: node scripts/test-reference-worker.mjs
+
+  # A brand-new CLI wallet seeded from the committed preprod pre-seed bundle:
+  # import it (witnesses included), refresh it, create a wallet, sync it to tip,
+  # and relaunch to prove its dust state restores in seconds. It needs no secrets,
+  # so it runs on pull requests from forks too.
+  #
+  # Advisory: it talks to the live preprod indexer, so an outage there can fail it
+  # without any change here. It reports on every PR and does not block merging.
+  e2e-preprod:
+    name: E2E preprod pre-seed (advisory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: yarn
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Build packages
+        run: yarn build
+
+      - name: End-to-end test the committed preprod bundle with the CLI
+        env:
+          MOTH_E2E_NETWORK: preprod
+        run: yarn workspace @shieldedtech/moth-cli test:e2e
+
   # Reported, not enforced: there are no thresholds yet, so this job exists to
   # publish a number and make the trend visible. Once thresholds are set from
   # this baseline, they become a floor, at which point this stops being advisory

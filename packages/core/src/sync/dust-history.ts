@@ -50,17 +50,26 @@ export type DustGenerationsMessage =
 
 /** Classify one graphql-transport-ws frame of the dustGenerations subscription. */
 export function classifyDustGenerationsMessage(raw: unknown): DustGenerationsMessage {
-  let msg: {type?: string; payload?: unknown};
+  let parsed: unknown;
   try {
-    msg = JSON.parse(String(raw)) as typeof msg;
+    parsed = JSON.parse(String(raw));
   } catch {
-    return {kind: 'other'};
+    return {kind: 'error', detail: 'malformed subscription JSON'};
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    return {kind: 'error', detail: 'invalid subscription frame'};
+  }
+  const msg = parsed as {type?: string; id?: unknown; payload?: unknown};
+  if (['next', 'error', 'complete'].includes(msg.type ?? '') && msg.id !== SUBSCRIPTION_ID) {
+    return {kind: 'error', detail: 'unexpected subscription id'};
   }
   switch (msg.type) {
     case 'connection_ack':
       return {kind: 'ack'};
     case 'ping':
       return {kind: 'ping'};
+    case 'pong':
+      return {kind: 'other'};
     case 'complete':
       return {kind: 'complete'};
     case 'error':
@@ -75,13 +84,15 @@ export function classifyDustGenerationsMessage(raw: unknown): DustGenerationsMes
         case 'DustGenerationDtimeUpdateItem':
           return {kind: 'dtime'};
         case 'DustGenerationsProgress':
-          return {kind: 'progress', highestIndex: event.highestIndex ?? -1};
+          return Number.isSafeInteger(event.highestIndex) && event.highestIndex! >= -1
+            ? {kind: 'progress', highestIndex: event.highestIndex!}
+            : {kind: 'error', detail: 'invalid generation progress'};
         default:
-          return {kind: 'other'};
+          return {kind: 'error', detail: 'unrecognized DUST history data'};
       }
     }
     default:
-      return {kind: 'other'};
+      return {kind: 'error', detail: 'unrecognized subscription frame'};
   }
 }
 
@@ -96,7 +107,10 @@ export function probeDustGenerations(
   endIndexExclusive: number,
   opts: ProbeOptions = {},
 ): Promise<DustHistoryVerdict> {
-  if (endIndexExclusive <= 0) return Promise.resolve({kind: 'none'});
+  if (!Number.isSafeInteger(endIndexExclusive) || endIndexExclusive < 0) {
+    return Promise.resolve({kind: 'unknown', reason: 'invalid generation tree size'});
+  }
+  if (endIndexExclusive === 0) return Promise.resolve({kind: 'none'});
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const connect: SocketFactory = opts.socket ?? ((url, protocol) => new WebSocket(url, protocol) as unknown as SocketLike);
 
@@ -109,6 +123,7 @@ export function probeDustGenerations(
       return;
     }
     let settled = false;
+    let subscribed = false;
     let entries = 0;
     const finish = (verdict: DustHistoryVerdict) => {
       if (settled) return;
@@ -126,9 +141,11 @@ export function probeDustGenerations(
     socket.onopen = () => socket.send(JSON.stringify({type: 'connection_init'}));
     socket.onerror = () => finish({kind: 'unknown', reason: `could not reach ${wsUrl(indexerUrl)}`});
     socket.onmessage = (event) => {
+      if (settled) return;
       const message = classifyDustGenerationsMessage(event.data);
       switch (message.kind) {
         case 'ack':
+          subscribed = true;
           socket.send(
             JSON.stringify({
               id: SUBSCRIPTION_ID,
@@ -147,7 +164,9 @@ export function probeDustGenerations(
           finish({kind: 'some', entries});
           return;
         case 'complete':
-          finish(entries > 0 ? {kind: 'some', entries} : {kind: 'none'});
+          finish(!subscribed
+            ? {kind: 'unknown', reason: 'subscription completed before it started'}
+            : entries > 0 ? {kind: 'some', entries} : {kind: 'none'});
           return;
         case 'error':
           finish({kind: 'unknown', reason: `indexer rejected the query: ${message.detail}`});

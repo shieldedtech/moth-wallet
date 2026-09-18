@@ -44,7 +44,7 @@ A brand-new account is not usable the instant you create it. The DUST sub-wallet
 
 This is a property of where zero-knowledge chains currently are, not a defect in Midnight or in Moth, and the protocol's own roadmap addresses it further later this year. What follows is how Moth makes the wait tolerable in the meantime.
 
-Most of that replay is identical for every wallet, so it does not need doing more than once. A **pre-seed reference** is an unfunded throwaway wallet's synced state, captured at a known block height. A new account starts from that height instead of from genesis. On preprod this is the difference between roughly 78 minutes and roughly 29 seconds.
+Most of that replay is identical for every wallet, so it does not need doing more than once. A **pre-seed reference** is an unfunded throwaway wallet's synced state, captured at a known block height. A new account starts from that height instead of from genesis. On preprod this was measured as the difference between roughly 78 minutes and roughly 29 seconds, before the reference's dust state was collapsed (see below).
 
 The reference holds nothing and controls nothing, so it is safe to distribute — it is a snapshot of public chain state, not of anyone's funds. Its *mnemonic*, by contrast, is never published; see [`docs/adr/0003-preseed-reference.md`](docs/adr/0003-preseed-reference.md).
 
@@ -53,7 +53,9 @@ Two things constrain when it is used:
 - It is applied **only to wallets that provably cannot have had activity before the reference height** — a wallet created after the reference was built. A wallet restored from a seed phrase has no such guarantee and takes the full walk, because starting it mid-history would hide its own funds from it.
 - Each sub-wallet carries an independent cursor, so DUST can start at the reference height while shielded and unshielded resume from their own caches.
 
-Builds bundle references for preview and preprod. Other networks sync from genesis until one is built.
+**The reference's dust trees are collapsed.** A seeded wallet inherits the reference's dust state and deserializes it every time it starts, in the CLI, TUI and extension alike. On preprod that state was 5.5 MB and took about a minute to restore, on every launch. Nearly all of it was a DUST generation tree bloated by a defect in ledger-v8 8.1.x, which leaves the root unchanged and so costs only space and time. Moth collapses the populated range of the reference's trees wherever a reference is built, refreshed, imported, exported or handed out, and checks that the result has the same roots, balance and frontiers before anything uses it. The preprod state becomes 3,666 bytes and restores in about 7 ms. A wallet's own dust state is never collapsed, so a wallet seeded before this change keeps the state it was seeded with; for a wallet that holds DUST, collapsing is unsafe on this ledger. See [ADR 0006](docs/adr/0006-collapse-preseed-dust-trees.md).
+
+Builds bundle collapsed references for preview and preprod. The qanet bundle has been removed: qanet's indexer was unavailable, so it could not be re-cut or verified. Until a bundle is added back, qanet wallets sync from genesis and the extension offers to build a reference on the device. Other networks sync from genesis until one is built.
 
 Building and refreshing is two steps: sync an unfunded reference wallet to tip, then package it into the extension. The first sync is the slow part, so budget tens of minutes to an hour depending on the network. Later runs resume the cached reference and only process the intervening blocks.
 
@@ -61,18 +63,38 @@ Building and refreshing is two steps: sync an unfunded reference wallet to tip, 
 # 1. Prepare: build or incrementally refresh the reference in ~/.moth
 node scripts/prepare-preseed.mjs --network preprod
 
-# 2. Package: copy it into packages/extension/public/preseed/<network>/
+# 2. Package: copy it into packages/extension/public/preseed/<network>/,
+#    collapsing its dust trees (refuses a reference it cannot collapse and verify)
 node scripts/export-preseed.mjs --network preprod
+
+# 3. Verify: prove the bundle is collapsed and valid, writing nothing
+node scripts/collapse-preseed.mjs --network preprod --check
 
 # Report age and size without writing anything
 node scripts/export-preseed.mjs --check
 ```
 
+`scripts/collapse-preseed.mjs` works on bundle directories and needs only the core package built — no indexer, no sync store. With no flags it collapses every bundle the extension ships; `--network <id>` picks one, and `--dir <bundle-dir>` names any bundle directory. `--check` verifies and writes nothing, and fails on an uncollapsed or invalid bundle; `--json` prints a machine-readable report. Every check runs before anything is written: the manifest's network, height and both witnesses; every part present, gzipped JSON, and recorded in the manifest; a usable dust cursor; core's verified collapse; and the exact compressed bytes reading back to the same roots, no UTXOs and the same cursor. Writes go to a temporary file and are renamed into place. A freshly exported bundle is already collapsed, so on one of those it changes nothing. `export-preseed.mjs --no-collapse` cuts an uncollapsed bundle for comparison only; CI refuses to ship one.
+
 A stale reference costs catch-up time, not correctness — the wallet syncs forward from the reference height — so one cut at release time stays useful for as long as the release does. Roughly half a second of catch-up per hour of age, measured on preprod. Refresh it when cutting a release rather than on a schedule; `--check` reports the age it would ship.
 
-### The preprod reference shipped before 2026-08-21 is stale — clear your cache
+### Preprod renumbered its event ids, twice — and the bundles are re-cut
 
-If you have synced a preprod wallet with a build from before this date, clear that
+Sync cursors are event sequence numbers assigned by the indexer, not heights
+derived from the chain. When an indexer renumbers, every cursor written under the
+old numbering starts naming a different event, and nothing in the cursor itself
+shows it. Preprod has done this twice.
+
+**The first renumbering (2026-08-21).** The default preprod indexer used to have a
+22-event hole in its dust id space; the host now serving that name numbers
+contiguously. Cursors written before that change sit 22 events too high, and the
+preprod reference bundled before that date (dust cursor `1431375`) is one of them
+— a wallet seeded from it resumes 22 dust events beyond the state the snapshot
+actually holds. It fails silently: no error, no warning, dust generation history
+missing those events, and the balance quietly wrong. That is why the fix was a
+cache clear rather than something the wallet can repair in place.
+
+If you synced a preprod wallet with a build from before 2026-08-21, clear that
 account's sync cache once:
 
 ```bash
@@ -82,32 +104,31 @@ rm -rf ~/.moth/sync/preprod                            # CLI and TUI
 
 In the extension: Settings → Advanced → Clear sync cache, with preprod selected.
 
-**Why.** Sync cursors are event sequence numbers assigned by the indexer, not
-heights derived from the chain. The default preprod indexer used to have a
-22-event hole in its dust id space; the host now serving that name numbers
-contiguously. Cursors written before that change therefore sit 22 events too high,
-and the bundled preprod reference (dust cursor `1431375`) is one of them — a wallet
-seeded from it resumes 22 dust events beyond the state the snapshot actually
-holds.
-
-**What it looks like if you don't.** Nothing. No error, no warning. Dust
-generation history is missing those events and the balance is quietly wrong.
-That silence is the whole problem, and it is why the fix is a cache clear rather
-than something the wallet can repair in place.
-
-**What you lose by clearing.** Sync time only — the account rescans from genesis,
+What you lose by clearing is sync time only — the account rescans from genesis,
 which is minutes for shielded and up to about an hour for dust on preprod. No key
 material and no funds are involved. Nothing is destroyed by the stale cursor
 either; the events are on chain and a rescan finds them.
 
-A rebuilt reference is being cut against the current indexer. Until it lands, a
-preprod account created on a fresh install will use the bundled reference and
-inherit the same skew, so clear the cache after your first sync there too. Builds
-from 2026-08-21 onward refuse a reference whose cursor no longer names the event it
-named when it was written — see [ADR 0003](docs/adr/0003-preseed-reference.md) and
-issue #40.
+Builds from 2026-08-21 onward record a witness for each reference cursor and
+refuse a reference whose cursor no longer names the event it named when it was
+written — see [ADR 0004](docs/adr/0004-preseed-distribution.md) and issue #40.
 
-The manually dispatched `Prepare preseed references` workflow prepares preview, preprod, or both in parallel. It restores only public reference state, refreshes to chain tip, exports the files, records SHA-256 checksums, and uploads reviewable workflow artifacts. It does not publish assets, modify the repository, open or merge a PR, or use OIDC. See [`docs/BENCHMARKING.md`](docs/BENCHMARKING.md) for what the preparation does and the sharp edges around it, and [ADR 0004](docs/adr/0004-preseed-distribution.md) for the longer-term distribution design.
+**The second renumbering.** The preprod indexer has since renumbered its ids by
++22 again. The preprod bundle cut on 2026-08-21 records its dust witness at event
+1,449,958 and its shielded witness at 1,449,828; those events are now at 1,449,980
+and 1,449,850. The extension's witness check refuses to seed from that bundle.
+`moth preseed import` did not refuse it, because import dropped every bundle's
+witnesses: a CLI import of the stale bundle went through, and `moth preseed
+refresh` then looped on "values inserted non-linearly". Import now reads the
+witnesses in both bundle formats, and refuses a malformed or missing one.
+
+**The preview and preprod bundles are re-cut, with their dust trees collapsed** —
+preprod rebuilt from genesis, preview refreshed to tip from its previous bundle,
+whose witnesses still matched. The extension now replaces a stored reference that is older than the
+bundled one, so an upgrade installs the re-cut reference in place of the stale
+one. A stored reference at least as new as the bundled one is kept.
+
+The manually dispatched `Prepare preseed references` workflow prepares preview, preprod, or both in parallel. It builds every package, restores only public reference state, refreshes to chain tip, and exports the files with their dust trees collapsed. Before it records SHA-256 checksums and uploads reviewable workflow artifacts, it verifies the export with `collapse-preseed.mjs --check`, runs the test suite, and runs the CLI end-to-end test against the exported files (see [`docs/TESTING.md`](docs/TESTING.md#running-the-pre-seed-end-to-end-test-live-network)). Its cache key is `preseed-v2`, so its next run builds each reference from genesis rather than restoring state stored before collapsing and before preprod's second renumbering. It does not publish assets, modify the repository, open or merge a PR, or use OIDC. Separately, CI checks the committed bundles with `collapse-preseed.mjs --check` on every pull request and before packaging the extension. See [`docs/BENCHMARKING.md`](docs/BENCHMARKING.md) for what the preparation does and the sharp edges around it, [ADR 0004](docs/adr/0004-preseed-distribution.md) for the longer-term distribution design, and [ADR 0006](docs/adr/0006-collapse-preseed-dust-trees.md) for the collapse.
 
 ## Prerequisites
 

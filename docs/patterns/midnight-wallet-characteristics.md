@@ -111,13 +111,25 @@ available option.
 
 **Which makes state transplanting an interim measure, not the answer.** Sync one
 empty reference wallet to tip and hand its serialized tree to every new wallet
-with the keys swapped: 78.6 minutes becomes 29.3 seconds, today, against the SDK
-you can actually ship. It works precisely *because* the tree is global — the thing
-that makes DUST expensive is the same thing that makes it shareable.
+with the keys swapped: 78.6 minutes became 29.3 seconds (measured in August 2026,
+before the collapse below), today, against the SDK you can actually ship. It works
+precisely *because* the tree is global — the thing that makes DUST expensive is
+the same thing that makes it shareable.
+
+**The tree you transplant should be collapsed first.** Most of a synced dust
+state is not the tree, but a defect in ledger-v8 8.1.x: replay collapses each
+generation the wallet does not own, then a later dtime update on an
+already-collapsed leaf re-expands it for good. Both shapes hash to the same root,
+so nothing notices, but a seeded wallet deserializes the bloat on every launch.
+On preprod that was 5,474,535 bytes and ~57s. Collapsing the reference's
+populated range takes it to 3,666 bytes and ~7 ms, with the same roots and
+frontier. Only an unfunded state can be collapsed this way: on 8.1.x, reading a
+collapsed leaf the wallet owns panics. See
+[ADR 0006](../adr/0006-collapse-preseed-dust-trees.md).
 
 Treat it as a bridge with a visible far bank. Once a wallet SDK release consumes
-the collapsed-update endpoints, shipping a 10 MB tree stops being worth doing and
-the transplant retires rather than migrating. See
+the collapsed-update endpoints, shipping a serialized tree stops being worth doing
+and the transplant retires rather than migrating. See
 [pre-seeding](./preseed-sync-acceleration.md) for what survives that transition
 and what does not.
 

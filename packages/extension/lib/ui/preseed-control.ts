@@ -5,12 +5,9 @@
 // on preprod — was the only way to get one, and offering it everywhere was
 // right.
 //
-// It is no longer right everywhere. preprod, preview and qanet each ship a
-// reference in the package (see offscreen/bundled-preseed.ts), installed on the
-// first unlock. Offering to build one there is offering an hour of work to arrive
-// at what the user already has on disk. So the control is now scoped to the case
-// it was always for: networks this release ships nothing prepared for. The set is
-// probed rather than listed here, so adding a bundle needs no change to this.
+// Bundled references avoid the initial chain walk. Once ready, Settings offers
+// an explicit Update action that catches up from a retained verified reference.
+// Networks without a bundle offer the original opt-in background build.
 //
 // Note what this does NOT claim to fix. Because of the `height <= birthday`
 // guard, warming can never help the account whose creation prompted the user to
@@ -24,7 +21,7 @@ export type PreseedControl =
   /** Status not in yet (offscreen still coming up). Render nothing: guessing
    *  either way shows the user a claim that a poll one tick later retracts. */
   | 'unknown'
-  /** A usable reference is in the store. Nothing to offer, nothing to wait for. */
+  /** A reference is in the store. Offer an optional background update. */
   | 'ready'
   /** This release ships one for this network; it installs on unlock. Show that
    *  it is handled, but offer no build — the build would be redundant work. */

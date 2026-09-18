@@ -1137,7 +1137,7 @@
     "message": "Wird vorbereitet $1%"
   },
   "settings_preseedWarmingDescriptionReady": {
-    "message": "$1 ist vorbereitet. Neue Konten synchronisieren in Sekunden, anstatt die gesamte Chain zu durchsuchen."
+    "message": "$1 ist vorbereitet. Aktualisiere die Vorbereitung, um die erste Synchronisierung zukünftiger Konten zu verkürzen."
   },
   "settings_preseedWarmingDescriptionOff": {
     "message": "Neue Konten durchsuchen die gesamte Chain, was bis zu einer Stunde dauern kann. Aktiviere dies, um $1 einmalig im Hintergrund vorzubereiten, damit spätere Konten in Sekunden starten."
@@ -1639,5 +1639,11 @@
   },
   "accounts_revealNoPhraseReason": {
     "message": "Dieses Konto wurde aus einem Hex-Seed wiederhergestellt und hat daher keine Wiederherstellungsphrase — eine Phrase lässt sich aus einem Seed nicht ermitteln. Der Seed ist das Backup."
+  },
+  "settings_preseedRefresh": {
+    "message": "Aktualisieren"
+  },
+  "settings_preseedRefreshing": {
+    "message": "Wird aktualisiert…"
   }
 }

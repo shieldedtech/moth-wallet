@@ -453,7 +453,10 @@ export function registerHandlers(): void {
     // never delays the wallet becoming usable.
     if (settings.preseedWarming) {
       void getNetworkConfig()
-        .then((network) => offscreen.preseedWarm({ network }))
+        .then(async (network) => {
+          const status = await offscreen.preseedStatus({network});
+          if (!status.ready) await offscreen.preseedWarm({network});
+        })
         .catch(() => {});
     }
     return sessionStatus();

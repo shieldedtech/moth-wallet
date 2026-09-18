@@ -24,7 +24,7 @@ import {resolveProverConfig, type NetworkConfig} from '../types/network.js';
 import {createWalletProvingService} from '../proof/provider.js';
 import {NIGHT_TOKEN_ID, formatNight} from '../types/tokens.js';
 import {formatDustBalance} from '../wallet/balance-format.js';
-import {ensureEmptyRefCache, preSeedNewWallet} from './preseed.js';
+import {ensureEmptyRefCache, preSeedNewWallet, type EmptyRefStates} from './preseed.js';
 import {InMemorySyncStateStore, syncStateKey, type SyncStateStore, type WalletPart} from './sync-store.js';
 import {dedupingShieldedBuilder, dedupingDustBuilder} from './sdk-dedup.js';
 import {largestDustCoinFirst} from './dust-coin-selection.js';
@@ -395,6 +395,10 @@ export interface BatchUpdatesOptions {
 export interface WalletSyncOptions {
   /** Where serialized sync state is cached. Defaults to the filesystem store in Node, in-memory elsewhere. */
   syncStore?: SyncStateStore;
+  /** A witness-checked candidate from the host; core still gates each part by birthday/history. Null disables legacy lookup. */
+  reference?: EmptyRefStates | null;
+  /** First fully synced state, captured before balance subscribers run. Never blocks sync on async work. */
+  onInitialSyncSnapshot?: (snapshot: {shielded: string; unshielded: string; dust: string}) => void;
   /**
    * Event-batching overrides. Defaults favour throughput (size 500), which is
    * right for Node CLIs; UI hosts that share a thread with rendering should
@@ -497,7 +501,9 @@ export async function startWalletSync(
   if (missingParts.length > 0) {
     onProgress?.('Pre-seed: looking for a reference...');
     try {
-      const emptyRef = await ensureEmptyRefCache(network, onProgress, store);
+      const emptyRef = options?.reference !== undefined
+        ? options.reference
+        : await ensureEmptyRefCache(network, onProgress, store);
       if (emptyRef) {
         // Seeding a wallet past its own history would hide funds, so a part is only
         // seeded when that is impossible: a birthday at or after the reference height
@@ -678,6 +684,7 @@ export async function startWalletSync(
   const progressBaseline: ProgressBaseline = {value: null};
 
   let hasSavedCache = false;
+  let capturedInitialSync = false;
   let lastCacheSaveTime = 0;
   const subscription = facade
     .state()
@@ -688,6 +695,18 @@ export async function startWalletSync(
         const balances = extractBalancesPartial(s, syncStartTime, lastProgressPct, progressBaseline, latestBalances);
         latestBalances = balances;
         lastProgressPct = balances.syncProgress.percentage;
+
+        // Capture the immutable facade emission, not three later state reads:
+        // funds arriving after this point must not change the candidate. This
+        // only serializes; validation/collapse runs in the host's separate worker.
+        if (balances.synced && !capturedInitialSync && options?.onInitialSyncSnapshot) {
+          capturedInitialSync = true;
+          try {
+            options.onInitialSyncSnapshot(serializeReferenceCandidate(s));
+          } catch {
+            // Reference contribution is optional and cannot fail wallet sync.
+          }
+        }
 
         const nightTotal = (balances.unshielded[NIGHT_TOKEN_ID] ?? 0n) + (balances.shielded[NIGHT_TOKEN_ID] ?? 0n);
         const pct = Math.round(balances.syncProgress.percentage * 100);
@@ -806,6 +825,16 @@ export async function startWalletSync(
     stop,
     refresh,
     subscribe,
+  };
+}
+
+/** Copy one facade emission while its three sub-wallet states still belong together. */
+export function serializeReferenceCandidate(state: FacadeState): {shielded: string; unshielded: string; dust: string} {
+  if (!state.isSynced || state.pending.all.length !== 0) throw new Error('Wallet is not an idle, synced reference candidate');
+  return {
+    shielded: state.shielded.capabilities.serialization.serialize(state.shielded.state),
+    unshielded: state.unshielded.capabilities.serialization.serialize(state.unshielded.state),
+    dust: state.dust.capabilities.serialization.serialize(state.dust.state),
   };
 }
 

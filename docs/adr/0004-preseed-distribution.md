@@ -19,6 +19,16 @@ item 3's longer-term direction. Mainnet remains the intended bundled default
 once a mainnet reference has been built, validated, and accepted through the
 governance process. Hosting non-default references remains an open follow-up.
 
+**Updated 2026-09-15.** The workflow is still manual-only and read-only, and still
+covers preview and preprod only. It now builds every package, restores from a
+`preseed-v2` cache key (which forces one build from genesis, because stored
+references are now collapsed and the preprod indexer renumbered), and exports
+with the dust trees collapsed. Before recording checksums and uploading, it runs
+`scripts/collapse-preseed.mjs --check` against the exported bundle, the test
+suite, and the CLI end-to-end test against that bundle. CI checks the committed
+bundles on every pull request and before packaging the extension. The qanet
+bundle has been removed from the extension. See the 2026-09-15 addendum.
+
 ## Context
 
 ADR 0003 established that a pre-seed reference removes the DUST chain walk —
@@ -26,8 +36,9 @@ ADR 0003 established that a pre-seed reference removes the DUST chain walk —
 swaps the new wallet's keys in and keeps only `state`, `protocolVersion` and
 `offset`, so a reference contains no user-specific or secret material.
 
-Preprod's reference now ships **inside the extension package** (4.81 MB gzipped),
-loaded into IndexedDB on first sync. The release candidate also bundles the
+Preprod's reference now ships **inside the extension package** (4.81 MB gzipped
+when this was written; a few KB since its dust trees were collapsed, see the
+2026-09-15 addendum), loaded into IndexedDB on first sync. The release candidate also bundles the
 preview reference, solving the fresh-install case for both test networks while
 leaving three problems:
 
@@ -54,6 +65,13 @@ Reference sizes measured 2026-08-10:
 
 Size tracks chain length, so every network's reference grows over time and
 mainnet's will be the largest.
+
+> **Superseded 2026-09-15.** These are uncollapsed references. With their dust
+> trees collapsed ([ADR 0006](0006-collapse-preseed-dust-trees.md)) the dust state
+> is 3,666 bytes on preprod and 3,564 on preview, and the shipped preprod
+> `dust.dat.gz` falls from 5,139,554 B to a few KB. The two networks' dust states
+> now differ by about 100 bytes, so size no longer tracks chain length. Build time
+> still does.
 
 ## Decision
 
@@ -126,6 +144,13 @@ So:
   exposure than a default-path user.
 - Revisit when a single reference exceeds roughly **20 MB gzipped**, at which
   point bundling even one becomes disproportionate.
+
+> **Note, 2026-09-15.** The size cost weighed in this section has mostly gone. The
+> 4.81 MB above was an uncollapsed reference; with its dust trees collapsed
+> ([ADR 0006](0006-collapse-preseed-dust-trees.md)) a bundled reference is a few
+> KB, so per-network package size is no longer a meaningful argument against
+> bundling, and the 20 MB threshold is far off. The trust, privacy and freshness
+> arguments are unchanged.
 
 Location: a versioned, publicly readable object store. The manifest already
 carries an S3 host permission
@@ -248,3 +273,61 @@ per-part byte counts, and `export-preseed.mjs` is the natural place to record
 them. Checksums stay as they are — they answer a different question.
 
 See issue #40 and [ADR 0003](0003-preseed-reference.md).
+
+## Addendum, 2026-09-15: collapsed bundles, verified in CI, and a second renumbering
+
+**References now ship with their dust trees collapsed**
+([ADR 0006](0006-collapse-preseed-dust-trees.md)). The dust state every seeded
+wallet deserializes on each launch was mostly a ledger-v8 8.1.x defect. Collapsing
+it takes preprod's from 5,474,535 bytes to 3,666, and the shipped preprod
+`dust.dat.gz` from 5,139,554 B to a few KB. For this ADR that retires most of the
+size argument in §3 (see the note there). `scripts/export-preseed.mjs` now refuses
+to export a reference it cannot collapse and verify.
+
+**CI now checks the bundle's shape, not only its bytes.** Checksums say the bytes
+arrived and witnesses say the cursors still mean what they meant. Neither says
+whether the bundle is the size every wallet seeded from it will pay for on each
+launch, and an uncollapsed bundle is otherwise indistinguishable from a collapsed
+one. So:
+
+- `ci.yml` runs `scripts/collapse-preseed.mjs --check` on the committed bundles in
+  the `test` job, and adds an advisory `e2e-preprod` job that seeds a new CLI
+  wallet from the committed preprod bundle on the live network.
+- `cd.yml` runs the same check before building the extension ZIP.
+- The prepare workflow, still manual-only and read-only, builds every package and
+  restores from a `preseed-v2` cache key. After export, it runs
+  `collapse-preseed.mjs --dir "$EXPORT_DIR" --check`, then the test suite, then
+  the CLI end-to-end test against the exported artifact, and only then records
+  checksums and uploads. The new key forces one build from genesis, because stored
+  references are now collapsed and preprod has renumbered.
+
+None of this changes the open question of how a reviewed artifact enters a
+release: the workflow still stops at an artifact.
+
+**Preprod renumbered again, and the witness caught it — in the extension.** The
+preprod indexer renumbered its event ids by +22 again. The bundle cut on
+2026-08-21 records its dust witness at event 1,449,958 and its shielded witness at
+1,449,828; those events are now at 1,449,980 and 1,449,850. The extension's
+witness check refuses that bundle, which is the detection the 2026-08-21
+addendum asked for. The CLI did not refuse it. `moth preseed import` read only the
+`.dat.gz` parts and dropped the witnesses in both bundle formats, so an imported
+stale bundle was unverifiable-but-usable, and a refresh then looped on "values
+inserted non-linearly". That is fixed (ADR 0005, 2026-09-15 addendum). Both bundles
+are re-cut in this change: preprod rebuilt from genesis, since its old cursors no
+longer match, and preview refreshed to tip from its previous bundle, whose
+witnesses still matched.
+
+**The extension retains versions assigned to existing wallets.**
+`installBundledReference` migrates the previous reference and pins eligible
+wallets before adding a newer bundle. Existing usable assignments survive
+upgrades and background refreshes; new wallets use the newest birthday-compatible
+version. Publication is atomic and unassigned old versions are collected. This
+supersedes the replacement approach initially proposed in this PR; see ADR 0006
+for the full lifecycle and background snapshot conversion.
+
+**The qanet bundle is removed.** The qanet indexer was unavailable (HTTP 503)
+throughout this work, so its bundle could be neither re-cut nor verified, and by
+the reasoning of the 2026-08-21 addendum a bundle we cannot verify should not
+ship. qanet wallets sync from genesis, and the extension offers the on-device
+build for qanet, until a bundle is added back. The CD and prepare workflows only
+ever covered preview and preprod.

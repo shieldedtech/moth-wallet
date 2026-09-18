@@ -1,13 +1,17 @@
 import { describe, it, expect } from 'vitest';
-import { gzipSync } from 'node:zlib';
+import { readFileSync } from 'node:fs';
+import { gunzipSync, gzipSync } from 'node:zlib';
 import {
   exportReference,
   importReference,
   ReferenceImportError,
   type PortableReference,
+  type ReferenceManifest,
 } from '../../../src/sync/preseed-portable.js';
+import { inspectDustSnapshot } from '../../../src/sync/dust-reference-collapse.js';
 import {
   cursorWitnessKey,
+  emptyRefCollapsedKey,
   emptyRefHeightKey,
   emptyRefStateKey,
   emptyRefMnemonicKey,
@@ -118,7 +122,7 @@ describe('importReference refuses rather than guesses', () => {
     expect(store.entries.get(emptyRefHeightKey('preprod'))).toBe('500');
 
     const forced = await importReference(store, 'preprod', bundleFor('preprod', 100), { force: true });
-    expect(forced).toEqual({ height: 100, replacedHeight: 500 });
+    expect(forced).toEqual({ height: 100, replacedHeight: 500, dust: 'as-is' });
     expect(store.entries.get(emptyRefHeightKey('preprod'))).toBe('100');
   });
 
@@ -213,7 +217,7 @@ describe('round trip', () => {
     const target = new MemoryStore();
     const result = await importReference(target, 'preprod', bundle);
 
-    expect(result).toEqual({ height: 4242, replacedHeight: null });
+    expect(result).toEqual({ height: 4242, replacedHeight: null, dust: 'as-is' });
     for (const part of ['shielded', 'unshielded', 'dust'] as const) {
       expect(target.entries.get(emptyRefStateKey('preprod', part))).toBe(
         source.entries.get(emptyRefStateKey('preprod', part)),
@@ -236,8 +240,8 @@ describe('round trip', () => {
 
 describe('cursor witnesses travel with a bundle', () => {
   const NET = 'preprod';
-  const WITNESS_SHIELDED = '{"stream":"shielded","id":1431375,"hash":"aa"}';
-  const WITNESS_DUST = '{"stream":"dust","id":1449958,"hash":"bb"}';
+  const WITNESS_SHIELDED = '{"stream":"zswapLedgerEvents","id":1431375,"digest":"aaaaaaaaaaaaaaaa"}';
+  const WITNESS_DUST = '{"stream":"dustLedgerEvents","id":1449958,"digest":"bbbbbbbbbbbbbbbb"}';
 
   function withWitnesses(store: MemoryStore): MemoryStore {
     store.entries.set(cursorWitnessKey(NET, EMPTY_REF_WALLET, 'shielded'), WITNESS_SHIELDED);
@@ -287,15 +291,160 @@ describe('cursor witnesses travel with a bundle', () => {
   it('replaces a stale witness rather than keeping the older one', async () => {
     const target = withWitnesses(storeWithReference(NET, 2_100_000));
     const source = storeWithReference(NET, 2_203_416);
-    source.entries.set(cursorWitnessKey(NET, EMPTY_REF_WALLET, 'dust'), '{"stream":"dust","id":1500000,"hash":"cc"}');
+    source.entries.set(cursorWitnessKey(NET, EMPTY_REF_WALLET, 'dust'), '{"stream":"dustLedgerEvents","id":1500000,"digest":"cccccccccccccccc"}');
     const bundle = await exportReference(source, NET);
 
     await importReference(target, NET, bundle!);
 
     expect(target.entries.get(cursorWitnessKey(NET, EMPTY_REF_WALLET, 'dust'))).toBe(
-      '{"stream":"dust","id":1500000,"hash":"cc"}',
+      '{"stream":"dustLedgerEvents","id":1500000,"digest":"cccccccccccccccc"}',
     );
     // shielded had no witness in the bundle, so the old one must be gone, not kept.
     expect(target.entries.has(cursorWitnessKey(NET, EMPTY_REF_WALLET, 'shielded'))).toBe(false);
+  });
+});
+
+// The extension's committed bundles carry their witnesses INSIDE the manifest
+// (scripts/export-preseed.mjs writes them there), not as witness-<part>.json
+// files. Import used to understand only the files, so a committed bundle imported
+// through the CLI arrived with no witnesses at all — and a preprod bundle cut
+// before an indexer renumbering then imported, refreshed, and failed its sync in
+// a loop rather than being refused.
+describe('witnesses written inline in the manifest', () => {
+  const NET = 'preprod';
+  const INLINE = {
+    shielded: {stream: 'zswapLedgerEvents', id: 1_449_850, digest: 'fc9acd5a4f6ca3a0'},
+    dust: {stream: 'dustLedgerEvents', id: 1_449_980, digest: 'ffdc476b89fca076'},
+  } as const;
+
+  function withManifestWitnesses(witnesses: unknown): PortableReference {
+    const bundle = bundleFor(NET, 2_203_416);
+    return {...bundle, manifest: {...bundle.manifest, witnesses: witnesses as ReferenceManifest['witnesses']}};
+  }
+
+  it('stores them, so an imported extension bundle can be verified', async () => {
+    const store = new MemoryStore();
+
+    await importReference(store, NET, withManifestWitnesses(INLINE));
+
+    expect(JSON.parse(store.entries.get(cursorWitnessKey(NET, EMPTY_REF_WALLET, 'shielded'))!)).toEqual(INLINE.shielded);
+    expect(JSON.parse(store.entries.get(cursorWitnessKey(NET, EMPTY_REF_WALLET, 'dust'))!)).toEqual(INLINE.dust);
+  });
+
+  it('refuses a malformed inline witness, and writes nothing', async () => {
+    // Stored, a witness the verifier cannot parse is skipped — which it treats as
+    // "unverifiable, allow". Evidence that cannot be read is no evidence.
+    const malformed = [
+      {...INLINE, dust: {...INLINE.dust, stream: 'zswapLedgerEvents'}},
+      {...INLINE, dust: {...INLINE.dust, id: 0}},
+      {...INLINE, dust: {...INLINE.dust, digest: 'not-a-digest'}},
+      {...INLINE, shielded: 'fc9acd5a4f6ca3a0'},
+    ];
+    for (const witnesses of malformed) {
+      const store = storeWithReference(NET, 100);
+      const before = new Map(store.entries);
+      await expect(importReference(store, NET, withManifestWitnesses(witnesses))).rejects.toThrow(/malformed/);
+      expect(store.entries).toEqual(before);
+    }
+  });
+
+  it('refuses a bundle whose manifest names a witness file it does not carry', async () => {
+    // What a reader that loads only the .dat.gz parts hands over for a bundle
+    // `exportReference` wrote.
+    const store = storeWithReference(NET, 100);
+    const before = new Map(store.entries);
+
+    await expect(importReference(store, NET, withManifestWitnesses(['shielded', 'dust']))).rejects.toThrow(
+      /witness-shielded\.json/,
+    );
+    expect(store.entries).toEqual(before);
+  });
+
+  it('rejects malformed witness files before overwriting the existing reference', async () => {
+    for (const content of ['not JSON', '{}', JSON.stringify({...INLINE.dust, stream: 'zswapLedgerEvents'})]) {
+      const bundle = withManifestWitnesses(INLINE);
+      bundle.files.set('witness-dust.json', new TextEncoder().encode(content));
+      const store = storeWithReference(NET, 100);
+      const before = new Map(store.entries);
+      await expect(importReference(store, NET, bundle)).rejects.toThrow(/malformed/);
+      expect(store.entries).toEqual(before);
+    }
+  });
+
+  it('rejects conflicting copies, but accepts identical witnesses in both formats', async () => {
+    const bundle = withManifestWitnesses(INLINE);
+    bundle.files.set('witness-dust.json', new TextEncoder().encode(JSON.stringify({...INLINE.dust, id: INLINE.dust.id + 1})));
+    const store = storeWithReference(NET, 100);
+    const before = new Map(store.entries);
+    await expect(importReference(store, NET, bundle)).rejects.toThrow(/conflicts/);
+    expect(store.entries).toEqual(before);
+    bundle.files.set('witness-dust.json', new TextEncoder().encode(JSON.stringify(INLINE.dust, null, 2)));
+    await importReference(store, NET, bundle);
+    expect(JSON.parse(store.entries.get(cursorWitnessKey(NET, EMPTY_REF_WALLET, 'dust'))!)).toEqual(INLINE.dust);
+  });
+});
+
+// A bundle cut before references were collapsed carries megabytes of dust state
+// that every wallet seeded from it would deserialize on each launch. Import and
+// export both collapse it, best-effort: a state that cannot be collapsed is still
+// a correct one. See dust-reference-collapse.ts and tests/fixtures/preseed.
+describe('dust trees are collapsed on the way in and out', () => {
+  const NET = 'preview';
+  const UNCOLLAPSED = gunzipSync(
+    readFileSync(new URL('../../fixtures/preseed/preview-519470-dust.dat.gz', import.meta.url)),
+  ).toString('utf8');
+
+  function bundleWithDust(dust: string): PortableReference {
+    const bundle = bundleFor(NET, 519_470);
+    bundle.files.set('dust.dat.gz', new Uint8Array(gzipSync(Buffer.from(dust))));
+    return bundle;
+  }
+
+  it('collapses an uncollapsed dust state on import, and records that it did', async () => {
+    const store = new MemoryStore();
+
+    const result = await importReference(store, NET, bundleWithDust(UNCOLLAPSED));
+
+    expect(result.dust).toBe('collapsed');
+    const stored = store.entries.get(emptyRefStateKey(NET, 'dust'))!;
+    expect(inspectDustSnapshot(stored).stateBytes).toBeLessThan(8_192);
+    expect(inspectDustSnapshot(stored).generationRoot).toBe(inspectDustSnapshot(UNCOLLAPSED).generationRoot);
+    // So the first wallet seeded from it does not collapse it again.
+    expect(store.entries.get(emptyRefCollapsedKey(NET))).toBe('141062');
+  });
+
+  it('stores an already-collapsed dust state byte-for-byte', async () => {
+    const collapsed = new MemoryStore();
+    await importReference(collapsed, NET, bundleWithDust(UNCOLLAPSED));
+    const small = collapsed.entries.get(emptyRefStateKey(NET, 'dust'))!;
+
+    const store = new MemoryStore();
+    const result = await importReference(store, NET, bundleWithDust(small));
+
+    expect(result.dust).toBe('already-collapsed');
+    expect(store.entries.get(emptyRefStateKey(NET, 'dust'))).toBe(small);
+  });
+
+  it('stores a dust state it cannot collapse as it is, and clears any old marker', async () => {
+    // A marker left by the previous reference must not vouch for this one.
+    const store = new MemoryStore();
+    store.entries.set(emptyRefCollapsedKey(NET), '141062');
+
+    const result = await importReference(store, NET, bundleFor(NET, 519_470));
+
+    expect(result.dust).toBe('as-is');
+    expect(store.entries.get(emptyRefStateKey(NET, 'dust'))).toBe('{"dust":true}');
+    expect(store.entries.has(emptyRefCollapsedKey(NET))).toBe(false);
+  });
+
+  it('exports a stored uncollapsed dust state collapsed', async () => {
+    const store = storeWithReference(NET, 519_470);
+    store.entries.set(emptyRefStateKey(NET, 'dust'), UNCOLLAPSED);
+
+    const bundle = (await exportReference(store, NET))!;
+
+    const exported = gunzipSync(bundle.files.get('dust.dat.gz')!).toString('utf8');
+    expect(inspectDustSnapshot(exported).stateBytes).toBeLessThan(8_192);
+    expect(bundle.manifest.parts.dust!.bytes).toBe(Buffer.byteLength(exported));
   });
 });

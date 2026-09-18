@@ -57,6 +57,20 @@ export function emptyRefMnemonicKey(networkId: string): string {
   return `empty-ref/${networkId}/mnemonic.txt`;
 }
 
+/**
+ * The dust cursor at which the reference's dust trees were last collapsed and
+ * verified (see dust-reference-collapse.ts).
+ *
+ * A cursor rather than a flag, because everything that rewrites the reference's
+ * dust state — a refresh, a resumed build, an import — moves its cursor. A marker
+ * that still matches means the stored state is the one that was collapsed; one
+ * that does not sends it back through the collapse, which costs milliseconds for
+ * state that is already small.
+ */
+export function emptyRefCollapsedKey(networkId: string): string {
+  return `empty-ref/${networkId}/dust-collapsed.txt`;
+}
+
 /** Volatile store — used as the default outside Node when none is provided. */
 export class InMemorySyncStateStore implements SyncStateStore {
   private readonly entries = new Map<string, string>();

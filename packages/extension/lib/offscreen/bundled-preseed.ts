@@ -19,7 +19,9 @@
 // leak "this IP created a wallet on network X at time T" at the moment least
 // worth leaking.
 
-import { cursorWitnessKey, emptyRefStateKey, emptyRefHeightKey, EMPTY_REF_WALLET, type SyncStateStore, type WalletPart } from '@shieldedtech/moth-wallet/sync/sync-store';
+import {type SyncStateStore, type WalletPart} from '@shieldedtech/moth-wallet/sync/sync-store';
+import {isCursorWitness} from '@shieldedtech/moth-wallet/sync/cursor-witness';
+import {migrateReferenceVersions, referenceEpoch, referenceVersionsStatus, saveReferenceVersion, type ReferenceSnapshot, type ReferenceWallet} from '@shieldedtech/moth-wallet/sync/reference-versions';
 
 const PARTS: WalletPart[] = ['shielded', 'unshielded', 'dust'];
 
@@ -49,9 +51,10 @@ async function fetchText(url: string, gzipped: boolean): Promise<string | null> 
   const response = await fetch(url);
   if (!response.ok) return null;
   if (!gzipped) return response.text();
-  // DecompressionStream keeps the 9.8 MB dust state out of memory in one piece
-  // and is available in workers; the alternative is shipping it uncompressed and
-  // doubling what the package carries.
+  // DecompressionStream is available in workers and keeps the parts compressed in
+  // the package. The dust state was the reason this mattered (megabytes before
+  // its trees were collapsed at export); it is kilobytes now, but a reference cut
+  // without collapsing still loads.
   const stream = response.body?.pipeThrough(new DecompressionStream('gzip'));
   if (!stream) return null;
   return new Response(stream).text();
@@ -77,7 +80,7 @@ function parseManifest(text: string | null): Manifest | null {
     // a wallet silently resuming at the wrong event.
     for (const part of ['shielded', 'dust'] as const) {
       const witness = manifest.witnesses?.[part];
-      if (!witness || typeof witness.digest !== 'string' || !Number.isFinite(witness.id)) return null;
+      if (!isCursorWitness(witness, part === 'dust' ? 'dustLedgerEvents' : 'zswapLedgerEvents')) return null;
     }
     return manifest;
   } catch {
@@ -109,25 +112,29 @@ export function hasBundledReference(networkId: string): Promise<boolean> {
 }
 
 /**
- * Install the bundled reference for `networkId` if the store has none.
+ * Add a newer bundled version after assigning the old reference to existing
+ * eligible wallets. Old assigned versions survive upgrades and DUST rebuilds.
  *
  * Best-effort and idempotent. A missing or unreadable asset is not an error —
  * not every network ships one, and a wallet without a reference syncs the slow
  * way rather than failing. Returns whether anything was written.
  *
- * Writes the height LAST, deliberately. `loadUsableRefStates` treats a reference
- * with no recorded height as unusable, so an interrupted install leaves state
- * that is ignored rather than trusted — the failure mode is a slow sync, never a
- * wallet seeded from half a reference.
+ * Publication is one catalog write containing all parts, witnesses and wallet
+ * assignments. Failed or interrupted installation leaves the old catalog usable.
  */
-export async function installBundledReference(networkId: string, store: SyncStateStore): Promise<boolean> {
+export async function installBundledReference(networkId: string, store: SyncStateStore, wallets: ReferenceWallet[] = []): Promise<boolean> {
   try {
-    // Already present — a locally built or previously installed reference wins,
-    // since it is at least as fresh as anything we ship.
-    if (await store.get(emptyRefHeightKey(networkId))) return false;
-
+    // Capture the reset generation before asset fetches can yield. A reset must
+    // not be undone by an installation already in flight.
+    await migrateReferenceVersions(store, networkId, wallets);
+    const epoch = await referenceEpoch(store, networkId);
     const manifest = parseManifest(await fetchText(assetUrl(networkId, 'manifest.json'), false));
-    if (!manifest) return false;
+    if (!manifest || manifest.network !== networkId) return false;
+
+    // A local refresh may be newer than the bundle. The catalog already holds
+    // it; do not add redundant older versions without wallet assignments.
+    const status = await referenceVersionsStatus(store, networkId);
+    if (status.height !== null && status.height >= manifest.height) return false;
 
     const states: Partial<Record<WalletPart, string>> = {};
     for (const part of PARTS) {
@@ -138,15 +145,11 @@ export async function installBundledReference(networkId: string, store: SyncStat
       states[part] = value;
     }
 
-    for (const part of PARTS) await store.put(emptyRefStateKey(networkId, part), states[part]!);
-    // Witnesses before the height, for the same reason the height goes last: the
-    // height is what marks the reference usable, and a reference that reads as
-    // usable without its witnesses is one that skips verification.
-    for (const [part, witness] of Object.entries(manifest.witnesses ?? {})) {
-      await store.put(cursorWitnessKey(networkId, EMPTY_REF_WALLET, part as WalletPart), JSON.stringify(witness));
-    }
-    await store.put(emptyRefHeightKey(networkId), String(manifest.height));
-    return true;
+    return (await saveReferenceVersion(store, {
+      network: networkId, height: manifest.height,
+      shielded: states.shielded!, unshielded: states.unshielded!, dust: states.dust!,
+      witnesses: manifest.witnesses as ReferenceSnapshot['witnesses'],
+    }, {epoch})) !== null;
   } catch {
     // Never let a packaging problem stop a wallet from starting.
     return false;

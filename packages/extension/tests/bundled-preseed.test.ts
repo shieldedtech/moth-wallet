@@ -1,12 +1,12 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { installBundledReference } from '../lib/offscreen/bundled-preseed';
+import {REFERENCE_CATALOG_KEY, selectReferenceVersion, referenceVersionsStatus, registerReferenceWallet, resetReferenceVersions} from '@shieldedtech/moth-wallet/sync/reference-versions';
 
 const NETWORK = 'preprod';
 const HEIGHT_KEY = `empty-ref/${NETWORK}/height.txt`;
 const stateKey = (part: string) => `sync/${NETWORK}/__empty_ref__/${part}.dat`;
 
-/** Records the ORDER of writes: the height must land last, so an interrupted
- *  install leaves state that loadUsableRefStates ignores rather than trusts. */
+/** Records atomic catalog publication alongside unchanged legacy keys. */
 function recordingStore() {
   const entries = new Map<string, string>();
   const writes: string[] = [];
@@ -46,7 +46,7 @@ async function serveAssets(options: { height?: number; missing?: string; witness
   assets.set('manifest.json', JSON.stringify({ network: NETWORK, height, parts: {}, witnesses }));
   for (const part of ['shielded', 'unshielded', 'dust']) {
     if (part === options.missing) continue;
-    assets.set(`${part}.dat.gz`, await gzip(`${part}-state-blob`));
+    assets.set(`${part}.dat.gz`, await gzip(JSON.stringify({offset: part === 'dust' ? '1431375' : '1431228', state: part})));
   }
   vi.stubGlobal('fetch', async (input: string | URL) => {
     const file = String(input).split('/').pop()!;
@@ -66,114 +66,94 @@ afterEach(() => {
 });
 
 describe('installBundledReference', () => {
-  it('writes all three states and the height', async () => {
+  it('publishes the complete bundle and its witnesses in one catalog write', async () => {
     await serveAssets();
     const store = recordingStore();
-
     await expect(installBundledReference(NETWORK, store)).resolves.toBe(true);
-
-    expect(store.entries.get(stateKey('shielded'))).toBe('shielded-state-blob');
-    expect(store.entries.get(stateKey('unshielded'))).toBe('unshielded-state-blob');
-    expect(store.entries.get(stateKey('dust'))).toBe('dust-state-blob');
-    expect(store.entries.get(HEIGHT_KEY)).toBe('1985914');
+    const reference = await selectReferenceVersion(store, {id: NETWORK, indexerUrl: 'unused'}, undefined, async () => true);
+    expect(reference?.height).toBe(1985914);
+    expect(JSON.parse(reference!.dust).offset).toBe('1431375');
+    expect(reference?.witnesses.dust).toEqual({stream: 'dustLedgerEvents', id: 1431375, digest: 'bbbbbbbbbbbbbbbb'});
+    expect(store.entries.has(HEIGHT_KEY)).toBe(false);
   });
 
-  it('writes the height LAST, so an interrupted install is ignored not trusted', async () => {
-    await serveAssets();
+  it('keeps an existing wallet pinned across an upgrade while new wallets get the new bundle', async () => {
     const store = recordingStore();
+    await serveAssets({height: 100});
     await installBundledReference(NETWORK, store);
-
-    // A reference with no recorded height is unusable by construction
-    // (loadUsableRefStates), which is what makes a partial write safe.
-    expect(store.writes[store.writes.length - 1]).toBe(HEIGHT_KEY);
-    expect(store.writes.indexOf(HEIGHT_KEY)).toBe(store.writes.length - 1);
+    await serveAssets({height: 200});
+    await installBundledReference(NETWORK, store, [{name: 'existing', birthday: 150}]);
+    const config = {id: NETWORK, indexerUrl: 'unused'};
+    expect((await selectReferenceVersion(store, config, {name: 'existing', birthday: 150}, async () => true))?.height).toBe(100);
+    expect((await selectReferenceVersion(store, config, {name: 'new', birthday: 250}, async () => true))?.height).toBe(200);
   });
 
-  it('never overwrites a reference already in the store', async () => {
-    await serveAssets({ height: 1985914 });
+  it('migrates the legacy reference before installing a newer bundle', async () => {
     const store = recordingStore();
-    // A locally built reference is at least as fresh as anything shipped.
-    await store.put(HEIGHT_KEY, '2045150');
+    await store.put(HEIGHT_KEY, '100');
+    for (const part of ['shielded', 'unshielded', 'dust']) await store.put(stateKey(part), JSON.stringify({offset: '1'}));
+    await serveAssets({height: 200});
+    await installBundledReference(NETWORK, store, [{name: 'existing', birthday: 150}]);
+    const reference = await selectReferenceVersion(store, {id: NETWORK, indexerUrl: 'unused'}, {name: 'existing', birthday: 150}, async () => true);
+    expect(reference?.height).toBe(100);
+    expect(await store.get(HEIGHT_KEY)).toBe('100');
+  });
+
+  it('does not duplicate or downgrade an installed bundle', async () => {
+    const store = recordingStore();
+    await serveAssets({height: 200});
+    await installBundledReference(NETWORK, store);
     store.writes.length = 0;
-
-    await expect(installBundledReference(NETWORK, store)).resolves.toBe(false);
+    expect(await installBundledReference(NETWORK, store)).toBe(false);
+    await serveAssets({height: 100});
+    expect(await installBundledReference(NETWORK, store)).toBe(false);
     expect(store.writes).toEqual([]);
-    expect(store.entries.get(HEIGHT_KEY)).toBe('2045150');
   });
 
-  it('stores a witness per cursor-bearing part, so the reference can be verified later', async () => {
+  it('leaves the previous version usable if the atomic publication fails', async () => {
+    const store = recordingStore();
+    await serveAssets({height: 100});
+    await installBundledReference(NETWORK, store, []);
+    const before = await store.get(REFERENCE_CATALOG_KEY);
+    await serveAssets({height: 200});
+    const failing = {...store, put: async () => {throw new Error('quota exceeded');}};
+    expect(await installBundledReference(NETWORK, failing)).toBe(false);
+    expect(await store.get(REFERENCE_CATALOG_KEY)).toBe(before);
+  });
+
+  it('does not publish half a bundle or one without evidence', async () => {
+    for (const options of [{missing: 'dust'}, {witnesses: false}, {height: 0}]) {
+      await serveAssets(options);
+      const store = recordingStore();
+      expect(await installBundledReference(NETWORK, store)).toBe(false);
+      expect((await referenceVersionsStatus(store, NETWORK)).ready).toBe(false);
+    }
+  });
+
+  it('refuses assets for another network', async () => {
     await serveAssets();
     const store = recordingStore();
-
-    await installBundledReference(NETWORK, store);
-
-    expect(JSON.parse(store.entries.get(`witness/${NETWORK}/__empty_ref__/dust.json`)!)).toEqual({
-      stream: 'dustLedgerEvents',
-      id: 1_431_375,
-      digest: 'bbbbbbbbbbbbbbbb',
-    });
-    // Before the height, which is what marks the reference usable — a reference
-    // that reads as usable without its witnesses is one that skips verification.
-    expect(store.writes.indexOf(`witness/${NETWORK}/__empty_ref__/dust.json`)).toBeLessThan(
-      store.writes.indexOf(HEIGHT_KEY),
-    );
+    expect(await installBundledReference('preview', store)).toBe(false);
+    expect((await referenceVersionsStatus(store, 'preview')).ready).toBe(false);
   });
 
-  // #40: the shipped preprod bundle had no witnesses, so nothing could tell that
-  // its cursors had stopped meaning what they meant. Refused rather than trusted:
-  // unlike a local reference, this is an artefact we control and can re-cut, so
-  // the cost of refusing is one slower first sync.
-  it('refuses a bundle with no witnesses rather than installing an unverifiable one', async () => {
-    await serveAssets({ witnesses: false });
+  it('reinstalls the bundle after an explicit reset, without old assignments', async () => {
     const store = recordingStore();
-
-    await expect(installBundledReference(NETWORK, store)).resolves.toBe(false);
-    expect(store.writes).toEqual([]);
+    await serveAssets({height: 100});
+    await installBundledReference(NETWORK, store, []);
+    await registerReferenceWallet(store, NETWORK, {name: 'old', birthday: 150});
+    await resetReferenceVersions(store, NETWORK);
+    await serveAssets({height: 200});
+    expect(await installBundledReference(NETWORK, store)).toBe(true);
+    const config = {id: NETWORK, indexerUrl: 'unused'};
+    expect(await selectReferenceVersion(store, config, {name: 'old', birthday: 150}, async () => true)).toBeNull();
+    expect((await selectReferenceVersion(store, config, {name: 'new', birthday: 250}, async () => true))?.height).toBe(200);
   });
 
-  it('writes nothing when the network ships no reference', async () => {
-    vi.stubGlobal('fetch', async () => new Response(null, { status: 404 }));
-    const store = recordingStore();
-
-    await expect(installBundledReference('devnet', store)).resolves.toBe(false);
-    expect(store.writes).toEqual([]);
-  });
-
-  it('writes nothing when a part is missing — all three or none', async () => {
-    await serveAssets({ missing: 'dust' });
-    const store = recordingStore();
-
-    await expect(installBundledReference(NETWORK, store)).resolves.toBe(false);
-    // Dust is the expensive part; a reference without it is worthless, and
-    // writing the cheap two would waste quota for nothing.
-    expect(store.writes).toEqual([]);
-  });
-
-  it('rejects a manifest with no usable height', async () => {
-    await serveAssets({ height: 0 });
-    const store = recordingStore();
-
-    await expect(installBundledReference(NETWORK, store)).resolves.toBe(false);
-    expect(store.writes).toEqual([]);
-  });
-
-  it('never throws when the asset is corrupt — a slow sync beats a dead wallet', async () => {
-    vi.stubGlobal('fetch', async (input: string | URL) => {
-      if (String(input).endsWith('manifest.json')) return new Response('not json at all', { status: 200 });
-      return new Response(null, { status: 404 });
-    });
-    const store = recordingStore();
-
-    await expect(installBundledReference(NETWORK, store)).resolves.toBe(false);
-    expect(store.writes).toEqual([]);
-  });
-
-  it('never throws when fetch itself rejects', async () => {
-    vi.stubGlobal('fetch', async () => {
-      throw new Error('network gone');
-    });
-    const store = recordingStore();
-
-    await expect(installBundledReference(NETWORK, store)).resolves.toBe(false);
+  it('never lets an unavailable asset stop wallet startup', async () => {
+    for (const response of [async () => new Response(null, {status: 404}), async () => new Response('not JSON'), async () => {throw new Error('unavailable');}]) {
+      vi.stubGlobal('fetch', response);
+      await expect(installBundledReference(NETWORK, recordingStore())).resolves.toBe(false);
+    }
   });
 });

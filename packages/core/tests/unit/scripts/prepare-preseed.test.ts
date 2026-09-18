@@ -140,3 +140,60 @@ describe('extension release workflow', () => {
     expect(workflow).toContain('manifest.network !== network');
   });
 });
+
+describe('pre-seed collapse in the workflows', () => {
+  const read = (name: string) =>
+    readFileSync(fileURLToPath(new URL(`../../../../../.github/workflows/${name}`, import.meta.url)), 'utf8');
+  const step = (workflow: string, name: string) => {
+    const start = workflow.indexOf(`- name: ${name}`);
+    const next = workflow.indexOf('- name:', start + 1);
+    return workflow.slice(start, next === -1 ? undefined : next);
+  };
+
+  it('collapses, verifies and end-to-end tests a prepared bundle before uploading it', () => {
+    const workflow = read('prepare-preseed.yml');
+    const order = [
+      'node scripts/prepare-preseed.mjs',
+      'node scripts/export-preseed.mjs',
+      'node scripts/collapse-preseed.mjs --dir "$EXPORT_DIR" --check',
+      'yarn turbo run test',
+      'yarn workspace @shieldedtech/moth-cli test:e2e',
+      'actions/upload-artifact',
+    ].map((marker) => workflow.indexOf(marker));
+
+    expect(order.every((at) => at >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    expect(workflow).toContain('MOTH_E2E_NETWORK: ${{ matrix.network }}');
+  });
+
+  it('keeps the end-to-end test away from the reference mnemonic', () => {
+    const e2e = step(read('prepare-preseed.yml'), 'End-to-end test the exported bundle with the CLI');
+    expect(e2e).not.toBe('');
+    expect(e2e).not.toContain('secrets.');
+  });
+
+  it('runs the preprod end-to-end test on every pull request, without blocking merges', () => {
+    const ci = read('ci.yml');
+    expect(ci).toMatch(/on:\n  pull_request:\n/);
+
+    const job = ci.slice(ci.indexOf('\n  e2e-preprod:'), ci.indexOf('\n  coverage:'));
+    expect(job).toContain('continue-on-error: true');
+    expect(job).toContain('MOTH_E2E_NETWORK: preprod');
+    expect(job).toContain('yarn workspace @shieldedtech/moth-cli test:e2e');
+    // No secrets, so it runs on pull requests from forks as well; no condition, so
+    // it runs on all of them.
+    expect(job).not.toContain('secrets.');
+    expect(job).not.toMatch(/\n    if:/);
+  });
+
+  it('checks the committed bundles are collapsed on every PR and before packaging a release', () => {
+    expect(step(read('ci.yml'), 'Check committed preseed bundles are collapsed and valid')).toContain(
+      'node scripts/collapse-preseed.mjs --check',
+    );
+
+    const cd = read('cd.yml');
+    const check = cd.indexOf('node scripts/collapse-preseed.mjs --check');
+    expect(check).toBeGreaterThan(-1);
+    expect(check).toBeLessThan(cd.indexOf('yarn workspace @shieldedtech/moth-extension zip'));
+  });
+});

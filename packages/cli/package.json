@@ -28,6 +28,7 @@
     "build": "tsc && chmod +x dist/index.js",
     "clean": "rm -rf dist tsconfig.tsbuildinfo",
     "test": "vitest run",
+    "test:e2e": "vitest run tests/e2e",
     "test:watch": "vitest"
   },
   "dependencies": {

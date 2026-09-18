@@ -10,7 +10,7 @@ export interface SyncStatusView {
   dust: number;
 }
 
-const clamp = (value: number) => Math.max(0, Math.min(100, Math.round(value)));
+const clamp = (value: number) => Math.max(0, Math.min(100, Math.floor(value)));
 
 /**
  * Once synced, give the wallet a few progressive emissions to catch a newly
@@ -112,7 +112,7 @@ export function SyncStatus({
   const shielded = clamp(view.shielded);
   const unshielded = clamp(view.unshielded);
   const dust = clamp(view.dust);
-  const rawOverall = Math.round((shielded + unshielded + dust) / 3);
+  const rawOverall = Math.floor((shielded + unshielded + dust) / 3);
   const rawSynced = rawOverall >= 100;
   const synced = useSyncRegressionGrace(rawSynced);
 
