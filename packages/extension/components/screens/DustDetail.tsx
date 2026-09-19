@@ -18,6 +18,7 @@ import {
   type RegisterOutcome,
 } from '../../lib/ui/dust-register-outcome';
 import { waitPhrase } from '../../lib/ui/wait-phrase';
+import { dustFraction } from '../../lib/ui/sync-view';
 import type { DustNotYet, NightCoinRow } from '../../lib/messaging/protocol';
 import { isStaleUnregistered, oldestUnregisteredCoinAge } from '../../lib/ui/dust-register-timing';
 
@@ -101,6 +102,7 @@ export function DustDetail({
   const dustSynced = useSyncRegressionGrace(
     balances?.syncProgress.dustSynced ?? false,
     balances !== null,
+    dustFraction(balances),
   );
 
   useEffect(() => {

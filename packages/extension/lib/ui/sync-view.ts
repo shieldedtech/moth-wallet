@@ -13,5 +13,19 @@ export function syncStatusView(balances: WalletBalances): SyncStatusView {
     shielded: percent(sub.shielded.applied, sub.shielded.total, progress.shieldedSynced),
     unshielded: percent(sub.unshielded.applied, sub.unshielded.total, progress.unshieldedSynced),
     dust: percent(sub.dust.applied, sub.dust.total, progress.dustSynced),
+    etaSeconds: progress.etaSeconds,
   };
+}
+
+/**
+ * The dust sub-wallet's raw progress fraction, or undefined when there is
+ * nothing to measure.
+ *
+ * Passed to useSyncRegressionGrace so a rebuild's large drop is reported at
+ * once rather than smoothed over. Defined here rather than at each call site
+ * because Home and DustDetail both need it and had drifted into two copies.
+ */
+export function dustFraction(balances: WalletBalances | null): number | undefined {
+  const dust = balances?.subProgress.dust;
+  return dust && dust.total > 0 ? dust.applied / dust.total : undefined;
 }
