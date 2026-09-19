@@ -2,7 +2,7 @@
 // Visual style mirrors midnight-wallet-cli (Apache-2.0). See NOTICE.
 
 import React from 'react';
-import { Box, Text } from 'ink';
+import { Box, Text, useStdout } from 'ink';
 import { SectionHeader } from '../../components/SectionHeader.js';
 import type { WalletState, NetworkState } from '../../types.js';
 import type { ChainStatus } from '../../hooks/useChainStatus.js';
@@ -11,8 +11,14 @@ import type {
   ShieldedCoinInfo, UnshieldedCoinInfo, DustCoinInfo,
 } from '@shieldedtech/moth-wallet';
 import { NIGHT_TOKEN_ID } from '@shieldedtech/moth-wallet';
-import { formatBalanceForToken, formatDustBalance, groupCoinsForDisplay } from '../../utils/balance.js';
-import { formatTimeRemaining } from '../../utils/display.js';
+import {
+  formatBalanceForToken, formatDustBalance, groupCoinsForDisplay,
+  flattenBalanceRows,
+} from '../../utils/balance.js';
+import {
+  formatTimeRemaining, truncateMiddle, windowRows, balanceBudget,
+  type BalanceBudget,
+} from '../../utils/display.js';
 
 interface StateViewProps {
   wallet: WalletState | null;
@@ -84,11 +90,12 @@ function groupByToken<T extends { value: bigint; type: string }>(coins: readonly
 }
 // Fungible grouping (which folds booked coins into the total) lives in
 // utils/balance.ts as groupCoinsForDisplay so the arithmetic is unit-testable
-// without rendering Ink. groupByToken above still serves the dust block.
+// without rendering Ink. Note groupByToken above no longer serves the dust
+// block — nothing calls it; removing it is a separate cleanup.
 
 /** Shared "Balance" block for shielded + unshielded — grouped by token, nested coins. */
 function FungibleBalanceBlock({
-  available, booked = [], tokenType,
+  available, booked = [], tokenType, budget,
 }: {
   available: readonly (ShieldedCoinInfo | UnshieldedCoinInfo)[];
   /**
@@ -103,6 +110,7 @@ function FungibleBalanceBlock({
    */
   booked?: readonly (ShieldedCoinInfo | UnshieldedCoinInfo)[];
   tokenType: 'shielded' | 'unshielded';
+  budget: BalanceBudget;
 }) {
   if (available.length === 0 && booked.length === 0) {
     return (
@@ -114,34 +122,44 @@ function FungibleBalanceBlock({
   }
 
   const groups = groupCoinsForDisplay(available, booked, tokenType);
+  // Flat row list, then one budget over the whole block — see flattenBalanceRows.
+  const rows = flattenBalanceRows(groups);
+  // The "and N more" line costs a row of its own when there is going to be one.
+  const { shown, hidden } = windowRows(
+    rows,
+    rows.length > budget.maxRows ? budget.maxRows - 1 : budget.maxRows,
+  );
 
   return (
     <Box flexDirection="column">
       <Box><Label>Balance</Label></Box>
       <Box marginLeft={2} flexDirection="column">
-        {groups.map((g) => {
-          const display = g.token === NIGHT_TOKEN_ID && tokenType === 'unshielded' ? 'NIGHT' : g.token;
-          // Itemise for more than one coin, or when a lone coin carries a flag.
-          const itemise = g.coins.length > 1 || g.coins.some((c) => c.registered || c.booked);
-          return (
-            <Box key={g.token} flexDirection="column">
-              <Box>
+        {shown.map((row) => {
+          const g = groups[row.group];
+          if (row.kind === 'group') {
+            const display = g.token === NIGHT_TOKEN_ID && tokenType === 'unshielded'
+              ? 'NIGHT'
+              : truncateMiddle(g.token, budget.tokenWidth);
+            return (
+              <Box key={`g${row.group}`}>
                 <Text>{display}</Text>
                 <Text>  </Text>
                 <Text bold>{formatBalanceForToken(g.total, g.token, tokenType)}</Text>
                 <Text dimColor>  ({pluralCoins(g.coins.length)})</Text>
               </Box>
-              {itemise && g.coins.map((coin, idx) => (
-                <Box key={idx} marginLeft={2}>
-                  <Text dimColor>· </Text>
-                  <Text>{formatBalanceForToken(coin.value, coin.type, tokenType)}</Text>
-                  {coin.registered && <Text color="yellow"> [Registered for Dust]</Text>}
-                  {coin.booked && <Text color="cyan"> [in flight]</Text>}
-                </Box>
-              ))}
+            );
+          }
+          const coin = g.coins[row.coin!];
+          return (
+            <Box key={`g${row.group}c${row.coin}`} marginLeft={2}>
+              <Text dimColor>· </Text>
+              <Text>{formatBalanceForToken(coin.value, coin.type, tokenType)}</Text>
+              {coin.registered && <Text color="yellow"> [Registered for Dust]</Text>}
+              {coin.booked && <Text color="cyan"> [in flight]</Text>}
             </Box>
           );
         })}
+        {hidden > 0 && <Text dimColor>… and {hidden.toLocaleString()} more</Text>}
       </Box>
     </Box>
   );
@@ -149,10 +167,11 @@ function FungibleBalanceBlock({
 
 /** Dust "Balance" block — single DUST token with per-coin generation status. */
 function DustBalanceBlock({
-  totalDust, available,
+  totalDust, available, budget,
 }: {
   totalDust: bigint;
   available: readonly DustCoinInfo[];
+  budget: BalanceBudget;
 }) {
   if (available.length === 0) {
     return (
@@ -164,6 +183,13 @@ function DustBalanceBlock({
     );
   }
   const now = new Date();
+  // A deregistered coin renders a second line, so cost it as two rows.
+  const dustRows = (coin: DustCoinInfo) => (coin.dtime ? 2 : 1);
+  const { shown, hidden } = windowRows(
+    available,
+    available.length > budget.maxRows ? budget.maxRows - 1 : budget.maxRows,
+    dustRows,
+  );
   return (
     <Box flexDirection="column">
       <Box>
@@ -172,7 +198,7 @@ function DustBalanceBlock({
         <Text dimColor> DUST  ({pluralCoins(available.length)})</Text>
       </Box>
       <Box marginLeft={LABEL_WIDTH} flexDirection="column">
-        {available.map((coin, idx) => {
+        {shown.map((coin, idx) => {
           const timeRemaining = formatTimeRemaining(coin.maxCapReachedAt, now);
           const isComplete = coin.generatedNow >= coin.maxCap;
           return (
@@ -193,6 +219,7 @@ function DustBalanceBlock({
             </Box>
           );
         })}
+        {hidden > 0 && <Text dimColor>· … and {hidden.toLocaleString()} more</Text>}
       </Box>
     </Box>
   );
@@ -213,6 +240,13 @@ export function StateView({
   addresses, shieldedBalances: _sb, unshieldedBalances: _ub, dustBalance,
   coins, subProgress,
 }: StateViewProps) {
+  const { stdout } = useStdout();
+  // Ink renders the whole frame at once and has no viewport: a frame taller than
+  // the terminal corrupts its redraw, collapsing lines onto one another (the
+  // note in components/Select.tsx describes the same failure). Coin counts come
+  // from chain state, so every block below is bounded by what the terminal can
+  // actually show.
+  const budget = balanceBudget(stdout?.rows, stdout?.columns);
   const showWallets = isUnlocked && wallet && addresses;
   const headerHint = wallet ? `${network.id} · ${wallet.name}` : network.id;
   const chips = paused ? [{ label: 'PAUSED', color: 'yellow' }] : undefined;
@@ -286,6 +320,7 @@ export function StateView({
               <FungibleBalanceBlock
                 available={coins?.shielded.available ?? []}
                 tokenType="shielded"
+                budget={budget}
               />
               <PendingRow count={coins?.shielded.pending.length ?? 0} />
             </Box>
@@ -304,6 +339,7 @@ export function StateView({
                 available={coins?.unshielded.available ?? []}
                 booked={coins?.unshielded.pending ?? []}
                 tokenType="unshielded"
+                budget={budget}
               />
               <PendingRow count={coins?.unshielded.pending.length ?? 0} />
             </Box>
@@ -321,6 +357,7 @@ export function StateView({
               <DustBalanceBlock
                 totalDust={dustBalance ?? 0n}
                 available={coins?.dust.available ?? []}
+                budget={budget}
               />
               <PendingRow count={coins?.dust.pending.length ?? 0} />
             </Box>

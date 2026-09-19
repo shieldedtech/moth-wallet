@@ -31,10 +31,19 @@ async function gzip(text: string): Promise<ArrayBuffer> {
 
 /** Serve the package assets a real export would produce. `missing` omits one,
  *  to exercise the all-or-nothing rule. */
-async function serveAssets(options: { height?: number; missing?: string } = {}) {
+async function serveAssets(options: { height?: number; missing?: string; witnesses?: boolean } = {}) {
   const height = options.height ?? 1985914;
   const assets = new Map<string, BodyInit>();
-  assets.set('manifest.json', JSON.stringify({ network: NETWORK, height, parts: {} }));
+  // Witnesses are required: a bundle whose cursors cannot be checked against the
+  // serving indexer is refused. `witnesses: false` exercises that refusal.
+  const witnesses =
+    options.witnesses === false
+      ? undefined
+      : {
+          shielded: { stream: 'zswapLedgerEvents', id: 1_431_228, digest: 'aaaaaaaaaaaaaaaa' },
+          dust: { stream: 'dustLedgerEvents', id: 1_431_375, digest: 'bbbbbbbbbbbbbbbb' },
+        };
+  assets.set('manifest.json', JSON.stringify({ network: NETWORK, height, parts: {}, witnesses }));
   for (const part of ['shielded', 'unshielded', 'dust']) {
     if (part === options.missing) continue;
     assets.set(`${part}.dat.gz`, await gzip(`${part}-state-blob`));
@@ -90,6 +99,36 @@ describe('installBundledReference', () => {
     await expect(installBundledReference(NETWORK, store)).resolves.toBe(false);
     expect(store.writes).toEqual([]);
     expect(store.entries.get(HEIGHT_KEY)).toBe('2045150');
+  });
+
+  it('stores a witness per cursor-bearing part, so the reference can be verified later', async () => {
+    await serveAssets();
+    const store = recordingStore();
+
+    await installBundledReference(NETWORK, store);
+
+    expect(JSON.parse(store.entries.get(`witness/${NETWORK}/__empty_ref__/dust.json`)!)).toEqual({
+      stream: 'dustLedgerEvents',
+      id: 1_431_375,
+      digest: 'bbbbbbbbbbbbbbbb',
+    });
+    // Before the height, which is what marks the reference usable — a reference
+    // that reads as usable without its witnesses is one that skips verification.
+    expect(store.writes.indexOf(`witness/${NETWORK}/__empty_ref__/dust.json`)).toBeLessThan(
+      store.writes.indexOf(HEIGHT_KEY),
+    );
+  });
+
+  // #40: the shipped preprod bundle had no witnesses, so nothing could tell that
+  // its cursors had stopped meaning what they meant. Refused rather than trusted:
+  // unlike a local reference, this is an artefact we control and can re-cut, so
+  // the cost of refusing is one slower first sync.
+  it('refuses a bundle with no witnesses rather than installing an unverifiable one', async () => {
+    await serveAssets({ witnesses: false });
+    const store = recordingStore();
+
+    await expect(installBundledReference(NETWORK, store)).resolves.toBe(false);
+    expect(store.writes).toEqual([]);
   });
 
   it('writes nothing when the network ships no reference', async () => {

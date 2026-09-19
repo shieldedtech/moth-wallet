@@ -15,6 +15,16 @@ import {createKeystore} from '@midnightntwrk/wallet-sdk/unshielded';
 import {setNetworkId} from '@midnight-ntwrk/midnight-js/network-id';
 import type {WalletAddresses} from '../types/wallet.js';
 
+/**
+ * Every bech32m prefix a wallet may hold an address for.
+ *
+ * Deliberately WIDER than `SUPPORTED_NETWORKS` in types/network.ts, and not to
+ * be narrowed to match it. Two kinds of id live here without being a network the
+ * wallet offers: `stagenet`, which has no preset, and `local`, which was renamed
+ * to `undeployed`. Dropping either would take its key out of every bundle
+ * derived from then on, so a stored address a dApp or an address book still
+ * refers to would resolve to nothing.
+ */
 const ALL_NETWORKS = ['mainnet', 'devnet', 'preview', 'preprod', 'qanet', 'stagenet', 'local', 'undeployed'] as const;
 
 export {Roles};
@@ -40,6 +50,12 @@ function toHex(bytes: Uint8Array): string {
   return Array.from(bytes)
     .map((b: number) => b.toString(16).padStart(2, '0'))
     .join('');
+}
+
+/** The bech32m DUST address for a dust key on `network`; the seed is not needed. */
+export function dustAddressForKey(dustSecretKey: DustSecretKey, network: string): string {
+  setNetworkId(network);
+  return DustAddress.encodePublicKey(network, dustSecretKey.publicKey);
 }
 
 /**

@@ -71,13 +71,25 @@ describe('Address Derivation Parity', () => {
     expect(addresses.nightExternal.bech32m.preprod).not.toBe(addresses.metadata.bech32m.preprod);
   });
 
+  // `undeployed` and `stagenet` are covered deliberately. The claim that the
+  // wallet could not derive addresses for `undeployed` is why it spent a long
+  // time unavailable as a network choice, and this loop stopping at qanet is why
+  // nothing contradicted it.
   it('should produce valid bech32m with mn_ prefix for all networks and roles', () => {
     for (const role of ['nightExternal', 'nightInternal', 'dust', 'zswap', 'metadata'] as const) {
-      for (const network of ['mainnet', 'devnet', 'preview', 'preprod', 'qanet'] as const) {
+      for (const network of [
+        'mainnet', 'devnet', 'preview', 'preprod', 'qanet', 'stagenet', 'undeployed',
+      ] as const) {
         const addr = addresses[role].bech32m[network];
         expect(addr).toMatch(/^mn_/);
         expect(addr.length).toBeGreaterThan(20);
       }
     }
+  });
+
+  it('should encode the local devnet stack under its own prefix', () => {
+    expect(addresses.nightExternal.bech32m.undeployed).toMatch(/^mn_addr_undeployed1/);
+    expect(addresses.dust.bech32m.undeployed).toMatch(/^mn_dust_undeployed1/);
+    expect(addresses.zswap.bech32m.undeployed).toMatch(/^mn_shield-addr_undeployed1/);
   });
 });

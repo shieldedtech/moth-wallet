@@ -68,6 +68,12 @@ export function useBalance(
   onLog?: (msg: string) => void,
   walletName?: string,
   isNewWallet?: boolean,
+  /**
+   * Birthday for the network being synced. Without it the pre-seed gate
+   * (`isNewWallet || birthday`) leaves an existing wallet on the genesis path
+   * however good a reference is in the store — silently, as a slow sync.
+   */
+  getBirthday?: (networkId: string) => Promise<number | undefined>,
 ) {
   const prover = network ? resolveProverConfig(network) : null;
   const proverKey = prover?.type === 'server' ? `server:${prover.url}` : (prover?.type ?? '');
@@ -97,7 +103,7 @@ export function useBalance(
       onLogRef.current?.(`[sync] startWalletSync begin — wallet=${walletName ?? '?'} network=${network.id} indexer=${network.indexerUrl}`);
       const synced = await startWalletSync(walletKeys, network, (msg) => {
         setState(prev => ({ ...prev, syncStatus: msg }));
-      }, walletName, isNewWallet);
+      }, walletName, isNewWallet, await getBirthday?.(network.id));
       onLogRef.current?.('[sync] startWalletSync resolved — facade ready, subscribing');
 
       syncRef.current = synced;
@@ -117,7 +123,7 @@ export function useBalance(
       onLogRef.current?.(`Sync failed: ${msg}`);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [walletKeys, network?.id, network?.nodeUrl, network?.indexerUrl, proverKey, walletName, isNewWallet]);
+  }, [walletKeys, network?.id, network?.nodeUrl, network?.indexerUrl, proverKey, walletName, isNewWallet, getBirthday]);
 
   useEffect(() => {
     startSync();
@@ -152,5 +158,28 @@ export function useBalance(
 
   const getFacade = useCallback(() => syncRef.current?.facade ?? null, []);
 
-  return { ...state, refresh, getFacade };
+  /**
+   * Stop syncing and wait for it, before anything frees the keys.
+   *
+   * Quitting called `lockAll()` and `exit()` immediately, which zeroed the dust
+   * secret key in WASM while the dust sync was still mid-batch. The next
+   * `replayEventsWithChanges` then threw `Dust secret key was cleared`, once per
+   * live facade, over the top of the exiting terminal.
+   *
+   * Bounded, because quitting must not hang on a sync that will not settle: after
+   * the deadline it gives up and lets the caller proceed. A key freed under a
+   * still-running sync is noisy; a TUI that will not close is worse.
+   */
+  const stop = useCallback(async (timeoutMs = 3_000): Promise<void> => {
+    if (unsubRef.current) { unsubRef.current(); unsubRef.current = null; }
+    const synced = syncRef.current;
+    syncRef.current = null;
+    if (!synced) return;
+    await Promise.race([
+      synced.stop().catch(() => {}),
+      new Promise<void>((resolve) => setTimeout(resolve, timeoutMs).unref?.()),
+    ]);
+  }, []);
+
+  return { ...state, refresh, getFacade, stop };
 }

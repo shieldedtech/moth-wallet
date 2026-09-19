@@ -2,10 +2,13 @@ import type { StorageAdapter } from '../storage/adapter.js';
 import type { WalletInfo, UnlockedWallet, DerivedKeys, WalletAddresses, AddressEncoding } from '../types/wallet.js';
 import { WalletError } from '../types/errors.js';
 import { generateMnemonic24, validateMnemonic, mnemonicToSeed, hexSeedToUint8Array } from './mnemonic.js';
+import { assertHexSeed } from './hex-seed.js';
+import type { BackupKind } from '../types/wallet.js';
 import { encryptKeystore, decryptKeystore, keystoreNeedsUpgrade, type EncryptedKeystore } from './keystore.js';
 import { deriveAllAddressesFromSeed, deriveRawKeys, Roles } from './address.js';
 import { deriveWalletKeys, type WalletKeys } from '../sync/operations.js';
 import { removeWalletSyncArtifacts } from '../sync/wallet-sync.js';
+import { canonicalNetworkId } from '../types/network.js';
 
 const CONFIG_KEY = 'config.json';
 
@@ -42,6 +45,16 @@ interface WalletMeta {
   name: string;
   network: string;
   createdAt: string;
+  /**
+   * Which artifact this wallet's keystore holds, recorded at creation so a UI
+   * can tell before decrypting anything. The keystore itself distinguishes them
+   * (a hex import is stored as `seed:<hex>`), but only the password reveals
+   * that, which is too late to grey out an option.
+   *
+   * Absent on wallets written before this field: unknown, and deliberately not
+   * defaulted — see WalletInfo.backupKind.
+   */
+  backupKind?: BackupKind;
   /** Public night receive address (bech32m). Absent for wallets created before this field existed. */
   address?: string;
   /**
@@ -92,6 +105,55 @@ interface WalletMeta {
  * was written, which is `meta.network` — it was discarded on any switch, so a
  * stored one cannot refer to anywhere else.
  */
+/**
+ * Re-key per-network birthdays onto the ids in use today.
+ *
+ * Colliding keys keep the LOWER height. Both `local` and `undeployed` were
+ * offered at once, so a wallet can hold a birthday under each — created on one
+ * name, switched to the other — and letting insertion order decide would pick
+ * either. Lower is the safe direction: a birthday below the wallet's true
+ * first-existence height only costs scanning, while one above it lets the
+ * pre-seed guard (`reference.height <= birthday`) accept a reference newer than
+ * the wallet's own history, skipping transactions it needs to see.
+ */
+function canonicalBirthdays(birthdays: Record<string, number>): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [id, height] of Object.entries(birthdays)) {
+    const key = canonicalNetworkId(id);
+    const existing = out[key];
+    out[key] = existing === undefined ? height : Math.min(existing, height);
+  }
+  return out;
+}
+
+/**
+ * Resolve every network id a meta record carries to the id in use today.
+ *
+ * `birthdays` is re-keyed whatever the wallet's own network is, NOT only when
+ * that network was the renamed one. A wallet that has since moved elsewhere
+ * still holds the old key, and leaving it there means the next return trip looks
+ * like a first arrival to `setNetwork` and gets stamped with the current tip —
+ * a birthday far above the truth, with the consequence described above.
+ */
+function canonicalMeta(meta: WalletMeta): WalletMeta {
+  const network = canonicalNetworkId(meta.network);
+  const birthdays = meta.birthdays ? canonicalBirthdays(meta.birthdays) : undefined;
+  const birthdaysChanged =
+    birthdays !== undefined &&
+    (Object.keys(birthdays).length !== Object.keys(meta.birthdays!).length ||
+      Object.entries(birthdays).some(([id, height]) => meta.birthdays![id] !== height));
+  if (network === meta.network && !birthdaysChanged) return meta;
+
+  const migrated: WalletMeta = { ...meta, network, ...(birthdays ? { birthdays } : {}) };
+  // The stored address was derived for the OLD id, so its bech32m prefix names a
+  // network this wallet is no longer reported on — shown in an account list, it
+  // invites a receive on the wrong encoding. Dropped rather than re-derived,
+  // which would need the seed: `list()` renders "(locked)", an already-handled
+  // state, and the next unlock backfills the right address.
+  if (network !== meta.network) delete migrated.address;
+  return migrated;
+}
+
 function birthdayFor(meta: WalletMeta, network: string): number | undefined {
   if (meta.birthdays && meta.birthdays[network] !== undefined) return meta.birthdays[network];
   if (meta.birthday !== undefined && meta.network === network) return meta.birthday;
@@ -112,7 +174,8 @@ export class WalletManager {
     // on empty storage would push into DEFAULT_CONFIG itself and every later
     // fresh manager would then see that wallet as already existing.
     if (!data) return { ...DEFAULT_CONFIG, wallets: [...DEFAULT_CONFIG.wallets] };
-    return JSON.parse(decoder.decode(data)) as WalletConfig;
+    const config = JSON.parse(decoder.decode(data)) as WalletConfig;
+    return { ...config, defaultNetwork: canonicalNetworkId(config.defaultNetwork) };
   }
 
   private async saveConfig(config: WalletConfig): Promise<void> {
@@ -123,10 +186,19 @@ export class WalletManager {
     await this.storage.write(metaKey(meta.name), encoder.encode(JSON.stringify(meta)));
   }
 
+  /**
+   * Every read of a wallet's network goes through here, so a renamed network is
+   * canonicalised once rather than at each call site. It matters most on unlock:
+   * the meta record's network becomes the wallet-wide selection, so a stale id
+   * here would reassert itself over a migrated selection on every unlock.
+   *
+   * The stored bytes are left alone — the record is rewritten only when
+   * something else is already saving it.
+   */
   private async loadMeta(name: string): Promise<WalletMeta | null> {
     const data = await this.storage.read(metaKey(name));
     if (!data) return null;
-    return JSON.parse(decoder.decode(data)) as WalletMeta;
+    return canonicalMeta(JSON.parse(decoder.decode(data)) as WalletMeta);
   }
 
   private validateName(name: string): void {
@@ -165,6 +237,9 @@ export class WalletManager {
     // same phrase back here so the stored wallet matches what the user wrote down.
     mnemonic?: string,
   ): Promise<WalletInfo & { mnemonic: string }> {
+    // A caller-supplied id (a --network flag, a picker selection) is about to be
+    // persisted, so a retired name is resolved here rather than written back out.
+    network = canonicalNetworkId(network);
     this.validateName(name);
     const config = await this.loadConfig();
 
@@ -190,6 +265,7 @@ export class WalletManager {
       createdAt: new Date().toISOString(),
       address,
       createdHere: true,
+      backupKind: 'mnemonic',
       ...(birthday !== undefined ? { birthdays: { [network]: birthday } } : {}),
     };
     await this.saveMeta(meta);
@@ -204,6 +280,9 @@ export class WalletManager {
   }
 
   async import(name: string, mnemonic: string, passphrase: string, network = 'devnet'): Promise<WalletInfo> {
+    // A caller-supplied id (a --network flag, a picker selection) is about to be
+    // persisted, so a retired name is resolved here rather than written back out.
+    network = canonicalNetworkId(network);
     this.validateName(name);
 
     if (!validateMnemonic(mnemonic)) {
@@ -223,7 +302,10 @@ export class WalletManager {
     const keystore = await encryptKeystore(mnemonic, passphrase);
     await this.storage.write(walletKey(name), encoder.encode(JSON.stringify(keystore)));
 
-    const meta: WalletMeta = { name, network, createdAt: new Date().toISOString(), address, createdHere: false };
+    const meta: WalletMeta = {
+      name, network, createdAt: new Date().toISOString(), address,
+      createdHere: false, backupKind: 'mnemonic',
+    };
     await this.saveMeta(meta);
 
     config.wallets.push(name);
@@ -236,6 +318,16 @@ export class WalletManager {
   }
 
   async importFromSeed(name: string, hexSeed: string, passphrase: string, network = 'devnet'): Promise<WalletInfo> {
+    // Shape-checked before anything is derived or written. There was no
+    // validation here at all: a malformed seed reached the SDK and surfaced as
+    // a bare 'Invalid seed', and one that was merely the wrong *length* was
+    // accepted outright — silently producing a different wallet. A hex seed has
+    // no checksum, so shape is the only thing that can be checked; that makes
+    // checking it worth more here, not less. See wallet/hex-seed.ts.
+    hexSeed = assertHexSeed(hexSeed);
+    // A caller-supplied id (a --network flag, a picker selection) is about to be
+    // persisted, so a retired name is resolved here rather than written back out.
+    network = canonicalNetworkId(network);
     const addresses = this.deriveAddressesFromSeed(hexSeed);
     const address = this.primaryAddress(addresses, network);
 
@@ -248,7 +340,10 @@ export class WalletManager {
     }
 
     await this.storage.write(walletKey(name), encoder.encode(JSON.stringify(keystore)));
-    const meta: WalletMeta = { name, network, createdAt: new Date().toISOString(), address, createdHere: false };
+    const meta: WalletMeta = {
+      name, network, createdAt: new Date().toISOString(), address,
+      createdHere: false, backupKind: 'seed',
+    };
     await this.saveMeta(meta);
 
     config.wallets.push(name);
@@ -273,6 +368,27 @@ export class WalletManager {
       ciphertext: new Uint8Array(Object.values(keystore.ciphertext)),
       tag: new Uint8Array(Object.values(keystore.tag)),
     };
+  }
+
+  /**
+   * The birthday this wallet asserts for a SPECIFIC network.
+   *
+   * `list()` resolves against the wallet's own `meta.network`, which is wrong for
+   * a sync driven by `--network`: birthdays are per-network (see `birthdays`), so
+   * asking about the wallet's default network returns a height belonging to a
+   * different chain, or nothing at all. Callers about to sync must ask about the
+   * network they are syncing.
+   *
+   * Never throws. A wallet with no meta, or an unreadable one, asserts nothing —
+   * and "no claim" means scan from genesis, which is slow but never wrong.
+   */
+  async birthdayOn(name: string, networkId: string): Promise<number | undefined> {
+    try {
+      const meta = await this.loadMeta(name);
+      return meta ? birthdayFor(meta, networkId) : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   async unlock(name: string, passphrase: string): Promise<UnlockedWallet> {
@@ -308,7 +424,8 @@ export class WalletManager {
     // function — never escapes to the UnlockedWallet object.
     // See docs/spec/wallet-service/05-key-management.md D-KM-3.
     let seedHex: string;
-    if (decrypted.startsWith('seed:')) {
+    const backupKind: BackupKind = decrypted.startsWith('seed:') ? 'seed' : 'mnemonic';
+    if (backupKind === 'seed') {
       seedHex = decrypted.slice(5);
     } else {
       const seed = await mnemonicToSeed(decrypted);
@@ -323,8 +440,15 @@ export class WalletManager {
     // Backfill the public address for wallets created before it was stored (or
     // re-derive it after a network change), so the account list can show it
     // without another unlock.
-    if (meta && meta.address !== address) {
-      await this.saveMeta({ ...meta, address });
+    //
+    // backupKind rides along on the same write. It is recorded at creation for
+    // new wallets, but an existing wallet has no way to learn it without the
+    // password — the keystore is what distinguishes a `seed:` payload from a
+    // mnemonic. Unlock is the one moment that knowledge exists, so it is
+    // persisted here rather than left unknown for ever. Written only when
+    // missing or wrong, so a normal unlock does not touch storage.
+    if (meta && (meta.address !== address || meta.backupKind !== backupKind)) {
+      await this.saveMeta({ ...meta, address, backupKind });
     }
     const rawKeys = deriveRawKeys(seedHex);
     const keys: DerivedKeys = {
@@ -490,6 +614,7 @@ export class WalletManager {
         active: config.activeWallet === name,
         birthday: meta ? birthdayFor(meta, meta.network) : undefined,
         label: meta?.label,
+        backupKind: meta?.backupKind,
       });
     }
     return wallets;
@@ -533,6 +658,9 @@ export class WalletManager {
    * address to keep the locked account list immediately useful.
    */
   async setNetwork(name: string, network: string, address?: string, birthday?: number): Promise<void> {
+    // A caller-supplied id (a --network flag, a picker selection) is about to be
+    // persisted, so a retired name is resolved here rather than written back out.
+    network = canonicalNetworkId(network);
     const meta = await this.loadMeta(name);
     if (!meta) {
       throw new WalletError('WALLET_ERROR', `Wallet "${name}" not found`);

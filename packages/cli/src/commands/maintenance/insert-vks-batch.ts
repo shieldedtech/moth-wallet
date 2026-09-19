@@ -99,7 +99,7 @@ export default class MaintenanceInsertVksBatch extends BaseCommand {
       if (msg.includes('syncing') || msg.includes('synced')) {
         process.stderr.write(`\r  ${msg}${''.padEnd(20)}`);
       }
-    }, walletName);
+    }, walletName, false, await this.syncBirthday(walletName, network.id));
     process.stderr.write('\n');
 
     try {

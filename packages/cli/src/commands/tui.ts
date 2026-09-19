@@ -1,3 +1,4 @@
+import { canonicalNetworkId } from '@shieldedtech/moth-wallet';
 import { BaseCommand } from '../base-command.js';
 
 export default class Tui extends BaseCommand {
@@ -11,7 +12,9 @@ export default class Tui extends BaseCommand {
     const { flags } = await this.parse(Tui);
 
     const walletName = await this.resolveWalletName(flags).catch(() => 'none');
-    const networkId = flags.network;
+    // The TUI is handed the flag value directly rather than a resolved config,
+    // so a renamed id is resolved here instead.
+    const networkId = canonicalNetworkId(flags.network);
 
     // Dynamic imports — TUI, React, and Ink loaded only when this command runs
     const { render } = await import('ink');

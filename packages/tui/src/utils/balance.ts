@@ -96,3 +96,40 @@ export function parseNightAmount(amount: string): bigint {
   const [int, dec = ''] = amount.split('.');
   return BigInt(int || '0') * 1_000_000n + BigInt(dec.padEnd(6, '0').slice(0, 6));
 }
+
+/**
+ * Itemise a group's individual coins? More than one coin, or a lone coin
+ * carrying a flag worth seeing.
+ */
+export function shouldItemise(group: DisplayTokenGroup): boolean {
+  return group.coins.length > 1 || group.coins.some((c) => c.registered || c.booked);
+}
+
+/** One rendered line of the balance block. */
+export interface BalanceRow {
+  kind: 'group' | 'coin';
+  /** Index into the groups array. */
+  group: number;
+  /** Index into that group's coins — set for `coin` rows only. */
+  coin?: number;
+}
+
+/**
+ * Flatten display groups into the exact sequence of lines the balance block
+ * renders: a header per token, then its itemised coins.
+ *
+ * Flattened rather than nested because the block has to be bounded as a whole.
+ * Volume arrives from either direction — a wallet with many tokens or a token
+ * with many coins — and capping only the inner list leaves the outer one
+ * unbounded. One flat list means one row budget (see windowRows), so the block
+ * can never render taller than the terminal whichever way the coins fall.
+ */
+export function flattenBalanceRows(groups: readonly DisplayTokenGroup[]): BalanceRow[] {
+  const rows: BalanceRow[] = [];
+  groups.forEach((group, g) => {
+    rows.push({ kind: 'group', group: g });
+    if (!shouldItemise(group)) return;
+    group.coins.forEach((_coin, c) => rows.push({ kind: 'coin', group: g, coin: c }));
+  });
+  return rows;
+}

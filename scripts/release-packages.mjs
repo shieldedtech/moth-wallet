@@ -368,6 +368,22 @@ function appendGitHubOutput(name, value) {
   appendFileSync(outputPath, `${name}=${value}\n`);
 }
 
+export function writeChangesetsOutput(releaseWork, outputPath = process.env.CHANGESETS_OUTPUT) {
+  if (!outputPath) return;
+  appendFileSync(
+    outputPath,
+    releaseWork
+      .map((workspace) =>
+        JSON.stringify({
+          type: 'git-tag',
+          tag: requireString(workspace.releaseTag, 'release tag'),
+          packageName: requireString(workspace.name, 'package name'),
+        }),
+      )
+      .join('\n') + (releaseWork.length > 0 ? '\n' : ''),
+  );
+}
+
 function createTag(rootDir, releaseTag, targetSha) {
   const result = spawnSync('git', ['tag', '-a', releaseTag, targetSha, '-m', releaseTag], {
     cwd: rootDir,
@@ -444,6 +460,7 @@ async function main() {
     console.log(`${workspace.releaseTag} is missing its GitHub Release; recovering it`);
     console.log(`New tag: ${workspace.releaseTag}`);
   }
+  writeChangesetsOutput(plan.releaseWork);
   if (plan.releaseWork.length === 0) console.log('No release work found');
 }
 

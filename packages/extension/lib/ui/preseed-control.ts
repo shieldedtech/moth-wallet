@@ -5,11 +5,12 @@
 // on preprod — was the only way to get one, and offering it everywhere was
 // right.
 //
-// It is no longer right everywhere. preprod ships a reference in the package
-// (see offscreen/bundled-preseed.ts), installed on the first unlock. Offering to
-// build one there is offering an hour of work to arrive at what the user already
-// has on disk. So the control is now scoped to the case it was always for:
-// networks this release ships nothing prepared for.
+// It is no longer right everywhere. preprod, preview and qanet each ship a
+// reference in the package (see offscreen/bundled-preseed.ts), installed on the
+// first unlock. Offering to build one there is offering an hour of work to arrive
+// at what the user already has on disk. So the control is now scoped to the case
+// it was always for: networks this release ships nothing prepared for. The set is
+// probed rather than listed here, so adding a bundle needs no change to this.
 //
 // Note what this does NOT claim to fix. Because of the `height <= birthday`
 // guard, warming can never help the account whose creation prompted the user to

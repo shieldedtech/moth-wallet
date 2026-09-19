@@ -5,9 +5,12 @@ import { useEffect, useState } from 'react';
 import { Moon, TriangleAlert } from 'lucide-react';
 import { t } from '../../lib/i18n';
 import { sendMessage } from '../../lib/messaging/protocol';
+import { useTokenNames } from '../../lib/ui/client';
 import { accountLabel } from '../../lib/ui/format';
 import { nativeAssetLabelsForNetwork } from '../../lib/ui/token-labels';
+import { txSummaryRows } from '../../lib/ui/tx-summary-view';
 import type { PendingApproval } from '../../lib/background/approvals';
+import type { BalanceApprovalPayload } from '../../lib/background/connector-handlers';
 import { Button } from '../ui/button';
 import { Badge, Card, Separator } from '../ui/card';
 import { Input } from '../ui/input';
@@ -53,6 +56,7 @@ export function Approval({
 }) {
   const [approval, setApproval] = useState<PendingApproval | null>(null);
   const [missing, setMissing] = useState(false);
+  const { names: tokenNames } = useTokenNames();
   const shownName = walletName ? accountLabel(walletName, walletLabel) : null;
 
   useEffect(() => {
@@ -178,10 +182,24 @@ export function Approval({
               {t('approval_balanceSubtitle', [host])}
             </p>
           </div>
+          <BalanceSummary
+            payload={approval.payload as BalanceApprovalPayload}
+            host={host}
+            labels={labels}
+            tokenNames={tokenNames}
+          />
           <DetailCard
             rows={[
               { label: t('approval_fromLabel'), value: shownName ?? '—' },
               { label: t('approval_networkFeeLabel'), value: t('approval_paidIn', [labels.dust]) },
+              ...((approval.payload as BalanceApprovalPayload).summary?.contractActions
+                ? [
+                    {
+                      label: t('approval_contractCallsLabel'),
+                      value: String((approval.payload as BalanceApprovalPayload).summary?.contractActions),
+                    },
+                  ]
+                : []),
             ]}
           />
           <NoteCard icon={TriangleAlert}>
@@ -226,6 +244,61 @@ export function Approval({
 
       {locked && <ApprovalUnlock walletName={walletName} onUnlocked={onUnlocked} />}
     </PanelScreen>
+  );
+}
+
+/**
+ * What a dApp-built transaction takes from the wallet, token by token, before
+ * the user approves balancing it. The one thing this screen must never do is
+ * stay quiet: no summary means a visible warning, and a summary with nothing in
+ * it says so in words.
+ */
+function BalanceSummary({
+  payload,
+  host,
+  labels,
+  tokenNames,
+}: {
+  payload: BalanceApprovalPayload;
+  host: string;
+  labels: ReturnType<typeof nativeAssetLabelsForNetwork>;
+  tokenNames: Record<string, string>;
+}) {
+  if (!payload.summary) {
+    return (
+      <NoteCard icon={TriangleAlert}>
+        {t('approval_summaryUnavailable', [host])}
+      </NoteCard>
+    );
+  }
+  const rows = txSummaryRows(payload.summary, labels, tokenNames);
+  if (rows.length === 0) {
+    return (
+      <Card className="p-4">
+        <p className="m-0 text-[13.5px] text-muted-foreground">{t('approval_spendsNothing')}</p>
+      </Card>
+    );
+  }
+  return (
+    <Card className="p-0">
+      {rows.map((row, index) => (
+        <div key={`${row.direction}-${row.symbol}-${index}`}>
+          {index > 0 && <Separator />}
+          <div className="flex items-center gap-3 px-4 py-[15px]">
+            <TokenIcon kind={row.icon} />
+            <span className="flex-1">
+              <span className="block text-[12px] text-muted-foreground">
+                {row.direction === 'pay' ? t('approval_youPay') : t('approval_youGetBack')}
+              </span>
+              <span className="block text-[15px] font-bold">
+                {row.amount} {row.symbol}
+              </span>
+            </span>
+            {row.detail && <span className="font-mono text-xs text-muted-foreground">{row.detail}</span>}
+          </div>
+        </div>
+      ))}
+    </Card>
   );
 }
 

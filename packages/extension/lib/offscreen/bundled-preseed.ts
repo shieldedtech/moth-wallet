@@ -19,7 +19,7 @@
 // leak "this IP created a wallet on network X at time T" at the moment least
 // worth leaking.
 
-import { emptyRefStateKey, emptyRefHeightKey, type SyncStateStore, type WalletPart } from '@shieldedtech/moth-wallet/sync/sync-store';
+import { cursorWitnessKey, emptyRefStateKey, emptyRefHeightKey, EMPTY_REF_WALLET, type SyncStateStore, type WalletPart } from '@shieldedtech/moth-wallet/sync/sync-store';
 
 const PARTS: WalletPart[] = ['shielded', 'unshielded', 'dust'];
 
@@ -27,6 +27,16 @@ interface Manifest {
   network: string;
   height: number;
   parts: Record<string, { bytes: number; gzipBytes: number }>;
+  /**
+   * Hash of the event each cursor points at, recorded at export time.
+   *
+   * Required. A bundle's cursors are indexer-assigned event numbers, so without
+   * these there is no way to tell whether the numbering they were written under
+   * still holds — which is how a stale preprod reference shipped and kept being
+   * installed (#40). Checksums prove the bytes arrived, not that the cursors
+   * still mean what they meant.
+   */
+  witnesses?: Record<string, { stream: string; id: number; digest: string }>;
 }
 
 /** Package-relative, so this works in the worker without extension APIs — the
@@ -60,6 +70,15 @@ function parseManifest(text: string | null): Manifest | null {
   try {
     const manifest = JSON.parse(text) as Manifest;
     if (!Number.isFinite(manifest.height) || manifest.height <= 0) return null;
+    // A bundle we cannot verify is refused rather than trusted. Unlike a local
+    // reference — where the same strictness would force every existing user into
+    // a chain walk on upgrade — this is an artefact we control and can re-cut, so
+    // the cost of refusing is one slower first sync, and the cost of trusting is
+    // a wallet silently resuming at the wrong event.
+    for (const part of ['shielded', 'dust'] as const) {
+      const witness = manifest.witnesses?.[part];
+      if (!witness || typeof witness.digest !== 'string' || !Number.isFinite(witness.id)) return null;
+    }
     return manifest;
   } catch {
     return null;
@@ -120,6 +139,12 @@ export async function installBundledReference(networkId: string, store: SyncStat
     }
 
     for (const part of PARTS) await store.put(emptyRefStateKey(networkId, part), states[part]!);
+    // Witnesses before the height, for the same reason the height goes last: the
+    // height is what marks the reference usable, and a reference that reads as
+    // usable without its witnesses is one that skips verification.
+    for (const [part, witness] of Object.entries(manifest.witnesses ?? {})) {
+      await store.put(cursorWitnessKey(networkId, EMPTY_REF_WALLET, part as WalletPart), JSON.stringify(witness));
+    }
     await store.put(emptyRefHeightKey(networkId), String(manifest.height));
     return true;
   } catch {

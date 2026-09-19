@@ -1,12 +1,12 @@
 import React from 'react';
 import { Box, Text } from 'ink';
-import { DEFAULT_NETWORKS } from '@shieldedtech/moth-wallet';
+import { SUPPORTED_NETWORKS } from '@shieldedtech/moth-wallet';
 import { BackHint } from '../../components/BackHint.js';
 import { SectionHeader } from '../../components/SectionHeader.js';
 import { Select } from '../../components/Select.js';
 import type { Navigator, Route } from '../../navigation/index.js';
 
-const NETWORKS = Object.keys(DEFAULT_NETWORKS);
+const NETWORKS: readonly string[] = SUPPORTED_NETWORKS;
 const ITEMS = NETWORKS.map((id) => ({ label: id, value: id }));
 
 interface Props {

@@ -12,6 +12,7 @@ import {
   listNightUtxos,
   clearSyncCache,
   NIGHT_TOKEN_ID,
+  DustRegistrationNotYetError,
   type SendRequest,
 } from '@shieldedtech/moth-wallet';
 import { syncedWalletStub } from './utils/synced-wallet-stub.js';
@@ -70,7 +71,7 @@ export function App({ networkId: networkIdProp }: AppProps) {
   const networkConfig = useMemo(() => network.getConfig(), [network.getConfig]);
   const chain = useChainStatus(networkConfig);
   const activeWalletKeys = wallet.getActiveWalletKeys();
-  const balance = useBalance(activeWalletKeys, networkConfig, logs.info, wallet.activeWallet?.name, wallet.isActiveWalletNew());
+  const balance = useBalance(activeWalletKeys, networkConfig, logs.info, wallet.activeWallet?.name, wallet.isActiveWalletNew(), wallet.activeWalletBirthdayOn);
   const [lastWalletName, setLastWalletName] = useState<string | null>(null);
 
   // Daemon: keep a ref to the latest WalletBalances snapshot so daemon
@@ -114,6 +115,8 @@ export function App({ networkId: networkIdProp }: AppProps) {
 
   useEffect(() => {
     loadSettings(storage).then(settings => {
+      // loadSettings resolves renamed network ids on both the selection and the
+      // override keys, so nothing here has to know about them.
       const targetNetwork = networkIdProp ?? settings.lastNetwork ?? 'devnet';
       setInitialNetwork(targetNetwork);
       network.connect(targetNetwork, settings.networkOverrides?.[targetNetwork]);
@@ -152,8 +155,33 @@ export function App({ networkId: networkIdProp }: AppProps) {
 
   useEffect(() => { persistSettings(); }, [persistSettings]);
 
+  // Quitting frees key material, and the sync must be stopped first: lockAll()
+  // zeroes the dust secret key in WASM, and a dust batch still in flight then
+  // throws `Dust secret key was cleared` from replayEventsWithChanges — once per
+  // live facade, printed over the exiting terminal. Bounded so a sync that will
+  // not settle cannot keep the TUI open.
+  const quit = useCallback(() => {
+    void (async () => {
+      try {
+        await balance.stop();
+      } catch {
+        /* stopping is best-effort; exiting is not optional */
+      }
+      wallet.lockAll();
+      exit();
+    })();
+  }, [balance, wallet, exit]);
+
   useEffect(() => {
-    return () => { wallet.lockAll(); };
+    // Unmount that did not come through `quit` — Ctrl-C, a crash, the process
+    // ending. Ask the sync to stop before freeing the keys. It cannot be awaited
+    // in a cleanup, so this narrows the window rather than closing it: a batch
+    // already inside the WASM call can still find the key gone. The explicit
+    // quit path awaits properly.
+    return () => {
+      void balance.stop().catch(() => {});
+      wallet.lockAll();
+    };
   }, [wallet.lockAll]);
 
   // Onboarding handler — fired by the wizard's final step. Uses a ref so
@@ -260,7 +288,7 @@ export function App({ networkId: networkIdProp }: AppProps) {
       return;
     }
     if (!key.meta) return;
-    if (input === 'q') { wallet.lockAll(); exit(); return; }
+    if (input === 'q') { quit(); return; }
     if (input === 'p') { setPaused(p => !p); logs.info(paused ? 'Resumed' : 'Paused'); return; }
   });
 
@@ -307,7 +335,7 @@ export function App({ networkId: networkIdProp }: AppProps) {
         coins={balance.coins}
         subProgress={balance.subProgress}
         unreadLogs={unreadLogs}
-        onQuit={() => { wallet.lockAll(); exit(); }}
+        onQuit={quit}
         onViewLogs={() => setLastLogsSeen(logs.count)}
         renderSend={(onBack) => (
           <Send wallet={walletState}
@@ -495,6 +523,16 @@ export function App({ networkId: networkIdProp }: AppProps) {
                 await balance.refresh();
                 return { success: true, txId: txHash };
               } catch (err) {
+                // Registration self-funds from the DUST its NIGHT would already
+                // have generated, and that amount starts at zero — so on a
+                // freshly funded wallet this is "not yet", not a failure.
+                // Nothing was built, booked or spent. The panel and the CLI both
+                // say so; without this the TUI showed the raw SDK message, which
+                // reads as a broken wallet.
+                if (err instanceof DustRegistrationNotYetError) {
+                  logs.info(`DUST registration not possible yet: ${err.message}`);
+                  return { success: false, error: err.message };
+                }
                 const msg = err instanceof Error ? err.message : String(err);
                 logs.error(`DUST register failed: ${msg}`);
                 return { success: false, error: msg };

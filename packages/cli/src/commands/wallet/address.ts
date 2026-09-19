@@ -14,7 +14,14 @@ export default class WalletAddress extends BaseCommand {
 
   static override flags = {
     ...BaseCommand.baseFlags,
-    name: Flags.string({ description: 'Wallet name', required: true }),
+    // `--name` was required, and this was the only command in the CLI that used
+    // it — every other wallet-scoped command takes the shared `--wallet` and
+    // falls back to the active wallet. That made this the one command that could
+    // not act on the active wallet: `wallet use w1` then `wallet address` failed
+    // with "Missing required flag name" (#60). `--wallet` now works, resolution
+    // goes through resolveWalletName like everywhere else, and `--name` stays as
+    // an alias so existing scripts keep working.
+    name: Flags.string({ description: 'Wallet name (alias for --wallet)' }),
   };
 
   async run(): Promise<void> {
@@ -22,8 +29,11 @@ export default class WalletAddress extends BaseCommand {
     this.outputFormat = (flags.output as 'text' | 'json') ?? 'text';
     this.verbose = flags.verbose;
 
+    // --name wins when given, else --wallet, else the active wallet.
+    const walletName = flags.name ?? (await this.resolveWalletName(flags));
+
     const passphrase = await getPassphrase();
-    const wallet = await this.walletManager.unlock(flags.name, passphrase);
+    const wallet = await this.walletManager.unlock(walletName, passphrase);
     try {
       if (this.outputFormat === 'json') {
         this.outputSuccess({ name: wallet.name, addresses: wallet.addresses });

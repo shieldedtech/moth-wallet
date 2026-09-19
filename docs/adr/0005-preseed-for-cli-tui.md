@@ -1,8 +1,31 @@
-# ADR 0005 — Pre-seeding the CLI, TUI and daemon
+# ADR 0005 — Surface parity: pre-seeding, timings and DUST UX across CLI, TUI and daemon
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-12
 - **Related:** ADR 0003 (the mechanism and the `height <= birthday` guard), ADR 0004 (CI, storage and retrieval of published references), `packages/core/src/sync/preseed.ts`, `packages/extension/lib/offscreen/bundled-preseed.ts`
+
+> **Revised 2026-08-12.** Originally scoped to pre-seeding. A parity audit found
+> the same shape in two more places — the phase-timings recorder and the DUST
+> registration estimate — so the scope is widened rather than duplicated into a
+> second ADR. The decision is unchanged: give the CLI and TUI the state and the
+> commands the extension already has.
+
+## Measured parity, before this work
+
+| capability | core | extension | CLI | TUI |
+|---|---|---|---|---|
+| Pre-seed consumption | yes | yes | **no birthday** | **no birthday** |
+| Bundled reference | — | yes | no | no |
+| Build / refresh | exported | Settings toggle | **no command** | **no command** |
+| Phase timings | storage-agnostic | 4 call sites | **0** | **0** |
+| DUST "not yet" estimate | yes | yes | `--wait` | **0** |
+
+Two of these are worse than they look. The timings recorder was deliberately
+made storage-agnostic so every surface could use it, and `docs/BENCHMARKING.md`
+already documents a `~/.moth/timings.json` — which nothing wrote. And the DUST
+registration estimate reached the CLI but not the TUI, so the failure that
+prompted it ("That didn't go through", pointing at the proof server) was still
+live on one surface.
 
 ## Context
 
@@ -60,15 +83,32 @@ loses them silently. `manager.import` must keep passing nothing.
 This one change is worth making even before the rest: without a birthday, a
 reference cannot be used no matter how it arrives.
 
-### 2. A `dust preseed` command group
+### 2. A `preseed` command group
 
 ```
-moth dust preseed status    # height, staleness, whether one exists
-moth dust preseed build     # first build for this network (tens of minutes)
-moth dust preseed refresh   # catch an existing one up (9.1s measured)
-moth dust preseed import <file>   # load a published reference
-moth dust preseed export <dir>    # write one out, as scripts/export-preseed.mjs does
+moth preseed status         # height, staleness, whether one exists
+moth preseed import <dir>   # load a published reference (seconds)
+moth preseed refresh        # catch an existing one up (9.1s measured)
+moth preseed build          # first build for this network (tens of minutes)
+moth preseed export <dir>   # write one out, in the format CI publishes
 ```
+
+**Top-level, not under `dust`.** An earlier draft of this ADR proposed `moth dust
+preseed …`, reasoning that DUST is why the pre-seed matters — it is the 4.9 MB
+blob, the ~1.4M events, the tens of minutes, where shielded and unshielded take
+seconds. True about the motivation, wrong about the thing: the pre-seed writes
+all three sub-wallet caches, and a reference is per-network machine state in
+`~/.moth` shared by every wallet on the machine, whereas `moth dust` groups
+per-wallet token operations (`register`, `deregister`, `status`). A command tree
+should say what a thing is; the "why" belongs in its description. Discoverability
+agrees — someone whose first sync is crawling searches for "preseed", and only
+learns the DUST connection from the output.
+
+Settled while neither surface had shipped, so the accurate name cost nothing.
+
+Each action is a real oclif subcommand rather than one command taking an action
+argument, so `--timeout` belongs to `build` and `--force` to `import` instead of
+every flag hanging off the group with "(build only)" in its description.
 
 `build` and `refresh` are thin wrappers over the core functions that already
 exist. `import`/`export` make the reference a portable artifact, which is what
@@ -78,7 +118,24 @@ where a persistent per-network cache plus `refresh` costs seconds per run.
 This also promotes `scripts/export-preseed.mjs` from a loose script into a
 supported command, which is where the benchmark tooling should have been.
 
-### 3. Retrieval, deferred to ADR 0004
+### 3. Wire the timings recorder outside the extension
+
+`createFileTimingStore` backs the existing recorder with a JSON file, and the
+CLI's `BaseCommand` exposes it as `this.timings`, writing `~/.moth/timings.json`.
+Off unless `moth diagnostics timings on` has been run, so the cost is one file
+read per command otherwise — the same trade the extension makes.
+
+`moth diagnostics timings` is the CLI's `debug.html`: it prints the timeline as
+deltas rather than absolute stamps, because the question is where the wall clock
+went, not what time it was.
+
+### 4. Surface the DUST registration estimate in the TUI
+
+`DustRegistrationNotYetError` already carries the wait. The TUI now catches it
+distinctly and reports "not possible yet" rather than logging the raw SDK message
+as a failure.
+
+### 5. Retrieval, deferred to ADR 0004
 
 A CLI cannot bundle a reference inside a signed package the way the extension
 does — that property is what makes the extension's bundling trustworthy without a

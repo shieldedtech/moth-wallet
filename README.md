@@ -70,6 +70,43 @@ node scripts/export-preseed.mjs --check
 
 A stale reference costs catch-up time, not correctness — the wallet syncs forward from the reference height — so one cut at release time stays useful for as long as the release does. Roughly half a second of catch-up per hour of age, measured on preprod. Refresh it when cutting a release rather than on a schedule; `--check` reports the age it would ship.
 
+### The preprod reference shipped before 2026-08-21 is stale — clear your cache
+
+If you have synced a preprod wallet with a build from before this date, clear that
+account's sync cache once:
+
+```bash
+moth wallet status --wallet <name> --network preprod   # confirm which account
+rm -rf ~/.moth/sync/preprod                            # CLI and TUI
+```
+
+In the extension: Settings → Advanced → Clear sync cache, with preprod selected.
+
+**Why.** Sync cursors are event sequence numbers assigned by the indexer, not
+heights derived from the chain. The default preprod indexer used to have a
+22-event hole in its dust id space; the host now serving that name numbers
+contiguously. Cursors written before that change therefore sit 22 events too high,
+and the bundled preprod reference (dust cursor `1431375`) is one of them — a wallet
+seeded from it resumes 22 dust events beyond the state the snapshot actually
+holds.
+
+**What it looks like if you don't.** Nothing. No error, no warning. Dust
+generation history is missing those events and the balance is quietly wrong.
+That silence is the whole problem, and it is why the fix is a cache clear rather
+than something the wallet can repair in place.
+
+**What you lose by clearing.** Sync time only — the account rescans from genesis,
+which is minutes for shielded and up to about an hour for dust on preprod. No key
+material and no funds are involved. Nothing is destroyed by the stale cursor
+either; the events are on chain and a rescan finds them.
+
+A rebuilt reference is being cut against the current indexer. Until it lands, a
+preprod account created on a fresh install will use the bundled reference and
+inherit the same skew, so clear the cache after your first sync there too. Builds
+from 2026-08-21 onward refuse a reference whose cursor no longer names the event it
+named when it was written — see [ADR 0003](docs/adr/0003-preseed-reference.md) and
+issue #40.
+
 The manually dispatched `Prepare preseed references` workflow prepares preview, preprod, or both in parallel. It restores only public reference state, refreshes to chain tip, exports the files, records SHA-256 checksums, and uploads reviewable workflow artifacts. It does not publish assets, modify the repository, open or merge a PR, or use OIDC. See [`docs/BENCHMARKING.md`](docs/BENCHMARKING.md) for what the preparation does and the sharp edges around it, and [ADR 0004](docs/adr/0004-preseed-distribution.md) for the longer-term distribution design.
 
 ## Prerequisites
@@ -106,16 +143,41 @@ For end-to-end verification of every mode (in-process CLI, TUI host, daemon Unix
 
 The extension is not on the Chrome Web Store. Build it and load it unpacked.
 
+Run `yarn build` from the repo root first — the extension consumes `core`'s compiled output, and `wxt build` does not build `core`.
+
 ```bash
 yarn workspace @shieldedtech/moth-extension build          # -> packages/extension/.output/chrome-mv3
 yarn workspace @shieldedtech/moth-extension build:firefox  # -> packages/extension/.output/firefox-mv2
 ```
 
-In Chrome, open `chrome://extensions`, turn on **Developer mode**, choose **Load unpacked**, and select `packages/extension/.output/chrome-mv3`. After a rebuild, press the reload icon on the extension's card — Chrome does not pick up a new build on its own.
+### Building to a fixed directory
 
-In Firefox, open `about:debugging#/runtime/this-firefox`, choose **Load Temporary Add-on**, and select the `manifest.json` inside `packages/extension/.output/firefox-mv2`. Temporary add-ons are removed when Firefox restarts.
+Chrome derives an unpacked extension's ID from the absolute path it was loaded from, so a build in a new directory is a different extension: new ID, empty storage, a new wallet and a full re-sync.
 
-To hand a build to someone else, `yarn workspace @shieldedtech/moth-extension zip` writes a store-shaped archive to `.output/`. They still load it unpacked, so they will need to unzip it first.
+`MOTH_EXT_OUT_DIR` sets where the extension build writes, and affects no other package. Point it at a fixed location outside the repo and the output path stops following the source directory, so Chrome loads it once and you only press reload afterwards.
+
+It applies to every extension command — `build`, `build:firefox` and `zip`. Each build keeps its own leaf, `chrome-mv3` or `firefox-mv2`, under the base you set, and wipes only that leaf.
+
+```bash
+export MOTH_EXT_OUT_DIR=~/.moth-ext-build
+yarn workspace @shieldedtech/moth-extension build   # -> ~/.moth-ext-build/chrome-mv3
+```
+
+If you use direnv (see [CONTRIBUTING.md](CONTRIBUTING.md#auto-enable-in-this-repo)), copy `envrc.local.example` to `.envrc.local` and set it there. `.envrc` sources `.envrc.local`, and git ignores it, so your path never shows up in a diff:
+
+```bash
+cp envrc.local.example .envrc.local
+# edit MOTH_EXT_OUT_DIR, then:
+direnv allow
+```
+
+Turbo cannot cache a directory outside the repo, so once `MOTH_EXT_OUT_DIR` is set, build the extension with `yarn workspace @shieldedtech/moth-extension build` rather than a root `yarn build`. It runs `wxt build` directly, never consults turbo's cache, and so rebuilds every time. A root build can instead report a cache hit having written nothing, and `--force` is no answer there — it invalidates all six packages, not just the extension.
+
+In Chrome, open `chrome://extensions`, turn on **Developer mode**, choose **Load unpacked**, and select `packages/extension/.output/chrome-mv3` — or your `MOTH_EXT_OUT_DIR` path's `chrome-mv3`. After a rebuild, press the reload icon on the extension's card — Chrome does not pick up a new build on its own.
+
+In Firefox, open `about:debugging#/runtime/this-firefox`, choose **Load Temporary Add-on**, and select the `manifest.json` inside `packages/extension/.output/firefox-mv2`, or your `MOTH_EXT_OUT_DIR` path's `firefox-mv2`. Temporary add-ons are removed when Firefox restarts.
+
+To hand a build to someone else, `yarn workspace @shieldedtech/moth-extension zip` writes a store-shaped archive to `.output/`, or to your `MOTH_EXT_OUT_DIR` if set. They still load it unpacked, so they will need to unzip it first.
 
 A fresh install creates its wallet on preprod, not mainnet. That is deliberate — see [Status](#status-experimental-and-unsupported) — and you can change it in Settings once you understand what you are changing it to.
 
@@ -366,8 +428,9 @@ Every command accepts:
 |---------|-------------|
 | `moth balance` | Show NIGHT (shielded + unshielded) + DUST + non-NIGHT token balances. In-process — spins up its own sync. |
 | `moth wallet status` | Same info but via the daemon's warm snapshot (instant). Requires TUI or `moth daemon serve`. |
-| `moth transfer [<amount>] [NIGHT] [--to <addr>]` | Transfer NIGHT (prompts for missing details) |
-| `moth transfer <amount> NIGHT --to <addr> --shielded` | Shielded transfer |
+| `moth transfer [<amount>] [--to <addr>]` | Transfer NIGHT (prompts for missing details). NIGHT only — the token is not selectable |
+| `moth transfer <amount> --to <addr> --shielded` | Shielded transfer |
+| `moth daemon transfer --to <addr> --token-id <id> --amount <raw>` | Transfer any token through the daemon. `--amount` is raw smallest units; `--night <decimal>` converts at 10⁶ but only for NIGHT |
 | `moth transfer batch <file.json>` | Batch transfer from JSON file (`@stdin` for pipe). Exit: 0 all ok, 1 partial, 2 all failed |
 
 ### Contract Operations
@@ -544,10 +607,15 @@ const prover = new ProofClient('http://localhost:6300');
 
 | Network | Node | Indexer | Proof Server |
 |---------|------|--------|--------------|
-| devnet | `ws://localhost:9944` | `http://localhost:8088` | `http://localhost:6300` |
+| devnet | `https://rpc.devnet.midnight.network` | `https://indexer.devnet.midnight.network/api/v4/graphql` | `http://localhost:6300` |
 | preview | `https://rpc.preview.midnight.network` | `https://indexer.preview.midnight.network/api/v4/graphql` | `http://localhost:6300` |
 | preprod | `https://rpc.preprod.midnight.network` | `https://indexer.preprod.midnight.network/api/v4/graphql` | `http://localhost:6300` |
-| qanet | `https://rpc.qanet.dev.midnight.network` | `https://indexer.qanet.dev.midnight.network/api/v4/graphql` | `http://localhost:6300` |
+| qanet | `https://rpc.qanet.midnight.network` | `https://indexer.qanet.midnight.network/api/v4/graphql` | `http://localhost:6300` |
+| undeployed | `ws://localhost:9944` | `http://localhost:8088/api/v4/graphql` | `http://localhost:6300` |
+
+`undeployed` is the local devnet stack — see [§2. Fund the Wallet](#2-fund-the-wallet-local-devnet-only) for bringing one up.
+
+Mainnet is deliberately absent. Moth is an unaudited reference wallet for development and testing, so it is not a network to use it on: the CLI refuses to run against mainnet, and the extension keeps it out of the picker.
 
 Default network is `devnet`. Endpoints can be overridden at multiple levels (highest precedence first):
 

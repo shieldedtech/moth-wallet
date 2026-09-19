@@ -8,7 +8,7 @@ import type { Navigator, Route, SeedSource } from '../../navigation/index.js';
 const SOURCES: SelectItem<SeedSource>[] = [
   { label: 'Generate new (random)', value: 'random',   hint: '24-word mnemonic will be shown for you to save' },
   { label: 'Import mnemonic',       value: 'mnemonic', hint: '24 BIP-39 words' },
-  { label: 'Import hex seed',       value: 'hex',      hint: '64 hex characters' },
+  { label: 'Import hex seed',       value: 'hex',      hint: '64 hex characters, or 128 from a recovery phrase' },
 ];
 
 interface Props {

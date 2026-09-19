@@ -12,6 +12,16 @@
 // time, not correctness — the wallet syncs forward from the reference height —
 // so a reference cut at release time stays useful for as long as the release does.
 //
+// The manifest also records a WITNESS per cursor-bearing part: the hash of the
+// event the cursor points at, read from the indexer at export time. Cursors are
+// indexer-assigned event sequence numbers, so a bundle records a number whose
+// meaning lives entirely in the indexer that issued it — when preprod's dust id
+// space stopped having a 22-event hole, every cursor written under the old
+// numbering silently began naming a different event, this bundle's included.
+// Checksums cannot catch that; they prove the bytes arrived, which was never the
+// failure. A consumer compares the witness against its own indexer and refuses
+// the reference if the event has moved. See ADR 0004 and issue #40.
+//
 // Files are gzipped individually rather than bundled into one JSON: the state
 // blobs are already JSON, and nesting them as JSON string values would escape
 // every quote in a 10 MB document before compression ever saw it.
@@ -40,7 +50,7 @@ const { values } = parseArgs({
 });
 
 const core = await import('@shieldedtech/moth-wallet');
-const { DEFAULT_NETWORKS, resolveSyncStore, emptyRefStateKey, emptyRefHeightKey, IndexerClient } = core;
+const { DEFAULT_NETWORKS, resolveSyncStore, emptyRefStateKey, emptyRefHeightKey, IndexerClient, readEventWitness } = core;
 
 const network = DEFAULT_NETWORKS[values.network];
 if (!network) {
@@ -86,8 +96,48 @@ try {
 console.log(`network:  ${network.id}`);
 console.log(`height:   ${height}${staleBy === null ? '' : `  (${staleBy} blocks behind tip at export)`}`);
 
+// Which stream each cursor indexes into. Only shielded and dust ride the
+// indexer's global ledger-event numbering; unshielded is keyed by address, so
+// there is no id to witness.
+const WITNESS_STREAMS = { shielded: 'zswapLedgerEvents', dust: 'dustLedgerEvents' };
+
+/** The cursor a serialized snapshot resumes from. */
+const cursorOf = (raw) => {
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed.offset === undefined ? 0 : Number(parsed.offset);
+  } catch {
+    return 0;
+  }
+};
+
+const witnesses = {};
+for (const [part, stream] of Object.entries(WITNESS_STREAMS)) {
+  const id = cursorOf(states[part]);
+  if (!Number.isFinite(id) || id <= 0) {
+    console.error(`  ${part.padEnd(11)} cursor is ${id} — refusing to export a reference whose cursor is unusable`);
+    process.exit(1);
+  }
+  let witness;
+  try {
+    witness = await readEventWitness(network.indexerUrl, stream, id);
+  } catch (err) {
+    console.error(`  ${part.padEnd(11)} could not read the event at id ${id}: ${err}`);
+    console.error('Refusing to export without witnesses — a bundle nobody can verify is how #40 shipped.');
+    process.exit(1);
+  }
+  if (!witness) {
+    console.error(`  ${part.padEnd(11)} no event at or after id ${id} on ${network.indexerUrl}.`);
+    console.error('That means this reference is AHEAD of the indexer it is being exported against, which');
+    console.error('is the renumbering signal itself. Rebuild from genesis rather than exporting this.');
+    process.exit(1);
+  }
+  witnesses[part] = witness;
+  console.log(`  ${part.padEnd(11)} cursor ${String(witness.id).padStart(9)}  witness ${witness.digest}`);
+}
+
 let total = 0;
-const manifest = { network: network.id, height: Number(height), parts: {} };
+const manifest = { network: network.id, height: Number(height), parts: {}, witnesses };
 for (const part of PARTS) {
   const raw = Buffer.from(states[part], 'utf8');
   const gz = gzipSync(raw, { level: 9 });

@@ -66,7 +66,7 @@ export default class TransferBatch extends BaseCommand {
     process.stderr.write('Syncing wallet before batch transfer...\n');
     const syncedWallet = await startWalletSync(wallet.walletKeys, network, (msg) => {
       this.log_verbose(msg);
-    }, walletName);
+    }, walletName, false, await this.syncBirthday(walletName, network.id));
 
     try {
       const summary = await executeBatchTransfer(
