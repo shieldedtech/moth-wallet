@@ -16,6 +16,7 @@ import type {
   DaemonDustRegisterParams,
   DaemonInsertVerifierKeyParams,
   DaemonInsertVerifierKeysBatchParams,
+  DaemonProveTransactionParams,
   DaemonSubmitTransactionParams,
   DaemonTransferTokensParams,
 } from './wallet-rpc-types.js';
@@ -78,6 +79,69 @@ export function parseSubmitTransactionParams(raw: unknown): DaemonSubmitTransact
   const summary = typeof p.summary === 'string' ? p.summary : undefined;
   const details = parseOptionalStringArray(p.details, 'submitTransaction.details');
   return {hex: p.hex, summary, details};
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// proveTransaction
+// ─────────────────────────────────────────────────────────────────────
+
+export const PROVE_TTL_MIN_MINUTES = 1;
+export const PROVE_TTL_MAX_MINUTES = 60;
+export const PROVE_TTL_DEFAULT_MINUTES = 30;
+
+export function parseProveTransactionParams(raw: unknown): DaemonProveTransactionParams {
+  if (!raw || typeof raw !== 'object') {
+    throw new DaemonProtocolError('INVALID_PARAMS', 'proveTransaction params must be an object');
+  }
+  const p = raw as Record<string, unknown>;
+
+  if (p.type !== 'shielded' && p.type !== 'unshielded') {
+    throw new DaemonProtocolError('INVALID_PARAMS', "proveTransaction.type must be 'shielded' or 'unshielded'");
+  }
+
+  if (typeof p.tokenId !== 'string' || !/^[0-9a-fA-F]{64}$/.test(p.tokenId)) {
+    throw new DaemonProtocolError('INVALID_PARAMS', 'proveTransaction.tokenId must be a 64-char hex string');
+  }
+
+  if (typeof p.amount !== 'string' || !/^\d+$/.test(p.amount)) {
+    throw new DaemonProtocolError('INVALID_PARAMS', 'proveTransaction.amount must be a non-negative decimal string');
+  }
+  let amountBig: bigint;
+  try {
+    amountBig = BigInt(p.amount);
+  } catch {
+    throw new DaemonProtocolError('INVALID_PARAMS', 'proveTransaction.amount must be parseable as bigint');
+  }
+  if (amountBig <= 0n) {
+    throw new DaemonProtocolError('INVALID_PARAMS', 'proveTransaction.amount must be greater than zero');
+  }
+
+  if (typeof p.to !== 'string' || p.to.length === 0) {
+    throw new DaemonProtocolError('INVALID_PARAMS', 'proveTransaction.to must be a non-empty bech32m address string');
+  }
+
+  // Garbage is rejected; an out-of-range number is clamped, per the
+  // documented contract on DaemonProveTransactionParams.ttlMinutes.
+  let ttlMinutes: number | undefined;
+  if (p.ttlMinutes !== undefined && p.ttlMinutes !== null) {
+    if (typeof p.ttlMinutes !== 'number' || !Number.isFinite(p.ttlMinutes)) {
+      throw new DaemonProtocolError('INVALID_PARAMS', 'proveTransaction.ttlMinutes must be a finite number');
+    }
+    ttlMinutes = Math.min(
+      PROVE_TTL_MAX_MINUTES,
+      Math.max(PROVE_TTL_MIN_MINUTES, Math.floor(p.ttlMinutes)),
+    );
+  }
+
+  return {
+    type: p.type,
+    tokenId: p.tokenId.toLowerCase(),
+    amount: p.amount,
+    to: p.to,
+    ...(ttlMinutes !== undefined ? {ttlMinutes} : {}),
+    summary: typeof p.summary === 'string' ? p.summary : undefined,
+    details: parseOptionalStringArray(p.details, 'proveTransaction.details'),
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────
