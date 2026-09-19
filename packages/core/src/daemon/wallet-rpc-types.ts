@@ -43,6 +43,45 @@ export type DaemonSubmitTransactionResult = {
 };
 
 // ─────────────────────────────────────────────────────────────────────
+// proveTransaction
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Same shape as transferTokens plus a ttl, because this is that verb with
+ * submission withheld: build, balance, prove and sign, then hand the
+ * finalized transaction back as hex for the caller to submit later via
+ * `submitTransaction`.
+ *
+ * Holding a proof is not free. See the note on buildTransferTransaction —
+ * the proof binds fee-side DUST UTXOs by nullifier, so any other spend from
+ * this wallet before submission invalidates it.
+ */
+export type DaemonProveTransactionParams = {
+  readonly type: 'shielded' | 'unshielded';
+  /** 64-char hex token id. NIGHT is '0' * 64. */
+  readonly tokenId: string;
+  /** Raw decimal amount in the token's smallest unit. */
+  readonly amount: string;
+  readonly to: string;
+  /**
+   * Intent deadline, in minutes from now. Clamped to [1, 60] — the ledger
+   * rejects an intent whose ttl exceeds the including block by more than
+   * 3600s. Defaults to 30 to match the build path's own default.
+   */
+  readonly ttlMinutes?: number;
+  readonly summary?: string;
+  readonly details?: readonly string[];
+};
+
+export type DaemonProveTransactionResult = {
+  /** Hex-encoded FinalizedTransaction. Feed straight to submitTransaction. */
+  readonly hex: string;
+  /** Unix ms deadline. Submitting after this point is rejected. */
+  readonly ttlUnix: number;
+  readonly sizeBytes: number;
+};
+
+// ─────────────────────────────────────────────────────────────────────
 // transferTokens
 // ─────────────────────────────────────────────────────────────────────
 
