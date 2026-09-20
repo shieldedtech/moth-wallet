@@ -104,6 +104,12 @@ function fakeWallet(night: bigint) {
   };
 }
 
+// Pay the cold cost of the wallet-host module graph here, at collection time,
+// where no hook timeout applies. `beforeEach` still re-imports it for a fresh
+// module registry, but that re-import is ~0ms once the graph is warm — and a
+// 10s `hookTimeout` is not a budget a cold graph load reliably fits on CI.
+import '../lib/offscreen/wallet-host';
+
 describe('balance emissions across a mid-start wallet switch', () => {
   let host: typeof import('../lib/offscreen/wallet-host');
   let emitted: Array<{ event: string; data: unknown }>;
