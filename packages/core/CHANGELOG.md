@@ -1,5 +1,162 @@
 # @shieldedtech/moth-wallet
 
+## 0.14.0
+
+### Minor Changes
+
+- 55a878c: Add a `proveTransaction` daemon verb, and honour `MOTH_HOME`.
+
+  `proveTransaction` builds, balances, proves and signs a transfer, then returns
+  the finalized transaction as hex instead of submitting it. Programmatic clients
+  that need to hold a proof and submit it later had no verb for the prove half;
+  `submitTransaction` already covered the other. The returned hex binds fee-side
+  DUST UTXOs by nullifier, so the wallet must stay quiet until submission — the
+  L3 modal says so, and `--max-spend` applies as it does to `transferTokens`.
+
+  `MOTH_HOME` now overrides the `~/.moth` root for both the filesystem storage
+  adapter and the daemon socket path, so several isolated instances can run from
+  one account. A relative value is rejected rather than resolved against the
+  working directory, which would otherwise put a wallet and its socket under
+  different roots.
+
+### Patch Changes
+
+- 3b39fb6: Report the real error when a contract artifact fails to load.
+
+  `loadContractArtifact` wrapped its whole `managed/contract/` branch in a
+  `try`/`catch` that discarded the error, so a module that existed but failed to
+  load was reported as `No contract module found in <path>`. The common cause is a
+  compact runtime version mismatch, whose own message names both versions and
+  points straight at the fix. Only a missing `contract/` directory now falls
+  through to the remaining strategies.
+- 3b39fb6: Stop waiting for two equal DUST balances before building a contract transaction.
+
+  Before building a contract transaction the contract paths waited for the wallet
+  to be strictly synced, and then for two consecutive emissions carrying an
+  identical DUST balance. `facade.state()` emits roughly every 30 seconds, and a
+  resident daemon has just spent DUST on the previous call, so the pair never
+  matched on the first try and every call after the first paid a full emission
+  cycle.
+
+  Measured with the wait instrumented, this was 39 s of a 60 s daemon call on a
+  local stack and 16-30 s of a ~36 s call on preprod, against 1.7 s of real work.
+  Comparing both snapshots at a single instant does not help, because the balance
+  genuinely differs after a spend.
+
+  The pair check is removed. The strict-completion filter stays: that is what
+  guards against a stale dust tree root (InvalidDustSpendProof, error 170), and it
+  is all the transfer path has ever done. Per call this takes preprod from ~36 s
+  to ~27 s and a local stack from 60 s to ~29 s.
+- 3b39fb6: Sign contract transactions through `facade.signRecipe`, so unshielded inputs reach the node signed.
+
+  The contract paths signed by hand, ending each intent with
+  `tx.intents.set(segment, signedIntent)` and discarding the result.
+  `Transaction.intents` is a WASM getter that builds a fresh JS Map on every read,
+  so this mutated a throwaway copy and the signature never reached WASM. Any
+  circuit producing unshielded UTxO inputs — anything calling `receiveUnshielded`
+  — was submitted with those inputs and zero signatures, and the node rejected it
+  with `1010 Invalid Transaction: Custom error: 192`
+  (InputsSignaturesLengthMismatch).
+
+  All four sites (call, deploy, and both maintenance paths) now call
+  `facade.signRecipe`, which returns a new recipe rather than mutating in place —
+  the same call the transfer path has always made. It also selects the right
+  signer per transaction type and stamps DUST registration signatures, neither of
+  which the hand-rolled helper did. The three copies of that helper are deleted.
+
+  `deploy` was never affected, because it spends only DUST on fees, which is why
+  the failure looked specific to `call`.
+- 77edf22: Replace the wallet SDK's DUST fee-balancing loop with one that terminates.
+
+  The SDK's `computeBalancingRecipe` (`wallet-sdk-dust-wallet` 4.2.0) re-selects
+  dust coins until they cover the fee of the transaction they produce, with no
+  iteration cap and no progress check. It also seeds its first pass with a
+  negative dust imbalance and every later pass with a positive fee; the balancer
+  reads the positive seed as a surplus, adds an output and selects nothing, so
+  only the first pass can ever converge. A wallet holding several part-drained
+  dust coins under-covers on that first pass and the loop then spins forever,
+  building and proof-erasing a WASM transaction on the calling thread each time
+  until the process runs out of memory.
+
+  Moth now supplies its own transacting capability through the SDK's documented
+  `V1Builder.withTransacting` seam (`sync/dust-transacting.ts`). It keeps the
+  SDK's fee arithmetic — `dryRunFee` and `calculateFee`, the WASM parts — and
+  replaces only the control flow: each pass covers the outstanding deficit from
+  coins not yet selected, then re-prices the transaction with everything selected
+  so far. A pass that does not converge has strictly grown the input set, so the
+  loop is bounded by the number of coins; running out surfaces as the SDK's own
+  `InsufficientFundsError`. Both `estimateFee` and `balanceTransactions` route
+  through the replaced method, so the fee preview and the real spend take the
+  same path. Coin selection order is unchanged.
+
+  Trade-off: this couples Moth to the SDK's exported implementation class and
+  three of its methods. The test suite pins that surface so an SDK upgrade that
+  changes it fails in CI rather than silently reverting to the non-terminating
+  loop. `effect` becomes a direct dependency of `@shieldedtech/moth-wallet` (it
+  was already in the tree via the SDK) because the capability returns the SDK's
+  `Either` values. The same loop is proposed upstream in
+  `docs/upstream-issues/dust-fee-balancing-nontermination.md`.
+- aa3c276: Pay DUST fees from the largest coin first, so fee balancing terminates.
+
+  The wallet SDK's dust fee balancer (`wallet-sdk-dust-wallet` 4.2.0,
+  `computeBalancingRecipe`) loops until the coins it selected cover the fee that
+  selecting them produced, with no iteration cap and no progress check. Its
+  default selector takes the smallest coin first, so a wallet holding several
+  part-drained DUST coins spends a handful of them, which enlarges the
+  transaction, which raises the fee past what those coins cover — and the loop
+  never exits. It also never fails: only the first pass can converge, because
+  that pass is seeded with a negative dust imbalance while every later pass is
+  seeded with a positive fee, which sends the balancer down its add-an-output
+  branch and selects no inputs at all. Each pass deserialises and erases proofs
+  on a fresh WASM transaction while holding the thread, so the wallet stops
+  responding and its WASM heap grows until the process dies.
+
+  Moth now sets largest-first selection on the dust wallet through the SDK's
+  documented `V1Builder.withCoinSelection` extension point
+  (`sync/dust-coin-selection.ts`), on both the restore-from-cache and
+  start-from-secret-key paths. One coin near its generation cap covers a fee
+  outright, so the first pass converges — which is the only pass that can.
+
+  This costs nothing in DUST fragmentation: a dust spend is one-in-one-out (the
+  ledger nullifies the coin and mints a successor worth the remainder), coin
+  count is pinned to the number of registered NIGHT UTXOs, and a coin's value
+  regenerates toward its cap. Draining the fullest coin therefore rotates across
+  backing UTXOs on its own as the drained ones refill, and produces a smaller
+  transaction than spending eight coins to reach the same fee.
+
+  **This is a mitigation, not a fix.** A wallet whose dust is spread evenly
+  across coins that are all far below fee size still spins, because no single
+  coin covers the fee — pinned as a test, and filed upstream with the iteration
+  traces in `docs/upstream-issues/dust-fee-balancing-nontermination.md`, which
+  asks for the progress check that would close it. Transaction construction,
+  signing, and proving are unchanged.
+- 19a1a23: Pre-seed the DUST state of restored wallets when the indexer proves it safe.
+
+  Pre-seeding only ran for a wallet whose birthday was at or after the reference
+  height — the birthday being the wallet's only local proof that it has no earlier
+  history to skip. A wallet restored from a mnemonic or hex seed has no birthday,
+  and a wallet whose cache was cleared has one that predates the reference, so
+  both walked DUST from genesis: 1.4M events at ~293 events/s, about 78 minutes on
+  preprod, of which dust is 99%.
+
+  For the dust part there is a second proof. All of a wallet's DUST descends from
+  generation entries owned by its dust key, and the indexer can say whether that
+  key owned any entry at the reference height: `Block.dustGenerationEndIndex`
+  gives the generation tree's size `N` at that height, and the bounded
+  `dustGenerations(dustAddress, 0, N − 1)` subscription ends with `complete` — no
+  owned entry before it is a positive "none" (~1.1 s on preprod). When the
+  birthday rule fails and the dust cache is missing, `startWalletSync` runs that
+  probe and on "none" seeds dust alone from the reference; shielded and
+  unshielded still scan from genesis, which is quick. The hour becomes the
+  reference's deserialize plus catch-up.
+
+  Fails closed: an owned entry, an indexer without the field (pre-4.2), a timeout
+  or an error all keep the genesis walk, with the reason in the sync progress
+  line. The decision is the pure `preSeedPlan` (`sync/preseed-parts.ts`); the
+  probe is `sync/dust-history.ts`; `IndexerClient.getDustGenerationEndIndex` and
+  `dustAddressForKey` (a dust address from the typed key, no seed needed) support
+  it. ADR 0003 records the exception.
+
 ## 0.13.0
 
 ### Minor Changes

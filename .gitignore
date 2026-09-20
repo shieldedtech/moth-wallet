@@ -64,6 +64,10 @@ CLAUDE.md
 # hand Chrome's "Load unpacked" picker. Points into ignored build output.
 packages/extension/latest
 
+# Playwright (extension e2e)
+test-results/
+playwright-report/
+
 # design-sync (machine state, regenerated)
 .ds-sync/
 ds-bundle/
