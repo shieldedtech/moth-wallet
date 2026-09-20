@@ -55,6 +55,10 @@ export default defineConfig({
       // them: it grants header rewriting on hosts already declared below, and
       // no new access.
       'declarativeNetRequestWithHostAccess',
+      // Required by the Paste buttons (recipient field, setup seed phrase),
+      // which read the clipboard. Chrome allows that read from an extension
+      // page undeclared; stricter Chromium builds such as Brave refuse it.
+      'clipboardRead',
       // Chrome-only; Firefox gets sidebar_action from the sidepanel entrypoint.
       ...(browser === 'firefox' ? [] : ['sidePanel', 'offscreen']),
     ],
