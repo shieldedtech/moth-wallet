@@ -42,6 +42,10 @@ jobs:
       statuses: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          # The SARIF upload authenticates via its github_token input, not the
+          # checkout's persisted credentials; don't leave the token on disk.
+          persist-credentials: false
       - name: Scan and upload SARIF
         uses: midnightntwrk/upload-sarif-github-action@362d0346b194663004cb371e8e8523bd1c910917  # SHA-pinned; dependabot bumps
         with:

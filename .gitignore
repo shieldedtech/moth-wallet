@@ -61,6 +61,10 @@ CLAUDE.md
 .output/
 .wxt/
 
+# Playwright (extension e2e)
+test-results/
+playwright-report/
+
 # design-sync (machine state, regenerated)
 .ds-sync/
 ds-bundle/
