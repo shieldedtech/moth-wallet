@@ -26,7 +26,7 @@
 // this only classifies what a rejection means, after the ledger/SDK has
 // already accepted or refused it.
 
-import {WalletError} from '../types/errors.js';
+import {WalletError, errorChainMessage} from '../types/errors.js';
 
 /** Consecutive independently-built submissions carrying the same ambiguous
  *  signature before Moth calls the network wedged rather than unlucky.
@@ -41,9 +41,16 @@ export const DEFAULT_WEDGE_THRESHOLD = 3;
  *  under whichever wrapping the SDK / RPC layer puts around the node's raw
  *  `1010: Invalid Transaction: Custom error: 170` or the node-log spelling
  *  `Malformed(InvalidDustSpendProof)` (surfaced to a client that reads node
- *  logs directly, e.g. a devnet operator's tooling). */
+ *  logs directly, e.g. a devnet operator's tooling).
+ *
+ *  "Whichever wrapping" has to mean the cause chain, not just the outermost
+ *  message: the wallet SDK's submission service replaces the node's words
+ *  with the constant "Transaction submission error" and buries the real
+ *  verdict two `cause` levels down, so a detector reading `error.message`
+ *  alone could never see a 170 on the path this is wired into (the facade's
+ *  submitTransaction) and the streak below could never advance. */
 export function isDustSpendProofRejection(error: unknown): boolean {
-  const msg = error instanceof Error ? error.message : String(error);
+  const msg = errorChainMessage(error);
   return /custom error:\s*170\b|invaliddustspendproof/i.test(msg);
 }
 

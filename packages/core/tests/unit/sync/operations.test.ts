@@ -43,6 +43,22 @@ function freshWalletFacade(
   } as unknown as WalletFacade;
 }
 
+/** The shape the wallet SDK actually rejects with. Its own message is the
+ * constant "Transaction submission error"; the node's verdict sits two `cause`
+ * levels down, under wallet-sdk-capabilities' submission service and
+ * wallet-sdk-node-client. Tests that reject with a flat Error test a case
+ * production never produces. */
+function sdkSubmissionFailure(nodeMessage: string): Error {
+  const nodeClient = Object.assign(new Error('Transaction submission failed'), {
+    _tag: 'SubmissionError',
+    cause: new Error(nodeMessage),
+  });
+  return Object.assign(new Error('Transaction submission error'), {
+    _tag: 'SubmissionError',
+    cause: nodeClient,
+  });
+}
+
 describe('DUST operations on a fresh wallet', () => {
   it('lists NIGHT UTXOs once unshielded sync is complete', async () => {
     await expect(listNightUtxos(freshWalletFacade())).resolves.toEqual([]);
@@ -155,6 +171,82 @@ describe('DUST operations on a fresh wallet', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  // Everything above rejects with a flat Error, which is not what the SDK
+  // does — so each classifier below was passing on a message shape the send
+  // path never sees. These three pin the real one.
+  it('sees 1013 through the SDK wrappers and reports the submitted hash', async () => {
+    const coin = {
+      utxo: { type: NIGHT_TOKEN_ID, value: 1n },
+      meta: { ctime: new Date(), registeredForDustGeneration: false },
+    } as UtxoWithMeta;
+    const recipe = { type: 'UNPROVEN_TRANSACTION', transaction: {} };
+    const finalized = { identifiers: () => ['tx-id'], transactionHash: () => 'tx-hash' };
+    const submitTransaction = vi
+      .fn()
+      .mockRejectedValue(sdkSubmissionFailure('1013: Transaction Already Imported'));
+    const facade = freshWalletFacade([coin], {
+      registerNightUtxosForDustGeneration: vi.fn().mockResolvedValue(recipe),
+      finalizeRecipe: vi.fn().mockResolvedValue(finalized),
+      submitTransaction,
+    } as unknown as Partial<WalletFacade>);
+
+    await expect(designateForDust(facade, seedHex, 'devnet')).resolves.toBe('tx-hash');
+    expect(submitTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('resends when the SDK wrappers hide a dropped connection', async () => {
+    vi.useFakeTimers();
+    try {
+      const coin = {
+        utxo: { type: NIGHT_TOKEN_ID, value: 1n },
+        meta: { ctime: new Date(), registeredForDustGeneration: false },
+      } as UtxoWithMeta;
+      const recipe = { type: 'UNPROVEN_TRANSACTION', transaction: {} };
+      const finalized = { identifiers: () => ['tx-id'], transactionHash: () => 'tx-hash' };
+      // A relay socket that dropped during a long local-WASM proof looks
+      // exactly like a node rejection from the outermost message alone.
+      const submitTransaction = vi
+        .fn()
+        .mockRejectedValueOnce(
+          sdkSubmissionFailure('Could not connect within specified time range (5s)'),
+        )
+        .mockResolvedValueOnce('tx-id');
+      const facade = freshWalletFacade([coin], {
+        registerNightUtxosForDustGeneration: vi.fn().mockResolvedValue(recipe),
+        finalizeRecipe: vi.fn().mockResolvedValue(finalized),
+        submitTransaction,
+      } as unknown as Partial<WalletFacade>);
+
+      const promise = designateForDust(facade, seedHex, 'devnet');
+      await vi.advanceTimersByTimeAsync(5_000);
+      await expect(promise).resolves.toBe('tx-hash');
+      expect(submitTransaction).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("surfaces the node's own words, not the SDK's placeholder", async () => {
+    const coin = {
+      utxo: { type: NIGHT_TOKEN_ID, value: 1n },
+      meta: { ctime: new Date(), registeredForDustGeneration: false },
+    } as UtxoWithMeta;
+    const recipe = { type: 'UNPROVEN_TRANSACTION', transaction: {} };
+    const finalized = { identifiers: () => ['tx-id'], transactionHash: () => 'tx-hash' };
+    const original = sdkSubmissionFailure('1010: Invalid Transaction: Custom error: 170');
+    const facade = freshWalletFacade([coin], {
+      registerNightUtxosForDustGeneration: vi.fn().mockResolvedValue(recipe),
+      finalizeRecipe: vi.fn().mockResolvedValue(finalized),
+      submitTransaction: vi.fn().mockRejectedValue(original),
+    } as unknown as Partial<WalletFacade>);
+
+    // Every surface renders error.message and nothing else, so the reason has
+    // to be in it — a bare "Transaction submission error" is the bug.
+    const failure = await designateForDust(facade, seedHex, 'devnet').catch((e) => e);
+    expect(failure.message).toContain('Custom error: 170');
+    expect(failure.cause).toBe(original);
   });
 
   it('does not wait for aggregate sync before deregistration', async () => {

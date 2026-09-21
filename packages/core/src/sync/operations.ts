@@ -27,6 +27,7 @@ import {
   DustRegistrationNotYetError,
   type DustRegistrationEstimate,
 } from './dust-registration-estimate.js';
+import {errorChainMessage, TransactionSubmissionError} from '../types/errors.js';
 
 // Re-exported from the module that throws it, so a consumer importing the
 // registration API by subpath (packages/browser does) gets the error type it has
@@ -115,9 +116,12 @@ function deriveKeysFromSeed(seedHex: string): WalletKeys {
  * with error 1013 "Transaction Already Imported". Because a finalized tx has a
  * fixed hash, this fires whenever we resubmit identical bytes — which means the
  * transaction already reached the node, so it should be treated as success.
+ *
+ * Matched against the whole cause chain: the SDK hands us its own fixed
+ * wrapper message, never the node's, so `e.message` alone never says 1013.
  */
 function isAlreadyImported(e: unknown): boolean {
-  const msg = e instanceof Error ? e.message : String(e);
+  const msg = errorChainMessage(e);
   return msg.includes('1013') || /already imported/i.test(msg);
 }
 
@@ -127,12 +131,40 @@ function isAlreadyImported(e: unknown): boolean {
  * and rejected it (bad proof, insufficient funds, low priority, …) returns a
  * deterministic verdict; resending the identical bytes only makes the user
  * wait for the same answer, so those rejections must surface immediately.
+ *
+ * Also matched against the whole chain — and this is the direction that costs
+ * a user something when it is missed. A submission the relay never delivered
+ * arrives wearing the same "Transaction submission error" as a rejection, so
+ * reading only `e.message` classified every dropped connection as the node's
+ * final answer and skipped the one retry that would have landed it.
  */
 function isTransient(e: unknown): boolean {
-  const msg = e instanceof Error ? e.message : String(e);
-  return /disconnect|not connected|connection|websocket|socket hang up|time\s?d?\s?out|timeout|ECONN|ENOTFOUND|network|fetch failed|1006/i.test(
+  const msg = errorChainMessage(e);
+  // `not connect` rather than `not connected`: the relay's own failure to
+  // come up is worded "Could not connect within specified time range (5s)",
+  // which the narrower spelling missed even though nothing was ever sent.
+  return /disconnect|not connect|connection|websocket|socket hang up|time\s?d?\s?out|timeout|ECONN|ENOTFOUND|network|fetch failed|1006/i.test(
     msg
   );
+}
+
+/**
+ * Restate a submission failure with the reason actually in it.
+ *
+ * The wallet SDK's own message for every one of these is the constant
+ * "Transaction submission error" — the node's verdict (`1010: Invalid
+ * Transaction: Custom error: 170`) or the relay's ("Could not connect within
+ * specified time range (5s)") sits two `cause` levels below it, and every
+ * surface Moth has shows `error.message`. So a user was being told only that
+ * submission failed, never what the network said, no matter which of these it
+ * was. Flatten the chain into the message and keep the original on `cause`.
+ */
+function asSubmissionFailure(e: unknown): Error {
+  const chained = errorChainMessage(e);
+  const own = e instanceof Error ? e.message : String(e);
+  // Nothing gained by re-wrapping an error that already says its own reason.
+  if (!chained || chained === own) return e instanceof Error ? e : new Error(own);
+  return new TransactionSubmissionError(chained, e);
 }
 
 /**
@@ -161,7 +193,7 @@ async function submitWithRetry(
       return finalized.transactionHash();
     } catch (e) {
       if (isAlreadyImported(e)) return finalized.transactionHash();
-      if (attempt === attempts || !isTransient(e)) throw e;
+      if (attempt === attempts || !isTransient(e)) throw asSubmissionFailure(e);
       await new Promise((r) => setTimeout(r, delayMs));
     }
   }
