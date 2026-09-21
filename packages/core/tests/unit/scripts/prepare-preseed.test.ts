@@ -1,8 +1,10 @@
 import {existsSync, readFileSync} from 'node:fs';
-import {fileURLToPath} from 'node:url';
+import {fileURLToPath, pathToFileURL} from 'node:url';
 import {describe, expect, it} from 'vitest';
 
-const helperPath = '../../../../../scripts/lib/prepare-preseed.mjs';
+const helperPath = fileURLToPath(
+  new URL('../../../../../scripts/lib/prepare-preseed.mjs', import.meta.url),
+);
 const workflowPath = fileURLToPath(
   new URL('../../../../../.github/workflows/prepare-preseed.yml', import.meta.url),
 );
@@ -11,7 +13,7 @@ const cdWorkflowPath = fileURLToPath(
 );
 
 async function loadHelper(): Promise<Record<string, unknown>> {
-  return import(helperPath).catch(() => ({}));
+  return import(pathToFileURL(helperPath).href);
 }
 
 describe('preparePreseed', () => {

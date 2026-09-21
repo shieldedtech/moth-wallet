@@ -1,0 +1,8 @@
+{
+  "version": 3,
+  "file": "index.js",
+  "sourceRoot": "../../",
+  "sources": ["recv.compact", "compiler/standard-library.compact"],
+  "names": [],
+  "mappings": ";;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;EAAA;;;;;;;;;;MASA,AAAA,SAGC;;;;;;;;;;;;;;;;;;;;;;OAAA;;;;GACA;EAbD;;;;;;;;;;;;;;;;;;;;;;;;;;IAOA;;;;;;;;;yEAAgC;;;;;;;GAM/B;ECwBD,AAAA,QAA0B;kCACkB;;EA6E5C,AAAA;;;EA+MA,AAAA,gDAAiC,SAAkB;UACjD,qBAAsD;IAAtD;;;;;;;;;;;2HAAA;;;;;;2HAA8D;;;;;;;;;;;;;;;ED1ThE,AAAA,YAGC;;;;;UADC,KAAQ;IAAR;;;;;;;;;;6FAAA,KAAQ;;;;wEAAA;;GACT;;;;;;;;;;;;;;;;IALD;qCAAA;;;;;;;;;;;0GAAgC;KAAA;;;;;;;;;;"
+}
