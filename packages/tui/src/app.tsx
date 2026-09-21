@@ -488,6 +488,13 @@ export function App({ networkId: networkIdProp }: AppProps) {
                 logs.info(`Sync cache cleared for ${name} on ${network.id}`);
               });
             }}
+            onRevealPhrase={async (name, passphrase) => {
+              const secret = await wallet.exportPhrase(name, passphrase);
+              // The event, never the value: moth.log is a file on disk, and a
+              // phrase written there outlives the screen it was shown on.
+              logs.info(`Recovery ${secret.kind} revealed for wallet: ${name}`);
+              return secret;
+            }}
             onCreateNew={() => {
               nav.push('onboarding-network', { onComplete: onboardingCompleteStable, partial: {} });
             }}
