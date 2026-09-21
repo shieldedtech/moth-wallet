@@ -56,6 +56,12 @@ export { mothHome, MOTH_HOME_ENV } from './storage/home.js';
 export { JsonRpcNodeClient, type NodeClient } from './network/node-client.js';
 export { IndexerClient } from './network/indexer-client.js';
 export type { Block, ContractAction, DustGenerationStatus, TransactionInfo } from './network/indexer-client.js';
+export { dustGenerationsFor } from './network/dust-generations.js';
+export type {
+  DustGenerationEntry,
+  DustGenerationsResult,
+  DustGenerationsOptions,
+} from './network/dust-generations.js';
 
 // Proof
 export { ProofClient, type ProofServerStatus } from './proof/client.js';
