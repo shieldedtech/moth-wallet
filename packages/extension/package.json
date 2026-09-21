@@ -1,6 +1,6 @@
 {
   "name": "@shieldedtech/moth-extension",
-  "version": "0.13.0",
+  "version": "0.14.1",
   "private": true,
   "description": "Moth Wallet browser extension for the Midnight Network. USE AT YOUR OWN RISK. This is experimental software provided AS-IS with no warranty. Not audited. For development and testing purposes only.",
   "license": "Apache-2.0",
@@ -14,6 +14,7 @@
     "compile": "wxt prepare && tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "playwright test",
     "clean": "rm -rf .output .wxt",
     "postinstall": "wxt prepare"
   },
@@ -38,6 +39,7 @@
   },
   "devDependencies": {
     "@midnight-ntwrk/dapp-connector-api": "4.0.1",
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/vite": "^4.3.2",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
@@ -46,7 +48,7 @@
     "typescript": "^5.5.0",
     "vite-plugin-node-polyfills": "^0.28.0",
     "vite-plugin-wasm": "^3.6.0",
-    "vitest": "^3.1.0",
+    "vitest": "^5.0.1",
     "wxt": "^0.20.27"
   }
 }

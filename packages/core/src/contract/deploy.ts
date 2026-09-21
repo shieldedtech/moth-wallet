@@ -282,27 +282,17 @@ export async function deployContract(options: DeployOptions): Promise<Transactio
           };
         })()
       ),
+      // A stale dust tree root is rejected as InvalidDustSpendProof (error 170), so
+      // wait for strict completion. Waiting further for two equal DUST balances, as
+      // this once did, stalled every call on a resident daemon for a full cycle.
       Rx.filter((s: any) => {
-        // Dust must be fully synced — InvalidDustSpendProof (error 170) if tree root is stale.
         try {
           const unDone = s.unshielded?.progress?.isStrictlyComplete?.() === true;
           const dustDone = s.dust?.progress?.isStrictlyComplete?.() === true;
           if (unDone && dustDone) return true;
         } catch {}
         return s.isSynced === true;
-      }),
-      // After isSynced, wait for two consecutive emissions with the same dust balance
-      Rx.bufferCount(2, 1),
-      Rx.filter(([a, b]: any[]) => {
-        try {
-          const dustA = a.dust?.balance?.(new Date()) ?? 0n;
-          const dustB = b.dust?.balance?.(new Date()) ?? 0n;
-          return dustA === dustB;
-        } catch {
-          return true;
-        } // If dust isn't available, don't block forever
-      }),
-      Rx.map(([, b]: any[]) => b)
+      })
     )
   );
 
@@ -321,11 +311,11 @@ export async function deployContract(options: DeployOptions): Promise<Transactio
       );
       // Sign unshielded transaction intents
       const signFn = (payload: Uint8Array) => keystore.signData(payload);
-      signTransactionIntents(recipe.baseTransaction, signFn, 'proof');
-      if (recipe.balancingTransaction) {
-        signTransactionIntents(recipe.balancingTransaction, signFn, 'pre-proof');
-      }
-      return (facade as any).finalizeRecipe(recipe);
+      // `Transaction.intents` is a WASM getter returning a fresh Map per read, so
+      // signing in place loses the signature and the node rejects with error 192.
+      // `signRecipe` returns a new recipe, as moth's transfer path already relies on.
+      const signed = await (facade as any).signRecipe(recipe, signFn);
+      return (facade as any).finalizeRecipe(signed);
     },
     submitTx: async (tx: any) => {
       return (facade as any).submitTransaction(tx);
@@ -437,29 +427,5 @@ export async function deployContract(options: DeployOptions): Promise<Transactio
         /* best effort */
       }
     }
-  }
-}
-
-/** Sign unshielded transaction intents (same as mn-tui's signTransactionIntents) */
-function signTransactionIntents(tx: any, signFn: (p: Uint8Array) => any, proofMarker: 'proof' | 'pre-proof'): void {
-  if (!tx.intents || tx.intents.size === 0) return;
-  for (const segment of tx.intents.keys()) {
-    const intent = tx.intents.get(segment);
-    if (!intent) continue;
-    const cloned = (ledger as any).Intent.deserialize('signature', proofMarker, 'pre-binding', intent.serialize());
-    const signature = signFn(cloned.signatureData(segment));
-    if (cloned.fallibleUnshieldedOffer) {
-      const sigs = cloned.fallibleUnshieldedOffer.inputs.map(
-        (_: any, i: number) => cloned.fallibleUnshieldedOffer.signatures.at(i) ?? signature
-      );
-      cloned.fallibleUnshieldedOffer = cloned.fallibleUnshieldedOffer.addSignatures(sigs);
-    }
-    if (cloned.guaranteedUnshieldedOffer) {
-      const sigs = cloned.guaranteedUnshieldedOffer.inputs.map(
-        (_: any, i: number) => cloned.guaranteedUnshieldedOffer.signatures.at(i) ?? signature
-      );
-      cloned.guaranteedUnshieldedOffer = cloned.guaranteedUnshieldedOffer.addSignatures(sigs);
-    }
-    tx.intents.set(segment, cloned);
   }
 }

@@ -205,18 +205,31 @@ async function submitWithRetry(
  * The dApp connector's makeTransfer/submitTransaction split needs the
  * finalized transaction as a standalone artifact; sendTokens composes this
  * with submission.
+ *
+ * `ttl` overrides the default 30-minute intent deadline. Callers that hold a
+ * proof before submitting — the daemon's `proveTransaction` verb — need to
+ * choose the window themselves. The ledger rejects an intent whose ttl is
+ * more than 3600s past the including block, so 60 minutes is the practical
+ * ceiling.
+ *
+ * Note for hold-then-submit callers: the returned transaction binds specific
+ * fee-side DUST UTXOs by nullifier, and building it books those inputs. A
+ * proof that is never submitted leaves them booked until the ttl lapses, and
+ * any other spend from this wallet in the interim invalidates the proof
+ * (DustDoubleSpend at inclusion).
  */
 export async function buildTransferTransaction(
   facade: WalletFacade,
   keys: WalletKeys,
   networkId: string,
   requests: SendRequest[],
-  onProgress?: (stage: TxStage) => void
+  onProgress?: (stage: TxStage) => void,
+  ttlOverride?: Date
 ): Promise<FinalizedTransaction> {
   setNetworkId(networkId);
   const ks = createKeystore(keys.nightExternalKey, networkId);
   const transfers = combinedTransfers(networkId, requests);
-  const ttl = new Date(Date.now() + 30 * 60_000);
+  const ttl = ttlOverride ?? new Date(Date.now() + 30 * 60_000);
 
   onProgress?.('building');
   const recipe = await facade.transferTransaction(
