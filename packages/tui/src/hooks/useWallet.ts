@@ -132,6 +132,22 @@ export function useWallet(storage: StorageAdapter) {
     await refresh();
   }, [manager, refresh]);
 
+  /**
+   * The wallet's backup secret: the BIP-39 mnemonic, or the hex seed for a
+   * wallet imported from one (#166).
+   *
+   * Deliberately does NOT consult sessionCache. An unlocked entry holds derived
+   * keys and no seed — `unlock()` drops it (D-KM-3) — so there is nothing there
+   * to hand back, and D-KM-2 puts seed export through the keystore anyway. The
+   * passphrase is required every time, whatever the session state.
+   */
+  const exportPhrase = useCallback(
+    async (name: string, passphrase: string): Promise<{ kind: 'mnemonic' | 'seed'; value: string }> => {
+      return manager.exportPhrase(name, passphrase);
+    },
+    [manager],
+  );
+
   // Daemon write verbs read the typed key bundle. The raw seedHex
   // never escapes walletManager.unlock — see D-KM-3.
   const getActiveWalletKeys = useCallback((): WalletKeys | null => {
@@ -177,6 +193,7 @@ export function useWallet(storage: StorageAdapter) {
     importFromSeed,
     switchWallet,
     removeWallet,
+    exportPhrase,
     refresh,
     manager,
   };
