@@ -22,6 +22,7 @@ import {
   type WalletBalances,
   type WalletKeys,
   type ConfirmationQueue,
+  type SyncedWallet,
 } from '@shieldedtech/moth-wallet';
 import type {WalletFacade} from '@midnightntwrk/wallet-sdk/facade';
 
@@ -35,6 +36,9 @@ export interface UseDaemonHostOptions {
    *  unlocked or sync hasn't initialized yet — write verbs reject in
    *  that case. */
   readonly getFacade: () => WalletFacade | null;
+  /** Getter for the live sync session, so the dust rebuild / view check
+   *  verbs can reach it. Optional: a host without one simply lacks those verbs. */
+  readonly getSyncedWallet?: () => SyncedWallet | null;
   /** Getter for the active wallet's typed key bundle (D-KM-3). */
   readonly getWalletKeys: () => WalletKeys | null;
   readonly queue: ConfirmationQueue;
@@ -55,9 +59,11 @@ export interface UseDaemonHostState {
 }
 
 export function useDaemonHost(opts: UseDaemonHostOptions): UseDaemonHostState {
-  const {network, walletName, balancesRef, getFacade, getWalletKeys, queue, daemonVersion, logs} = opts;
+  const {network, walletName, balancesRef, getFacade, getSyncedWallet, getWalletKeys, queue, daemonVersion, logs} = opts;
   const getFacadeRef = useRef(getFacade);
   getFacadeRef.current = getFacade;
+  const getSyncedRef = useRef(getSyncedWallet);
+  getSyncedRef.current = getSyncedWallet;
   const getWalletKeysRef = useRef(getWalletKeys);
   getWalletKeysRef.current = getWalletKeys;
   const logsRef = useRef(logs);
@@ -107,6 +113,21 @@ export function useDaemonHost(opts: UseDaemonHostOptions): UseDaemonHostState {
       getBalances: () => balancesRef.current,
       queue,
       auditLog,
+      checkDustView: async () => {
+        const synced = getSyncedRef.current?.();
+        if (!synced?.checkDustView) throw new Error('no sync session to check');
+        return synced.checkDustView();
+      },
+      rebuildDust: async () => {
+        const synced = getSyncedRef.current?.();
+        if (!synced?.rebuildDust) return {started: false, reason: 'no sync session to rebuild'};
+        return synced.rebuildDust();
+      },
+      restartSync: async () => {
+        const synced = getSyncedRef.current?.();
+        if (!synced?.restartSync) return {started: false, reason: 'no sync session to restart'};
+        return synced.restartSync();
+      },
       log: (level, msg) => {
         if (level === 'info') logsRef.current?.info?.(msg);
         else if (level === 'warn') logsRef.current?.warn?.(msg);

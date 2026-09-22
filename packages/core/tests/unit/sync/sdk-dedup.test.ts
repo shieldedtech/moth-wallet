@@ -215,3 +215,70 @@ describe('non-linear insert errors', () => {
     expect((thrown as Error).message).toContain('2 dropped as already applied');
   });
 });
+
+describe('hooks', () => {
+  const nonLinear = () => {
+    throw new Error('values inserted non-linearly into dust commitment tree; expected to insert index 951778, but received 951794.');
+  };
+  const passThrough = (state: FakeState, wrapped: {updates: ReadonlyArray<FakeUpdate>}) =>
+    [{...state, progress: {...state.progress, appliedIndex: BigInt(wrapped.updates.at(-1)!.id)}}, {changes: [], protocolVersion: 1}] as const;
+
+  it('reports an inconsistency, with the cursor and batch, before the enriched error propagates', () => {
+    const onInconsistent = vi.fn();
+    const apply = makeDedupingApplyUpdate<FakeState, FakeUpdate>(
+      {applyUpdate: nonLinear},
+      (s) => s,
+      {onInconsistent},
+      'dust',
+    );
+    expect(() => apply(makeState(10n), {updates: [{id: 11, maxId: 20}, {id: 12, maxId: 20}]})).toThrow(/will not recover on retry/);
+    expect(onInconsistent).toHaveBeenCalledTimes(1);
+    expect(onInconsistent.mock.calls[0]![0]).toMatchObject({part: 'dust', appliedIndex: 10n, range: '11..12'});
+    expect(onInconsistent.mock.calls[0]![0].message).toMatch(/non-linearly/);
+  });
+
+  it('does not report unrelated failures as inconsistencies', () => {
+    const onInconsistent = vi.fn();
+    const apply = makeDedupingApplyUpdate<FakeState, FakeUpdate>(
+      {
+        applyUpdate: () => {
+          throw new Error('Dust secret key was cleared');
+        },
+      },
+      (s) => s,
+      {onInconsistent},
+    );
+    expect(() => apply(makeState(10n), {updates: [{id: 11, maxId: 20}]})).toThrow(/secret key/);
+    expect(onInconsistent).not.toHaveBeenCalled();
+  });
+
+  it('a throwing observer does not mask the sync error', () => {
+    const apply = makeDedupingApplyUpdate<FakeState, FakeUpdate>(
+      {applyUpdate: nonLinear},
+      (s) => s,
+      {
+        onInconsistent: () => {
+          throw new Error('observer bug');
+        },
+      },
+    );
+    expect(() => apply(makeState(10n), {updates: [{id: 11, maxId: 20}]})).toThrow(/non-linearly/);
+  });
+
+  it('reports an id gap ahead of the cursor as a diagnostic and still applies the batch', () => {
+    const onGap = vi.fn();
+    const apply = makeDedupingApplyUpdate<FakeState, FakeUpdate>({applyUpdate: passThrough}, (s) => s, {onGap}, 'dust');
+    const [next] = apply(makeState(1_548_929n), {updates: [{id: 1_548_934, maxId: 1_549_339}, {id: 1_548_935, maxId: 1_549_339}]});
+    expect(next.progress.appliedIndex).toBe(1_548_935n);
+    expect(onGap).toHaveBeenCalledWith({part: 'dust', appliedIndex: 1_548_929n, firstFreshId: 1_548_934n, batchSize: 2});
+  });
+
+  it('is silent about gaps for a contiguous batch, a fresh wallet, or an out-of-order batch', () => {
+    const onGap = vi.fn();
+    const apply = makeDedupingApplyUpdate<FakeState, FakeUpdate>({applyUpdate: passThrough}, (s) => s, {onGap});
+    apply(makeState(10n), {updates: [{id: 11, maxId: 20}]});
+    apply(makeState(0n), {updates: [{id: 500, maxId: 600}]});
+    apply(makeState(10n), {updates: [{id: 15, maxId: 20}, {id: 9, maxId: 20}]});
+    expect(onGap).not.toHaveBeenCalled();
+  });
+});

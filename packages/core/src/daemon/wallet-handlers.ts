@@ -33,6 +33,7 @@ import {
 } from './wallet-rpc-parsers.js';
 import type {
   DaemonCallCircuitResult,
+  DaemonCheckDustViewResult,
   DaemonDeployContractResult,
   DaemonDustDeregisterResult,
   DaemonDustRegisterResult,
@@ -41,8 +42,10 @@ import type {
   DaemonInsertVerifierKeysBatchResult,
   DaemonProveTransactionResult,
   DaemonSubmitTransactionResult,
+  DaemonSyncRestartResult,
   DaemonTransferTokensResult,
 } from './wallet-rpc-types.js';
+import {dustViewToWire, toGetStateResult} from './state-wire.js';
 
 import {
   buildTransferTransaction,
@@ -60,7 +63,7 @@ import {parseArgs, toPositionalArgs} from '../contract/args-parser.js';
 import {resolveInitialPrivateState} from '../contract/initial-private-state.js';
 import {clearSyncCache} from '../sync/wallet-sync.js';
 import {NIGHT_DENOMINATION, formatBalance} from '../wallet/balance-format.js';
-import type {SyncedWallet, WalletBalances} from '../sync/wallet-sync.js';
+import type {DustViewHealth, SyncRestartResult, SyncedWallet, WalletBalances} from '../sync/wallet-sync.js';
 import type {NetworkConfig} from '../types/network.js';
 import type {TransactionResult} from '../types/transaction.js';
 import type {DerivedKeys} from '../types/wallet.js';
@@ -104,6 +107,12 @@ export interface WalletHandlerDeps {
    *  auto-approve mode), a NIGHT transfer above this is refused. Undefined
    *  in interactive hosts, where a human approves each transfer instead. */
   readonly maxSpendRaw?: bigint;
+  /** Compare the dust view against the chain now (SyncedWallet.checkDustView). */
+  readonly checkDustView?: () => Promise<DustViewHealth>;
+  /** Evict the dust cache and resync it (SyncedWallet.rebuildDust). */
+  readonly rebuildDust?: () => Promise<SyncRestartResult>;
+  /** Stop and restart the sync from its caches (SyncedWallet.restartSync). */
+  readonly restartSync?: () => Promise<SyncRestartResult>;
 }
 
 /**
@@ -237,18 +246,62 @@ export function buildWalletHandlers(deps: WalletHandlerDeps): Record<string, Rpc
       const b = getBalances();
       const f = getFacade();
       if (!b || !f) return {ready: false};
-      return {
-        ready: true,
-        walletName,
-        networkId: network.id,
-        synced: b.synced,
-        syncProgress: b.syncProgress,
-        balances: {
-          shielded: serializeBigintRecord(b.shielded),
-          unshielded: serializeBigintRecord(b.unshielded),
-          dust: b.dust.toString(),
-        },
-      };
+      return toGetStateResult(b, {walletName, networkId: network.id});
+    },
+
+    // ─────────────────────────────────────────────────────────────────
+    // checkDustView — compare the dust view with the chain, now
+    // ─────────────────────────────────────────────────────────────────
+
+    checkDustView: async (): Promise<DaemonCheckDustViewResult> => {
+      requireReady();
+      if (!deps.checkDustView) {
+        throw new DaemonProtocolError('METHOD_NOT_FOUND', 'this host does not expose the dust view check');
+      }
+      const view = await deps.checkDustView();
+      return {dustView: dustViewToWire(view)!};
+    },
+
+    // ─────────────────────────────────────────────────────────────────
+    // rebuildDust — evict the dust cache and resync it, keeping the rest
+    // ─────────────────────────────────────────────────────────────────
+
+    rebuildDust: async (_params: unknown, ctx: ConnectionContext): Promise<DaemonSyncRestartResult> => {
+      requireReady();
+      if (!deps.rebuildDust) {
+        throw new DaemonProtocolError('METHOD_NOT_FOUND', 'this host does not expose the dust rebuild');
+      }
+      const rebuild = deps.rebuildDust;
+      return withAudit(
+        'rebuildDust',
+        `Rebuild the DUST view of ${walletName} on ${network.id} from the chain?`,
+        [
+          'Evicts only the dust sync cache; shielded, unshielded and history stay.',
+          'Dust resyncs from the pre-seed reference when the indexer proves that safe, else from genesis (slow).',
+          'A transaction in flight on this daemon will fail while the sync restarts.',
+        ],
+        ctx,
+        rebuild,
+      );
+    },
+
+    // ─────────────────────────────────────────────────────────────────
+    // restartSync — stop and start the sync again from its caches
+    // ─────────────────────────────────────────────────────────────────
+
+    restartSync: async (_params: unknown, ctx: ConnectionContext): Promise<DaemonSyncRestartResult> => {
+      requireReady();
+      if (!deps.restartSync) {
+        throw new DaemonProtocolError('METHOD_NOT_FOUND', 'this host does not expose a sync restart');
+      }
+      const restart = deps.restartSync;
+      return withAudit(
+        'restartSync',
+        `Restart the sync of ${walletName} on ${network.id}?`,
+        ['Re-subscribes to the indexer from the cached cursors; nothing is evicted.'],
+        ctx,
+        restart,
+      );
     },
 
     // ─────────────────────────────────────────────────────────────────
@@ -813,14 +866,9 @@ export function buildWalletHandlers(deps: WalletHandlerDeps): Record<string, Rpc
   // call it. Adding a write verb? Don't bother — the default already
   // covers it.
   handlers.getState.scope = 'read';
+  handlers.checkDustView.scope = 'read';
 
   return handlers;
-}
-
-function serializeBigintRecord(r: Record<string, bigint>): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const [k, v] of Object.entries(r)) out[k] = v.toString();
-  return out;
 }
 
 function flattenTxResult(r: TransactionResult): {
