@@ -1,0 +1,57 @@
+---
+'@shieldedtech/moth-wallet': minor
+---
+
+Check the DUST view against the chain, release fee coins of transactions that
+never land, and recover from a rejected replay instead of retrying it forever.
+
+The dust wallet's state is incremental and forward-only: events are applied as
+they arrive and nothing ever re-derives from the chain. Three ways that went
+wrong on preprod between 2026-09-20 and 22, all reported as `dustSynced: true`:
+
+- A wallet paying contract fees lost sight of a ≈500 DUST coin for three hours
+  and every fee after that failed with "could not balance dust". The coin was
+  not lost: `DustLocalState.spend()` marks the input pending for the ledger's
+  grace period and hides it from `utxos`, and only the `DustSpendProcessed`
+  event replaces it with its successor. The transaction that spent it had been
+  accepted by the pool and never included — no event, so no successor, and a
+  submission resolved at 'Submitted' has no way to notice.
+- Two wallets looped 9,300 times over five hours on `values inserted
+  non-linearly into dust commitment tree`, a failure the dedup wrapper already
+  explains cannot recover on retry.
+- A pre-seeded cache gave a wallet with generation history a permanent 0 DUST.
+
+What changes:
+
+- **Inclusion watch** (`sync/tx-watch.ts`). Every submission is polled against
+  the indexer; one not seen within ten minutes has its bookkeeping reverted
+  through `facade.revertTransaction`, which the dust wallet maps to
+  `processTtls(spendTime + grace)` — the ledger un-pends the coin. Safe if the
+  transaction lands later: the event finds the coin by nullifier regardless.
+- **Dust view check** (`sync/dust-view.ts`, `sync/dust-generations.ts`). Once
+  dust reports synced, and every five minutes after, the wallet fetches its
+  generation entries from the indexer's `dustGenerations(dustAddress)` and the
+  live dust tip, and compares: every live entry must have a coin in the local
+  view, no coin may lack a generation record, and the cursor must move. A live
+  entry with no coin for more than ten minutes, an excluded coin, a stalled
+  cursor or a rejected replay makes the view incomplete. `WalletBalances` gains
+  `dustView` saying so, and `syncProgress.dustSynced` is false while it is.
+- **Auto-recovery.** The dedup wrapper now takes hooks. On a non-linear insert
+  the affected part's cache is evicted and the sync restarted, at most once an
+  hour per part. `SyncedWallet` gains `rebuildDust()`, `restartSync()` and
+  `checkDustView()`; the facade is replaced across a restart, so hold the
+  `SyncedWallet`.
+- **Daemon.** `getState` returns the per-coin breakdown (`coins`, with each dust
+  coin's backing NIGHT, spend sequence, initial value and creation time),
+  `dustGeneration`, `subProgress` and `dustView`. New verbs: `checkDustView`
+  (read), `rebuildDust` and `restartSync` (audited writes).
+- **Offline check.** `checkCachedDustView` reads a cached `dust.dat` and compares
+  it with the chain without starting a sync.
+- The pre-seed history probe inlines its integers: the public preprod indexer
+  intermittently rejects them as GraphQL variables, and the probe fell back to a
+  from-genesis sync for no reason.
+
+Indexer event ids are one global serial shared with zswap and contract events,
+so an id-contiguity check is not a gap detector (twelve gaps in four hundred
+ids on preprod); gaps are reported through a diagnostic hook only, and the
+ledger tree's own rejection remains the verdict.

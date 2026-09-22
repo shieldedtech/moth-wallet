@@ -53,6 +53,9 @@ export {
 } from './wallet-rpc-parsers.js';
 export type {
   DaemonGetStateResult,
+  DaemonDustCoinWire, DaemonDustGenerationWire, DaemonDustViewWire,
+  DaemonShieldedCoinWire, DaemonUnshieldedCoinWire,
+  DaemonCheckDustViewResult, DaemonSyncRestartResult,
   DaemonSubmitTransactionParams, DaemonSubmitTransactionResult,
   DaemonTransferTokensParams, DaemonTransferTokensResult,
   DaemonCallCircuitParams, DaemonCallCircuitResult,

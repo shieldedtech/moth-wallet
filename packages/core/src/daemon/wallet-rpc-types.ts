@@ -8,11 +8,77 @@
 // daemon — the daemon does its own resolvePath on receipt for the
 // modal display, but treats the incoming string as authoritative.
 
-import type {SyncProgress, TransactionResult} from '../index.js';
+import type {SubWalletProgress, SyncProgress, TransactionResult} from '../index.js';
 
 // ─────────────────────────────────────────────────────────────────────
 // getState (read)
 // ─────────────────────────────────────────────────────────────────────
+
+export type DaemonShieldedCoinWire = {
+  readonly value: string;
+  readonly type: string;
+};
+
+export type DaemonUnshieldedCoinWire = {
+  readonly value: string;
+  readonly type: string;
+  readonly registeredForDustGeneration: boolean;
+  /** ISO-8601, or null when the SDK reported none. */
+  readonly ctime: string | null;
+};
+
+/** One dust coin, as wallet-sync's DustCoinInfo crosses the wire. */
+export type DaemonDustCoinWire = {
+  /** SPECK generated so far. */
+  readonly generatedNow: string;
+  /** SPECK the coin can hold at most. */
+  readonly maxCap: string;
+  readonly maxCapReachedAt: string;
+  /** ISO-8601 when the backing NIGHT was spent, else null. */
+  readonly dtime: string | null;
+  /** The backing NIGHT UTXO's initial nonce (hex) — matches the indexer's generation entry. */
+  readonly backingNight: string | null;
+  /** How many times this coin's chain has been spent. */
+  readonly seq: number | null;
+  /** SPECK at the coin's creation (its last spend). */
+  readonly initialValue: string | null;
+  readonly ctime: string | null;
+};
+
+export type DaemonDustGenerationWire = {
+  readonly balance: string;
+  readonly designated: string;
+  readonly ratePerDay: string;
+  readonly limit: string;
+  readonly fillTime: string | null;
+  readonly numUtxos: number;
+  readonly registered: boolean;
+  readonly registeredNight: string;
+  readonly newestRegisteredAt: string | null;
+};
+
+/** wallet-sync's DustViewHealth on the wire (see sync/dust-view.ts). */
+export type DaemonDustViewWire = {
+  readonly checkedAt: string | null;
+  readonly complete: boolean;
+  readonly missing: ReadonlyArray<{
+    readonly generationMtIndex: number;
+    /** Backing NIGHT in STAR. */
+    readonly night: string;
+    readonly backingNight: string;
+    readonly generatingSince: string;
+    readonly missingSince: string;
+  }>;
+  readonly excluded: number;
+  readonly localApplied: number | null;
+  readonly indexerMaxId: number | null;
+  readonly behindBy: number | null;
+  readonly stalled: boolean;
+  readonly inconsistent: boolean;
+  readonly revertedSubmissions: number;
+  readonly liveEntries: number | null;
+  readonly reason: string | null;
+};
 
 export type DaemonGetStateResult = {
   readonly ready: boolean;
@@ -25,6 +91,29 @@ export type DaemonGetStateResult = {
     readonly unshielded: Record<string, string>;
     readonly dust: string;
   };
+  /** Per-coin breakdown. Present whenever `ready`. */
+  readonly coins?: {
+    readonly shielded: {readonly available: readonly DaemonShieldedCoinWire[]; readonly pending: readonly DaemonShieldedCoinWire[]};
+    readonly unshielded: {readonly available: readonly DaemonUnshieldedCoinWire[]; readonly pending: readonly DaemonUnshieldedCoinWire[]};
+    readonly dust: {readonly available: readonly DaemonDustCoinWire[]; readonly pending: readonly DaemonDustCoinWire[]};
+  };
+  readonly subProgress?: SubWalletProgress;
+  readonly dustGeneration?: DaemonDustGenerationWire | null;
+  /** Whether the dust view is whole. Null when the sync session does not track it. */
+  readonly dustView?: DaemonDustViewWire | null;
+};
+
+// ─────────────────────────────────────────────────────────────────────
+// checkDustView (read) / rebuildDust / restartSync
+// ─────────────────────────────────────────────────────────────────────
+
+export type DaemonCheckDustViewResult = {
+  readonly dustView: DaemonDustViewWire;
+};
+
+export type DaemonSyncRestartResult = {
+  readonly started: boolean;
+  readonly reason?: string;
 };
 
 // ─────────────────────────────────────────────────────────────────────

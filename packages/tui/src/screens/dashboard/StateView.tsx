@@ -8,7 +8,7 @@ import type { WalletState, NetworkState } from '../../types.js';
 import type { ChainStatus } from '../../hooks/useChainStatus.js';
 import type {
   WalletCoinDetails, SubWalletProgress,
-  ShieldedCoinInfo, UnshieldedCoinInfo, DustCoinInfo,
+  ShieldedCoinInfo, UnshieldedCoinInfo, DustCoinInfo, DustViewHealth,
 } from '@shieldedtech/moth-wallet';
 import { NIGHT_TOKEN_ID } from '@shieldedtech/moth-wallet';
 import {
@@ -32,6 +32,20 @@ interface StateViewProps {
   dustBalance?: bigint;
   coins?: WalletCoinDetails;
   subProgress?: SubWalletProgress;
+  /** The sync engine's verdict on whether the dust view is whole against the chain. */
+  dustView?: DustViewHealth | null;
+}
+
+/** One line under the Dust Wallet block when the engine found the view incomplete. */
+function DustViewRow({ view }: { view?: DustViewHealth | null }) {
+  if (!view || view.complete) return null;
+  return (
+    <Box>
+      <Label>View</Label>
+      <Text color="red">incomplete — {view.reason ?? 'see dust check'}</Text>
+      <Text dimColor> · repair with `moth dust rebuild`</Text>
+    </Box>
+  );
 }
 
 // Common label width so Address / Sync / Balance / Pending line up vertically.
@@ -237,7 +251,7 @@ function PendingRow({ count }: { count: number }) {
 
 export function StateView({
   wallet, network, chain, isUnlocked, paused,
-  addresses, shieldedBalances: _sb, unshieldedBalances: _ub, dustBalance,
+  addresses, shieldedBalances: _sb, unshieldedBalances: _ub, dustBalance, dustView,
   coins, subProgress,
 }: StateViewProps) {
   const { stdout } = useStdout();
@@ -360,6 +374,7 @@ export function StateView({
                 budget={budget}
               />
               <PendingRow count={coins?.dust.pending.length ?? 0} />
+              <DustViewRow view={dustView} />
             </Box>
           </Box>
         </>

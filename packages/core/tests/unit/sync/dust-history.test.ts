@@ -31,7 +31,7 @@ class FakeSocket implements SocketLike {
   handshake() {
     this.onopen?.({});
     this.onmessage?.({data: JSON.stringify({type: 'connection_ack'})});
-    return this.sent.find((m) => m.type === 'subscribe') as {payload: {variables: {address: string; end: number}}};
+    return this.sent.find((m) => m.type === 'subscribe') as {payload: {query: string; variables?: unknown}};
   }
   next(dustGenerations: Record<string, unknown>) {
     this.onmessage?.({data: JSON.stringify({type: 'next', id: '1', payload: {data: {dustGenerations}}})});
@@ -58,7 +58,10 @@ describe('probeDustGenerations', () => {
 
     expect(sock.url).toBe('wss://indexer.preprod.midnight.network/api/v4/graphql/ws');
     expect(sock.protocol).toBe('graphql-transport-ws');
-    expect(subscribe.payload.variables).toEqual({address: ADDRESS, end: 392_575});
+    // Inlined, not variables: the preprod indexer intermittently rejects Int variables.
+    expect(subscribe.payload.variables).toBeUndefined();
+    expect(subscribe.payload.query).toContain(`dustAddress: "${ADDRESS}"`);
+    expect(subscribe.payload.query).toContain('startIndex: 0, endIndex: 392575');
 
     sock.complete();
     await pending;
@@ -153,7 +156,7 @@ describe('dustHistoryBefore', () => {
     const subscribe = FakeSocket.all[0]!.handshake();
 
     expect(client.getDustGenerationEndIndex).toHaveBeenCalledWith(2_203_416);
-    expect(subscribe.payload.variables.end).toBe(392_575);
+    expect(subscribe.payload.query).toContain('endIndex: 392575');
     FakeSocket.all[0]!.complete();
     await expect(pending).resolves.toEqual({kind: 'none'});
   });
