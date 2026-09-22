@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import * as Rx from 'rxjs';
 import type { UtxoWithMeta, WalletFacade } from '@midnightntwrk/wallet-sdk/facade';
+import { MidnightBech32m } from '@midnightntwrk/wallet-sdk/address-format';
 import {
   designateForDust,
   dedesignateFromDust,
@@ -74,11 +75,24 @@ describe('DUST operations on a fresh wallet', () => {
     await expect(
       designateForDust(facade, seedHex, 'devnet', undefined, (stage) => stages.push(stage)),
     ).resolves.toBe('tx-hash');
+    // The fourth argument is the DUST receiver. It used to be undefined, which
+    // let the SDK derive "my own DUST address" for the network the WALLET was
+    // created against rather than the one being registered on — a devnet-encoded
+    // receiver handed to preview's node, which refused it. It is now derived
+    // here, from the keys in hand and the network in the request.
     expect(registerNightUtxosForDustGeneration).toHaveBeenCalledWith(
       [coin],
       expect.anything(),
       expect.any(Function),
-      undefined,
+      expect.anything(),
+    );
+    const receiver = registerNightUtxosForDustGeneration.mock.calls[0]![3];
+    expect(receiver, 'a derived receiver, not the SDK default').toBeDefined();
+    // And it is THIS wallet's DUST address for the network being registered on —
+    // which is the entire point, since the SDK's own default derives it for
+    // whichever network the wallet was created against.
+    expect(MidnightBech32m.encode('devnet', receiver as never).toString()).toBe(
+      deriveAllAddressesFromSeed(seedHex).dust.bech32m.devnet,
     );
     expect(finalizeRecipe).toHaveBeenCalledWith(recipe);
     expect(submitTransaction).toHaveBeenCalledWith(finalized);
