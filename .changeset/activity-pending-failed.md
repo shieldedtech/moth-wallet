@@ -21,3 +21,9 @@ synced, two hours passing with no sign of it on chain. A chain entry that
 arrives later still wins. DUST registration and deregistration report a
 rejection the same way, and deregistration now announces its proving stage
 before, not after, the proof is made.
+
+Transactions a dApp submits through the connector are recorded too. What the
+wallet learned when it balanced or built the transaction (the deficits it
+covered, or the transfer it was asked for) is kept until the dApp submits it,
+so a contract call that takes NIGHT out of the wallet shows as a pending send
+of that amount, and is marked failed on the same terms as a wallet send.
