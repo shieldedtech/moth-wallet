@@ -194,6 +194,11 @@ function installLogSuppression(): void {
   });
 }
 
+// `additionalFeeOverhead` is not a margin on a computed fee — it IS the fee.
+// Balancing prices a proof-erased transaction before proving, and on preprod the
+// ledger answers 1 speck whether the transaction carries one transfer or two, so
+// this constant covers what the proofs weigh. See
+// docs/upstream-issues/dust-fee-priced-before-proving.md.
 const DUST_COST_PARAMETERS = {
   additionalFeeOverhead: 300_000_000_000_000n,
   feeBlocksMargin: 5,
