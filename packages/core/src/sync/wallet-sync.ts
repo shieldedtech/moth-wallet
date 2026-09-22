@@ -28,8 +28,8 @@ import {ensureEmptyRefCache, preSeedNewWallet} from './preseed.js';
 import {InMemorySyncStateStore, syncStateKey, type SyncStateStore, type WalletPart} from './sync-store.js';
 import {dedupingShieldedBuilder, dedupingDustBuilder} from './sdk-dedup.js';
 import {largestDustCoinFirst} from './dust-coin-selection.js';
-import {summarizeDustGeneration, type DustGeneration} from './dust-generation.js';
-import {terminatingDustTransacting} from './dust-transacting.js';
+import {spendableDust, summarizeDustGeneration, type DustGeneration} from './dust-generation.js';
+import {terminatingDustTransacting, type DustFeePass} from './dust-transacting.js';
 import {overallSyncProgress, type SubWallet} from './progress.js';
 import {partsToSeed, preSeedPlan, birthdayAdmits, type SeedablePart} from './preseed-parts.js';
 import {dustHistoryBefore} from './dust-history.js';
@@ -386,6 +386,13 @@ export interface WalletSyncOptions {
    * pass smaller batches so each synchronous WASM apply stays short.
    */
   batchUpdates?: BatchUpdatesOptions;
+  /**
+   * Called for each pass of the DUST fee-balancing loop, for both the fee
+   * preview and the real spend — they share `computeBalancingRecipe`. The
+   * converged pass carries the fee the transaction will actually pay, which is
+   * otherwise observable only on chain.
+   */
+  onDustFeePass?: (pass: DustFeePass) => void;
 }
 
 /** Bound on the SDK's own teardown. A healthy stop takes tens of milliseconds, so
@@ -593,7 +600,7 @@ export async function startWalletSync(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const dustBuilder = (dedupingDustBuilder() as any)
     .withCoinSelection(() => largestDustCoinFirst)
-    .withTransacting(terminatingDustTransacting());
+    .withTransacting(terminatingDustTransacting({onPass: options?.onDustFeePass}));
   let dustWallet: DustWallet | undefined;
   const savedDust = await loadCachedState(store, name, network.id, 'dust');
   if (savedDust) {
@@ -1012,6 +1019,9 @@ function extractBalancesPartial(
         dtime: c.dtime ? (c.dtime instanceof Date ? c.dtime : new Date(c.dtime)) : null,
       });
     }
+    // Booked fee inputs count toward the displayed balance for the same reason
+    // booked NIGHT inputs do above; see spendableDust.
+    dust = spendableDust(dust, coins.dust.pending);
     // v4 SDK dust SyncProgress shares the abstractions shape with shielded
     const dp = state.dust?.progress;
     const duApplied = dp?.appliedIndex ?? 0n;
@@ -1059,7 +1069,8 @@ function extractBalancesPartial(
       .map((c) => ({value: c.utxo?.value ?? 0n, ctime: c.meta?.ctime ?? null}));
     const dustCoins = [...state.dust.availableCoins, ...state.dust.pendingCoins].map((c) => ({
       maxCap: c.maxCap,
-      maxCapReachedAt: c.maxCapReachedAt,
+      generatedNow: c.generatedNow,
+      rate: c.rate,
       dtime: c.dtime ?? null,
     }));
     dustGeneration = summarizeDustGeneration({
@@ -1071,6 +1082,7 @@ function extractBalancesPartial(
         generationDecayRate: params.generationDecayRate,
         timeToCapSeconds: params.timeToCapSeconds,
       },
+      now: new Date(),
     });
   } catch {
     /* dust generation info not available */

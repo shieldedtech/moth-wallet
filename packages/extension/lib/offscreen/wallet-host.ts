@@ -53,6 +53,7 @@ import { serializeBalances } from '../messaging/balances-json';
 import { serializeActivity } from '../messaging/activity-json';
 import { waitForSyncedBalances } from './wait-synced';
 import { dustHealKey } from './dust-heal';
+import { logDustFeeEstimate, logDustFeePass } from './dust-fee-log';
 import { NIGHT_TOKEN_ID } from '@shieldedtech/moth-wallet/types/tokens';
 import type { NightCoinRow } from '../messaging/protocol';
 import {
@@ -344,7 +345,11 @@ export async function syncEnsure(
     walletName,
     false,
     birthday,
-    { syncStore: new IdbSyncStateStore(), ...(ON_MAIN_THREAD ? { batchUpdates: MAIN_THREAD_BATCH } : {}) },
+    {
+      syncStore: new IdbSyncStateStore(),
+      onDustFeePass: logDustFeePass,
+      ...(ON_MAIN_THREAD ? { batchUpdates: MAIN_THREAD_BATCH } : {}),
+    },
   );
   current = { key, synced, walletKeys };
 
@@ -716,6 +721,7 @@ export function estimateTransferFee(
       network.id,
       toRequests(requests),
     );
+    logDustFeeEstimate(fee, requests.length);
     return { fee: fee.toString() };
   }));
 }
