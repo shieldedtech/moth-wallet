@@ -318,6 +318,9 @@ export interface OffscreenProtocol {
   'os/eventTxStage'(stage: TxStage): void;
   /** Node relay reachability, pushed whenever it changes. */
   'os/eventRelayState'(state: RelayState): void;
+  /** A locally submitted transaction was recorded or ruled failed, so the
+   *  activity feed is worth re-reading. Carries the transaction's hash. */
+  'os/eventActivityChanged'(hash: string): void;
 }
 
 export const { sendMessage: offscreenSend, onMessage: offscreenOn } =

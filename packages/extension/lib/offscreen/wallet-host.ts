@@ -35,6 +35,8 @@ import {
   resolveProverConfig,
   EMPTY_COINS,
   type SyncedWallet,
+  type TransactionOutcome,
+  type TxStage,
   type NetworkConfig,
   type WalletBalances,
   type WalletKeys,
@@ -59,8 +61,9 @@ import {
   loadSubmissions,
   mergeSubmissions,
   recordSubmission,
-  saveSubmissions,
+  recordSubmissionFailure,
   submissionsKey,
+  type SubmissionFailure,
   type SubmittedTx,
 } from './submissions';
 import type {
@@ -344,7 +347,11 @@ export async function syncEnsure(
     walletName,
     false,
     birthday,
-    { syncStore: new IdbSyncStateStore(), ...(ON_MAIN_THREAD ? { batchUpdates: MAIN_THREAD_BATCH } : {}) },
+    {
+      syncStore: new IdbSyncStateStore(),
+      onTransactionOutcome: (outcome) => void noteOutcome(network.id, walletName, outcome),
+      ...(ON_MAIN_THREAD ? { batchUpdates: MAIN_THREAD_BATCH } : {}),
+    },
   );
   current = { key, synced, walletKeys };
 
@@ -660,6 +667,39 @@ function submitTracked<T>(network: NetworkConfig, walletName: string, submit: ()
 async function noteSubmitted(networkId: string, walletName: string, tx: SubmittedTx): Promise<void> {
   try {
     await recordSubmission(new IdbSyncStateStore(), networkId, walletName, tx);
+    emit('os/eventActivityChanged', tx.hash);
+  } catch {
+    /* ignore */
+  }
+}
+
+function rejected(error: unknown): SubmissionFailure {
+  return { at: Date.now(), message: error instanceof Error ? error.message : String(error) };
+}
+
+// A DUST operation the node rejected has no chain hash to reconcile against and
+// never will, so its failed row gets a local identity.
+function noteDustRejected(networkId: string, walletName: string, error: unknown): Promise<void> {
+  return noteSubmitted(networkId, walletName, {
+    hash: `local:${crypto.randomUUID()}`,
+    submittedAt: Date.now(),
+    kind: 'dust',
+    failure: rejected(error),
+  });
+}
+
+// Verdicts from the SDK's pending tracker arrive off the sync stream, not from
+// an operation the panel is waiting on, so nothing awaits this either.
+async function noteOutcome(networkId: string, walletName: string, outcome: TransactionOutcome): Promise<void> {
+  try {
+    const marked = await recordSubmissionFailure(
+      new IdbSyncStateStore(),
+      networkId,
+      walletName,
+      [outcome.transactionHash, ...outcome.identifiers],
+      { at: Date.now() },
+    );
+    if (marked) emit('os/eventActivityChanged', outcome.transactionHash);
   } catch {
     /* ignore */
   }
@@ -682,13 +722,12 @@ export function sendTokens(
       (stage) => emit('os/eventTxStage', stage),
     );
     emit('os/eventTxStage', 'submitting');
-    const txHash = await submitTracked(network, walletName, () => submitFinalizedTransaction(wallet.facade, finalized));
     // The activity feed's pending row is single-output. Record the rich detail
     // only for a lone output; a batch records a plain pending send (the applied
     // chain entry supplies every delta once it lands).
     const single = requests.length === 1 ? requests[0] : undefined;
-    await noteSubmitted(network.id, walletName, {
-      hash: txHash,
+    const submission: SubmittedTx = {
+      hash: finalized.transactionHash(),
       transactionHash: finalized.transactionHash(),
       submittedAt: Date.now(),
       kind: 'send',
@@ -697,7 +736,15 @@ export function sendTokens(
       tokenKind: single?.type,
       amount: single?.amount,
       outputs: requests.length,
-    });
+    };
+    let txHash: string;
+    try {
+      txHash = await submitTracked(network, walletName, () => submitFinalizedTransaction(wallet.facade, finalized));
+    } catch (e) {
+      await noteSubmitted(network.id, walletName, { ...submission, failure: rejected(e) });
+      throw e;
+    }
+    await noteSubmitted(network.id, walletName, { ...submission, hash: txHash });
     return { txHash };
   }));
 }
@@ -736,13 +783,17 @@ export async function registerDust(
     await ensureProver(network);
     const wallet = await syncEnsure(seedHex, walletName, network);
     let txHash: string | null;
+    const progress = { stage: null as TxStage | null };
     try {
       txHash = await coreDesignateForDust(
         wallet.facade,
         seedHex,
         network.id,
         dustAddress,
-        (stage) => emit('os/eventTxStage', stage),
+        (stage) => {
+          progress.stage = stage;
+          emit('os/eventTxStage', stage);
+        },
       );
       dustSpendHealthTracker(network.id, walletName).recordSuccess();
     } catch (e) {
@@ -762,7 +813,11 @@ export async function registerDust(
       // A DustRegistrationNotYetError never reached the node — it is a preflight
       // bail-out — so it must not count toward the wedge streak; only what falls
       // through here does.
-      throw await diagnoseSubmissionFailure(dustSpendHealthTracker(network.id, walletName), e, {network});
+      const failure = await diagnoseSubmissionFailure(dustSpendHealthTracker(network.id, walletName), e, {network});
+      // Only a transaction that reached the node is a failed transaction; one
+      // that never got past building or proving was never a transaction.
+      if (progress.stage === 'submitting') await noteDustRejected(network.id, walletName, failure);
+      throw failure;
     }
     if (txHash) {
       await noteSubmitted(network.id, walletName, { hash: txHash, submittedAt: Date.now(), kind: 'dust' });
@@ -782,13 +837,18 @@ export async function deregisterDust(
   return trackOp(async () => {
     await ensureProver(network);
     const wallet = await syncEnsure(seedHex, walletName, network);
-    const txHash = await submitTracked(network, walletName, () =>
-      coreDedesignateFromDust(
-        wallet.facade,
-        seedHex,
-        network.id,
-        (stage) => emit('os/eventTxStage', stage),
-      ));
+    const progress = { stage: null as TxStage | null };
+    let txHash: string;
+    try {
+      txHash = await submitTracked(network, walletName, () =>
+        coreDedesignateFromDust(wallet.facade, seedHex, network.id, (stage) => {
+          progress.stage = stage;
+          emit('os/eventTxStage', stage);
+        }));
+    } catch (e) {
+      if (progress.stage === 'submitting') await noteDustRejected(network.id, walletName, e);
+      throw e;
+    }
     await noteSubmitted(network.id, walletName, { hash: txHash, submittedAt: Date.now(), kind: 'dust' });
     return { txHash };
   });
@@ -1012,7 +1072,8 @@ function ownUnshieldedAddress(seedHex: string, networkId: string): string {
 // wait for sync: history is restored from its persisted cache when the engine
 // starts, so the feed shows what's known immediately and fills in as sync
 // applies newer transactions. Locally-submitted transactions merge in as
-// pending rows until the indexer reports them applied.
+// pending rows until the indexer reports them applied, and as failed rows once
+// the node or the SDK's pending tracker has ruled them out.
 export async function activityGet(
   seedHex: string,
   walletName: string,
@@ -1022,16 +1083,8 @@ export async function activityGet(
   const entries = await wallet.facade.getAllFromTxHistory();
   const ownAddress = ownUnshieldedAddress(seedHex, network.id);
 
-  const store = new IdbSyncStateStore();
-  const submissions = await loadSubmissions(store, network.id, walletName);
-  const { entries: merged, prune } = mergeSubmissions(
-    deriveActivity(entries, ownAddress),
-    submissions,
-    Date.now(),
+  const submissions = await loadSubmissions(new IdbSyncStateStore(), network.id, walletName);
+  return serializeActivity(
+    mergeSubmissions(deriveActivity(entries, ownAddress), submissions, Date.now(), wallet.balances.synced),
   );
-  if (prune.length > 0) {
-    const kept = submissions.filter((tx) => !prune.includes(tx.hash));
-    await saveSubmissions(store, network.id, walletName, kept).catch(() => {});
-  }
-  return serializeActivity(merged);
 }
