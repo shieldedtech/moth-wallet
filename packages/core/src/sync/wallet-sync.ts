@@ -28,7 +28,8 @@ import {ensureEmptyRefCache, preSeedNewWallet} from './preseed.js';
 import {InMemorySyncStateStore, syncStateKey, type SyncStateStore, type WalletPart} from './sync-store.js';
 import {dedupingShieldedBuilder, dedupingDustBuilder} from './sdk-dedup.js';
 import {largestDustCoinFirst} from './dust-coin-selection.js';
-import {terminatingDustTransacting} from './dust-transacting.js';
+import {spendableDust, summarizeDustGeneration, type DustGeneration} from './dust-generation.js';
+import {terminatingDustTransacting, type DustFeePass} from './dust-transacting.js';
 import {overallSyncProgress, type SubWallet} from './progress.js';
 import {partsToSeed, preSeedPlan, birthdayAdmits, type SeedablePart} from './preseed-parts.js';
 import {dustHistoryBefore} from './dust-history.js';
@@ -193,28 +194,17 @@ function installLogSuppression(): void {
   });
 }
 
+// `additionalFeeOverhead` is not a margin on a computed fee — it IS the fee.
+// Balancing prices a proof-erased transaction before proving, and on preprod the
+// ledger answers 1 speck whether the transaction carries one transfer or two, so
+// this constant covers what the proofs weigh. See
+// docs/upstream-issues/dust-fee-priced-before-proving.md.
 const DUST_COST_PARAMETERS = {
   additionalFeeOverhead: 300_000_000_000_000n,
   feeBlocksMargin: 5,
 };
 
-export interface DustGeneration {
-  balance: bigint;
-  designated: bigint;
-  ratePerDay: bigint;
-  limit: bigint;
-  fillTime: Date;
-  numUtxos: number;
-  registered: boolean;
-  /** NIGHT (raw STAR) actually registered for generation — the sum of the
-   *  registered UTXOs. Balance beyond this contributes no DUST capacity until
-   *  it, too, is registered. */
-  registeredNight: bigint;
-  /** Creation time of the newest registered NIGHT UTXO, or null when none.
-   *  Lets callers distinguish "generation records still settling" (recent)
-   *  from a stale local dust view (old UTXOs with no records). */
-  newestRegisteredAt: Date | null;
-}
+export type {DustGeneration} from './dust-generation.js';
 
 export interface SyncProgress {
   /** 0.0 to 1.0 */
@@ -255,6 +245,13 @@ export interface UnshieldedCoinInfo {
 export interface DustCoinInfo {
   generatedNow: bigint;
   maxCap: bigint;
+  /** Specks per second this coin generates while its backing NIGHT is unspent. */
+  rate: bigint;
+  /**
+   * The SDK's own cap-reached time: creation time plus the whole time-to-cap,
+   * whatever the coin already holds, and a spend resets the creation time. Use
+   * `secondsUntilFull` for a countdown; this is kept only as reported state.
+   */
   maxCapReachedAt: Date;
   /** Set when the underlying NIGHT UTXO has been deregistered. */
   dtime: Date | null;
@@ -401,6 +398,13 @@ export interface WalletSyncOptions {
    * pass smaller batches so each synchronous WASM apply stays short.
    */
   batchUpdates?: BatchUpdatesOptions;
+  /**
+   * Called for each pass of the DUST fee-balancing loop, for both the fee
+   * preview and the real spend — they share `computeBalancingRecipe`. The
+   * converged pass carries the fee the transaction will actually pay, which is
+   * otherwise observable only on chain.
+   */
+  onDustFeePass?: (pass: DustFeePass) => void;
 }
 
 /** Bound on the SDK's own teardown. A healthy stop takes tens of milliseconds, so
@@ -608,7 +612,7 @@ export async function startWalletSync(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const dustBuilder = (dedupingDustBuilder() as any)
     .withCoinSelection(() => largestDustCoinFirst)
-    .withTransacting(terminatingDustTransacting());
+    .withTransacting(terminatingDustTransacting({onPass: options?.onDustFeePass}));
   let dustWallet: DustWallet | undefined;
   const savedDust = await loadCachedState(store, name, network.id, 'dust');
   if (savedDust) {
@@ -1015,6 +1019,7 @@ function extractBalancesPartial(
       coins.dust.available.push({
         generatedNow: c.generatedNow ?? 0n,
         maxCap: c.maxCap ?? 0n,
+        rate: c.rate ?? 0n,
         maxCapReachedAt: c.maxCapReachedAt instanceof Date ? c.maxCapReachedAt : new Date(c.maxCapReachedAt ?? 0),
         dtime: c.dtime ? (c.dtime instanceof Date ? c.dtime : new Date(c.dtime)) : null,
       });
@@ -1023,10 +1028,14 @@ function extractBalancesPartial(
       coins.dust.pending.push({
         generatedNow: c.generatedNow ?? 0n,
         maxCap: c.maxCap ?? 0n,
+        rate: c.rate ?? 0n,
         maxCapReachedAt: c.maxCapReachedAt instanceof Date ? c.maxCapReachedAt : new Date(c.maxCapReachedAt ?? 0),
         dtime: c.dtime ? (c.dtime instanceof Date ? c.dtime : new Date(c.dtime)) : null,
       });
     }
+    // Booked fee inputs count toward the displayed balance for the same reason
+    // booked NIGHT inputs do above; see spendableDust.
+    dust = spendableDust(dust, coins.dust.pending);
     // v4 SDK dust SyncProgress shares the abstractions shape with shielded
     const dp = state.dust?.progress;
     const duApplied = dp?.appliedIndex ?? 0n;
@@ -1065,66 +1074,28 @@ function extractBalancesPartial(
     dustSynced = true;
   }
 
-  // Creation time of the newest UTXO, tolerant of absent metadata.
-  const newestCtime = (utxos: ReadonlyArray<{meta?: {ctime?: Date}}>): Date | null =>
-    utxos.reduce<Date | null>((newest, c) => {
-      const ctime = c.meta?.ctime;
-      return ctime && (!newest || ctime > newest) ? ctime : newest;
-    }, null);
-
-  // Extract DUST generation info from the facade's dust sub-wallet state.
-  // This matches mn-tui's extractDustGeneration pattern.
+  // Booked inputs count as registered NIGHT here for the same reason they count
+  // toward the balance above; summarizeDustGeneration explains the rest.
   try {
-    const nightRatio = ledger.LedgerParameters.initialParameters().dust.nightDustRatio as bigint;
-    // v4 API: availableCoins is a property returning DustFullInfo[]
-    const coins = state.dust.availableCoins.filter((coin) => coin.maxCap > 0n);
-
-    if (coins.length > 0) {
-      let limitRaw = 0n;
-      let ratePerDay = 0n;
-      let fillTime = new Date(0);
-      for (const coin of coins) {
-        limitRaw += coin.maxCap;
-        ratePerDay += coin.rate * 86_400n;
-        const cap = coin.maxCapReachedAt;
-        if (cap > fillTime) fillTime = cap;
-      }
-
-      // Registered NIGHT UTXOs — their sum is the exact backing of the cap;
-      // balance beyond it is unregistered and generates nothing.
-      const registeredUtxos = state.unshielded.availableCoins.filter(
-        (c) => c.utxo?.type === NIGHT_TOKEN_ID && c.meta?.registeredForDustGeneration === true
-      );
-      const registeredNight = registeredUtxos.reduce((sum, c) => sum + (c.utxo?.value ?? 0n), 0n);
-
-      dustGeneration = {
-        balance: dust,
-        designated: nightRatio > 0n ? limitRaw / nightRatio : 0n,
-        ratePerDay,
-        limit: limitRaw,
-        fillTime,
-        numUtxos: coins.length,
-        registered: registeredUtxos.length > 0 || coins.length > 0,
-        registeredNight,
-        newestRegisteredAt: newestCtime(registeredUtxos),
-      };
-    } else {
-      // Check if any UTXOs are registered even if no dust coins yet
-      const registeredUtxos = state.unshielded.availableCoins.filter(
-        (c) => c.utxo?.type === NIGHT_TOKEN_ID && c.meta?.registeredForDustGeneration === true
-      );
-      dustGeneration = {
-        balance: dust,
-        designated: 0n,
-        ratePerDay: 0n,
-        limit: 0n,
-        fillTime: new Date(0),
-        numUtxos: 0,
-        registered: registeredUtxos.length > 0,
-        registeredNight: registeredUtxos.reduce((sum, c) => sum + (c.utxo?.value ?? 0n), 0n),
-        newestRegisteredAt: newestCtime(registeredUtxos),
-      };
-    }
+    const params = ledger.LedgerParameters.initialParameters().dust;
+    const registeredNight = [...state.unshielded.availableCoins, ...state.unshielded.pendingCoins]
+      .filter((c) => c.utxo?.type === NIGHT_TOKEN_ID && c.meta?.registeredForDustGeneration === true)
+      .map((c) => ({value: c.utxo?.value ?? 0n, ctime: c.meta?.ctime ?? null}));
+    const dustCoins = [...state.dust.availableCoins, ...state.dust.pendingCoins].map((c) => ({
+      maxCap: c.maxCap,
+      dtime: c.dtime ?? null,
+    }));
+    dustGeneration = summarizeDustGeneration({
+      balance: dust,
+      registeredNight,
+      dustCoins,
+      params: {
+        nightDustRatio: params.nightDustRatio,
+        generationDecayRate: params.generationDecayRate,
+        timeToCapSeconds: params.timeToCapSeconds,
+      },
+      now: new Date(),
+    });
   } catch {
     /* dust generation info not available */
   }
