@@ -85,6 +85,7 @@ describe('HOST_METHODS', () => {
     'os/txSummary',
     'os/activityGet',
     'os/signData',
+    'os/shieldedRebuild',
     'os/deriveAppSecret',
     'os/provingProviderCheck',
     'os/provingProviderProve',

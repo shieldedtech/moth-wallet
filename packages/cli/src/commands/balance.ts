@@ -45,6 +45,24 @@ interface BalanceResult {
       readonly amount: string; // raw smallest units
     }>;
   };
+  /**
+   * Individual spendable shielded coins, present only with --coins.
+   *
+   * These are what a Compact circuit needs to SPEND a coin: `nonce`, `type`,
+   * `value` and `mtIndex` together form a `QualifiedShieldedCoinInfo`. A DApp
+   * cannot derive them — the DApp connector exposes no coin enumeration, and
+   * the indexer's contract-filtered Zswap state cannot yield a global Merkle
+   * index — so the wallet has to report them.
+   */
+  readonly shieldedCoins?: ReadonlyArray<{
+    readonly nonce: string | null;
+    readonly type: string;
+    readonly value: string;
+    readonly mtIndex: string | null;
+    readonly commitment: string | null;
+    readonly nullifier: string | null;
+    readonly status: 'available' | 'pending';
+  }>;
 }
 
 export default class Balance extends BaseCommand {
@@ -53,6 +71,14 @@ export default class Balance extends BaseCommand {
 
   static override flags = {
     ...BaseCommand.baseFlags,
+    coins: Flags.boolean({
+      description:
+        'Also list individual shielded coins with the fields needed to spend them ' +
+        '(nonce, type, value, Merkle index, commitment, nullifier). Required when ' +
+        'passing a coin to a Compact circuit as a QualifiedShieldedCoinInfo — for ' +
+        'example `moth call unwrap --args` on a contract that takes a coin.',
+      default: false,
+    }),
     'wait-timeout-ms': Flags.integer({
       description:
         'How long to wait for the sync to reach synced=true before reading balances. Default 5 minutes. After timeout the command emits whatever the latest snapshot showed (likely 0s if sync was still catching up) with synced=false.',
@@ -109,6 +135,33 @@ export default class Balance extends BaseCommand {
 
       const split = unshieldedSplit(b.coins, NIGHT_TOKEN_ID);
 
+      // Individual shielded coins, only when asked for: this is the spendable
+      // detail (nonce + Merkle index) that a circuit needs and that nothing
+      // outside the wallet can reconstruct.
+      const shieldedCoins = flags.coins
+        ? [
+            ...b.coins.shielded.available.map((c) => ({
+              nonce: c.nonce ?? null,
+              type: c.type,
+              value: c.value.toString(),
+              mtIndex: c.mtIndex?.toString() ?? null,
+              commitment: c.commitment ?? null,
+              nullifier: c.nullifier ?? null,
+              status: 'available' as const,
+            })),
+            ...b.coins.shielded.pending.map((c) => ({
+              nonce: c.nonce ?? null,
+              type: c.type,
+              value: c.value.toString(),
+              // Pending coins are not in the commitment tree yet.
+              mtIndex: null,
+              commitment: c.commitment ?? null,
+              nullifier: c.nullifier ?? null,
+              status: 'pending' as const,
+            })),
+          ]
+        : undefined;
+
       const result: BalanceResult = {
         wallet: walletName,
         network: network.id,
@@ -125,6 +178,7 @@ export default class Balance extends BaseCommand {
           dust: b.dust.toString(),
           otherTokens,
         },
+        ...(shieldedCoins ? {shieldedCoins} : {}),
       };
 
       if (this.outputFormat === 'json') {
@@ -148,6 +202,24 @@ export default class Balance extends BaseCommand {
       this.log(`  total:      ${formatBalance(totalNight, NIGHT_DENOMINATION)}  (${totalNight.toString()} STARS)`);
       this.log('');
       this.log(`DUST:     ${b.dust.toString()} SPECK`);
+      if (shieldedCoins) {
+        this.log('');
+        if (shieldedCoins.length === 0) {
+          this.log('Shielded coins: none');
+        } else {
+          this.log(`Shielded coins (${shieldedCoins.length}):`);
+          for (const c of shieldedCoins) {
+            this.log(`  ${c.value}  type ${c.type}`);
+            this.log(`    nonce      ${c.nonce ?? '(unknown)'}`);
+            this.log(`    mt_index   ${c.mtIndex ?? '(pending — not in the tree yet)'}`);
+            this.log(`    commitment ${c.commitment ?? '(unknown)'}`);
+            this.log(`    status     ${c.status}`);
+          }
+          this.log('');
+          this.log('  To spend one in a circuit taking a QualifiedShieldedCoinInfo, pass');
+          this.log('  {nonce, color/type, value, mt_index} — hex as "0x…", numbers as "123n".');
+        }
+      }
       if (otherTokens.length > 0) {
         this.log('');
         this.log('Other tokens:');

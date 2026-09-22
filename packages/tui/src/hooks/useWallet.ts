@@ -12,6 +12,7 @@ export function useWallet(storage: StorageAdapter) {
   const [wallets, setWallets] = useState<WalletInfo[]>([]);
   const [activeWallet, setActiveWallet] = useState<WalletState | null>(null);
   const [loading, setLoading] = useState(true);
+  const activeName = activeWallet?.name ?? null;
 
   // Session-only cache: name → unlocked wallet. Keys zeroed on lockAll().
   const sessionCache = useRef<Map<string, UnlockedEntry>>(new Map());
@@ -134,15 +135,22 @@ export function useWallet(storage: StorageAdapter) {
 
   // Daemon write verbs read the typed key bundle. The raw seedHex
   // never escapes walletManager.unlock — see D-KM-3.
+  //
+  // Keyed on the NAME, not the activeWallet object: `refresh()` builds a fresh
+  // object every call, so depending on the object gave this callback — and every
+  // consumer keyed on its identity — a new identity after any refresh. In
+  // useBalance that is the whole sync: an unrelated refresh (a wallet created,
+  // imported, removed) tore down and rebuilt the sync of a wallet that had not
+  // changed. These callbacks only ever read the name, so that is what they
+  // depend on.
   const getActiveWalletKeys = useCallback((): WalletKeys | null => {
-    if (!activeWallet) return null;
-    const entry = sessionCache.current.get(activeWallet.name);
-    return entry?.wallet.walletKeys ?? null;
-  }, [activeWallet]);
+    if (!activeName) return null;
+    return sessionCache.current.get(activeName)?.wallet.walletKeys ?? null;
+  }, [activeName]);
 
   const isActiveWalletNew = useCallback((): boolean => {
-    return activeWallet ? newWallets.current.has(activeWallet.name) : false;
-  }, [activeWallet]);
+    return activeName ? newWallets.current.has(activeName) : false;
+  }, [activeName]);
 
   /**
    * The active wallet's birthday for a SPECIFIC network.
@@ -154,10 +162,10 @@ export function useWallet(storage: StorageAdapter) {
    */
   const activeWalletBirthdayOn = useCallback(
     async (networkId: string): Promise<number | undefined> => {
-      if (!activeWallet) return undefined;
-      return manager.birthdayOn(activeWallet.name, networkId);
+      if (!activeName) return undefined;
+      return manager.birthdayOn(activeName, networkId);
     },
-    [activeWallet, manager],
+    [activeName, manager],
   );
 
   return {

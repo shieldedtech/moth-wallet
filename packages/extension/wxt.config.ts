@@ -75,6 +75,14 @@ export default defineConfig({
     },
   }),
   vite: () => ({
+    // Stamped into the bundle so a screen can say which build is loaded —
+    // the one question "did my rebuild actually reach Chrome?" turns on, and
+    // the manifest version cannot answer it (it only moves on a release).
+    // See lib/ui/build-info.ts for why a cache hit keeping an older stamp is
+    // the correct reading rather than a stale one.
+    define: {
+      __MOTH_BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+    },
     plugins: [
       // ledger-v8 ships WASM via the ESM-integration proposal, which emits a
       // top-level await. A Chrome MV3 service worker cannot have TLA in its

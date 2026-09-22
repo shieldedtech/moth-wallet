@@ -461,6 +461,11 @@ export function registerHandlers(): void {
 
   onMessage('sessionLock', async () => {
     await lockNow();
+    // Same broadcast the auto-lock tick sends. The panel that asked for the
+    // lock refreshes its own status, but any other open surface — a second
+    // panel, or the approval window sitting on a pending request — would
+    // otherwise keep rendering an unlocked session that no longer exists.
+    broadcastSessionLocked();
   });
 
   onMessage('activityPing', async () => {
@@ -589,6 +594,24 @@ export function registerHandlers(): void {
   });
 
   onMessage('resyncFromScratch', () => resyncFromScratch());
+  // Rebuild ONLY the shielded sub-wallet. Same bracketing rationale as
+  // dustRebuild below; kept separate so this does not force a DUST rescan,
+  // which is much slower.
+  onMessage('shieldedRebuild', async () => {
+    const session = await getSession();
+    if (!session) throw new Error('Wallet is locked');
+    const network = await getNetworkConfig();
+    beginOp();
+    try {
+      return await offscreen.shieldedRebuild({
+        seedHex: session.seedHex,
+        walletName: session.walletName,
+        network,
+      });
+    } finally {
+      endOp();
+    }
+  });
 
   // Spends nothing, but brackets the op anyway: it stops and restarts the sync
   // engine, and the service worker must not suspend underneath that.

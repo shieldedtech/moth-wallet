@@ -29,7 +29,7 @@ import {InMemorySyncStateStore, syncStateKey, type SyncStateStore, type WalletPa
 import {dedupingShieldedBuilder, dedupingDustBuilder} from './sdk-dedup.js';
 import {largestDustCoinFirst} from './dust-coin-selection.js';
 import {terminatingDustTransacting} from './dust-transacting.js';
-import {overallSyncProgress, type SubWallet} from './progress.js';
+import {formatSubProgress, overallSyncProgress, type SubWallet} from './progress.js';
 import {partsToSeed, preSeedPlan, birthdayAdmits, type SeedablePart} from './preseed-parts.js';
 import {dustHistoryBefore} from './dust-history.js';
 import {dustAddressForKey} from '../wallet/address.js';
@@ -238,6 +238,27 @@ export interface SubWalletSyncProgress {
 export interface ShieldedCoinInfo {
   value: bigint;
   type: string;
+  /**
+   * Coin nonce (hex). Together with `type`, `value` and `mtIndex` this is the
+   * full `QualifiedShieldedCoinInfo` a Compact circuit needs in order to spend
+   * the coin — e.g. any contract taking a coin as a circuit argument.
+   *
+   * Previously dropped: only `{value, type}` was kept, which is enough to show a
+   * balance but NOT enough to spend. A DApp cannot recover these itself — the
+   * connector exposes no coin enumeration, and the indexer's
+   * `queryZSwapAndContractState` returns a contract-filtered Zswap state whose
+   * `firstFree` is 0, so it cannot yield a global Merkle index. The wallet is
+   * the only party that tracks the global commitment tree for its own coins.
+   *
+   * Optional because pending coins have no Merkle index yet.
+   */
+  nonce?: string;
+  /** Zswap Merkle index. Absent for pending coins, which are not yet in the tree. */
+  mtIndex?: bigint;
+  /** Coin commitment (hex) — identifies the coin in the commitment tree. */
+  commitment?: string;
+  /** Nullifier (hex) — revealed when the coin is spent. */
+  nullifier?: string;
 }
 
 export interface UnshieldedCoinInfo {
@@ -413,11 +434,19 @@ const STOP_TIMEOUT_MS = 5_000;
  * raw seed is never threaded here). Pre-seed of brand-new wallets derives the
  * bundle up front (see preseed.ts) and calls this directly.
  */
-/** A sub-wallet's own fraction, for the progress line. `done` wins over the
- *  counters: a sub-wallet with nothing to apply is complete, not stalled. */
-function subPct(sub: {applied: number; total: number}, done: boolean): string {
-  if (done) return '100%';
-  return sub.total > 0 ? `${Math.round(Math.min(1, sub.applied / sub.total) * 100)}%` : '100%';
+/**
+ * Re-assert the SDK's global network id.
+ *
+ * `startWalletSync` sets it, and every write path sets it again at its own
+ * boundary (see operations.ts and contract/*), because it is process-global and
+ * whatever ran last owns it. A caller that reuses an already-started sync —
+ * WarmSyncPool handing a facade back after the session visited another network —
+ * skips `startWalletSync` entirely, so it has to make the same assertion the
+ * cold path would have made, or the reused wallet encodes addresses for the
+ * network it is no longer on.
+ */
+export function applyNetworkId(networkId: string): void {
+  setNetworkId(networkId);
 }
 
 export async function startWalletSync(
@@ -716,7 +745,7 @@ export async function startWalletSync(
           onProgress?.(
             balances.synced
               ? `● synced — NIGHT: ${formatNight(nightTotal)}, DUST: ${formatDustBalance(balances.dust)}`
-              : `○ syncing ${pct}%${slowestLabel} — shielded ${subPct(balances.subProgress.shielded, balances.syncProgress.shieldedSynced)}, unshielded ${subPct(balances.subProgress.unshielded, balances.syncProgress.unshieldedSynced)}, dust ${subPct(balances.subProgress.dust, balances.syncProgress.dustSynced)}${etaStr ? ` (${etaStr} remaining)` : ''}`
+              : `○ syncing ${pct}%${slowestLabel} — shielded ${formatSubProgress(balances.subProgress.shielded, balances.syncProgress.shieldedSynced)}, unshielded ${formatSubProgress(balances.subProgress.unshielded, balances.syncProgress.unshieldedSynced)}, dust ${formatSubProgress(balances.subProgress.dust, balances.syncProgress.dustSynced)}${etaStr ? ` (${etaStr} remaining)` : ''}`
           );
         }
 
@@ -932,11 +961,31 @@ function extractBalancesPartial(
   try {
     const sb = state.shielded?.balances;
     if (sb && typeof sb === 'object') shielded = sb as Record<string, bigint>;
+    // Keep the FULL coin, not just {value, type}. The SDK's AvailableCoin is
+    // `{coin: QualifiedShieldedCoinInfo, commitment, nullifier}` and the
+    // QualifiedShieldedCoinInfo carries the nonce and mt_index that a circuit
+    // needs to spend it. Dropping them made every spend-a-user-coin contract
+    // pattern (vaults, wrappers, escrow) uncallable from a DApp.
     for (const c of state.shielded?.availableCoins ?? []) {
-      coins.shielded.available.push({value: c.coin?.value ?? 0n, type: c.coin?.type ?? ''});
+      coins.shielded.available.push({
+        value: c.coin?.value ?? 0n,
+        type: c.coin?.type ?? '',
+        nonce: c.coin?.nonce,
+        mtIndex: c.coin?.mt_index,
+        commitment: c.commitment,
+        nullifier: c.nullifier,
+      });
     }
     for (const c of state.shielded?.pendingCoins ?? []) {
-      coins.shielded.pending.push({value: c.coin?.value ?? 0n, type: c.coin?.type ?? ''});
+      // Pending coins are not in the commitment tree yet, so there is no
+      // mt_index — the nonce is still useful for correlating them.
+      coins.shielded.pending.push({
+        value: c.coin?.value ?? 0n,
+        type: c.coin?.type ?? '',
+        nonce: c.coin?.nonce,
+        commitment: c.commitment,
+        nullifier: c.nullifier,
+      });
     }
   } catch {
     /* shielded coins not ready */
@@ -1247,6 +1296,42 @@ export async function removeWalletSyncArtifacts(
  * the chain — the targeted repair for a dust view that stopped ingesting
  * generation records for newer NIGHT UTXOs.
  */
+/**
+ * Clear ONLY the shielded sync cache, leaving unshielded, dust and history
+ * intact.
+ *
+ * Worth having separately because a full `clearSyncCache` forces a DUST resync,
+ * which is by far the slowest part — so anyone wanting to rebuild shielded coin
+ * state (e.g. to check whether coins are rediscoverable from the seed, or after
+ * a non-linear commitment-tree error) would otherwise pay for a DUST rescan
+ * they did not need.
+ */
+export async function clearShieldedSyncCache(
+  walletName: string,
+  networkId: string,
+  store?: SyncStateStore
+): Promise<void> {
+  const resolved = await resolveSyncStore(store);
+  await evictCachedState(resolved, walletName, networkId, 'shielded');
+}
+
+/**
+ * Clear an arbitrary subset of the sync cache. `clearSyncCache` is the
+ * all-of-them case; this exists so callers can be surgical without reaching for
+ * the private `evictCachedState`.
+ */
+export async function clearSyncCacheParts(
+  walletName: string,
+  networkId: string,
+  parts: readonly WalletPart[],
+  store?: SyncStateStore
+): Promise<void> {
+  const resolved = await resolveSyncStore(store);
+  for (const part of parts) {
+    await evictCachedState(resolved, walletName, networkId, part);
+  }
+}
+
 export async function clearDustSyncCache(
   walletName: string,
   networkId: string,

@@ -1205,6 +1205,15 @@
   "settings_autoLockNever": {
     "message": "Nie sperren"
   },
+  "settings_lockNow": {
+    "message": "Jetzt sperren"
+  },
+  "settings_lockNowDescription": {
+    "message": "Lock this account and forget its keys until you enter your password again. Your accounts and settings stay on this device."
+  },
+  "settings_lockNowAction": {
+    "message": "Sperren"
+  },
   "settings_sectionAppearance": {
     "message": "Darstellung"
   },
@@ -1228,6 +1237,9 @@
   },
   "settings_version": {
     "message": "Version $1"
+  },
+  "settings_buildTime": {
+    "message": "Build $1"
   },
   "setup_taglineLine1": {
     "message": "Deine Wallet"
@@ -1639,5 +1651,17 @@
   },
   "accounts_revealNoPhraseReason": {
     "message": "Dieses Konto wurde aus einem Hex-Seed wiederhergestellt und hat daher keine Wiederherstellungsphrase — eine Phrase lässt sich aus einem Seed nicht ermitteln. Der Seed ist das Backup."
+  },
+  "settings_rebuildShielded": {
+    "message": "Shielded-Coin-Daten neu aufbauen"
+  },
+  "settings_rebuildShieldedDesc": {
+    "message": "Shielded-Coins erneut von der Chain einlesen. Nutze dies, wenn ein Shielded-Guthaben falsch oder veraltet aussieht. Kostet nichts und lässt DUST unberührt — DUST synchronisiert deutlich langsamer."
+  },
+  "settings_rebuildShieldedAction": {
+    "message": "Neu aufbauen"
+  },
+  "settings_rebuildShieldedBusy": {
+    "message": "Wird aufgebaut…"
   }
 }

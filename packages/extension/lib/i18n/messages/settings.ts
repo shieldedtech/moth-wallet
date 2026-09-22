@@ -50,6 +50,10 @@ export const settings = {
   settings_autoLock30Minutes: '30 minutes',
   settings_autoLock1Hour: '1 hour',
   settings_autoLockNever: 'Never lock',
+  settings_lockNow: 'Lock now',
+  settings_lockNowDescription:
+    'Lock this account and forget its keys until you enter your password again. Your accounts and settings stay on this device.',
+  settings_lockNowAction: 'Lock',
   settings_sectionAppearance: 'Appearance',
   settings_theme: 'Theme',
   settings_themeSystem: 'System',
@@ -61,9 +65,19 @@ export const settings = {
   // eleven releases. The bug-report template asks reporters for a version and
   // this is the only place in the UI that shows one.
   settings_version: 'Version $1',
+  // The version only moves on a release, so it cannot tell a developer whether
+  // the unpacked build they just reloaded is the one they compiled. The build
+  // stamp can. Empty for a bundle built without the stamp — see
+  // lib/ui/build-info.ts.
+  settings_buildTime: 'Built $1',
   settings_sectionSupport: 'Support',
   settings_copyDiagnostics: 'Copy diagnostics',
   settings_copyDiagnosticsDesc:
     'Environment and configuration for a bug report. No addresses, account names or balances — safe to paste in a public issue.',
   settings_copyDiagnosticsDone: 'Copied',
+  settings_rebuildShielded: 'Rebuild shielded coin records',
+  settings_rebuildShieldedDesc:
+    'Rescan shielded coins from the chain. Use this if a shielded balance looks wrong or stale. Spends nothing, and leaves DUST alone — DUST is much slower to resync.',
+  settings_rebuildShieldedAction: 'Rebuild',
+  settings_rebuildShieldedBusy: 'Rebuilding…',
 } as const;
