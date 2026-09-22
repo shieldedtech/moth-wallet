@@ -143,4 +143,44 @@ describe('DustDetail', () => {
     const unregistered = makeBalances({ dust: 0n, limit: 0n, night: 1_000n * 10n ** 6n, dustSynced: true });
     expect(render(unregistered)).not.toContain('Stop generating tDUST');
   });
+
+  // The detail screen is the one that contradicted itself: the gauge caption was
+  // guarded but the three figures under it were not, so a wallet with a real
+  // balance and no records read "Capacity unknown", then "0% generated", then
+  // "Total possible: 0 tDUST" — the same statement the guard just denied.
+  describe('when the generation records are missing', () => {
+    const missingRecords = () =>
+      render(
+        makeBalances({
+          dust: 3_301_040n * 10n ** 12n,
+          limit: 0n,
+          night: 944n * 10n ** 6n,
+          registered: true,
+          generatingNight: 0n,
+          newestRegisteredAt: new Date(Date.now() - 5 * 3_600_000),
+          dustSynced: true,
+        }),
+      );
+
+    it('does not caption the gauge with a percentage of nothing', () => {
+      const html = missingRecords();
+      expect(html).not.toContain('0% generated');
+      expect(html).toContain('Capacity unknown');
+    });
+
+    it('does not state a total possible of zero', () => {
+      expect(missingRecords()).not.toContain('0 tDUST');
+    });
+
+    it('does not attribute the cap to zero generating NIGHT', () => {
+      // Unguarded this read "From your 0 tNIGHT generating now" beside 3,301.04
+      // of held DUST — the caption has no figure to give when the records are
+      // the thing that is missing.
+      expect(missingRecords()).not.toContain('From your 0 tNIGHT');
+    });
+
+    it('still shows the balance, which is not what went missing', () => {
+      expect(missingRecords()).toContain('3,301.04');
+    });
+  });
 });
