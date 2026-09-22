@@ -49,10 +49,11 @@ export default class DustCheck extends BaseCommand {
     if (!flags.offline) {
       const { client } = await this.probeDaemon(network.id, walletName, { bind: flags.bind });
       if (client) {
+        // The report exits 2 on an incomplete view, and oclif's exit is a throw —
+        // so it runs outside the try, or the catch would turn it into a daemon error.
+        let result: CheckResult;
         try {
-          const result = await client.call<CheckResult>('checkDustView', undefined, { timeoutMs: 120_000 });
-          this.report(result.dustView, { via: 'daemon', walletName, networkId: network.id, balance: null });
-          return;
+          result = await client.call<CheckResult>('checkDustView', undefined, { timeoutMs: 120_000 });
         } catch (err) {
           const { category, message } = this.renderDaemonError(err);
           this.outputError(category, message);
@@ -61,6 +62,8 @@ export default class DustCheck extends BaseCommand {
         } finally {
           client.close();
         }
+        this.report(result.dustView, { via: 'daemon', walletName, networkId: network.id, balance: null });
+        return;
       }
       this.log_verbose(`No daemon is hosting "${walletName}" on ${network.id}; checking the cached dust state instead.`);
     }

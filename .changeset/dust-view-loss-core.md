@@ -23,6 +23,26 @@ wrong on preprod between 2026-09-20 and 22, all reported as `dustSynced: true`:
 
 What changes:
 
+- **A revert that reverts** (`sync/dust-transacting.ts`). The SDK's own revert
+  clears the lock with `processTtls(ctime + grace)`, but only for spends it
+  still finds in the wallet's in-memory `pendingDust`, and that list is pruned
+  on every sync batch against `utxos` — which hides exactly the coin the list
+  exists to remember. Within seconds of a spend every revert path was a silent
+  no-op: the facade's revert when the node rejects the submission (the 13:55Z
+  incident was a rejected proof, not a dropped transaction), the SDK's TTL
+  revert, and any watch built on top. The transacting capability moth already
+  replaces now un-pends every dust spend in the transaction unconditionally.
+- **Spends declared at the sync point** (`sync/dust-transacting.ts`). The node
+  verifies a dust spend against the tree root of the block at or before the
+  spend's declared `ctime`, kept for the trailing hour; the wallet's proof
+  commits to its local root, which advances only as events are applied. The SDK
+  declares the indexer's tip time, so whenever any dust event has landed in a
+  block the wallet has not applied yet, the roots differ and the node rejects
+  the proof (`InvalidDustSpendProof`, "Custom error: 170") — about one fee in
+  fifty on preprod, clustered right after a landed spend. Spends and estimates
+  now declare `DustLocalState.syncTime`, the block time of the last applied
+  event, whose root is exactly the wallet's, unless that is older than 45
+  minutes.
 - **Inclusion watch** (`sync/tx-watch.ts`). Every submission is polled against
   the indexer; one not seen within ten minutes has its bookkeeping reverted
   through `facade.revertTransaction`, which the dust wallet maps to
