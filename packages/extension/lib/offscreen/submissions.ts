@@ -38,6 +38,36 @@ export interface SubmittedTx {
   failure?: SubmissionFailure;
 }
 
+/** What the wallet learned about a connector transaction before the dApp asked
+ *  it to submit: the deficits it covered when balancing, or the transfer it
+ *  built. Fees are never part of it. */
+export interface PreparedSubmission {
+  spends: Array<{ kind: 'shielded' | 'unshielded' | 'dust'; tokenId: string; amount: string }>;
+  /** Set when the wallet built the transfer itself (connector makeTransfer). */
+  transfer?: { to?: string; outputs: number };
+}
+
+/**
+ * The record for a connector-submitted transaction. A lone non-DUST spend is
+ * the amount the row shows; a mixed spend has no single figure, and a DUST-only
+ * transaction (a contract call paying just its fee) is a plain send until the
+ * chain entry says what it was. Without preparation only the hash is known.
+ */
+export function connectorSubmission(hash: string, prepared: PreparedSubmission | undefined, now: number): SubmittedTx {
+  const base: SubmittedTx = { hash, transactionHash: hash, submittedAt: now, kind: 'send' };
+  if (!prepared) return base;
+  const tokens = prepared.spends.filter(
+    (spend): spend is typeof spend & { kind: 'shielded' | 'unshielded' } => spend.kind !== 'dust',
+  );
+  const single = tokens.length === 1 ? tokens[0] : undefined;
+  return {
+    ...base,
+    to: prepared.transfer?.to,
+    outputs: prepared.transfer?.outputs,
+    ...(single ? { tokenType: single.tokenId, tokenKind: single.kind, amount: single.amount } : {}),
+  };
+}
+
 /** Newest submissions kept per wallet + network. */
 export const SUBMISSIONS_MAX = 100;
 

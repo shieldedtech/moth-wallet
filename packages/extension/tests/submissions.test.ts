@@ -4,6 +4,7 @@ import type { SyncStateStore } from '@shieldedtech/moth-wallet/sync/sync-store';
 import {
   SUBMISSIONS_MAX,
   SUBMISSION_PENDING_TTL_MS,
+  connectorSubmission,
   loadSubmissions,
   mergeSubmissions,
   recordSubmission,
@@ -293,5 +294,77 @@ describe('submission storage', () => {
   it('keys submissions per wallet and network', () => {
     expect(submissionsKey('devnet', 'alice')).not.toBe(submissionsKey('preprod', 'alice'));
     expect(submissionsKey('devnet', 'alice')).not.toBe(submissionsKey('devnet', 'bob'));
+  });
+});
+
+describe('connectorSubmission', () => {
+  const HASH = 'f'.repeat(64);
+
+  it('records only the hash when nothing was prepared', () => {
+    expect(connectorSubmission(HASH, undefined, NOW)).toEqual({
+      hash: HASH,
+      transactionHash: HASH,
+      submittedAt: NOW,
+      kind: 'send',
+    });
+  });
+
+  it('takes the amount from a lone non-DUST deficit the wallet covered', () => {
+    // A contract call that takes 100 NIGHT: the balancing summary shows the
+    // NIGHT deficit plus the DUST the fee needs. Only the NIGHT is the row.
+    const tx = connectorSubmission(
+      HASH,
+      {
+        spends: [
+          { kind: 'unshielded', tokenId: TOKEN, amount: '100000000' },
+          { kind: 'dust', tokenId: '', amount: '5' },
+        ],
+      },
+      NOW,
+    );
+
+    expect(tx).toMatchObject({ kind: 'send', tokenType: TOKEN, tokenKind: 'unshielded', amount: '100000000' });
+    expect(tx.to).toBeUndefined();
+  });
+
+  it('shows no single amount for a mixed-token spend', () => {
+    const tx = connectorSubmission(
+      HASH,
+      {
+        spends: [
+          { kind: 'unshielded', tokenId: TOKEN, amount: '1' },
+          { kind: 'shielded', tokenId: '1'.repeat(64), amount: '2' },
+        ],
+      },
+      NOW,
+    );
+
+    expect(tx.amount).toBeUndefined();
+    expect(tx.tokenType).toBeUndefined();
+  });
+
+  it('keeps the recipient and size of a transfer the wallet built itself', () => {
+    const tx = connectorSubmission(
+      HASH,
+      {
+        spends: [{ kind: 'shielded', tokenId: TOKEN, amount: '7' }],
+        transfer: { to: 'mn_addr1recipient', outputs: 1 },
+      },
+      NOW,
+    );
+
+    expect(tx).toMatchObject({ to: 'mn_addr1recipient', outputs: 1, tokenKind: 'shielded', amount: '7' });
+  });
+
+  it('renders as a pending send once merged', () => {
+    const tx = connectorSubmission(
+      HASH,
+      { spends: [{ kind: 'unshielded', tokenId: TOKEN, amount: '100000000' }] },
+      NOW - 1_000,
+    );
+    const entries = mergeSubmissions([], [tx], NOW);
+
+    expect(entries[0]).toMatchObject({ hash: HASH, kind: 'sent', pending: true });
+    expect(entries[0]?.deltas).toEqual([{ tokenType: TOKEN, kind: 'unshielded', amount: -100_000_000n }]);
   });
 });

@@ -58,11 +58,13 @@ import { dustHealKey } from './dust-heal';
 import { NIGHT_TOKEN_ID } from '@shieldedtech/moth-wallet/types/tokens';
 import type { NightCoinRow } from '../messaging/protocol';
 import {
+  connectorSubmission,
   loadSubmissions,
   mergeSubmissions,
   recordSubmission,
   recordSubmissionFailure,
   submissionsKey,
+  type PreparedSubmission,
   type SubmissionFailure,
   type SubmittedTx,
 } from './submissions';
@@ -688,6 +690,22 @@ function noteDustRejected(networkId: string, walletName: string, error: unknown)
   });
 }
 
+// Connector transactions reach the wallet twice: once to be built or balanced,
+// once to be submitted. What the first call learned is kept here for the
+// second, keyed by the finalized transaction's hash. In memory only: both calls
+// come from one dApp session, and a transaction the dApp never brings back is
+// dropped once the map fills.
+const PREPARED_MAX = 50;
+const preparedSubmissions = new Map<string, PreparedSubmission>();
+function rememberPrepared(hash: string, submission: PreparedSubmission): void {
+  preparedSubmissions.delete(hash);
+  preparedSubmissions.set(hash, submission);
+  for (const oldest of preparedSubmissions.keys()) {
+    if (preparedSubmissions.size <= PREPARED_MAX) break;
+    preparedSubmissions.delete(oldest);
+  }
+}
+
 // Verdicts from the SDK's pending tracker arrive off the sync stream, not from
 // an operation the panel is waiting on, so nothing awaits this either.
 async function noteOutcome(networkId: string, walletName: string, outcome: TransactionOutcome): Promise<void> {
@@ -870,6 +888,13 @@ export async function transferBuild(
       toRequests(requests),
       (stage) => emit('os/eventTxStage', stage),
     );
+    // Same detail a panel send records: a lone output keeps its amount and
+    // recipient, a batch only its size.
+    const single = requests.length === 1 ? requests[0] : undefined;
+    rememberPrepared(finalized.transactionHash(), {
+      spends: single ? [{ kind: single.type, tokenId: single.tokenId, amount: single.amount }] : [],
+      transfer: { to: single?.to, outputs: requests.length },
+    });
     return { txHex: toHex(finalized.serialize()) };
   });
 }
@@ -899,6 +924,19 @@ export async function balanceTransaction(
   return trackOp(async () => {
     await ensureProver(network);
     const wallet = await syncEnsure(seedHex, walletName, network);
+    // Read off the dApp's transaction, not the balanced one: balancing is what
+    // zeroes the deficits, so afterwards there is nothing left to read. A
+    // summary that cannot be produced only costs the pending row its amount.
+    let spends: PreparedSubmission['spends'] = [];
+    try {
+      spends = summarizeConnectorTransaction(fromHex(txHex), sealed).spends.map((spend) => ({
+        kind: spend.kind,
+        tokenId: spend.tokenId,
+        amount: spend.amount.toString(),
+      }));
+    } catch {
+      /* unknown amounts */
+    }
     const finalized = await coreBalanceTransaction(
       wallet.facade,
       activeWalletKeys(),
@@ -907,6 +945,7 @@ export async function balanceTransaction(
       sealed,
       (stage) => emit('os/eventTxStage', stage),
     );
+    rememberPrepared(finalized.transactionHash(), { spends });
     return { txHex: toHex(finalized.serialize()) };
   });
 }
@@ -950,7 +989,16 @@ export async function transferSubmit(
       'binding',
       fromHex(txHex),
     );
-    await submitTracked(network, walletName, () => submitFinalizedTransaction(wallet.facade, transaction));
+    const hash = transaction.transactionHash();
+    const submission = connectorSubmission(hash, preparedSubmissions.get(hash), Date.now());
+    preparedSubmissions.delete(hash);
+    try {
+      await submitTracked(network, walletName, () => submitFinalizedTransaction(wallet.facade, transaction));
+    } catch (e) {
+      await noteSubmitted(network.id, walletName, { ...submission, failure: rejected(e) });
+      throw e;
+    }
+    await noteSubmitted(network.id, walletName, submission);
   });
 }
 
@@ -962,7 +1010,8 @@ export async function transferSubmit(
 // single-section transfers, so SUCCESS/FAILURE is exact for those;
 // PARTIAL_SUCCESS (only reachable via external contract calls with fallible
 // sections) reports the guaranteed section as applied. Pending (submitted but
-// unconfirmed) transactions are not included yet.
+// unconfirmed) transactions are not included here; the panel's own feed
+// (activityGet) is where they show.
 function toHistoryEntry(entry: { hash: string; status: 'SUCCESS' | 'FAILURE' | 'PARTIAL_SUCCESS' }): HistoryEntry {
   return {
     txHash: entry.hash,
