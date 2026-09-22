@@ -3,13 +3,14 @@
 // Symptom it guards against: after a send, the dust bar dropped and climbed from
 // near zero for 10-15 minutes, as if syncing from genesis.
 //
-// Cause: `designated` is derived from the maxCap of dust coins in
-// state.dust.availableCoins (wallet-sync.ts:923-945). Spending a dust UTXO moves
-// it out of availableCoins while it settles, so designated collapses while
-// registeredNight — untouched by a fee-only spend, and keeping its old ctime —
-// stays. That looked identical to the stale view the heal targets, so the heal
-// ran syncStop -> clearDustSyncCache -> syncEnsure, resetting the dust
-// sub-wallet's appliedIndex to 0 and forcing a full dust rescan.
+// Cause, at the time: `designated` was derived from the maxCap of the dust
+// coins in state.dust.availableCoins, which a spend leaves the moment it is
+// submitted, so designated collapsed while registeredNight — untouched by a
+// fee-only spend, and keeping its old ctime — stayed. That looked identical to
+// the stale view the heal targets, so the heal ran syncStop ->
+// clearDustSyncCache -> syncEnsure, resetting the dust sub-wallet's
+// appliedIndex to 0 and forcing a full dust rescan. Booked coins now count
+// (sync/dust-generation.ts); the predicate's guards stay as the backstop.
 
 import { describe, expect, it } from 'vitest';
 import { DUST_VIEW_STALE_AFTER_MS, shouldRepairDustView } from '../lib/offscreen/dust-heal';
