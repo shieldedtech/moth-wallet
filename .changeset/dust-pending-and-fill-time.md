@@ -22,6 +22,10 @@ of the climb is left and how fast the coin climbs, which for that wallet reads
 about 4 days. Registered NIGHT whose generation record has not arrived yet is
 still allowed the full climb.
 
+The TUI's per-coin countdown read the same field and is corrected the same
+way: `DustCoinInfo` now carries the coin's generation rate, and both surfaces
+share `secondsUntilFull`.
+
 `startWalletSync` takes an `onDustFeePass` callback carrying each pass of the
 DUST fee-balancing loop, and the extension logs it alongside the quote the
 confirm screen shows. The preview and the real spend share the SDK's balancing

@@ -78,8 +78,15 @@ export function spendableDust(available: bigint, bookedCoins: ReadonlyArray<{gen
   return available + sum(bookedCoins.map((c) => c.generatedNow));
 }
 
-/** Seconds for a coin to reach its cap, or null when it never will. */
-function secondsToFill(coin: DustCoinSnapshot): bigint | null {
+/**
+ * Seconds for a coin to reach its cap, or null when it never will.
+ *
+ * Exported because every surface that shows a coin's own countdown needs it:
+ * the SDK's `maxCapReachedAt` is the coin's creation time plus the whole
+ * time-to-cap however full the coin already is, and a spend resets that
+ * creation time, so it overstates the wait after every send.
+ */
+export function secondsUntilFull(coin: {maxCap: bigint; generatedNow: bigint; rate: bigint}): bigint | null {
   const remaining = coin.maxCap - coin.generatedNow;
   if (remaining <= 0n) return 0n;
   if (coin.rate <= 0n) return null;
@@ -127,7 +134,7 @@ export function summarizeDustGeneration({
 
   // Registered NIGHT whose generation record has not reached the local view
   // yet has no coin to measure, so allow it the full climb from nothing.
-  const waits = generating.map(secondsToFill).filter((s): s is bigint => s !== null);
+  const waits = generating.map(secondsUntilFull).filter((s): s is bigint => s !== null);
   if (nightCap > recordedCap) waits.push(params.timeToCapSeconds);
   const longestWait = waits.reduce<bigint | null>((max, s) => (max === null || s > max ? s : max), null);
 

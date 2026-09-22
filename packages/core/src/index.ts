@@ -75,6 +75,7 @@ export {
   type ShieldedCoinInfo, type UnshieldedCoinInfo, type DustCoinInfo,
 } from './sync/wallet-sync.js';
 export type {DustFeePass} from './sync/dust-transacting.js';
+export {secondsUntilFull} from './sync/dust-generation.js';
 export {
   summarizeTransaction, summarizeConnectorTransaction, decodeConnectorTransaction,
   type TransactionSummary, type TxTokenAmount,

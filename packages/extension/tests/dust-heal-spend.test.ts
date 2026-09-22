@@ -43,6 +43,7 @@ function spendSettling() {
   (balances.coins.dust.pending as unknown[]).push({
     generatedNow: 0n,
     maxCap: CAP,
+    rate: 1n,
     maxCapReachedAt: new Date(NOW + 3_600_000),
     dtime: null,
   });

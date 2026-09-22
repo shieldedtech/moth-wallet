@@ -240,6 +240,13 @@ export interface UnshieldedCoinInfo {
 export interface DustCoinInfo {
   generatedNow: bigint;
   maxCap: bigint;
+  /** Specks per second this coin generates while its backing NIGHT is unspent. */
+  rate: bigint;
+  /**
+   * The SDK's own cap-reached time: creation time plus the whole time-to-cap,
+   * whatever the coin already holds, and a spend resets the creation time. Use
+   * `secondsUntilFull` for a countdown; this is kept only as reported state.
+   */
   maxCapReachedAt: Date;
   /** Set when the underlying NIGHT UTXO has been deregistered. */
   dtime: Date | null;
@@ -1007,6 +1014,7 @@ function extractBalancesPartial(
       coins.dust.available.push({
         generatedNow: c.generatedNow ?? 0n,
         maxCap: c.maxCap ?? 0n,
+        rate: c.rate ?? 0n,
         maxCapReachedAt: c.maxCapReachedAt instanceof Date ? c.maxCapReachedAt : new Date(c.maxCapReachedAt ?? 0),
         dtime: c.dtime ? (c.dtime instanceof Date ? c.dtime : new Date(c.dtime)) : null,
       });
@@ -1015,6 +1023,7 @@ function extractBalancesPartial(
       coins.dust.pending.push({
         generatedNow: c.generatedNow ?? 0n,
         maxCap: c.maxCap ?? 0n,
+        rate: c.rate ?? 0n,
         maxCapReachedAt: c.maxCapReachedAt instanceof Date ? c.maxCapReachedAt : new Date(c.maxCapReachedAt ?? 0),
         dtime: c.dtime ? (c.dtime instanceof Date ? c.dtime : new Date(c.dtime)) : null,
       });
