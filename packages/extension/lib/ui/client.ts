@@ -22,6 +22,7 @@ import { hasUnregisteredNightToNudge } from './dust-nudge';
  *  session hook re-reads status without the shell having to wire the two hooks
  *  together. Dispatched by usePanelEvents; consumed by useSession. */
 const SESSION_LOCKED_EVENT = 'moth:sessionLocked';
+const ACTIVITY_CHANGED_EVENT = 'moth:activityChanged';
 
 export function useSession() {
   const [status, setStatus] = useState<SessionStatus | null>(null);
@@ -224,9 +225,18 @@ export function useAddressBook() {
  */
 export function useActivity(balances: WalletBalances | null): ActivityEntry[] | null {
   const [entries, setEntries] = useState<ActivityEntry[] | null>(null);
+  // Bumped when the host records a submission or rules one failed. Neither
+  // moves the applied counters below, which only follow chain sync.
+  const [localVersion, setLocalVersion] = useState(0);
   const applied = balances
     ? `${balances.subProgress.shielded.applied}/${balances.subProgress.unshielded.applied}/${balances.subProgress.dust.applied}`
     : '';
+
+  useEffect(() => {
+    const bump = () => setLocalVersion((version) => version + 1);
+    window.addEventListener(ACTIVITY_CHANGED_EVENT, bump);
+    return () => window.removeEventListener(ACTIVITY_CHANGED_EVENT, bump);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -240,7 +250,7 @@ export function useActivity(balances: WalletBalances | null): ActivityEntry[] | 
     return () => {
       cancelled = true;
     };
-  }, [applied]);
+  }, [applied, localVersion]);
 
   return entries;
 }
@@ -336,6 +346,7 @@ export function usePanelEvents(): PanelEvents {
           setApprovalId(event.id);
         } else if (event.kind === 'setupOpen') setSetupOpen(event.open);
         else if (event.kind === 'sessionLocked') window.dispatchEvent(new Event(SESSION_LOCKED_EVENT));
+        else if (event.kind === 'activityChanged') window.dispatchEvent(new Event(ACTIVITY_CHANGED_EVENT));
       });
       // Fires only when the other end dies (SW terminated, extension reload) —
       // our own disconnect() in the cleanup below doesn't raise it locally.

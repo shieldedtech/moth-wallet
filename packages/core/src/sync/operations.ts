@@ -643,7 +643,8 @@ async function dedesignateFromDustImpl(
     {ttl: new Date(Date.now() + 30 * 60_000)}
   );
 
-  onProgress?.('submitting');
+  onProgress?.('proving');
   const finalized = await facade.finalizeRecipe(balancedRecipe);
+  onProgress?.('submitting');
   return submitWithRetry(facade, finalized);
 }

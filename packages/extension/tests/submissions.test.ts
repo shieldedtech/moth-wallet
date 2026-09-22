@@ -7,6 +7,7 @@ import {
   loadSubmissions,
   mergeSubmissions,
   recordSubmission,
+  recordSubmissionFailure,
   submissionsKey,
   type SubmittedTx,
 } from '../lib/offscreen/submissions';
@@ -57,9 +58,8 @@ function chainEntry(overrides: Partial<ActivityEntry>): ActivityEntry {
 
 describe('mergeSubmissions', () => {
   it('surfaces an unapplied fresh submission as a pending sent row', () => {
-    const { entries, prune } = mergeSubmissions([], [submission({})], NOW);
+    const entries = mergeSubmissions([], [submission({})], NOW);
 
-    expect(prune).toEqual([]);
     expect(entries).toHaveLength(1);
     expect(entries[0]).toMatchObject({
       hash: 'a'.repeat(64),
@@ -73,7 +73,7 @@ describe('mergeSubmissions', () => {
   });
 
   it('enriches the applied chain entry with the recorded recipient instead of duplicating it', () => {
-    const { entries } = mergeSubmissions([chainEntry({})], [submission({})], NOW);
+    const entries = mergeSubmissions([chainEntry({})], [submission({})], NOW);
 
     expect(entries).toHaveLength(1);
     expect(entries[0]?.pending).toBe(false);
@@ -87,7 +87,7 @@ describe('mergeSubmissions', () => {
       identifiers: [submitted.hash],
     });
 
-    const { entries } = mergeSubmissions([applied], [submitted], NOW);
+    const entries = mergeSubmissions([applied], [submitted], NOW);
 
     expect(entries).toHaveLength(1);
     expect(entries[0]).toMatchObject({
@@ -104,7 +104,7 @@ describe('mergeSubmissions', () => {
       transactionHash: appliedHash,
     });
 
-    const { entries } = mergeSubmissions(
+    const entries = mergeSubmissions(
       [chainEntry({ hash: appliedHash, identifiers: undefined })],
       [submitted],
       NOW,
@@ -115,7 +115,7 @@ describe('mergeSubmissions', () => {
   });
 
   it('never overwrites a counterparty the chain entry already reveals', () => {
-    const { entries } = mergeSubmissions(
+    const entries = mergeSubmissions(
       [chainEntry({ counterparty: 'mn_addr1fromchain' })],
       [submission({})],
       NOW,
@@ -128,7 +128,7 @@ describe('mergeSubmissions', () => {
     // A full-balance shielded send returns no change output, so the sender's
     // only chain entry is the DUST fee spend — kind 'dust', no token deltas.
     const feeOnly = chainEntry({ kind: 'dust', deltas: [], dustDelta: -5n });
-    const { entries } = mergeSubmissions(
+    const entries = mergeSubmissions(
       [feeOnly],
       [submission({ tokenKind: 'shielded', amount: '66666' })],
       NOW,
@@ -144,14 +144,14 @@ describe('mergeSubmissions', () => {
     // they would sort below the entire feed and look like a missing transfer.
     const unstamped = chainEntry({ kind: 'dust', deltas: [], timestamp: null });
     const older = chainEntry({ hash: 'b'.repeat(64), timestamp: new Date(NOW - 120_000) });
-    const { entries } = mergeSubmissions([unstamped, older], [submission({})], NOW);
+    const entries = mergeSubmissions([unstamped, older], [submission({})], NOW);
 
     expect(entries.map((entry) => entry.hash)).toEqual(['a'.repeat(64), 'b'.repeat(64)]);
     expect(entries[0]?.timestamp).toEqual(new Date(NOW - 60_000));
   });
 
   it('keeps the chain timestamp when the entry has one', () => {
-    const { entries } = mergeSubmissions([chainEntry({})], [submission({})], NOW);
+    const entries = mergeSubmissions([chainEntry({})], [submission({})], NOW);
     expect(entries[0]?.timestamp).toEqual(new Date(NOW - 30_000));
   });
 
@@ -159,23 +159,68 @@ describe('mergeSubmissions', () => {
     const withDelta = chainEntry({
       deltas: [{ tokenType: TOKEN, kind: 'unshielded', amount: -120_000_000n }],
     });
-    const { entries } = mergeSubmissions([withDelta], [submission({})], NOW);
+    const entries = mergeSubmissions([withDelta], [submission({})], NOW);
 
     expect(entries[0]?.deltas).toEqual([
       { tokenType: TOKEN, kind: 'unshielded', amount: -120_000_000n },
     ]);
   });
 
-  it('prunes a submission unseen on chain past the pending TTL', () => {
-    const stale = submission({ submittedAt: NOW - SUBMISSION_PENDING_TTL_MS - 1 });
-    const { entries, prune } = mergeSubmissions([], [stale], NOW);
+  it('calls a submission unseen on chain past the pending TTL failed', () => {
+    const stale = submission({ submittedAt: NOW - SUBMISSION_PENDING_TTL_MS });
+    const entries = mergeSubmissions([], [stale], NOW);
 
-    expect(entries).toEqual([]);
-    expect(prune).toEqual([stale.hash]);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ hash: stale.hash, kind: 'sent', status: 'FAILURE', pending: false });
+    expect(entries[0]?.deltas).toEqual([{ tokenType: TOKEN, kind: 'unshielded', amount: -120_000_000n }]);
+  });
+
+  it('keeps an old submission pending while history is still catching up', () => {
+    // Age proves nothing until sync has reached the tip: the transaction may
+    // well be on chain in a block the wallet has not applied yet.
+    const stale = submission({ submittedAt: NOW - SUBMISSION_PENDING_TTL_MS });
+    const entries = mergeSubmissions([], [stale], NOW, false);
+
+    expect(entries[0]).toMatchObject({ status: 'SUCCESS', pending: true });
+  });
+
+  it('shows a submission the node rejected as a failed sent row with its amount', () => {
+    const failed = submission({ failure: { at: NOW - 50_000, message: '1010: Invalid Transaction' } });
+    const entries = mergeSubmissions([], [failed], NOW);
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      hash: failed.hash,
+      kind: 'sent',
+      status: 'FAILURE',
+      pending: false,
+      counterparty: 'mn_addr1recipient',
+      timestamp: new Date(NOW - 60_000),
+    });
+    expect(entries[0]?.deltas).toEqual([{ tokenType: TOKEN, kind: 'unshielded', amount: -120_000_000n }]);
+  });
+
+  it('shows a rejected dust operation as a failed DUST row', () => {
+    const entries = mergeSubmissions(
+      [],
+      [submission({ kind: 'dust', to: undefined, tokenType: undefined, amount: undefined, failure: { at: NOW } })],
+      NOW,
+    );
+
+    expect(entries[0]).toMatchObject({ kind: 'dust', status: 'FAILURE', pending: false, deltas: [] });
+  });
+
+  it('lets the chain entry win over a recorded failure once the transaction is applied', () => {
+    // The tracker can rule a transaction failed because its TTL lapsed unseen;
+    // if history later reports it applied, the chain's own status stands.
+    const entries = mergeSubmissions([chainEntry({})], [submission({ failure: { at: NOW } })], NOW);
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ status: 'SUCCESS', pending: false, counterparty: 'mn_addr1recipient' });
   });
 
   it('shows a dust registration submission as a pending DUST row', () => {
-    const { entries } = mergeSubmissions(
+    const entries = mergeSubmissions(
       [],
       [submission({ kind: 'dust', to: undefined, tokenType: undefined, amount: undefined })],
       NOW,
@@ -186,7 +231,7 @@ describe('mergeSubmissions', () => {
 
   it('sorts pending submissions in with chain entries, newest first', () => {
     const older = chainEntry({ hash: 'b'.repeat(64), timestamp: new Date(NOW - 120_000) });
-    const { entries } = mergeSubmissions([older], [submission({})], NOW);
+    const entries = mergeSubmissions([older], [submission({})], NOW);
 
     expect(entries.map((entry) => entry.hash)).toEqual(['a'.repeat(64), 'b'.repeat(64)]);
   });
@@ -212,6 +257,31 @@ describe('submission storage', () => {
     const loaded = await loadSubmissions(store, 'devnet', 'alice');
     expect(loaded).toHaveLength(SUBMISSIONS_MAX);
     expect(loaded[0]?.hash).toBe('5'.padEnd(64, 'c'));
+  });
+
+  it('marks a submission failed by its hash, transaction hash or logical identifier', async () => {
+    const store = new MemoryStore();
+    await recordSubmission(store, 'devnet', 'alice', submission({ hash: 'a'.repeat(64), transactionHash: 'b'.repeat(64) }));
+    await recordSubmission(store, 'devnet', 'alice', submission({ hash: 'c'.repeat(64) }));
+
+    const failure = { at: NOW, message: 'rejected' };
+    expect(await recordSubmissionFailure(store, 'devnet', 'alice', ['b'.repeat(64)], failure)).toBe(true);
+    expect(await recordSubmissionFailure(store, 'devnet', 'alice', ['z'.repeat(64)], failure)).toBe(false);
+
+    const loaded = await loadSubmissions(store, 'devnet', 'alice');
+    expect(loaded.find((tx) => tx.hash === 'a'.repeat(64))?.failure).toEqual(failure);
+    expect(loaded.find((tx) => tx.hash === 'c'.repeat(64))?.failure).toBeUndefined();
+  });
+
+  it('keeps the first verdict when a second one arrives for the same transaction', async () => {
+    const store = new MemoryStore();
+    await recordSubmission(store, 'devnet', 'alice', submission({}));
+
+    await recordSubmissionFailure(store, 'devnet', 'alice', ['a'.repeat(64)], { at: NOW, message: 'first' });
+    await recordSubmissionFailure(store, 'devnet', 'alice', ['a'.repeat(64)], { at: NOW + 1, message: 'second' });
+
+    const [loaded] = await loadSubmissions(store, 'devnet', 'alice');
+    expect(loaded?.failure).toEqual({ at: NOW, message: 'first' });
   });
 
   it('treats a corrupted payload as empty', async () => {

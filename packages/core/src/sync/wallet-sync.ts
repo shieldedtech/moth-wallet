@@ -35,6 +35,7 @@ import {dustHistoryBefore} from './dust-history.js';
 import {dustAddressForKey} from '../wallet/address.js';
 import {IndexerClient} from '../network/indexer-client.js';
 import type {WalletKeys} from './operations.js';
+import {collectFailedOutcomes, type TransactionOutcome} from './activity.js';
 
 // Re-exported so existing importers (core/browser barrels, CLI/TUI) keep working;
 // the definitions live in the WASM-free ../types/tokens module.
@@ -401,6 +402,12 @@ export interface WalletSyncOptions {
    * pass smaller batches so each synchronous WASM apply stays short.
    */
   batchUpdates?: BatchUpdatesOptions;
+  /**
+   * Called once for each submitted transaction the SDK's pending tracker gives
+   * up on: the indexer reported it failed, or its TTL lapsed with no sign of it
+   * on chain. Successes are not reported; they reach history through sync.
+   */
+  onTransactionOutcome?: (outcome: TransactionOutcome) => void;
 }
 
 /** Bound on the SDK's own teardown. A healthy stop takes tens of milliseconds, so
@@ -745,6 +752,26 @@ export async function startWalletSync(
       },
     });
 
+  // Unaudited, unlike the balances subscription: the facade reverts and clears
+  // a failed pending transaction as soon as its verdict lands, so an audited
+  // stream would usually skip the one emission that carries it.
+  const seenOutcomes = new Set<string>();
+  const onTransactionOutcome = options?.onTransactionOutcome;
+  const outcomeSubscription = onTransactionOutcome
+    ? facade.state().subscribe({
+        next: (s: FacadeState) => {
+          for (const outcome of collectFailedOutcomes(s.pending, seenOutcomes)) {
+            try {
+              onTransactionOutcome(outcome);
+            } catch {
+              /* subscriber error */
+            }
+          }
+        },
+        error: () => {},
+      })
+    : null;
+
   // Wait briefly for first emission so we have something to return
   await new Promise<void>((resolve) => {
     const timeout = setTimeout(resolve, 5_000);
@@ -775,6 +802,7 @@ export async function startWalletSync(
 
   const stop = async () => {
     subscription.unsubscribe();
+    outcomeSubscription?.unsubscribe();
     await saveCache(store, facade, txHistoryStorage, name, network.id).catch(() => {});
 
     // `facade.stop()` never settles against an unreachable node: it awaits a

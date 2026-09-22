@@ -72,12 +72,15 @@ export {
   deriveActivity,
   deriveActivityEntry,
   sortActivity,
+  collectFailedOutcomes,
 } from '@shieldedtech/moth-wallet/sync/activity';
 export type {
   ActivityEntry,
   ActivityDelta,
   ActivityKind,
   ActivityStatus,
+  TransactionOutcome,
+  TransactionOutcomeStatus,
 } from '@shieldedtech/moth-wallet/sync/activity';
 export {
   isDustSpendProofRejection,
