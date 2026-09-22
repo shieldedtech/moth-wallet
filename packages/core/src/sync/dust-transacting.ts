@@ -255,7 +255,152 @@ export class TerminatingDustTransacting extends Transacting.TransactingCapabilit
             }),
     });
   }
+
+  /** See {@link dustSpendTime}: spends are declared at the wallet's sync point. */
+  override balanceTransactions(
+    secretKey: ledger.DustSecretKey,
+    state: CoreWallet,
+    transactions: ReadonlyArray<ledger.FinalizedTransaction | ledger.UnprovenTransaction>,
+    ttl: Date,
+    currentTime: Date,
+    ledgerParams: ledger.LedgerParameters,
+  ): ReturnType<Transacting.TransactingCapabilityImplementation<ledger.FinalizedTransaction>['balanceTransactions']> {
+    return super.balanceTransactions(secretKey, state, transactions, ttl, dustSpendTime(state, currentTime), ledgerParams);
+  }
+
+  /** Same point in time as the spend it previews, so the estimate matches. */
+  override estimateFee(
+    secretKey: ledger.DustSecretKey,
+    state: CoreWallet,
+    transactions: ReadonlyArray<ledger.FinalizedTransaction | ledger.UnprovenTransaction>,
+    ttl: Date,
+    currentTime: Date,
+    ledgerParams: ledger.LedgerParameters,
+  ): ReturnType<Transacting.TransactingCapabilityImplementation<ledger.FinalizedTransaction>['estimateFee']> {
+    return super.estimateFee(secretKey, state, transactions, ttl, dustSpendTime(state, currentTime), ledgerParams);
+  }
+
+  /** See {@link revertDustSpends}: the SDK's revert, without the gate that defeats it. */
+  override revertTransaction(
+    state: CoreWallet,
+    transaction: ledger.UnprovenTransaction | ledger.FinalizedTransaction,
+  ): Either.Either<CoreWallet, WalletError.OtherWalletError> {
+    return Either.try({
+      try: () => revertDustSpends(state, transaction),
+      catch: (err) =>
+        new WalletError.OtherWalletError({
+          message: `Error while reverting transaction ${safeFirstIdentifier(transaction)}`,
+          cause: err,
+        }),
+    });
+  }
 }
+
+function safeFirstIdentifier(transaction: {identifiers?: () => ReadonlyArray<unknown>}): string {
+  try {
+    return String(transaction.identifiers?.()[0] ?? '(unknown)');
+  } catch {
+    return '(unknown)';
+  }
+}
+
+/**
+ * Un-pend the dust inputs of a transaction that will not land — unconditionally.
+ *
+ * `DustLocalState.spend()` marks the input coin pending until `ctime + grace`
+ * (three hours) and the ledger hides pending coins from `utxos`. The SDK's own
+ * revert (`CoreWallet.applyFailed`) does the right thing — `processTtls(ctime +
+ * grace)`, which clears the lock — but only for spends it still finds in the
+ * wallet's in-memory `pendingDust` list. That list is pruned on every sync batch
+ * to the nonces present in `utxos`, and `utxos` hides exactly the coin the list
+ * exists to remember. So within seconds of a spend the entry is gone, and every
+ * revert path is a silent no-op: the facade's revert when the node rejects the
+ * submission, the SDK's TTL-expiry revert, and any inclusion watch built on top.
+ *
+ * Preprod, 2026-09-22 13:55Z: a fee proof was built (spend() at 13:55:18), the
+ * node rejected it sixteen seconds later with InvalidDustSpendProof, a dust
+ * event had arrived in between, and the ≈500 DUST coin stayed hidden for three
+ * hours while the wallet reported synced.
+ *
+ * This applies the same `processTtls` the SDK intends, for every dust spend in
+ * the transaction, without asking `pendingDust` first. Like the SDK's version it
+ * also releases any older spend still pending at that time, and drops coins of
+ * deregistered NIGHT that will have decayed to nothing by then — both the same
+ * semantics the SDK's revert has when its gate happens to pass.
+ */
+export function revertDustSpends(
+  wallet: CoreWallet,
+  transaction: {
+    readonly intents?: Map<number, {readonly dustActions?: {readonly ctime: Date; readonly spends: ReadonlyArray<{readonly oldNullifier: bigint}>} | undefined}> | undefined;
+  },
+): CoreWallet {
+  const spends: Array<{nullifier: bigint; ctime: Date}> = [];
+  for (const intent of transaction.intents?.values() ?? []) {
+    const actions = intent.dustActions;
+    if (!actions) continue;
+    for (const spend of actions.spends ?? []) spends.push({nullifier: spend.oldNullifier, ctime: actions.ctime});
+  }
+  if (spends.length === 0) return wallet;
+
+  const graceMs = Number(wallet.state.params.dustGracePeriodSeconds) * 1000;
+  let ledgerState = wallet.state;
+  for (const spend of spends) {
+    ledgerState = ledgerState.processTtls(new Date(spend.ctime.getTime() + graceMs));
+  }
+  const reverted = new Set(spends.map((s) => s.nullifier));
+  return {
+    ...wallet,
+    state: ledgerState,
+    pendingDust: wallet.pendingDust.filter((coin) => !reverted.has(coin.nullifier)),
+  };
+}
+
+/**
+ * The time a dust spend should declare: the wallet's own sync point, not the
+ * chain tip.
+ *
+ * The node does not verify a dust spend against its current tree root. It keeps
+ * a root per block for the trailing `global_ttl` (one hour by default) and
+ * verifies the proof against the root at the block at or before the spend's
+ * declared `ctime` (ledger-8.1.0 `verify.rs` dust_spend_check, `root_history`).
+ * The wallet's proof, in turn, commits to its local tree root, which advances
+ * only as events are applied. The SDK declares `ctime` as the indexer's tip
+ * block time. Whenever a dust event — anyone's spend, any NIGHT credit to a
+ * registered address — has landed in a block the wallet has not yet applied,
+ * the tip root and the local root differ and the node answers
+ * InvalidDustSpendProof. Spartacus measured that at about one fee in fifty on
+ * preprod, and both rejections it could time came within seconds of a landed
+ * spend, i.e. before the view had applied the block that spend was in.
+ *
+ * `DustLocalState.syncTime` is the block time of the last event the wallet
+ * applied, and the wallet's tree is exactly the chain's tree as of that block.
+ * Declaring the spend at `syncTime` makes the node look up that same block's
+ * root. The only cost is that the coin's generated value is taken as of a
+ * slightly earlier moment.
+ *
+ * Two guards. A sync point in the future of `currentTime` cannot happen in
+ * practice and is clamped. A sync point older than `maxAgeMs` is not used: past
+ * `global_ttl` the node has pruned that block's root, so declaring it would
+ * fail for certain, while the tip time can still succeed — if no dust event has
+ * landed since, the current root equals the wallet's; if the wallet has fallen
+ * behind, nothing it declares can pass and the dust view check will say so.
+ */
+export function dustSpendTime(
+  state: {readonly state?: {readonly syncTime?: Date}} | null | undefined,
+  currentTime: Date,
+  maxAgeMs = DEFAULT_SYNC_POINT_MAX_AGE_MS,
+): Date {
+  const synced = state?.state?.syncTime;
+  if (!(synced instanceof Date)) return currentTime;
+  const t = synced.getTime();
+  if (!Number.isFinite(t) || t <= 0) return currentTime;
+  if (t >= currentTime.getTime()) return currentTime;
+  if (currentTime.getTime() - t > maxAgeMs) return currentTime;
+  return synced;
+}
+
+/** Comfortably inside the ledger's default one-hour root retention. */
+export const DEFAULT_SYNC_POINT_MAX_AGE_MS = 45 * 60_000;
 
 /**
  * Factory in the shape `V1Builder.withTransacting` expects — the same shape as

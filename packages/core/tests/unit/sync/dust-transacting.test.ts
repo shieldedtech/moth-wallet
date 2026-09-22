@@ -4,6 +4,9 @@ import {Transacting, WalletError, CoinsAndBalances} from '@midnightntwrk/wallet-
 import {
   balanceDustFee,
   distributeFeeAcrossInputs,
+  dustSpendTime,
+  DEFAULT_SYNC_POINT_MAX_AGE_MS,
+  revertDustSpends,
   TerminatingDustTransacting,
   terminatingDustTransacting,
   type DustFeePass,
@@ -309,9 +312,167 @@ describe('SDK surface this module depends on', () => {
   // or renames one, this fails here instead of at a user's first transfer.
   it('still exposes the implementation class and the members the override uses', () => {
     const proto = Transacting.TransactingCapabilityImplementation.prototype as Record<string, unknown>;
-    for (const member of ['computeBalancingRecipe', 'dryRunFee', 'calculateFee', 'estimateFee', 'balanceTransactions']) {
+    for (const member of ['computeBalancingRecipe', 'dryRunFee', 'calculateFee', 'estimateFee', 'balanceTransactions', 'revertTransaction']) {
       expect(typeof proto[member], member).toBe('function');
     }
     expect(Transacting.TransactingCapabilityImplementation.length).toBe(5);
+  });
+});
+
+// --- revert -----------------------------------------------------------------
+
+const GRACE_SECONDS = 10_800n;
+const CTIME = new Date('2026-09-22T13:55:18Z');
+const NULLIFIER_990 = 0x812b95c53c5f31e4n;
+const NULLIFIER_10 = 0x0ff91bdf95ec9038n;
+
+/** A fake CoreWallet whose ledger state records every processTtls call. */
+function fakeWallet(pending: Array<{nullifier: bigint; nonce: bigint}>) {
+  const calls: Date[] = [];
+  const makeState = (): {params: {dustGracePeriodSeconds: bigint}; processTtls: (t: Date) => unknown; calls: Date[]} => ({
+    params: {dustGracePeriodSeconds: GRACE_SECONDS},
+    processTtls(t: Date) {
+      calls.push(t);
+      return makeState();
+    },
+    calls,
+  });
+  return {
+    wallet: {state: makeState(), pendingDust: pending.map((p) => ({...p, seq: 0, initialValue: 1n})), publicKey: {}, networkId: 'preprod', progress: {}, protocolVersion: 0n} as unknown as Parameters<typeof revertDustSpends>[0],
+    calls,
+  };
+}
+
+const txWithSpends = (spends: Array<{oldNullifier: bigint}>, ctime = CTIME) => ({
+  intents: new Map([[1, {dustActions: {ctime, spends}}]]),
+  identifiers: () => ['00d47ac2'],
+});
+
+describe('revertDustSpends', () => {
+  it('releases the spent coin at ctime + grace even when pendingDust no longer lists it', () => {
+    // The incident shape: the sync pruned the entry before the node's rejection
+    // arrived, so the SDK's own revert would find nothing to do.
+    const {wallet, calls} = fakeWallet([]);
+    const out = revertDustSpends(wallet, txWithSpends([{oldNullifier: NULLIFIER_990}]));
+    expect(calls).toEqual([new Date(CTIME.getTime() + Number(GRACE_SECONDS) * 1000)]);
+    expect(out.state).not.toBe(wallet.state);
+  });
+
+  it('drops the reverted spends from pendingDust and keeps the others', () => {
+    const {wallet} = fakeWallet([
+      {nullifier: NULLIFIER_990, nonce: 1n},
+      {nullifier: NULLIFIER_10, nonce: 2n},
+    ]);
+    const out = revertDustSpends(wallet, txWithSpends([{oldNullifier: NULLIFIER_990}]));
+    expect(out.pendingDust.map((c) => c.nullifier)).toEqual([NULLIFIER_10]);
+  });
+
+  it('processes each spend at its own intent time', () => {
+    const later = new Date(CTIME.getTime() + 60_000);
+    const {wallet, calls} = fakeWallet([]);
+    const tx = {
+      intents: new Map([
+        [1, {dustActions: {ctime: CTIME, spends: [{oldNullifier: NULLIFIER_990}]}}],
+        [2, {dustActions: {ctime: later, spends: [{oldNullifier: NULLIFIER_10}]}}],
+      ]),
+    };
+    revertDustSpends(wallet, tx);
+    expect(calls.map((d) => d.getTime())).toEqual([CTIME.getTime() + 10_800_000, later.getTime() + 10_800_000]);
+  });
+
+  it('leaves a wallet untouched when the transaction spent no dust', () => {
+    const {wallet, calls} = fakeWallet([{nullifier: NULLIFIER_10, nonce: 2n}]);
+    expect(revertDustSpends(wallet, {intents: new Map([[1, {dustActions: undefined}]])})).toBe(wallet);
+    expect(revertDustSpends(wallet, {intents: undefined})).toBe(wallet);
+    expect(calls).toEqual([]);
+  });
+});
+
+describe('TerminatingDustTransacting.revertTransaction', () => {
+  it('routes through revertDustSpends and returns the new state', () => {
+    const cap = new TestableTransacting(config, context([...full]));
+    const {wallet, calls} = fakeWallet([]);
+    const result = cap.revertTransaction(wallet as never, txWithSpends([{oldNullifier: NULLIFIER_990}]) as never);
+    expect(Either.isRight(result)).toBe(true);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('maps a ledger failure to OtherWalletError naming the transaction', () => {
+    const cap = new TestableTransacting(config, context([...full]));
+    const wallet = {
+      state: {
+        params: {dustGracePeriodSeconds: GRACE_SECONDS},
+        processTtls: () => {
+          throw new Error('Dust secret key was cleared');
+        },
+      },
+      pendingDust: [],
+    };
+    const result = cap.revertTransaction(wallet as never, txWithSpends([{oldNullifier: NULLIFIER_990}]) as never);
+    expect(Either.isLeft(result)).toBe(true);
+    if (!Either.isLeft(result)) return;
+    expect(result.left).toBeInstanceOf(WalletError.OtherWalletError);
+    expect(result.left.message).toMatch(/00d47ac2/);
+  });
+});
+
+// --- declared spend time ------------------------------------------------------
+
+describe('dustSpendTime', () => {
+  const tip = new Date('2026-09-22T13:55:18Z');
+  const at = (ms: number) => ({state: {syncTime: new Date(ms)}});
+
+  it('declares the spend at the wallet sync point when it is recent', () => {
+    const synced = tip.getTime() - 12_000; // the block before the tip's dust event
+    expect(dustSpendTime(at(synced), tip)).toEqual(new Date(synced));
+  });
+
+  it('falls back to the tip when the sync point is too old for the node to still hold its root', () => {
+    expect(dustSpendTime(at(tip.getTime() - DEFAULT_SYNC_POINT_MAX_AGE_MS - 1), tip)).toBe(tip);
+    // Just inside the window is still used.
+    const inside = tip.getTime() - DEFAULT_SYNC_POINT_MAX_AGE_MS + 1;
+    expect(dustSpendTime(at(inside), tip)).toEqual(new Date(inside));
+  });
+
+  it('never declares a time after the tip', () => {
+    expect(dustSpendTime(at(tip.getTime() + 5_000), tip)).toBe(tip);
+    expect(dustSpendTime(at(tip.getTime()), tip)).toBe(tip);
+  });
+
+  it('falls back to the tip for a wallet that has applied nothing yet or reports no sync time', () => {
+    expect(dustSpendTime(at(0), tip)).toBe(tip);
+    expect(dustSpendTime({state: {}}, tip)).toBe(tip);
+    expect(dustSpendTime({state: {syncTime: new Date(NaN)}}, tip)).toBe(tip);
+  });
+
+  it('honours a custom retention window', () => {
+    const synced = tip.getTime() - 120_000;
+    expect(dustSpendTime(at(synced), tip, 60_000)).toBe(tip);
+    expect(dustSpendTime(at(synced), tip, 180_000)).toEqual(new Date(synced));
+  });
+});
+
+describe('TerminatingDustTransacting declares spends at the sync point', () => {
+  const tip = new Date('2026-09-22T13:55:18Z');
+  const synced = new Date(tip.getTime() - 12_000);
+
+  it('passes the sync point, not the tip, to the SDK balanceTransactions and estimateFee', () => {
+    const cap = new TestableTransacting(config, context([...full]));
+    const balance = vi
+      .spyOn(Transacting.TransactingCapabilityImplementation.prototype, 'balanceTransactions')
+      .mockReturnValue(Either.left(new WalletError.OtherWalletError({message: 'stop here', cause: undefined})) as never);
+    const estimate = vi
+      .spyOn(Transacting.TransactingCapabilityImplementation.prototype, 'estimateFee')
+      .mockReturnValue(Either.right(1n) as never);
+    try {
+      const state = {state: {syncTime: synced}} as never;
+      cap.balanceTransactions(undefined as never, state, [], new Date(), tip, undefined as never);
+      cap.estimateFee(undefined as never, state, [], new Date(), tip, undefined as never);
+      expect(balance.mock.calls[0]![4]).toEqual(synced);
+      expect(estimate.mock.calls[0]![4]).toEqual(synced);
+    } finally {
+      balance.mockRestore();
+      estimate.mockRestore();
+    }
   });
 });
