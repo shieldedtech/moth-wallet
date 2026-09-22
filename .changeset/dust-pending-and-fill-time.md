@@ -17,14 +17,16 @@ balance, as booked NIGHT inputs already did.
 The fill-time estimate came from the SDK's `maxCapReachedAt`, which is the
 coin's creation time plus the whole time-to-cap however full the coin already
 is. Every spend gives the change coin a fresh creation time, so a wallet at 39%
-was told "full in about 7 days" after each send. It is now derived from how much
-of the climb is left and how fast the coin climbs, which for that wallet reads
-about 4 days. Registered NIGHT whose generation record has not arrived yet is
-still allowed the full climb.
+was told "full in about 7 days" after each send. The meter's estimate now comes
+from the meter: the fraction of the climb still ahead, at the rate the whole
+registered balance generates. That wallet reads about 4 days. Reading the
+slowest individual coin instead would not have helped, because every send
+leaves a fresh change UTXO whose own coin starts low, pinning the estimate near
+the full climb for any wallet in use.
 
-The TUI's per-coin countdown read the same field and is corrected the same
-way: `DustCoinInfo` now carries the coin's generation rate, and both surfaces
-share `secondsUntilFull`.
+The TUI shows a countdown per coin, where the remaining climb over that coin's
+rate is the right answer, so `DustCoinInfo` now carries the coin's rate and the
+shared `secondsUntilFull` replaces `maxCapReachedAt` there.
 
 `startWalletSync` takes an `onDustFeePass` callback carrying each pass of the
 DUST fee-balancing loop, and the extension logs it alongside the quote the

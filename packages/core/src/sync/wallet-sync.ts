@@ -1078,8 +1078,6 @@ function extractBalancesPartial(
       .map((c) => ({value: c.utxo?.value ?? 0n, ctime: c.meta?.ctime ?? null}));
     const dustCoins = [...state.dust.availableCoins, ...state.dust.pendingCoins].map((c) => ({
       maxCap: c.maxCap,
-      generatedNow: c.generatedNow,
-      rate: c.rate,
       dtime: c.dtime ?? null,
     }));
     dustGeneration = summarizeDustGeneration({

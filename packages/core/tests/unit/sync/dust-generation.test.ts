@@ -1,5 +1,6 @@
 import {describe, expect, it} from 'vitest';
 import {
+  secondsUntilFull,
   spendableDust,
   summarizeDustGeneration,
   type DustCoinSnapshot,
@@ -14,15 +15,11 @@ const NOW = new Date('2026-09-22T09:00:00Z');
 
 const night = (star: bigint, ctime: Date | null = NOW): RegisteredNightUtxo => ({value: star, ctime});
 
-/** A DUST coin backed by `star` raw NIGHT, holding `generatedNow` specks. */
-const coin = (star: bigint, generatedNow = 0n, dtime: Date | null = null): DustCoinSnapshot => ({
+/** A DUST coin backed by `star` raw NIGHT. */
+const coin = (star: bigint, dtime: Date | null = null): DustCoinSnapshot => ({
   maxCap: star * params.nightDustRatio,
-  generatedNow,
-  rate: star * params.generationDecayRate,
   dtime,
 });
-
-const atCap = (star: bigint): DustCoinSnapshot => coin(star, star * params.nightDustRatio);
 
 const summarize = (
   registeredNight: RegisteredNightUtxo[],
@@ -36,7 +33,7 @@ const daysUntil = (fillTime: Date, from = NOW) => Math.round((fillTime.getTime()
 describe('summarizeDustGeneration', () => {
   it('agrees with the dust coins once everything has settled', () => {
     const v = 50_000n * STAR;
-    const g = summarize([night(v)], [coin(v, 113n * DUST)], 113n * DUST);
+    const g = summarize([night(v)], [coin(v)], 113n * DUST);
 
     expect(g.limit).toBe(v * params.nightDustRatio);
     expect(g.designated).toBe(v);
@@ -62,7 +59,7 @@ describe('summarizeDustGeneration', () => {
   it('does not count a coin whose backing NIGHT was spent', () => {
     const before = 50_000n * STAR;
     const after = 49_900n * STAR;
-    const spent = coin(before, 0n, new Date(NOW.getTime() + 60_000));
+    const spent = coin(before, new Date(NOW.getTime() + 60_000));
     const g = summarize([night(after)], [spent, coin(after)]);
 
     expect(g.limit).toBe(after * params.nightDustRatio);
@@ -73,7 +70,7 @@ describe('summarizeDustGeneration', () => {
   it('follows the NIGHT while the dust sub-wallet still shows the old coin only', () => {
     const before = 50_000n * STAR;
     const after = 49_900n * STAR;
-    const spent = coin(before, 0n, new Date(NOW.getTime() + 60_000));
+    const spent = coin(before, new Date(NOW.getTime() + 60_000));
     const g = summarize([night(after)], [spent]);
 
     expect(g.limit).toBe(after * params.nightDustRatio);
@@ -94,7 +91,7 @@ describe('summarizeDustGeneration', () => {
 
   it('reports nothing to generate from once all NIGHT is spent', () => {
     const v = 50_000n * STAR;
-    const g = summarize([], [coin(v, 0n, NOW)], 90n * DUST);
+    const g = summarize([], [coin(v, NOW)], 90n * DUST);
 
     expect(g.limit).toBe(0n);
     expect(g.registered).toBe(false);
@@ -116,41 +113,42 @@ describe('summarizeDustGeneration', () => {
 
   describe('fill time', () => {
     // The reported symptom, with the wallet from the screenshots: 6,603.615385
-    // tNIGHT holding 12,959.88 of 33,018.07 tDUST, about 39% full. The SDK's
-    // own maxCapReachedAt is ctime plus the whole 7 days whatever the coin
-    // holds, and every spend resets ctime, so this read "about 7 days" after
-    // each send. What remains is 61% of the climb, so it is about 4 days.
+    // tNIGHT holding 12,959.88 of 33,018.07 tDUST, about 39% full. Both the
+    // SDK's maxCapReachedAt and the slowest-coin reading told it to wait the
+    // seven days of a standing start. Only 61% of the climb is left.
     const NIGHT_STAR = 6_603_615_385n;
     const held = 12_959_880_000_000_000_000n;
 
-    it('counts only the climb that is left, not the whole climb', () => {
-      const g = summarize([night(NIGHT_STAR)], [coin(NIGHT_STAR, held)], held);
+    it('counts only the climb that is left', () => {
+      const g = summarize([night(NIGHT_STAR)], [coin(NIGHT_STAR)], held);
 
       expect(g.limit).toBe(33_018_076_925_000_000_000n);
       expect(daysUntil(g.fillTime)).toBe(4);
-      // The old reading, for contrast.
       expect(daysUntil(g.fillTime)).toBeLessThan(Number(params.timeToCapSeconds) / 86_400);
     });
 
-    it('is now for a coin already at its cap', () => {
-      const g = summarize([night(NIGHT_STAR)], [atCap(NIGHT_STAR)]);
+    // Every send leaves a fresh change UTXO whose own coin starts low, so a
+    // per-coin reading is pinned near the full climb for any wallet in use —
+    // which is what kept the meter at "about 7 days" through 39%, 42% and 45%.
+    it('does not let the newest coin speak for a meter that is nearly full', () => {
+      const v = 1_000n * STAR;
+      const cap = v * params.nightDustRatio;
+      const g = summarize([night(v), night(v)], [coin(v), coin(v)], 2n * cap - cap / 100n);
+
+      expect(daysUntil(g.fillTime)).toBe(0);
+    });
+
+    it('is now once the meter reads full', () => {
+      const cap = NIGHT_STAR * params.nightDustRatio;
+      const g = summarize([night(NIGHT_STAR)], [coin(NIGHT_STAR)], cap);
 
       expect(g.fillTime).toEqual(NOW);
     });
 
-    it('takes the slowest coin', () => {
-      const v = 1_000n * STAR;
-      const nearlyFull = coin(v, v * params.nightDustRatio - 1n);
-      const empty = coin(v, 0n);
-      const g = summarize([night(v), night(v)], [nearlyFull, empty]);
-
-      expect(daysUntil(g.fillTime)).toBe(7);
-    });
-
-    it('allows registered NIGHT with no generation record the full climb', () => {
+    it('gives the full climb to a wallet holding no DUST yet', () => {
       const v = 4_424n * STAR;
       const ctime = new Date(NOW.getTime() - 3_600_000);
-      const g = summarize([night(v, ctime)], []);
+      const g = summarize([night(v, ctime)], [], 0n);
 
       expect(g.limit).toBe(v * params.nightDustRatio);
       expect(daysUntil(g.fillTime)).toBe(7);
@@ -160,10 +158,35 @@ describe('summarizeDustGeneration', () => {
     it('measures from the moment it is asked, not from any coin timestamp', () => {
       const v = 1_000n * STAR;
       const later = new Date(NOW.getTime() + 3 * 86_400_000);
-      const g = summarize([night(v)], [coin(v, 0n)], 0n, later);
+      const g = summarize([night(v)], [coin(v)], 0n, later);
 
       expect(daysUntil(g.fillTime, later)).toBe(7);
     });
+
+    it('has nothing to say without capacity', () => {
+      expect(summarize([], [], 0n).fillTime).toEqual(new Date(0));
+    });
+  });
+});
+
+// Still the right arithmetic for ONE coin's own countdown, which is what the
+// TUI shows per row; only the wallet-wide meter reads the aggregate.
+describe('secondsUntilFull', () => {
+  it('is the remaining climb over the rate', () => {
+    expect(secondsUntilFull({maxCap: 1_000n, generatedNow: 400n, rate: 2n})).toBe(300n);
+  });
+
+  it('rounds up, since a partial second still has to elapse', () => {
+    expect(secondsUntilFull({maxCap: 1_000n, generatedNow: 999n, rate: 2n})).toBe(1n);
+  });
+
+  it('is zero at or past the cap', () => {
+    expect(secondsUntilFull({maxCap: 1_000n, generatedNow: 1_000n, rate: 2n})).toBe(0n);
+    expect(secondsUntilFull({maxCap: 1_000n, generatedNow: 2_000n, rate: 2n})).toBe(0n);
+  });
+
+  it('is unknown for a coin that generates nothing', () => {
+    expect(secondsUntilFull({maxCap: 1_000n, generatedNow: 0n, rate: 0n})).toBeNull();
   });
 });
 

@@ -34,10 +34,6 @@ export interface RegisteredNightUtxo {
 export interface DustCoinSnapshot {
   /** Ceiling this coin generates toward: its backing NIGHT times the DUST ratio. */
   maxCap: bigint;
-  /** What it holds now, already accounting for decay once `dtime` is set. */
-  generatedNow: bigint;
-  /** Specks per second it generates while its backing NIGHT is unspent. */
-  rate: bigint;
   /** Set once the backing NIGHT UTXO was spent: the coin only decays from then on. */
   dtime: Date | null;
 }
@@ -107,11 +103,14 @@ export function secondsUntilFull(coin: {maxCap: bigint; generatedNow: bigint; ra
  * displayed NIGHT balance does, so a submission leaves the cap where it was
  * until the transaction lands.
  *
- * The fill time is derived from how full each coin is and how fast it fills,
- * never from the SDK's `maxCapReachedAt`. That field is `ctime` plus the full
- * time-to-cap whatever the coin already holds, and every spend gives the change
- * coin a fresh `ctime`, so a wallet sitting at 39% was told "full in about 7
- * days" — the figure for a coin starting from nothing — after each send.
+ * The fill time answers the meter's own question: when does the bar read full,
+ * at the rate the whole registered balance generates. Never the SDK's
+ * `maxCapReachedAt`, which is `ctime` plus the full time-to-cap whatever the
+ * coin already holds, and which every spend resets. Nor the slowest individual
+ * coin: NIGHT arriving in a wallet starts its own coin low, and a wallet that
+ * is topped up now and then would read "about 7 days" forever while its meter
+ * sat near full. Both readings told a wallet at 39% to wait the seven days of
+ * a standing start.
  */
 export function summarizeDustGeneration({
   balance,
@@ -132,18 +131,18 @@ export function summarizeDustGeneration({
   const ratio = params.nightDustRatio;
   const backing = ratio > 0n ? limit / ratio : 0n;
 
-  // Registered NIGHT whose generation record has not reached the local view
-  // yet has no coin to measure, so allow it the full climb from nothing.
-  const waits = generating.map(secondsUntilFull).filter((s): s is bigint => s !== null);
-  if (nightCap > recordedCap) waits.push(params.timeToCapSeconds);
-  const longestWait = waits.reduce<bigint | null>((max, s) => (max === null || s > max ? s : max), null);
+  // Time for the meter to read full, taken from the meter itself: every
+  // registered STAR generates at the same rate, so what is left to wait is the
+  // fraction of the climb still ahead.
+  const remaining = limit > balance ? limit - balance : 0n;
+  const secondsLeft = limit > 0n ? (remaining * params.timeToCapSeconds + limit - 1n) / limit : null;
 
   return {
     balance,
     designated: ratio > 0n ? recordedCap / ratio : 0n,
     ratePerDay: backing * params.generationDecayRate * 86_400n,
     limit,
-    fillTime: longestWait === null ? new Date(0) : new Date(now.getTime() + Number(longestWait) * 1000),
+    fillTime: secondsLeft === null ? new Date(0) : new Date(now.getTime() + Number(secondsLeft) * 1000),
     numUtxos: generating.length,
     registered: registeredNight.length > 0 || generating.length > 0,
     registeredNight: registeredNightValue,
