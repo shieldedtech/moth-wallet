@@ -52,7 +52,7 @@ describe('host error codec', () => {
 
 describe('HOST_METHODS', () => {
   // Every os/* request method — the OffscreenProtocol surface minus the
-  // synchronous ping and the three offscreen → SW events.
+  // synchronous ping and the offscreen → SW events.
   const EXPECTED = [
     'os/walletList',
     'os/walletCreate',
@@ -97,7 +97,14 @@ describe('HOST_METHODS', () => {
   });
 
   it('excludes the ping and the events', () => {
-    for (const excluded of ['os/ping', 'os/eventBalances', 'os/eventSyncMessage', 'os/eventTxStage']) {
+    for (const excluded of [
+      'os/ping',
+      'os/eventBalances',
+      'os/eventSyncMessage',
+      'os/eventTxStage',
+      'os/eventRelayState',
+      'os/eventActivityChanged',
+    ]) {
       expect(HOST_METHODS).not.toContain(excluded);
     }
   });

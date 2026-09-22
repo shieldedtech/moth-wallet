@@ -12,12 +12,18 @@ import type { RelayState } from './relay-socket';
 
 // The offscreen → SW events the host emits. Their payloads mirror the
 // `os/event*` entries of OffscreenProtocol exactly.
-export type HostEvent = 'os/eventBalances' | 'os/eventSyncMessage' | 'os/eventTxStage' | 'os/eventRelayState';
+export type HostEvent =
+  | 'os/eventBalances'
+  | 'os/eventSyncMessage'
+  | 'os/eventTxStage'
+  | 'os/eventRelayState'
+  | 'os/eventActivityChanged';
 export interface HostEventData {
   'os/eventBalances': string;
   'os/eventSyncMessage': string;
   'os/eventTxStage': TxStage;
   'os/eventRelayState': RelayState;
+  'os/eventActivityChanged': string;
 }
 
 // Every request method the worker answers: the full os/* surface minus the

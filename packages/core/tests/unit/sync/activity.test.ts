@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { WalletEntry } from '@midnightntwrk/wallet-sdk/facade';
-import { deriveActivity, deriveActivityEntry } from '../../../src/sync/activity.js';
+import { collectFailedOutcomes, deriveActivity, deriveActivityEntry } from '../../../src/sync/activity.js';
 import { NIGHT_TOKEN_ID } from '../../../src/types/tokens.js';
 
 const OWN = 'mn_addr_preprod1own';
@@ -194,5 +194,49 @@ describe('deriveActivity', () => {
 
     const hashes = deriveActivity(entries, OWN).map((activity) => activity.hash);
     expect(hashes).toEqual(['new'.padEnd(64, '0'), 'old'.padEnd(64, '0'), 'undated'.padEnd(64, '0')]);
+  });
+});
+
+describe('collectFailedOutcomes', () => {
+  const tx = (hash: string, ids: string[] = [hash]) => ({
+    transactionHash: () => hash,
+    identifiers: () => ids,
+  });
+
+  it('reports failed and partially failed items with their identities', () => {
+    const outcomes = collectFailedOutcomes(
+      {
+        all: [
+          { tx: tx('a'.repeat(64), ['id-a']), result: { status: 'FAILURE' } },
+          { tx: tx('b'.repeat(64)), result: { status: 'PARTIAL_SUCCESS' } },
+        ],
+      },
+      new Set(),
+    );
+
+    expect(outcomes).toEqual([
+      { transactionHash: 'a'.repeat(64), identifiers: ['id-a'], status: 'FAILURE' },
+      { transactionHash: 'b'.repeat(64), identifiers: ['b'.repeat(64)], status: 'PARTIAL_SUCCESS' },
+    ]);
+  });
+
+  it('ignores items still pending or checked as successful', () => {
+    const outcomes = collectFailedOutcomes(
+      {
+        all: [{ tx: tx('a'.repeat(64)) }, { tx: tx('b'.repeat(64)), result: { status: 'SUCCESS' } }],
+      },
+      new Set(),
+    );
+
+    expect(outcomes).toEqual([]);
+  });
+
+  it('reports each transaction once across snapshots', () => {
+    const seen = new Set<string>();
+    const snapshot = { all: [{ tx: tx('a'.repeat(64)), result: { status: 'FAILURE' } }] };
+
+    expect(collectFailedOutcomes(snapshot, seen)).toHaveLength(1);
+    expect(collectFailedOutcomes(snapshot, seen)).toEqual([]);
+    expect(seen.has('a'.repeat(64))).toBe(true);
   });
 });

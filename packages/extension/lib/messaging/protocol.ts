@@ -178,6 +178,8 @@ export type PortEvent =
   | { kind: 'syncMessage'; message: string }
   | { kind: 'syncReset' }
   | { kind: 'txStage'; stage: TxStage }
+  /** The activity feed changed outside sync: a submission was recorded or ruled failed. */
+  | { kind: 'activityChanged'; hash: string }
   | { kind: 'relayState'; state: RelayState }
   | { kind: 'approval'; id: string | null }
   | { kind: 'setupOpen'; open: boolean }

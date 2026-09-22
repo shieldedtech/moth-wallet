@@ -315,6 +315,9 @@ export function registerSyncEvents(): void {
     void recordTiming('tx', `tx: ${data}`);
     broadcast({ kind: 'txStage', stage: data });
   });
+  offscreenOn('os/eventActivityChanged', ({ data }) => {
+    broadcast({ kind: 'activityChanged', hash: data });
+  });
   offscreenOn('os/eventRelayState', ({ data }) => {
     // Cached like the balances snapshot: the panel mounts long after the relay
     // first failed, and a state that only arrives on change would leave it

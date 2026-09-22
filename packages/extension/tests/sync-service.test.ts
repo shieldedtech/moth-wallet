@@ -309,3 +309,28 @@ describe('sync-service snapshot ownership during teardown', () => {
     expect((await storage.get(SNAPSHOT))[SNAPSHOT]).toBe('{"dust":"1"}');
   });
 });
+
+describe('sync-service activity fan-out', () => {
+  let sync: typeof import('../lib/background/sync-service');
+
+  beforeEach(async () => {
+    vi.resetModules();
+    offscreenHandlers.clear();
+    exists.mockReset().mockResolvedValue(true);
+    syncStop.mockReset().mockResolvedValue(undefined);
+    close.mockReset().mockResolvedValue(undefined);
+    syncEnsure.mockReset().mockResolvedValue(undefined);
+    hasPendingApproval.mockReset().mockReturnValue(false);
+    sync = await import('../lib/background/sync-service');
+    sync.registerSyncEvents();
+  });
+
+  it('relays a host activity change to every open panel port', () => {
+    const { port } = fakePort();
+    sync.addPort(port);
+
+    offscreenHandlers.get('os/eventActivityChanged')?.({ data: 'a'.repeat(64) });
+
+    expect(port.postMessage).toHaveBeenCalledWith({ kind: 'activityChanged', hash: 'a'.repeat(64) });
+  });
+});
