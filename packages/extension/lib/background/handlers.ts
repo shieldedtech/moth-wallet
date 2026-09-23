@@ -21,7 +21,7 @@ import { getTokenNames, setTokenName } from './token-names';
 import { getAddressBook, saveAddressEntry, removeAddressEntry } from './address-book';
 import { offscreen } from './offscreen-client';
 import { record as recordTiming, getTimings, clearTimings, setTimingsEnabled, timingsEnabled } from './timings';
-import { applyNodeAuthHeader } from './node-auth-header';
+import { applyNodeAuthHeader, applyIndexerAuthHeader } from './node-auth-header';
 import { registerTimingLabel } from '../ui/dust-register-outcome';
 import {
   clear as clearStats,
@@ -160,6 +160,9 @@ export async function saveNetworkConfig(data: {
     ...(parseNodeAuthHeader(data.endpoints.nodeAuthHeader)
       ? { nodeAuthHeader: parseNodeAuthHeader(data.endpoints.nodeAuthHeader) }
       : {}),
+    ...(parseNodeAuthHeader(data.endpoints.indexerAuthHeader)
+      ? { indexerAuthHeader: parseNodeAuthHeader(data.endpoints.indexerAuthHeader) }
+      : {}),
   };
   validateNetworkConfig(nextConfig);
 
@@ -177,6 +180,7 @@ export async function saveNetworkConfig(data: {
   // Before anything reconnects: the rule has to be in place when the relay
   // dials, or the first attempt goes out unauthenticated and is rate-limited.
   await applyNodeAuthHeader(nextConfig.nodeUrl, nextConfig.nodeAuthHeader);
+  await applyIndexerAuthHeader(nextConfig.indexerUrl, nextConfig.indexerAuthHeader);
 
   // Persisted before the engine is touched, and rolled back below if the switch
   // fails: the edit must survive a restart that is slow or never completes.

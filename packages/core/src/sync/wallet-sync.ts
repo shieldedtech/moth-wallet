@@ -34,6 +34,7 @@ import {partsToSeed, preSeedPlan, birthdayAdmits, type SeedablePart} from './pre
 import {dustHistoryBefore} from './dust-history.js';
 import {dustAddressForKey} from '../wallet/address.js';
 import {IndexerClient} from '../network/indexer-client.js';
+import {installIndexerAuthHeader} from '../network/indexer-auth.js';
 import type {WalletKeys} from './operations.js';
 
 // Re-exported so existing importers (core/browser barrels, CLI/TUI) keep working;
@@ -431,6 +432,10 @@ export async function startWalletSync(
   options?: WalletSyncOptions
 ): Promise<SyncedWallet> {
   installLogSuppression();
+  // Before the WebSocket polyfill: with a header configured the global
+  // WebSocket becomes the header-carrying `ws` subclass, which is also what
+  // the polyfill would otherwise install.
+  await installIndexerAuthHeader(network.indexerUrl, network.indexerAuthHeader);
   await ensureWebSocket();
   const store = await resolveSyncStore(options?.syncStore);
 

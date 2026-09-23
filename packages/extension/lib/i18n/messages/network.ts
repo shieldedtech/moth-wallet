@@ -27,6 +27,9 @@ export const network = {
   network_authHeaderValue: 'Header value',
   network_authHeaderHelp:
     'Optional. Some node endpoints rate-limit and refuse connections without an operator-issued header. Sent only to the node, never to the indexer. Stored unencrypted on this device and not protected by your password — treat it as a shared secret.',
+  network_indexerAuthHeaderName: 'Indexer auth header',
+  network_indexerAuthHeaderHelp:
+    'Optional. The indexer\u2019s edge rate-limits by address and may refuse a busy device without an operator-issued header. Sent only to the indexer, on queries and subscriptions alike. Stored unencrypted on this device and not protected by your password — treat it as a shared secret.',
   network_saveError: 'The network configuration could not be saved.',
   network_saving: 'Saving…',
   network_mainnetHidden:

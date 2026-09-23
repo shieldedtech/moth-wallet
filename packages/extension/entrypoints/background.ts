@@ -2,7 +2,7 @@ import { defineBackground } from '#imports';
 import { browser } from 'wxt/browser';
 import { BALANCES_PORT, SETUP_PORT } from '../lib/messaging/protocol';
 import { registerHandlers, enforceAutoLock } from '../lib/background/handlers';
-import { applyNodeAuthHeader } from '../lib/background/node-auth-header';
+import { applyNodeAuthHeader, applyIndexerAuthHeader } from '../lib/background/node-auth-header';
 import { registerConnectorHandlers } from '../lib/background/connector-handlers';
 import { watchApprovalWindows } from '../lib/background/approvals';
 import { getSession } from '../lib/background/session';
@@ -25,7 +25,12 @@ export default defineBackground({
     // rule must also follow a changed node URL, so it is re-derived here from
     // whatever settings currently say.
     void getNetworkConfig()
-      .then((config) => applyNodeAuthHeader(config.nodeUrl, config.nodeAuthHeader))
+      .then((config) =>
+        Promise.all([
+          applyNodeAuthHeader(config.nodeUrl, config.nodeAuthHeader),
+          applyIndexerAuthHeader(config.indexerUrl, config.indexerAuthHeader),
+        ]),
+      )
       .catch(() => {});
     registerConnectorHandlers();
     registerSyncEvents();

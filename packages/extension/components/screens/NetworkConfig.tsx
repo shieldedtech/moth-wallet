@@ -79,18 +79,27 @@ const presetFor = (network: SupportedNetwork): NetworkEndpoints => {
   };
 };
 
+type AuthHeaderField = 'nodeAuthHeader' | 'indexerAuthHeader';
+
+// A header with no value is no header, so it must normalise away — otherwise
+// typing a name and deleting it again reads as an unsaved change for ever.
+const normalizedHeader = (header: NetworkEndpoints['nodeAuthHeader']) => {
+  const name = header?.name.trim() ?? '';
+  const value = header?.value.trim() ?? '';
+  return name !== '' && value !== '' ? { name, value } : undefined;
+};
+
 const normalized = (endpoints: NetworkEndpoints): NetworkEndpoints => {
-  const name = endpoints.nodeAuthHeader?.name.trim() ?? '';
-  const value = endpoints.nodeAuthHeader?.value.trim() ?? '';
+  const nodeAuthHeader = normalizedHeader(endpoints.nodeAuthHeader);
+  const indexerAuthHeader = normalizedHeader(endpoints.indexerAuthHeader);
   return {
     nodeUrl: endpoints.nodeUrl.trim(),
     indexerUrl: endpoints.indexerUrl.trim(),
     prover: endpoints.prover.type === 'server'
       ? serverProver(endpoints.prover.url.trim())
       : endpoints.prover,
-    // A header with no value is no header, so it must normalise away — otherwise
-    // typing a name and deleting it again reads as an unsaved change for ever.
-    ...(name !== '' && value !== '' ? { nodeAuthHeader: { name, value } } : {}),
+    ...(nodeAuthHeader ? { nodeAuthHeader } : {}),
+    ...(indexerAuthHeader ? { indexerAuthHeader } : {}),
   };
 };
 
@@ -102,7 +111,9 @@ const endpointsEqual = (left: NetworkEndpoints, right: NetworkEndpoints): boolea
     a.indexerUrl === b.indexerUrl &&
     proverConfigsEqual(a.prover, b.prover) &&
     a.nodeAuthHeader?.name === b.nodeAuthHeader?.name &&
-    a.nodeAuthHeader?.value === b.nodeAuthHeader?.value
+    a.nodeAuthHeader?.value === b.nodeAuthHeader?.value &&
+    a.indexerAuthHeader?.name === b.indexerAuthHeader?.name &&
+    a.indexerAuthHeader?.value === b.indexerAuthHeader?.value
   );
 };
 
@@ -202,22 +213,22 @@ export function useNetworkConfig(fallback: SupportedNetwork = 'mainnet'): Networ
     setUrls((previous) => ({ ...previous, prover: serverProver(value) }));
   };
 
-  const editAuthHeader = (field: 'name' | 'value') => (next: string) => {
+  const editAuthHeader = (target: AuthHeaderField, field: 'name' | 'value') => (next: string) => {
     setUrls((previous) => {
       const header = {
-        name: previous.nodeAuthHeader?.name ?? DEFAULT_AUTH_HEADER_NAME,
-        value: previous.nodeAuthHeader?.value ?? '',
+        name: previous[target]?.name ?? DEFAULT_AUTH_HEADER_NAME,
+        value: previous[target]?.value ?? '',
         [field]: next,
       };
       // An empty value means "no header" — drop the whole thing rather than
       // storing a blank credential.
       if (header.value.trim() === '') {
-        const { nodeAuthHeader: _dropped, ...rest } = previous;
+        const { [target]: _dropped, ...rest } = previous;
         return field === 'name' && next.trim() !== ''
-          ? { ...rest, nodeAuthHeader: { name: next, value: '' } }
+          ? { ...rest, [target]: { name: next, value: '' } }
           : rest;
       }
-      return { ...previous, nodeAuthHeader: header };
+      return { ...previous, [target]: header };
     });
   };
 
@@ -294,15 +305,27 @@ export function NetworkFields({ state }: { state: NetworkConfigState }) {
         <UrlField
           label={t('network_authHeaderName')}
           value={state.urls.nodeAuthHeader?.name ?? DEFAULT_AUTH_HEADER_NAME}
-          onChange={state.editAuthHeader('name')}
+          onChange={state.editAuthHeader('nodeAuthHeader', 'name')}
         />
         <UrlField
           label={t('network_authHeaderValue')}
           value={state.urls.nodeAuthHeader?.value ?? ''}
-          onChange={state.editAuthHeader('value')}
+          onChange={state.editAuthHeader('nodeAuthHeader', 'value')}
           secret
         />
         <p className="m-0 text-[12px] text-muted-foreground">{t('network_authHeaderHelp')}</p>
+        <UrlField
+          label={t('network_indexerAuthHeaderName')}
+          value={state.urls.indexerAuthHeader?.name ?? DEFAULT_AUTH_HEADER_NAME}
+          onChange={state.editAuthHeader('indexerAuthHeader', 'name')}
+        />
+        <UrlField
+          label={t('network_authHeaderValue')}
+          value={state.urls.indexerAuthHeader?.value ?? ''}
+          onChange={state.editAuthHeader('indexerAuthHeader', 'value')}
+          secret
+        />
+        <p className="m-0 text-[12px] text-muted-foreground">{t('network_indexerAuthHeaderHelp')}</p>
       </div>
 
       <div className="mt-1 flex flex-col gap-3 rounded-[16px] bg-card p-4">
