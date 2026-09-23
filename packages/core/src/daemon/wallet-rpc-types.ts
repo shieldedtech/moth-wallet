@@ -59,8 +59,12 @@ export type DaemonDustGenerationWire = {
 
 /** wallet-sync's DustViewHealth on the wire (see sync/dust-view.ts). */
 export type DaemonDustViewWire = {
+  /** unchecked | complete | incomplete | unknown — only `incomplete` withholds dustSynced. */
+  readonly status: 'unchecked' | 'complete' | 'incomplete' | 'unknown';
   readonly checkedAt: string | null;
+  readonly verdictAt: string | null;
   readonly complete: boolean;
+  readonly lastError: string | null;
   readonly missing: ReadonlyArray<{
     readonly generationMtIndex: number;
     /** Backing NIGHT in STAR. */

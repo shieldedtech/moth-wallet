@@ -69,7 +69,9 @@ describe('toGetStateResult', () => {
         syncProgress: {percentage: 1, etaSeconds: 0, slowest: null, shieldedSynced: true, unshieldedSynced: true, dustSynced: false},
         dustView: {
           ...EMPTY_DUST_VIEW,
+          status: 'incomplete',
           checkedAt: T0,
+          verdictAt: T0,
           complete: false,
           missing: [{generationMtIndex: 397_204, night: 990_000_000n, backingNight: '1e0d0fc0', generatingSinceMs: T0 - 3_600_000, missingSinceMs: T0 - 600_000}],
           localApplied: 1_549_223,
@@ -83,8 +85,11 @@ describe('toGetStateResult', () => {
     );
     expect(r.syncProgress?.dustSynced).toBe(false);
     expect(r.dustView).toMatchObject({
+      status: 'incomplete',
       checkedAt: new Date(T0).toISOString(),
+      verdictAt: new Date(T0).toISOString(),
       complete: false,
+      lastError: null,
       behindBy: 116,
       missing: [{generationMtIndex: 397_204, night: '990000000', missingSince: new Date(T0 - 600_000).toISOString()}],
     });

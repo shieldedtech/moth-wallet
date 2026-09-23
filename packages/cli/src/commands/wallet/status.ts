@@ -30,7 +30,9 @@ interface DaemonStateResult {
     };
   };
   dustView?: {
+    status?: 'unchecked' | 'complete' | 'incomplete' | 'unknown';
     complete: boolean;
+    lastError?: string | null;
     reason: string | null;
     checkedAt: string | null;
     missing: Array<{ generationMtIndex: number; night: string }>;
@@ -124,12 +126,17 @@ export default class WalletStatus extends BaseCommand {
       const view = state.dustView;
       if (view) {
         this.log('');
-        if (view.complete) {
-          this.log(`Dust view: ● whole${view.checkedAt ? ` (checked against the chain at ${view.checkedAt})` : ' (not yet checked against the chain)'}`);
-        } else {
+        const status = view.status ?? (view.complete ? 'complete' : 'incomplete');
+        if (status === 'complete') {
+          this.log(`Dust view: ● whole (checked against the chain at ${view.checkedAt})`);
+        } else if (status === 'incomplete') {
           this.log(`Dust view: ○ INCOMPLETE — ${view.reason}`);
           for (const m of view.missing) this.log(`  missing coin for generation ${m.generationMtIndex} (${BigInt(m.night) / 1_000_000n} NIGHT)`);
           this.log(`  repair: moth dust rebuild --wallet ${state.walletName ?? walletName} --network ${state.networkId ?? network.id}`);
+        } else if (status === 'unknown') {
+          this.log(`Dust view: ? could not be checked — ${view.lastError ?? view.reason ?? 'indexer did not answer'}`);
+        } else {
+          this.log('Dust view: ? not checked against the chain yet');
         }
         if (view.revertedSubmissions > 0) this.log(`  submissions never seen on chain, reverted: ${view.revertedSubmissions}`);
       }

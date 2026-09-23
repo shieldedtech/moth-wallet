@@ -38,7 +38,15 @@ interface StateViewProps {
 
 /** One line under the Dust Wallet block when the engine found the view incomplete. */
 function DustViewRow({ view }: { view?: DustViewHealth | null }) {
-  if (!view || view.complete) return null;
+  if (!view || view.status === 'complete' || view.status === 'unchecked') return null;
+  if (view.status === 'unknown') {
+    return (
+      <Box>
+        <Label>View</Label>
+        <Text color="yellow">unverified — {view.lastError ?? 'indexer did not answer'}</Text>
+      </Box>
+    );
+  }
   return (
     <Box>
       <Label>View</Label>

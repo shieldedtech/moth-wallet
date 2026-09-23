@@ -85,8 +85,11 @@ export function dustGenerationToWire(g: DustGeneration | null): DaemonDustGenera
 export function dustViewToWire(v: DustViewHealth | undefined): DaemonDustViewWire | null {
   if (!v) return null;
   return {
+    status: v.status,
     checkedAt: v.checkedAt === null ? null : new Date(v.checkedAt).toISOString(),
+    verdictAt: v.verdictAt === null ? null : new Date(v.verdictAt).toISOString(),
     complete: v.complete,
+    lastError: v.lastError,
     missing: v.missing.map((m) => ({
       generationMtIndex: m.generationMtIndex,
       night: m.night.toString(),
