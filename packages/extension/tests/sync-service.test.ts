@@ -113,6 +113,29 @@ describe('sync-service teardown', () => {
     expect(close).not.toHaveBeenCalled();
   });
 
+  // Switching network from the loading screen. The worker is inside the
+  // synchronous dust restore and cannot answer the stop for minutes.
+  it('closes an engine still restoring its caches without waiting for the stop', async () => {
+    syncStop.mockImplementation(() => new Promise<void>(() => {}));
+    await sync.startSync({ seedHex: 'ab'.repeat(32), walletName: 'Account-1' } as never, { id: 'preprod' } as never);
+
+    await sync.stopSync();
+
+    expect(syncStop).not.toHaveBeenCalled();
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it('asks an engine that has emitted balances to stop, so it saves its state', async () => {
+    sync.registerSyncEvents();
+    await sync.startSync({ seedHex: 'ab'.repeat(32), walletName: 'Account-1' } as never, { id: 'preprod' } as never);
+    offscreenHandlers.get('os/eventBalances')?.({ data: '{"dust":"1"}' });
+
+    await sync.stopSync();
+
+    expect(syncStop).toHaveBeenCalledTimes(1);
+    expect(close).not.toHaveBeenCalled();
+  });
+
   it('closes a document that cannot be reached at all', async () => {
     syncStop.mockRejectedValue(new Error('Offscreen document did not become ready'));
 
