@@ -120,8 +120,14 @@ export default class DustCheck extends BaseCommand {
     if (view.status === 'complete') this.log('● Dust view is whole');
     else if (view.status === 'incomplete') this.log(`○ Dust view is INCOMPLETE — ${view.reason}`);
     else if (view.status === 'unknown') {
-      this.log(`? Dust view could not be checked — ${view.lastError ?? view.reason ?? 'the indexer did not answer'}`);
-      this.log(`  (indexer for ${meta.networkId}: ${this.indexerHint(meta.networkId)})`);
+      const error = view.lastError ?? view.reason ?? 'the indexer did not answer';
+      this.log(`? Dust view could not be checked — ${error}`);
+      // A schema rejection means the wrong indexer as often as a broken query:
+      // newer indexers serve dustGenerations(dustAddress, blockHash, dtimeCutoffHeight).
+      if (/Unknown argument|expected type|Cannot query field|Unknown field/i.test(error)) {
+        this.log(`  the indexer for ${meta.networkId} serves a different dustGenerations schema than this build expects`);
+      }
+      this.log(`  (${this.indexerHint(meta.networkId)})`);
     } else this.log('? Dust view not checked yet — the daemon has not compared it with the chain');
     this.log(`  live generation entries on chain: ${view.liveEntries ?? '?'}`);
     this.log(`  local cursor ${view.localApplied ?? '?'} vs indexer tip ${view.indexerMaxId ?? '?'}${view.behindBy ? ` (behind by ${view.behindBy})` : ''}${view.stalled ? ' — STALLED' : ''}`);
@@ -140,8 +146,8 @@ export default class DustCheck extends BaseCommand {
     if (exitCode !== 0) this.exit(exitCode);
   }
 
-  /** Names the network in an indexer failure, since a missing -n silently means devnet. */
+  /** Names the network in an indexer failure, since a missing -n silently means the configured default. */
   private indexerHint(networkId: string): string {
-    return `if this is not the network you meant, pass --network; the default is ${networkId === 'devnet' ? 'devnet' : 'from your config'}`;
+    return `if this is not the network you meant, pass --network; without it the configured default (${networkId}) is used`;
   }
 }

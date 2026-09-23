@@ -58,7 +58,12 @@ What changes:
   `dustView` saying so, and `syncProgress.dustSynced` is false while it is.
 - **A check that cannot reach the indexer says so.** The verdict carries a
   `status` — `unchecked`, `complete`, `incomplete`, `unknown` — and only a
-  current `incomplete` withholds `dustSynced`. A failed attempt turns the
+  current `incomplete` withholds `dustSynced`. **Consumers: gate on
+  `dustView.status === 'incomplete'`, not on `complete === false`.** `complete`
+  is true only for a check that answered and found nothing wrong, so it is
+  also false at startup and during an indexer blip; a caller idling on it
+  would recreate the pinning this fixes. Treat `complete` as a fallback for
+  daemons that predate `status`. A failed attempt turns the
   verdict `unknown` (previous findings kept for context, not in force), is
   retried after 30 seconds rather than at the next 5-minute check, and a
   verdict older than 15 minutes without a fresh answer expires. Observed on
