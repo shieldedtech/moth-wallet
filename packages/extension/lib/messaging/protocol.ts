@@ -116,9 +116,11 @@ export interface NetworkEndpoints {
   nodeUrl: string;
   indexerUrl: string;
   prover: ProverConfig;
-  /** Optional; scoped to the node host only. The indexer is not rate-limited
-   *  today, and a credential should reach as few destinations as possible. */
+  /** Optional; scoped to the node host only. */
   nodeAuthHeader?: NodeAuthHeader;
+  /** Optional; scoped to the indexer host only. For indexers whose edge
+   *  rate-limits by source address and issues operators an exemption header. */
+  indexerAuthHeader?: NodeAuthHeader;
 }
 
 export interface ExtensionSettings {

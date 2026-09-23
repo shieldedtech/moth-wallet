@@ -1511,6 +1511,12 @@
   "network_authHeaderHelp": {
     "message": "Opcional. Algunos extremos de nodo limitan la tasa de peticiones y rechazan las conexiones sin una cabecera emitida por el operador. Se envía solo al nodo, nunca al indexador. Se guarda sin cifrar en este dispositivo y no está protegida por su contraseña: trátela como un secreto compartido."
   },
+  "network_indexerAuthHeaderHelp": {
+    "message": "Opcional. El borde del indexador limita la tasa por dirección y puede rechazar un dispositivo con mucha actividad sin una cabecera emitida por el operador. Se envía solo al indexador, tanto en consultas como en suscripciones. Se guarda sin cifrar en este dispositivo y no está protegida por su contraseña — trátela como un secreto compartido."
+  },
+  "network_indexerAuthHeaderName": {
+    "message": "Cabecera de autenticación del indexador"
+  },
   "network_authHeaderName": {
     "message": "Cabecera de autenticación del nodo"
   },

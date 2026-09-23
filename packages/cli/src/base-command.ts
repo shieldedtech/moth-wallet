@@ -16,6 +16,8 @@ import {
   connectDaemonTcp,
   daemonSocketPath,
   type DaemonClient,
+  parseAuthHeader,
+  installIndexerAuthHeader,
 } from '@shieldedtech/moth-wallet';
 import { createTimingRecorder, createFileTimingStore, type TimingRecorder } from '@shieldedtech/moth-wallet';
 import { homedir } from 'node:os';
@@ -149,6 +151,11 @@ export abstract class BaseCommand extends Command {
       description: 'Node WebSocket URL override',
       env: 'MOTH_NODE_URL',
     }),
+    'indexer-header': Flags.string({
+      description:
+        'Header sent on every indexer request, as "Name: value" — for indexers that rate-limit by source address and issue operators an exemption. A shared secret: prefer the MOTH_INDEXER_HEADER environment variable to the flag, which is visible in the process list. Never persisted.',
+      env: 'MOTH_INDEXER_HEADER',
+    }),
   };
 
   protected outputFormat: OutputFormat = 'text';
@@ -223,6 +230,8 @@ export abstract class BaseCommand extends Command {
       prover?: string;
       indexer?: string;
       nodeUrl?: string;
+      /** "Name: value"; see the --indexer-header flag. */
+      indexerHeader?: string;
     },
   ): Promise<NetworkConfig> {
     // A renamed network may still be in someone's script or shell history, so the
@@ -272,6 +281,17 @@ export abstract class BaseCommand extends Command {
       throw new WalletError('INVALID_INPUT', `Invalid prover mode "${proverMode}". Use "server" or "wasm".`);
     }
 
+    // The header is never read from persisted config: it is a credential, and
+    // ~/.moth is plaintext. Flag (which oclif also fills from the env var) only.
+    const rawHeader = overrides?.indexerHeader ?? process.env.MOTH_INDEXER_HEADER;
+    const indexerAuthHeader = parseAuthHeader(rawHeader);
+    if (rawHeader && !indexerAuthHeader) {
+      throw new WalletError(
+        'INVALID_INPUT',
+        'Invalid --indexer-header / MOTH_INDEXER_HEADER: expected "Name: value" with a token name and no line breaks.',
+      );
+    }
+
     const config: NetworkConfig = {
       id: networkId,
       indexerUrl: overrides?.indexer
@@ -283,10 +303,16 @@ export abstract class BaseCommand extends Command {
         ?? persistedNode
         ?? base.nodeUrl,
       prover: proverMode === 'wasm' ? {type: 'wasm'} : serverProver(proofServerUrl),
+      ...(indexerAuthHeader ? {indexerAuthHeader} : {}),
     };
 
     // CWE-918: Validate URL schemes to prevent SSRF via user-controlled URLs
     validateNetworkConfig(config);
+
+    // Commands that query the indexer without starting a sync (dust status,
+    // preseed status, dust check --offline) go through the global fetch too, so
+    // the header is installed here as well as in startWalletSync.
+    await installIndexerAuthHeader(config.indexerUrl, indexerAuthHeader);
 
     return config;
   }
@@ -300,6 +326,7 @@ export abstract class BaseCommand extends Command {
       prover: flags['prover'] as string | undefined,
       indexer: flags['indexer'] as string | undefined,
       nodeUrl: flags['node-url'] as string | undefined,
+      indexerHeader: flags['indexer-header'] as string | undefined,
     };
   }
 

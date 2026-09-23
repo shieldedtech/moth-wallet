@@ -10,6 +10,7 @@ import {createProofProvider, ensureProverReady} from '../proof/provider.js';
 import {NodeZkConfigProvider} from '@midnight-ntwrk/midnight-js-node-zk-config-provider';
 import {createMidnightProvider} from '../providers/midnight-provider.js';
 import {indexerPublicDataProvider} from '@midnight-ntwrk/midnight-js-indexer-public-data-provider';
+import {indexerWebSocketImpl} from '../network/indexer-auth.js';
 import {WalletError} from '../types/errors.js';
 import {setNetworkId} from '@midnight-ntwrk/midnight-js/network-id';
 import * as Rx from 'rxjs';
@@ -180,7 +181,7 @@ async function insertViaSDK(options: InsertVerifierKeyOptions): Promise<Transact
   void createMidnightProvider(network); // currently unused but kept for parity
   const indexerHttpUrl = network.indexerUrl;
   const indexerWsUrl = indexerHttpUrl.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:') + '/ws';
-  const publicDataProvider = indexerPublicDataProvider(indexerHttpUrl, indexerWsUrl);
+  const publicDataProvider = indexerPublicDataProvider(indexerHttpUrl, indexerWsUrl, indexerWebSocketImpl() as never);
 
   const proofProvider = createProofProvider(
     resolveProverConfig(network),
@@ -404,7 +405,7 @@ async function insertBatchViaSDK(options: InsertVerifierKeysOptions): Promise<Ba
   void createMidnightProvider(network);
   const indexerHttpUrl = network.indexerUrl;
   const indexerWsUrl = indexerHttpUrl.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:') + '/ws';
-  const publicDataProvider = indexerPublicDataProvider(indexerHttpUrl, indexerWsUrl);
+  const publicDataProvider = indexerPublicDataProvider(indexerHttpUrl, indexerWsUrl, indexerWebSocketImpl() as never);
 
   const proofProvider = createProofProvider(
     resolveProverConfig(network),
