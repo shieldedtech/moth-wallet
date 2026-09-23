@@ -15,6 +15,7 @@ import {
   type SendRequest,
   type SyncedWallet,
   type WalletBalances,
+  IndexerClient,
 } from '@shieldedtech/moth-wallet';
 
 export default class Transfer extends BaseCommand {
@@ -44,6 +45,15 @@ export default class Transfer extends BaseCommand {
       char: 'y',
       default: false,
       description: 'Skip confirmation prompt',
+    }),
+    'wait-inclusion': Flags.boolean({
+      default: false,
+      description:
+        'After submission, wait until the indexer shows the transaction before exiting. For scripted runs of several transfers from one wallet: each `moth transfer` re-syncs from the indexer, which runs seconds to minutes behind the chain, so the next transfer can otherwise select an input the chain has already spent and fail at submission.',
+    }),
+    'wait-inclusion-timeout-ms': Flags.integer({
+      default: 180_000,
+      description: 'How long --wait-inclusion waits before giving up (the transfer itself has already been submitted)',
     }),
     'wait-timeout-ms': Flags.integer({
       description:
@@ -181,6 +191,17 @@ export default class Transfer extends BaseCommand {
         throw err;
       }
 
+      let inclusion: {included: boolean; blockHeight?: number; waitedMs: number} | undefined;
+      if (flags['wait-inclusion']) {
+        process.stderr.write('Transfer: submitted, waiting for the indexer to show it...\n');
+        inclusion = await waitForInclusion(new IndexerClient(network.indexerUrl), txHash, flags['wait-inclusion-timeout-ms']);
+        process.stderr.write(
+          inclusion.included
+            ? `Transfer: included in block ${inclusion.blockHeight} after ${Math.round(inclusion.waitedMs / 1000)}s\n`
+            : `Transfer: not seen by the indexer after ${Math.round(inclusion.waitedMs / 1000)}s — it may still land; check the hash before retrying\n`,
+        );
+      }
+
       this.outputSuccess({
         txHash,
         // Base units, unambiguously — the previous field echoed whatever the user
@@ -191,6 +212,7 @@ export default class Transfer extends BaseCommand {
         recipient: to,
         shielded: flags.shielded,
         network: network.id,
+        ...(inclusion ? {inclusion} : {}),
       });
     } finally {
       await syncedWallet.stop();
@@ -205,6 +227,26 @@ export default class Transfer extends BaseCommand {
  * with whatever the latest snapshot showed and can read `balances.synced` to
  * know whether it was authoritative.
  */
+/** Poll the indexer for the transaction until it is included or the deadline passes. */
+async function waitForInclusion(
+  indexer: IndexerClient,
+  txHash: string,
+  timeoutMs: number,
+  pollMs = 5_000,
+): Promise<{included: boolean; blockHeight?: number; waitedMs: number}> {
+  const started = Date.now();
+  for (;;) {
+    try {
+      const found = await indexer.getTransactions({hash: txHash});
+      if (found.length > 0) return {included: true, blockHeight: found[0]!.block?.height, waitedMs: Date.now() - started};
+    } catch {
+      /* indexer hiccup: keep polling until the deadline */
+    }
+    if (Date.now() - started >= timeoutMs) return {included: false, waitedMs: Date.now() - started};
+    await new Promise((r) => setTimeout(r, pollMs));
+  }
+}
+
 function waitForSynced(synced: SyncedWallet, timeoutMs: number): Promise<void> {
   return new Promise<void>((resolveOuter) => {
     if (synced.balances.synced) return resolveOuter();

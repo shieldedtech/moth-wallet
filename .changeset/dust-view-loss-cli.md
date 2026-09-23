@@ -17,6 +17,13 @@ unshielded and history — in place on a running daemon, or on the next sync
 otherwise. The resync starts from the pre-seed reference when the indexer
 proves the wallet has no earlier DUST history, and from genesis when it does.
 
+`moth transfer --wait-inclusion` waits after submission until the indexer
+shows the transaction (`--wait-inclusion-timeout-ms`, default 180 s). Each
+`moth transfer` is a fresh process that re-syncs from an indexer running
+seconds to minutes behind the chain, so a scripted series of transfers from one
+wallet could select an input the previous transfer had already spent and fail
+at submission; waiting for inclusion makes the change visible to the next one.
+
 `wallet status` now lists each dust coin (generated / cap, backing NIGHT,
 spend sequence, creation time) and the view verdict, and `--output json`
 carries the daemon's full `coins`, `dustGeneration` and `dustView`. `0.3 DUST`
