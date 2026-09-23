@@ -6,6 +6,12 @@ const SETTINGS_KEY = 'tui/settings.json';
 export interface NetworkOverrides {
   nodeUrl?: string;
   indexerUrl?: string;
+  /**
+   * Header sent on every indexer request (see core NetworkEndpoints.indexerAuthHeader).
+   * A shared secret stored in plaintext here; the MOTH_INDEXER_HEADER environment
+   * variable takes precedence and is the safer place for it.
+   */
+  indexerAuthHeader?: { name: string; value: string };
   prover?: ProverConfig;
   /** @deprecated Migrated when the network is next loaded. */
   proofServerUrl?: string;

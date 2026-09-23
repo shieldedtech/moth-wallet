@@ -55,6 +55,9 @@ export { mothHome, MOTH_HOME_ENV } from './storage/home.js';
 // Network
 export { JsonRpcNodeClient, type NodeClient } from './network/node-client.js';
 export { IndexerClient } from './network/indexer-client.js';
+export {
+  installIndexerAuthHeader, parseAuthHeader, indexerWebSocketImpl, hasIndexerAuthHeader, type AuthHeader,
+} from './network/indexer-auth.js';
 export type { Block, ContractAction, DustGenerationStatus, TransactionInfo } from './network/indexer-client.js';
 
 // Proof

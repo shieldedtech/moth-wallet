@@ -6,6 +6,8 @@ import {
   resolveProverConfig,
   serverProver,
   type NetworkConfig,
+  parseAuthHeader,
+  installIndexerAuthHeader,
 } from '@shieldedtech/moth-wallet';
 import type { NetworkState } from '../types.js';
 import type { NetworkOverrides } from '../settings.js';
@@ -57,12 +59,20 @@ export function useNetwork(initialNetworkId: string = 'devnet') {
     const proofServerUrl = prover.type === 'server'
       ? prover.url
       : (presetProver.type === 'server' ? presetProver.url : serverProver().url);
+    // Env first: a credential belongs in the environment rather than the
+    // settings file, so an operator who has set it there wins.
+    const indexerAuthHeader = parseAuthHeader(process.env.MOTH_INDEXER_HEADER) ?? overrides.indexerAuthHeader;
     const config: NetworkConfig = {
       id,
       nodeUrl: overrides.nodeUrl ?? preset.nodeUrl,
       indexerUrl: overrides.indexerUrl ?? preset.indexerUrl,
       prover,
+      ...(indexerAuthHeader ? {indexerAuthHeader} : {}),
     };
+    // The TUI's own chain-status and indexer queries share the process-wide
+    // fetch with the sync engine, so the header is installed as soon as the
+    // network is chosen, not only when a wallet syncs.
+    void installIndexerAuthHeader(config.indexerUrl, indexerAuthHeader);
 
     currentIdRef.current = id;
 

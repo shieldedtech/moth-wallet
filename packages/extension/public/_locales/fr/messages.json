@@ -1511,6 +1511,12 @@
   "network_authHeaderHelp": {
     "message": "Facultatif. Certains points de terminaison de nœud limitent le débit et refusent les connexions sans un en-tête fourni par l’opérateur. Envoyé uniquement au nœud, jamais à l’indexeur. Stocké non chiffré sur cet appareil et non protégé par votre mot de passe : traitez-le comme un secret partagé."
   },
+  "network_indexerAuthHeaderHelp": {
+    "message": "Facultatif. La bordure de l’indexeur limite le débit par adresse et peut refuser un appareil très actif sans un en-tête délivré par l’opérateur. Envoyé uniquement à l’indexeur, pour les requêtes comme pour les abonnements. Stocké non chiffré sur cet appareil et non protégé par votre mot de passe — traitez-le comme un secret partagé."
+  },
+  "network_indexerAuthHeaderName": {
+    "message": "En-tête d’authentification de l’indexeur"
+  },
   "network_authHeaderName": {
     "message": "En-tête d’authentification du nœud"
   },

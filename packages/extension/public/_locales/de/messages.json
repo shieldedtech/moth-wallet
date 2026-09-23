@@ -1511,6 +1511,12 @@
   "network_authHeaderHelp": {
     "message": "Optional. Manche Node-Endpunkte begrenzen die Anfragerate und lehnen Verbindungen ohne einen vom Betreiber ausgestellten Header ab. Wird nur an den Node gesendet, nie an den Indexer. Unverschlüsselt auf diesem Gerät gespeichert und nicht durch Ihr Passwort geschützt — behandeln Sie ihn wie ein geteiltes Geheimnis."
   },
+  "network_indexerAuthHeaderHelp": {
+    "message": "Optional. Der Rand des Indexers begrenzt die Anfragerate pro Adresse und kann ein ausgelastetes Gerät ohne einen vom Betreiber ausgestellten Header abweisen. Wird nur an den Indexer gesendet, für Abfragen wie für Abonnements. Unverschlüsselt auf diesem Gerät gespeichert und nicht durch Ihr Passwort geschützt — behandeln Sie ihn wie ein geteiltes Geheimnis."
+  },
+  "network_indexerAuthHeaderName": {
+    "message": "Indexer-Auth-Header"
+  },
   "network_authHeaderName": {
     "message": "Node-Auth-Header"
   },
