@@ -9,7 +9,8 @@ generation entry the indexer holds for the dust address must have a coin in
 the local view, and the local cursor must be at the indexer's tip. With a
 daemon or TUI hosting the wallet it checks the live view; otherwise it reads
 the cached `dust.dat` and compares that (`--offline` forces this). Exit code 2
-when the view is incomplete, so a bot can gate on it.
+when the view is incomplete and 3 when it could not be checked, so a bot can
+gate on it and an indexer outage never reads as a healthy view.
 
 `dust rebuild` evicts only the dust sync cache and resyncs it, keeping shielded,
 unshielded and history — in place on a running daemon, or on the next sync

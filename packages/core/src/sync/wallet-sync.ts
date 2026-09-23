@@ -44,11 +44,12 @@ import {
   localDustCoins,
   markCheckFailed,
   markInconsistent,
+  mergeDustView,
   type DustViewHealth,
 } from './dust-view.js';
 import {watchInclusion, type InclusionWatch} from './tx-watch.js';
 
-export type {DustViewHealth, DustViewMissing, LocalDustCoin} from './dust-view.js';
+export type {DustViewHealth, DustViewMissing, DustViewStatus, LocalDustCoin} from './dust-view.js';
 export {EMPTY_DUST_VIEW} from './dust-view.js';
 
 // Re-exported so existing importers (core/browser barrels, CLI/TUI) keep working;
@@ -453,8 +454,17 @@ export interface DustViewCheckOptions {
   enabled?: boolean;
   /** Time between checks. Default 5 minutes. */
   intervalMs?: number;
+  /** Time to the next attempt after a check that could not reach the indexer. Default 30 seconds. */
+  retryMs?: number;
   /** How long a live generation entry may lack a coin before the view is called incomplete. Default 10 minutes. */
   missingGraceMs?: number;
+  /**
+   * When a check finds the dust cursor stalled while the indexer's tip advances,
+   * stop and restart the sync from its caches. The SDK's subscription client
+   * does not retry a failed socket, so a wallet that lived through an indexer
+   * outage otherwise stays frozen until its process restarts. Default true.
+   */
+  restartOnStall?: boolean;
 }
 
 export interface InclusionWatchOptions {
@@ -488,14 +498,21 @@ export interface WalletSyncOptions {
 }
 
 const DEFAULT_DUST_CHECK_INTERVAL_MS = 5 * 60_000;
+const DEFAULT_DUST_CHECK_RETRY_MS = 30_000;
+/** A check that has not settled by then is treated as failed; the indexer client's own timeouts are shorter. */
+const DUST_CHECK_DEADLINE_MS = 90_000;
 /** First check runs this long after dust first reports synced, so a just-restored cache has settled. */
 const FIRST_DUST_CHECK_DELAY_MS = 30_000;
 /** Minimum time between two automatic rebuilds of the same part. */
 const AUTO_REBUILD_COOLDOWN_MS = 60 * 60_000;
+/** Minimum time between two automatic restarts for a stalled cursor. */
+const STALL_RESTART_COOLDOWN_MS = 10 * 60_000;
 
 /** What a sync session reports back to the wrapper that owns it. */
 interface SessionControl {
   onInconsistent: (info: SyncInconsistency) => void;
+  /** The dust cursor has not moved between two checks while the indexer's has. */
+  onStalled: (info: {localApplied: number | null; indexerMaxId: number | null}) => void;
 }
 
 /** One run of the facade. `startWalletSync` owns a sequence of these. */
@@ -583,7 +600,14 @@ export async function startWalletSync(
     return restarting;
   };
 
+  let lastStallRestart = 0;
   const control: SessionControl = {
+    onStalled: (info) => {
+      if (options?.dustView?.restartOnStall === false) return;
+      if (Date.now() - lastStallRestart < STALL_RESTART_COOLDOWN_MS) return;
+      lastStallRestart = Date.now();
+      void restart([], `dust cursor stalled at ${info.localApplied} while the indexer is at ${info.indexerMaxId}`);
+    },
     onInconsistent: (info) => {
       if (options?.autoRebuildOnInconsistency === false) return;
       const part: WalletPart = info.part;
@@ -942,27 +966,22 @@ async function startSyncSession(
    * so — a fee attempt against it fails, and a bot gating on the flag should wait.
    */
   const applyDustView = (b: WalletBalances): WalletBalances => {
-    const excluded = b.dustView?.excluded ?? 0;
-    const complete = dustView.complete && excluded === 0;
-    const reason = complete
-      ? null
-      : [dustView.reason, excluded > 0 && !dustView.reason?.includes('generation record') ? `${excluded} coin(s) have no generation record and are excluded from the balance` : null]
-          .filter(Boolean)
-          .join('; ');
-    const merged: DustViewHealth = {...dustView, excluded, complete, reason};
+    const {view, withholdSynced} = mergeDustView(dustView, b.dustView?.excluded ?? 0, Date.now());
     return {
       ...b,
-      dustView: merged,
-      syncProgress: complete ? b.syncProgress : {...b.syncProgress, dustSynced: false},
+      dustView: view,
+      syncProgress: withholdSynced ? {...b.syncProgress, dustSynced: false} : b.syncProgress,
     };
   };
 
   // --- Dust view check against the indexer (sync/dust-view.ts) ---
   const dustAddress = dustAddressForKey(dustSecretKey, network.id);
   const checkIntervalMs = options?.dustView?.intervalMs ?? DEFAULT_DUST_CHECK_INTERVAL_MS;
+  const checkRetryMs = options?.dustView?.retryMs ?? DEFAULT_DUST_CHECK_RETRY_MS;
   let latestFacadeState: FacadeState | null = null;
   let dustSyncedSince: number | null = null;
   let lastDustCheckAt = 0;
+  let lastDustCheckFailed = false;
   let dustCheck: Promise<DustViewHealth> | null = null;
   const runDustCheck = (): Promise<DustViewHealth> => {
     if (dustCheck) return dustCheck;
@@ -975,13 +994,24 @@ async function startSyncSession(
         const localCoins = localDustCoins((dustState as any)?.state);
         const applied = dustState?.progress?.appliedIndex;
         const localApplied = applied === undefined ? null : Number(applied);
-        const block = await indexer.getBlock();
-        const end = block ? await indexer.getDustGenerationEndIndex(block.height) : null;
-        if (end === null) throw new Error('indexer does not report the generation tree size at the tip');
-        const [gens, tip] = await Promise.all([
-          fetchDustGenerations(indexerHttpUrl, dustAddress, end),
-          localApplied === null ? Promise.resolve(null) : readDustTip(indexerHttpUrl, localApplied).catch(() => null),
-        ]);
+        const gather = (async () => {
+          const block = await indexer.getBlock();
+          const end = block ? await indexer.getDustGenerationEndIndex(block.height) : null;
+          if (end === null) throw new Error('indexer does not report the generation tree size at the tip');
+          return Promise.all([
+            fetchDustGenerations(indexerHttpUrl, dustAddress, end),
+            // The tip is what tells a stall apart from a catch-up; a failure to
+            // read it is a failed check, not a check with no lag.
+            localApplied === null ? Promise.resolve(null) : readDustTip(indexerHttpUrl, localApplied),
+          ]);
+        })();
+        let deadline: ReturnType<typeof setTimeout> | undefined;
+        const [gens, tip] = await Promise.race([
+          gather,
+          new Promise<never>((_, reject) => {
+            deadline = setTimeout(() => reject(new Error(`no answer from the indexer within ${DUST_CHECK_DEADLINE_MS / 1000}s`)), DUST_CHECK_DEADLINE_MS);
+          }),
+        ]).finally(() => clearTimeout(deadline));
         const before = dustView;
         dustView = assessDustView({
           now,
@@ -992,13 +1022,18 @@ async function startSyncSession(
           previous: before,
           missingGraceMs: options?.dustView?.missingGraceMs,
         });
-        if (!dustView.complete && (before.complete || before.reason !== dustView.reason)) {
+        lastDustCheckFailed = false;
+        if (dustView.status === 'incomplete' && (before.status !== 'incomplete' || before.reason !== dustView.reason)) {
           onProgress?.(`Dust view is incomplete: ${dustView.reason}`);
-        } else if (dustView.complete && !before.complete) {
-          onProgress?.('Dust view is whole again');
+        } else if (dustView.status === 'complete' && before.status !== 'complete') {
+          onProgress?.(before.status === 'unchecked' ? 'Dust view checked against the chain: whole' : 'Dust view is whole again');
         }
+        if (dustView.stalled) control.onStalled({localApplied: dustView.localApplied, indexerMaxId: dustView.indexerMaxId});
       } catch (err) {
-        dustView = markCheckFailed(dustView, now, err instanceof Error ? err.message : String(err));
+        const message = err instanceof Error ? err.message : String(err);
+        if (!lastDustCheckFailed) onProgress?.(`Dust view check could not reach the indexer: ${message}`);
+        lastDustCheckFailed = true;
+        dustView = markCheckFailed(dustView, now, message);
       } finally {
         dustCheck = null;
       }
@@ -1022,7 +1057,10 @@ async function startSyncSession(
       return;
     }
     dustSyncedSince ??= now;
-    const due = lastDustCheckAt === 0 ? now - dustSyncedSince >= FIRST_DUST_CHECK_DELAY_MS : now - lastDustCheckAt >= checkIntervalMs;
+    // A failed attempt is retried soon: the indexer coming back must lift an
+    // unknown verdict promptly, not at the next scheduled check.
+    const wait = lastDustCheckFailed ? checkRetryMs : checkIntervalMs;
+    const due = lastDustCheckAt === 0 ? now - dustSyncedSince >= FIRST_DUST_CHECK_DELAY_MS : now - lastDustCheckAt >= wait;
     if (due && !dustCheck) void runDustCheck();
   };
 
@@ -1368,10 +1406,20 @@ function extractBalancesPartial(
     // Dust sub-wallet synced check
     if (synced) dustSynced = true;
     // Per-coin breakdown — dust coins carry max-cap + dtime
-    for (const c of state.dust?.availableCoins ?? []) {
+    // Evaluated at the same instant as the headline balance above. The SDK's
+    // `availableCoins` getter values each coin at the state's sync time, so
+    // under a stalled sync the per-coin figures froze while the headline kept
+    // growing — 1,391 against coins summing to 1,217 on preprod.
+    const coinsNow = new Date();
+    const cab = state.dust?.capabilities?.coinsAndBalances;
+    const availableNow =
+      typeof cab?.getAvailableCoins === 'function' ? cab.getAvailableCoins(state.dust.state, coinsNow) : state.dust?.availableCoins ?? [];
+    const pendingNow =
+      typeof cab?.getPendingCoins === 'function' ? cab.getPendingCoins(state.dust.state, coinsNow) : state.dust?.pendingCoins ?? [];
+    for (const c of availableNow) {
       coins.dust.available.push(toDustCoinInfo(c));
     }
-    for (const c of state.dust?.pendingCoins ?? []) {
+    for (const c of pendingNow) {
       coins.dust.pending.push(toDustCoinInfo(c));
     }
     // Coins the ledger state holds that the SDK leaves out of every list above,

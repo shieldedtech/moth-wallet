@@ -40,11 +40,27 @@ export interface DustViewMissing {
   readonly missingSinceMs: number;
 }
 
+/**
+ * What the last attempt to compare the view with the chain established.
+ *
+ * - `unchecked`: no attempt yet (a session that just started).
+ * - `complete` / `incomplete`: the indexer answered and this is the verdict.
+ * - `unknown`: the last attempt failed. The previous verdict is kept below for
+ *   context but is NOT in force — an indexer outage must neither pin a wallet
+ *   on a stale "incomplete" nor certify a broken view as whole.
+ */
+export type DustViewStatus = 'unchecked' | 'complete' | 'incomplete' | 'unknown';
+
 export interface DustViewHealth {
-  /** When the indexer was last consulted, epoch ms. Null until the first check. */
+  readonly status: DustViewStatus;
+  /** When the indexer was last consulted (successfully or not), epoch ms. Null until the first attempt. */
   readonly checkedAt: number | null;
-  /** True when nothing below says the view is incomplete. The default before any check. */
+  /** When the indexer last answered and produced a verdict, epoch ms. */
+  readonly verdictAt: number | null;
+  /** True only when a check answered and found nothing wrong. False for unchecked and unknown too. */
   readonly complete: boolean;
+  /** Why the last attempt could not decide, when `status` is `unknown`. */
+  readonly lastError: string | null;
   /** Live generation entries with no coin in the local view. Counts against `complete` only once older than the grace. */
   readonly missing: readonly DustViewMissing[];
   /** Local coins the SDK excludes for lack of generation info. */
@@ -68,8 +84,11 @@ export interface DustViewHealth {
 }
 
 export const EMPTY_DUST_VIEW: DustViewHealth = {
+  status: 'unchecked',
   checkedAt: null,
-  complete: true,
+  verdictAt: null,
+  complete: false,
+  lastError: null,
   missing: [],
   excluded: 0,
   localApplied: null,
@@ -164,8 +183,11 @@ export function assessDustView(input: AssessInput): DustViewHealth {
   const complete = reasons.length === 0;
 
   return {
+    status: complete ? 'complete' : 'incomplete',
     checkedAt: now,
+    verdictAt: now,
     complete,
+    lastError: null,
     missing,
     excluded,
     localApplied,
@@ -210,9 +232,10 @@ export function localDustCoins(state: DustLocalStateLike | null | undefined): Lo
 export function markInconsistent(health: DustViewHealth, reason: string): DustViewHealth {
   return {
     ...health,
+    status: 'incomplete',
     complete: false,
     inconsistent: true,
-    reason: health.reason ? `${reason}; ${health.reason}` : reason,
+    reason: health.reason && health.status === 'incomplete' ? `${reason}; ${health.reason}` : reason,
   };
 }
 
@@ -221,7 +244,69 @@ export function countRevertedSubmission(health: DustViewHealth): DustViewHealth 
   return {...health, revertedSubmissions: health.revertedSubmissions + 1};
 }
 
-/** Record a check that could not be completed, leaving the verdict as it was. */
+/**
+ * Record a check that could not be completed.
+ *
+ * The verdict becomes `unknown`: the previous findings stay on the record for
+ * context, but nothing is in force. Preprod, 2026-09-23 03:41–03:47Z: the
+ * indexer answered 403/503 for six minutes, a wallet's coins had come back in
+ * the meantime, and the last successful check's "incomplete" kept it idle
+ * holding 1,459 DUST — while on another wallet the same code path reported
+ * `complete: true` with a coin fifteen minutes missing, because the failed
+ * attempt kept a verdict from before the grace had run out.
+ */
 export function markCheckFailed(health: DustViewHealth, now: number, reason: string): DustViewHealth {
-  return {...health, checkedAt: now, reason: health.complete ? `last check failed: ${reason}` : health.reason};
+  return {
+    ...health,
+    status: health.inconsistent ? 'incomplete' : 'unknown',
+    complete: false,
+    checkedAt: now,
+    lastError: reason,
+    reason: health.inconsistent ? health.reason : `could not check the view: ${reason}`,
+  };
+}
+
+/** How long a verdict stays in force without a fresh answer from the indexer. */
+export const DEFAULT_VERDICT_MAX_AGE_MS = 15 * 60_000;
+
+/**
+ * Fold a session's view health and one emission's local fact into the verdict
+ * a balance snapshot carries, and say whether `dustSynced` must be withheld.
+ *
+ * Only a current `incomplete` verdict withholds `dustSynced`. A verdict older
+ * than `maxAgeMs` without a fresh answer is treated as unknown, so a wallet
+ * cannot be pinned by a check that has stopped succeeding. Coins the SDK
+ * excludes for lack of a generation record are a local fact and count at once.
+ * An inconsistency (the ledger rejected a replay) is a local fact too.
+ */
+export function mergeDustView(
+  session: DustViewHealth,
+  excluded: number,
+  now: number,
+  maxAgeMs = DEFAULT_VERDICT_MAX_AGE_MS,
+): {view: DustViewHealth; withholdSynced: boolean} {
+  let view: DustViewHealth = {...session, excluded};
+  const stale =
+    (view.status === 'incomplete' || view.status === 'complete') &&
+    view.verdictAt !== null &&
+    now - view.verdictAt > maxAgeMs &&
+    !view.inconsistent;
+  if (stale) {
+    view = {
+      ...view,
+      status: 'unknown',
+      complete: false,
+      reason: `verdict from ${new Date(view.verdictAt!).toISOString()} is stale; the indexer has not answered since`,
+    };
+  }
+  if (excluded > 0) {
+    const note = `${excluded} coin(s) have no generation record and are excluded from the balance`;
+    view = {
+      ...view,
+      status: 'incomplete',
+      complete: false,
+      reason: view.status === 'incomplete' && view.reason ? `${view.reason}; ${note}` : note,
+    };
+  }
+  return {view, withholdSynced: view.status === 'incomplete'};
 }

@@ -84,7 +84,7 @@ export function dustView(
   // The engine compares the view with the indexer's generation entries and tip
   // (core/sync/dust-view.ts); when that says the view is missing coins, a rebuild
   // is the remedy regardless of what the capacity heuristic above thinks.
-  const viewProblem = balances.dustView && !balances.dustView.complete ? balances.dustView.reason : null;
+  const viewProblem = balances.dustView?.status === 'incomplete' ? balances.dustView.reason : null;
   const canRebuild = viewProblem !== null || shouldRepairDustView(balances, Date.now(), null);
 
   return { current: formatDust(current), max: formatDust(max), percent, etaText, syncing, unregisteredNight, canRebuild, viewProblem };

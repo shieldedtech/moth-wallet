@@ -56,6 +56,25 @@ What changes:
   entry with no coin for more than ten minutes, an excluded coin, a stalled
   cursor or a rejected replay makes the view incomplete. `WalletBalances` gains
   `dustView` saying so, and `syncProgress.dustSynced` is false while it is.
+- **A check that cannot reach the indexer says so.** The verdict carries a
+  `status` — `unchecked`, `complete`, `incomplete`, `unknown` — and only a
+  current `incomplete` withholds `dustSynced`. A failed attempt turns the
+  verdict `unknown` (previous findings kept for context, not in force), is
+  retried after 30 seconds rather than at the next 5-minute check, and a
+  verdict older than 15 minutes without a fresh answer expires. Observed on
+  preprod 2026-09-23 03:41–03:47Z: a 403/503 window kept a stale "incomplete"
+  in force on one wallet, idling 1,459 DUST for twenty minutes, while on another
+  it kept a stale "complete" over a coin fifteen minutes missing.
+- **Restart on stall.** A check that finds the dust cursor frozen while the
+  indexer's tip advances stops and restarts the sync from its caches (at most
+  once per ten minutes). The SDK's subscription client is created with
+  `shouldRetry: () => false`, so a wallet that lived through an indexer outage
+  otherwise stayed at 99% with all three parts unsynced until its process was
+  restarted.
+- **Per-coin dust valued at now.** The SDK's `availableCoins` values each coin
+  at the state's sync time, so under a stalled sync the per-coin figures froze
+  while the headline balance kept growing (1,391 against coins summing to
+  1,217). Both now use the same instant.
 - **Auto-recovery.** The dedup wrapper now takes hooks. On a non-linear insert
   the affected part's cache is evicted and the sync restarted, at most once an
   hour per part. `SyncedWallet` gains `rebuildDust()`, `restartSync()` and

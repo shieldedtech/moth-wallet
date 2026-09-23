@@ -6,6 +6,7 @@ import {
   localDustCoins,
   markCheckFailed,
   markInconsistent,
+  mergeDustView,
   type LocalDustCoin,
 } from '../../../src/sync/dust-view.js';
 import type {DustGenerationEntry} from '../../../src/sync/dust-generations.js';
@@ -46,11 +47,13 @@ describe('assessDustView', () => {
       indexerMaxId: 1_549_223,
     });
     expect(h.complete).toBe(true);
+    expect(h.status).toBe('complete');
     expect(h.reason).toBeNull();
     expect(h.missing).toEqual([]);
     expect(h.liveEntries).toBe(2);
     expect(h.behindBy).toBe(0);
     expect(h.checkedAt).toBe(T0);
+    expect(h.verdictAt).toBe(T0);
   });
 
   it('records a missing coin at once but only counts it against completeness after the grace', () => {
@@ -196,21 +199,94 @@ describe('assessDustView', () => {
 
 describe('health record helpers', () => {
   it('markInconsistent flips completeness and keeps an existing reason', () => {
-    const base = {...EMPTY_DUST_VIEW, complete: false, reason: 'stuck'};
+    const base = {...EMPTY_DUST_VIEW, status: 'incomplete' as const, complete: false, reason: 'stuck'};
     const h = markInconsistent(base, 'ledger rejected dust replay at 1..2');
     expect(h.complete).toBe(false);
+    expect(h.status).toBe('incomplete');
     expect(h.inconsistent).toBe(true);
     expect(h.reason).toBe('ledger rejected dust replay at 1..2; stuck');
+    // An unknown verdict's reason is a failure note, not a finding — it is replaced.
+    const fromUnknown = markInconsistent(markCheckFailed(EMPTY_DUST_VIEW, T0, 'HTTP 503'), 'ledger rejected dust replay at 1..2');
+    expect(fromUnknown.reason).toBe('ledger rejected dust replay at 1..2');
   });
 
-  it('markCheckFailed records the time and explains only when there is nothing worse to say', () => {
-    const fine = markCheckFailed(EMPTY_DUST_VIEW, T0, 'indexer unreachable');
-    expect(fine.complete).toBe(true);
-    expect(fine.checkedAt).toBe(T0);
-    expect(fine.reason).toBe('last check failed: indexer unreachable');
+  it('markCheckFailed turns the verdict unknown, keeps the findings for context, and never reads as whole', () => {
+    const prior = assessDustView({now: T0, live: LIVE, localCoins: [coin(SMALL), coin(BIG)], localApplied: 1, indexerMaxId: 1});
+    const failed = markCheckFailed(prior, T0 + MIN, 'HTTP 503');
+    expect(failed.status).toBe('unknown');
+    expect(failed.complete).toBe(false);
+    expect(failed.checkedAt).toBe(T0 + MIN);
+    expect(failed.verdictAt).toBe(T0);
+    expect(failed.lastError).toBe('HTTP 503');
+    expect(failed.reason).toMatch(/could not check the view: HTTP 503/);
+    expect(failed.liveEntries).toBe(2);
+  });
 
-    const broken = markCheckFailed({...EMPTY_DUST_VIEW, complete: false, reason: 'stuck'}, T0, 'indexer unreachable');
-    expect(broken.reason).toBe('stuck');
+  // Preprod 2026-09-23 03:45:55Z: a check that hit a 503 kept an earlier verdict
+  // in which the 990-NIGHT entry had been missing for 15 minutes but was
+  // recorded before the grace ran out — and reported complete: true, reason null.
+  it('a failed check cannot certify a verdict whose missing coin has since gone overdue', () => {
+    const early = assessDustView({now: T0, live: LIVE, localCoins: [coin(SMALL)], localApplied: 1, indexerMaxId: 1});
+    expect(early.complete).toBe(true); // just seen missing, inside the grace
+    const failed = markCheckFailed(early, T0 + 15 * MIN, 'HTTP 403');
+    expect(failed.complete).toBe(false);
+    expect(failed.status).toBe('unknown');
+    expect(failed.missing).toHaveLength(1);
+    const {view, withholdSynced} = mergeDustView(failed, 0, T0 + 15 * MIN);
+    expect(view.status).toBe('unknown');
+    expect(view.reason).toMatch(/could not check/);
+    expect(withholdSynced).toBe(false);
+  });
+
+  it('markCheckFailed keeps an inconsistent view incomplete, since that is a local fact', () => {
+    const failed = markCheckFailed(markInconsistent(EMPTY_DUST_VIEW, 'ledger rejected dust replay at 1..2'), T0, 'HTTP 503');
+    expect(failed.status).toBe('incomplete');
+    expect(failed.reason).toMatch(/ledger rejected/);
+  });
+});
+
+describe('mergeDustView', () => {
+  const whole = () => assessDustView({now: T0, live: LIVE, localCoins: [coin(SMALL), coin(BIG)], localApplied: 1, indexerMaxId: 1});
+  const broken = () => {
+    const first = assessDustView({now: T0 - 20 * MIN, live: LIVE, localCoins: [coin(SMALL)], localApplied: 1, indexerMaxId: 1});
+    return assessDustView({now: T0, live: LIVE, localCoins: [coin(SMALL)], localApplied: 1, indexerMaxId: 1, previous: first});
+  };
+
+  it('withholds dustSynced only for a current incomplete verdict', () => {
+    expect(mergeDustView(whole(), 0, T0).withholdSynced).toBe(false);
+    expect(mergeDustView(EMPTY_DUST_VIEW, 0, T0).withholdSynced).toBe(false);
+    expect(mergeDustView(markCheckFailed(broken(), T0, 'HTTP 503'), 0, T0).withholdSynced).toBe(false);
+    const b = broken();
+    expect(b.status).toBe('incomplete');
+    expect(mergeDustView(b, 0, T0).withholdSynced).toBe(true);
+  });
+
+  // Preprod 2026-09-23 03:41–03:47Z: the indexer went 403/503 right after a check
+  // found a coin missing; the coins came back, the check could not run, and the
+  // stale "incomplete" kept the wallet idle with 1,459 DUST for twenty minutes.
+  it('lets a verdict expire when the indexer has not answered since', () => {
+    const b = broken();
+    expect(mergeDustView(b, 0, T0 + 14 * MIN).withholdSynced).toBe(true);
+    const {view, withholdSynced} = mergeDustView(b, 0, T0 + 16 * MIN);
+    expect(withholdSynced).toBe(false);
+    expect(view.status).toBe('unknown');
+    expect(view.reason).toMatch(/stale/);
+  });
+
+  it('counts excluded coins at once, on top of whatever the indexer said', () => {
+    const {view, withholdSynced} = mergeDustView(whole(), 2, T0);
+    expect(withholdSynced).toBe(true);
+    expect(view.status).toBe('incomplete');
+    expect(view.excluded).toBe(2);
+    expect(view.reason).toMatch(/2 coin\(s\) have no generation record/);
+    const onUnknown = mergeDustView(markCheckFailed(whole(), T0, 'HTTP 503'), 1, T0);
+    expect(onUnknown.withholdSynced).toBe(true);
+    expect(onUnknown.view.reason).toMatch(/1 coin\(s\)/);
+  });
+
+  it('does not expire an inconsistency', () => {
+    const v = markInconsistent(whole(), 'ledger rejected dust replay at 1..2');
+    expect(mergeDustView(v, 0, T0 + 60 * MIN).withholdSynced).toBe(true);
   });
 });
 

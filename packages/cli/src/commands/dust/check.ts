@@ -93,6 +93,10 @@ export default class DustCheck extends BaseCommand {
     view: DaemonDustViewWire,
     meta: { via: string; walletName: string; networkId: string; balance: bigint | null; syncTime?: Date | null; coins?: number },
   ): void {
+    // Exit codes: 0 whole, 2 incomplete, 3 could not be checked. An indexer
+    // outage must never certify a broken view as healthy (preprod 2026-09-23:
+    // a 503 printed "whole" with every figure unknown).
+    const exitCode = view.status === 'complete' ? 0 : view.status === 'incomplete' ? 2 : 3;
     if (this.outputFormat === 'json') {
       this.outputSuccess({
         via: meta.via,
@@ -103,7 +107,7 @@ export default class DustCheck extends BaseCommand {
         ...(meta.coins !== undefined ? { cachedCoins: meta.coins } : {}),
         dustView: view,
       });
-      if (!view.complete) this.exit(2);
+      if (exitCode !== 0) this.exit(exitCode);
       return;
     }
 
@@ -113,7 +117,12 @@ export default class DustCheck extends BaseCommand {
     if (meta.syncTime) this.log(`Cache last applied an event at: ${meta.syncTime.toISOString()}`);
     if (meta.balance !== null) this.log(`Cache balance now: ${formatDustBalance(meta.balance)} DUST across ${meta.coins ?? 0} coin(s)`);
     this.log('');
-    this.log(view.complete ? '● Dust view is whole' : `○ Dust view is INCOMPLETE — ${view.reason}`);
+    if (view.status === 'complete') this.log('● Dust view is whole');
+    else if (view.status === 'incomplete') this.log(`○ Dust view is INCOMPLETE — ${view.reason}`);
+    else if (view.status === 'unknown') {
+      this.log(`? Dust view could not be checked — ${view.lastError ?? view.reason ?? 'the indexer did not answer'}`);
+      this.log(`  (indexer for ${meta.networkId}: ${this.indexerHint(meta.networkId)})`);
+    } else this.log('? Dust view not checked yet — the daemon has not compared it with the chain');
     this.log(`  live generation entries on chain: ${view.liveEntries ?? '?'}`);
     this.log(`  local cursor ${view.localApplied ?? '?'} vs indexer tip ${view.indexerMaxId ?? '?'}${view.behindBy ? ` (behind by ${view.behindBy})` : ''}${view.stalled ? ' — STALLED' : ''}`);
     if (view.excluded > 0) this.log(`  coins without a generation record (excluded from balance): ${view.excluded}`);
@@ -124,10 +133,15 @@ export default class DustCheck extends BaseCommand {
         `  missing coin: ${formatNightStar(m.night)} NIGHT (generation ${m.generationMtIndex}, backing ${m.backingNight.slice(0, 12)}…) generating since ${m.generatingSince}, absent since ${m.missingSince}`,
       );
     }
-    if (!view.complete) {
+    if (view.status === 'incomplete') {
       this.log('');
       this.log(`Repair: moth dust rebuild --wallet ${meta.walletName} --network ${meta.networkId}`);
-      this.exit(2);
     }
+    if (exitCode !== 0) this.exit(exitCode);
+  }
+
+  /** Names the network in an indexer failure, since a missing -n silently means devnet. */
+  private indexerHint(networkId: string): string {
+    return `if this is not the network you meant, pass --network; the default is ${networkId === 'devnet' ? 'devnet' : 'from your config'}`;
   }
 }
