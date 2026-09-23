@@ -42,7 +42,7 @@ export {
   STARS_PER_NIGHT,
   NIGHT_DECIMALS,
 } from './wallet/night-amount.js';
-export { deriveAllAddressesFromSeed, deriveRawKeys, deriveShieldedPublicKeys, decodeBech32mAddress } from './wallet/address.js';
+export { deriveAllAddressesFromSeed, deriveRawKeys, deriveShieldedPublicKeys, decodeBech32mAddress, dustAddressForKey } from './wallet/address.js';
 export { signMessage, signedMessageBytes, type SignEncoding, type SignedMessage } from './wallet/sign-message.js';
 export { deriveAppSecret } from './wallet/app-secret.js';
 export { loadBatchFile, executeBatchTransfer, batchExitCode, type BatchTransferEntry, type BatchTransferResult, type BatchTransferSummary } from './wallet/batch-transfer.js';
@@ -69,11 +69,25 @@ export {
 // Sync
 export {
   startWalletSync, formatNight, NIGHT_TOKEN_ID, clearSyncCache, clearDustSyncCache, resolveSyncStore,
-  EMPTY_COINS, EMPTY_SUB_PROGRESS, type WalletSyncOptions,
+  EMPTY_COINS, EMPTY_SUB_PROGRESS, EMPTY_DUST_VIEW, type WalletSyncOptions,
   type WalletBalances, type SyncedWallet, type DustGeneration, type SyncProgress,
   type SubWalletSyncProgress, type SubWalletProgress, type WalletCoinDetails,
   type ShieldedCoinInfo, type UnshieldedCoinInfo, type DustCoinInfo,
+  type DustViewHealth, type DustViewMissing, type LocalDustCoin, type SyncRestartResult,
+  type DustViewCheckOptions, type InclusionWatchOptions,
 } from './sync/wallet-sync.js';
+export {
+  assessDustView, localDustCoins, DEFAULT_MISSING_GRACE_MS,
+} from './sync/dust-view.js';
+export {
+  fetchDustGenerations, readDustTip, dustGenerationsQuery,
+  type DustGenerationEntry, type DustGenerations, type DustTip,
+} from './sync/dust-generations.js';
+export { watchInclusion, type InclusionOutcome, type InclusionWatch } from './sync/tx-watch.js';
+export {
+  checkCachedDustView, readCachedDustSnapshot, type CachedDustSnapshot, type OfflineDustCheck,
+} from './sync/dust-view-offline.js';
+export { toGetStateResult, dustViewToWire } from './daemon/state-wire.js';
 export {
   summarizeTransaction, summarizeConnectorTransaction, decodeConnectorTransaction,
   type TransactionSummary, type TxTokenAmount,
@@ -186,6 +200,9 @@ export {
   type ConfirmationRequest, type ConfirmationQueueOptions,
   type WalletHandlerDeps,
   type DaemonGetStateResult,
+  type DaemonDustCoinWire, type DaemonDustGenerationWire, type DaemonDustViewWire,
+  type DaemonShieldedCoinWire, type DaemonUnshieldedCoinWire,
+  type DaemonCheckDustViewResult, type DaemonSyncRestartResult,
   type DaemonSubmitTransactionParams, type DaemonSubmitTransactionResult,
   type DaemonTransferTokensParams, type DaemonTransferTokensResult,
   type DaemonCallCircuitParams, type DaemonCallCircuitResult,

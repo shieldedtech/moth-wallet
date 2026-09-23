@@ -9,7 +9,7 @@ import { StateView } from './StateView.js';
 import { HelpFooter, type HelpHint } from '../../components/HelpFooter.js';
 import type { WalletState, NetworkState } from '../../types.js';
 import type { ChainStatus } from '../../hooks/useChainStatus.js';
-import type { WalletCoinDetails, SubWalletProgress } from '@shieldedtech/moth-wallet';
+import type { WalletCoinDetails, DustViewHealth, SubWalletProgress } from '@shieldedtech/moth-wallet';
 
 type View =
   | 'state'
@@ -52,6 +52,7 @@ interface DashboardHubProps {
   dustBalance?: bigint;
   coins?: WalletCoinDetails;
   subProgress?: SubWalletProgress;
+  dustView?: DustViewHealth | null;
   unreadLogs?: number;
 
   // Sub-view renderers — each gets a back handler that returns to state.
@@ -109,6 +110,7 @@ export function DashboardHub(props: DashboardHubProps) {
         dustBalance={props.dustBalance}
         coins={props.coins}
         subProgress={props.subProgress}
+        dustView={props.dustView}
       />
 
       <Box paddingX={2}>

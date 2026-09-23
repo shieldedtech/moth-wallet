@@ -54,6 +54,39 @@ interface Capability<S, U> {
   applyUpdate: ApplyUpdateFn<S, U>;
 }
 
+export type SyncPart = 'shielded' | 'dust';
+
+/** The ledger tree rejected a replay. Retrying replays the same batch from the same cursor, so this cache is done. */
+export interface SyncInconsistency {
+  readonly part: SyncPart;
+  readonly appliedIndex: bigint;
+  /** Ids of the batch that was rejected. */
+  readonly range: string;
+  readonly message: string;
+}
+
+/**
+ * A batch whose first fresh id is more than one past the cursor.
+ *
+ * Diagnostic only. Indexer event ids are one global serial shared by the zswap,
+ * dust and contract streams, so a dust batch routinely skips the ids other
+ * streams used up — twelve gaps in four hundred ids on preprod. What a gap
+ * cannot prove is a lost event; that verdict belongs to the tree, which rejects
+ * the insert (see SyncInconsistency). It is reported so a run of gaps around a
+ * later failure can be read back.
+ */
+export interface SyncGap {
+  readonly part: SyncPart;
+  readonly appliedIndex: bigint;
+  readonly firstFreshId: bigint;
+  readonly batchSize: number;
+}
+
+export interface DedupHooks {
+  onInconsistent?: (info: SyncInconsistency) => void;
+  onGap?: (info: SyncGap) => void;
+}
+
 /**
  * Walk the updates array and split into "already applied" vs "still to
  * apply" against the wallet's current appliedIndex. The boundary event
@@ -114,17 +147,39 @@ function applyGuarded<S, U extends Updateish>(
   wrapped: WrappedUpdate<U>,
   updates: ReadonlyArray<U>,
   droppedCount: number,
+  hooks?: DedupHooks,
+  part: SyncPart = 'dust',
 ): readonly [S, {changes: unknown[]; protocolVersion: number}] {
   try {
     return base.applyUpdate(state, updates === wrapped.updates ? wrapped : {...wrapped, updates});
   } catch (err) {
-    throw enrichNonLinear(err, {appliedIndex: state.progress.appliedIndex, updates, droppedCount});
+    const enriched = enrichNonLinear(err, {appliedIndex: state.progress.appliedIndex, updates, droppedCount});
+    if (enriched !== err && hooks?.onInconsistent) {
+      // The host decides what to do with a dead cache — mark the part unsynced,
+      // evict it, resync. Left to the retry loop alone, a wallet in this state
+      // logged the same error 9,300 times over five hours (preprod, 2026-09-20).
+      const ids = updates.map((u) => BigInt(u.id));
+      const range = ids.length === 0 ? '(empty batch)' : `${ids[0]}..${ids[ids.length - 1]}`;
+      try {
+        hooks.onInconsistent({
+          part,
+          appliedIndex: state.progress.appliedIndex,
+          range,
+          message: enriched instanceof Error ? enriched.message : String(enriched),
+        });
+      } catch {
+        /* a failing observer must not mask the sync error */
+      }
+    }
+    throw enriched;
   }
 }
 
 function makeDedupingApplyUpdate<S extends {progress: {appliedIndex: bigint; [k: string]: unknown}; protocolVersion: number | bigint}, U extends Updateish>(
   base: Capability<S, U>,
   updateProgress: (state: S, patch: {highestRelevantWalletIndex: bigint; isConnected: boolean}) => S,
+  hooks?: DedupHooks,
+  part: SyncPart = 'dust',
 ): ApplyUpdateFn<S, U> {
   return (state, wrapped) => {
     if (wrapped.updates.length === 0) {
@@ -136,16 +191,27 @@ function makeDedupingApplyUpdate<S extends {progress: {appliedIndex: bigint; [k:
       state.progress.appliedIndex,
     );
 
+    if (hooks?.onGap && !outOfOrder && fresh.length > 0 && state.progress.appliedIndex > 0n) {
+      const firstFreshId = BigInt(fresh[0]!.id);
+      if (firstFreshId > state.progress.appliedIndex + 1n) {
+        try {
+          hooks.onGap({part, appliedIndex: state.progress.appliedIndex, firstFreshId, batchSize: fresh.length});
+        } catch {
+          /* diagnostic only */
+        }
+      }
+    }
+
     if (outOfOrder) {
       // Not the ascending stream this filter assumes. Dropping a mid-batch event
       // here is what creates the hole the tree rejects, so drop nothing and let
       // the SDK decide — its own skip path is the conservative one.
-      return applyGuarded(base, state, wrapped, wrapped.updates, 0);
+      return applyGuarded(base, state, wrapped, wrapped.updates, 0, hooks, part);
     }
 
     if (droppedCount === 0) {
       // No duplicates — fast path, defer entirely to the SDK.
-      return applyGuarded(base, state, wrapped, wrapped.updates, 0);
+      return applyGuarded(base, state, wrapped, wrapped.updates, 0, hooks, part);
     }
 
     if (fresh.length === 0) {
@@ -162,7 +228,7 @@ function makeDedupingApplyUpdate<S extends {progress: {appliedIndex: bigint; [k:
 
     // Partial overlap — hand only the fresh suffix to the SDK so its
     // own appliedIndex advancement still reflects the batch tail.
-    return applyGuarded(base, state, wrapped, fresh, droppedCount);
+    return applyGuarded(base, state, wrapped, fresh, droppedCount, hooks, part);
   };
 }
 
@@ -186,7 +252,7 @@ function makeDedupingApplyUpdate<S extends {progress: {appliedIndex: bigint; [k:
 // deliberate escape hatch, and the callers cast.
 
 // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
-export function dedupingShieldedBuilder(): unknown {
+export function dedupingShieldedBuilder(hooks?: DedupHooks): unknown {
   return new ShieldedV1Builder().withDefaults().withSync(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ShieldedSync.makeEventsSyncService as any,
@@ -199,6 +265,8 @@ export function dedupingShieldedBuilder(): unknown {
           base as any,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (state: any, patch: any) => ShieldedCoreWallet.updateProgress(state, patch),
+          hooks,
+          'shielded',
         ),
       };
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -212,7 +280,7 @@ export function dedupingShieldedBuilder(): unknown {
  * makeDefaultSyncCapability. Pass to CustomDustWallet(cfg, builder).
  */
 // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
-export function dedupingDustBuilder(): unknown {
+export function dedupingDustBuilder(hooks?: DedupHooks): unknown {
   return new DustV1Builder().withDefaults().withSync(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     DustSyncService.makeDefaultSyncService as any,
@@ -227,6 +295,8 @@ export function dedupingDustBuilder(): unknown {
           base as any,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (state: any, patch: any) => DustCoreWallet.updateProgress(state, patch),
+          hooks,
+          'dust',
         ),
       };
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
