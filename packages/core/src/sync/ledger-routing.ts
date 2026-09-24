@@ -76,6 +76,34 @@ export async function protocolStatus(facade: WalletFacade): Promise<ProtocolStat
   };
 }
 
+const MARKERS = {
+  Unproven: ['signature', 'pre-proof', 'pre-binding'],
+  Unbound: ['signature', 'proof', 'pre-binding'],
+  Finalized: ['signature', 'proof', 'binding'],
+} as const;
+
+/**
+ * Which ledger reads `bytes` as a transaction at `stage`, if either does.
+ *
+ * For diagnostics only: the facade's adoptTransaction is what reads bytes for
+ * use. It refuses junk and a transaction built across the fork with the same
+ * WireFormatError, and asking both ledgers is what tells the two apart.
+ */
+export function ledgerReading(bytes: Uint8Array, stage: WalletTransaction.Stage): LedgerVersion | undefined {
+  const [s, p, b] = MARKERS[stage];
+  const reads = (deserialize: () => unknown): boolean => {
+    try {
+      deserialize();
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  if (reads(() => ledgerV8.Transaction.deserialize(s as never, p as never, b as never, bytes))) return 'v8';
+  if (reads(() => ledgerV9.Transaction.deserialize(s as never, p as never, b as never, bytes))) return 'v9';
+  return undefined;
+}
+
 /**
  * The ledger object a handle carries. The handle erases the ledger type on
  * purpose; callers that need a member of it say which shape they expect.

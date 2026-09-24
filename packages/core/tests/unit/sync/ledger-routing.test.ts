@@ -7,10 +7,11 @@ import {describe, expect, it} from 'vitest';
 import {ProtocolVersion, WalletTransaction} from '@midnightntwrk/wallet-sdk';
 import * as Rx from 'rxjs';
 import type {WalletFacade} from '@midnightntwrk/wallet-sdk/facade';
-import {finalizedTransaction} from '../../helpers/ledger-transactions.js';
+import {finalizedTransaction, unboundTransaction} from '../../helpers/ledger-transactions.js';
 import {
   forks,
   isLedgerV9,
+  ledgerReading,
   protocolStatus,
   transactionHashOf,
   unshieldedPublicKeyAt,
@@ -25,6 +26,18 @@ describe('isLedgerV9', () => {
     expect(isLedgerV9(V8)).toBe(false);
     expect(isLedgerV9(BELOW_FORK)).toBe(false);
     expect(isLedgerV9(V9)).toBe(true);
+  });
+});
+
+describe('ledgerReading', () => {
+  it('names the ledger that wrote the bytes', async () => {
+    expect(ledgerReading((await finalizedTransaction('v8')).serialize(), 'Finalized')).toBe('v8');
+    expect(ledgerReading((await finalizedTransaction('v9')).serialize(), 'Finalized')).toBe('v9');
+  });
+
+  it('answers undefined for bytes neither ledger reads at that stage', async () => {
+    expect(ledgerReading(Uint8Array.from([0xde, 0xad, 0xbe, 0xef]), 'Finalized')).toBeUndefined();
+    expect(ledgerReading((await unboundTransaction('v9')).serialize(), 'Finalized')).toBeUndefined();
   });
 });
 
