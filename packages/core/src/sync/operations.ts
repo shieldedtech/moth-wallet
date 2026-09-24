@@ -22,7 +22,7 @@ import {HDWallet, Roles} from '@midnightntwrk/wallet-sdk/hd';
 import {setNetworkId} from '@midnight-ntwrk/midnight-js/network-id';
 import type {NetworkConfig} from '../types/network.js';
 import {NIGHT_TOKEN_ID} from './wallet-sync.js';
-import {activeProtocolVersion, transactionFromBytes, transactionHashOf} from './ledger-routing.js';
+import {transactionHashOf} from './ledger-routing.js';
 import {
   estimateRegistrationAffordability,
   DustRegistrationNotYetError,
@@ -47,7 +47,6 @@ export type UnprovenTransaction = UnprovenTx;
 
 export {
   transactionHashOf,
-  finalizedTransactionFromBytes,
   activeProtocolVersion,
   protocolStatus,
   type ProtocolStatus,
@@ -301,10 +300,9 @@ export async function balanceTransaction(
   const ttl = new Date(Date.now() + 30 * 60_000);
 
   onProgress?.('building');
-  const version = await activeProtocolVersion(facade);
   const recipe = sealed
-    ? await facade.balanceFinalizedTransaction(transactionFromBytes(txBytes, 'Finalized', version), {ttl})
-    : await facade.balanceUnboundTransaction(transactionFromBytes(txBytes, 'Unbound', version), {ttl});
+    ? await facade.balanceFinalizedTransaction(facade.adoptTransaction(txBytes, 'Finalized'), {ttl})
+    : await facade.balanceUnboundTransaction(facade.adoptTransaction(txBytes, 'Unbound'), {ttl});
 
   onProgress?.('proving');
   const signed = await facade.signRecipe(recipe, ks.signDataAsync);

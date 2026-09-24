@@ -18,7 +18,6 @@ import {
   dedesignateFromDust as coreDedesignateFromDust,
   submitFinalizedTransaction,
   transactionHashOf,
-  finalizedTransactionFromBytes,
   activeProtocolVersion,
   protocolStatus as coreProtocolStatus,
   deriveShieldedPublicKeys,
@@ -912,8 +911,8 @@ export async function transferSubmit(
 ): Promise<void> {
   return trackOp(async () => {
     const wallet = await syncEnsure(seedHex, walletName, network);
-    // The hex carries no protocol version; read it with the ledger the wallets are acting at.
-    const transaction = await finalizedTransactionFromBytes(wallet.facade, fromHex(txHex));
+    // The hex carries no protocol version; the facade reads it with the ledger it is acting at.
+    const transaction = wallet.facade.adoptTransaction(fromHex(txHex), 'Finalized');
     await submitTracked(network, walletName, () => submitFinalizedTransaction(wallet.facade, transaction));
   });
 }

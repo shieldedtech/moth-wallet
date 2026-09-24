@@ -108,7 +108,6 @@ export {
   dedesignateFromDust,
   deriveWalletKeys,
   transactionHashOf,
-  finalizedTransactionFromBytes,
   activeProtocolVersion,
   protocolStatus,
 } from '@shieldedtech/moth-wallet/sync/operations';

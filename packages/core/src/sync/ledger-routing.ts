@@ -4,10 +4,10 @@
 // from it, and every transaction it hands out or takes in is a WalletTransaction
 // handle stamped with the protocol version that authored its bytes. Bytes that
 // reach moth from outside the SDK — a dApp's transaction, a hex payload on the
-// daemon socket — carry no stamp, so this module picks the ledger by the
-// version the wallets are acting at and seals the result. It also derives the
-// public keys the pre-seed path writes into a snapshot, with the ledger that
-// wrote the reference. Importing either ledger loads its WASM, so the modules
+// daemon socket — carry no stamp; the facade's adoptTransaction reads them with
+// the ledger it is acting at. This module reads what those handles carry, and
+// derives the public keys the pre-seed path writes into a snapshot, with the
+// ledger that wrote the reference. Importing either ledger loads its WASM, so the modules
 // the extension UI bundles must not import this one.
 
 import * as Rx from 'rxjs';
@@ -19,7 +19,6 @@ import {createKeystore as createV1Keystore, PublicKey as V1PublicKey} from '@mid
 import {createKeystore, PublicKey} from '@midnightntwrk/wallet-sdk/unshielded';
 
 export type {AnyTx, FinalizedTx};
-export type TransactionStage = WalletTransaction.Stage;
 
 /** Where this chain hands over to ledger-v9. Moth uses the facade's preset, so the
  *  routing here and the wallets' own hand-over read the same number. */
@@ -75,33 +74,6 @@ export async function protocolStatus(facade: WalletFacade): Promise<ProtocolStat
         : {kind: 'crossing', from: protocol.from, to: protocol.to, behind: protocol.behind},
     wallets: state.protocolVersion,
   };
-}
-
-const MARKERS = {
-  Unproven: ['signature', 'pre-proof', 'pre-binding'],
-  Unbound: ['signature', 'proof', 'pre-binding'],
-  Finalized: ['signature', 'proof', 'binding'],
-} as const;
-
-/**
- * Read raw transaction bytes with the ledger that owns `version` and seal them
- * into a handle at that version, so the facade accepts them as its own.
- */
-export function transactionFromBytes<TStage extends TransactionStage>(
-  bytes: Uint8Array,
-  stage: TStage,
-  version: ProtocolVersion.ProtocolVersion,
-): WalletTransaction<TStage> {
-  const [s, p, b] = MARKERS[stage];
-  const transaction = isLedgerV9(version)
-    ? ledgerV9.Transaction.deserialize(s as never, p as never, b as never, bytes)
-    : ledgerV8.Transaction.deserialize(s as never, p as never, b as never, bytes);
-  return WalletTransaction.adopt(stage, transaction, version);
-}
-
-/** A submit-ready transaction from its bytes, at the version the wallets are acting at. */
-export async function finalizedTransactionFromBytes(facade: WalletFacade, bytes: Uint8Array): Promise<FinalizedTx> {
-  return transactionFromBytes(bytes, 'Finalized', await activeProtocolVersion(facade));
 }
 
 /**

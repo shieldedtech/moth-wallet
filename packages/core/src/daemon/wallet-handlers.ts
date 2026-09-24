@@ -44,7 +44,6 @@ import {
   sendTokensWithKeys,
   designateForDustWithKeys,
   dedesignateFromDustWithKeys,
-  finalizedTransactionFromBytes,
   type FinalizedTransaction,
 } from '../sync/operations.js';
 import {submitWithHealthTracking} from '../sync/dust-ledger-health.js';
@@ -288,9 +287,9 @@ export function buildWalletHandlers(deps: WalletHandlerDeps): Record<string, Rpc
         async () => {
           let tx: FinalizedTransaction;
           try {
-            // Read with the ledger the wallets are acting at: the hex carries no
-            // protocol version of its own.
-            tx = await finalizedTransactionFromBytes(facade, Buffer.from(params.hex, 'hex'));
+            // The hex carries no protocol version of its own; the facade reads it
+            // with the ledger it is acting at.
+            tx = facade.adoptTransaction(Buffer.from(params.hex, 'hex'), 'Finalized');
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             throw new DaemonProtocolError('INVALID_PARAMS', `failed to deserialize hex as FinalizedTransaction: ${msg}`);

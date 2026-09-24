@@ -6,16 +6,18 @@
 '@shieldedtech/moth-cli': minor
 ---
 
-Upgrade to `@midnightntwrk/wallet-sdk` 2.0.0-beta.3. The SDK now
-runs ledger-v8 below the chain's v9 fork and ledger-v9 from it, and its wallets follow a live
-chain across the boundary, so moth reaches networks on either side with one build.
+Upgrade to `@midnightntwrk/wallet-sdk` 2.0.0-rc.0, which brings `@midnightntwrk/ledger-v9`
+1.0.0-rc.5. The SDK runs ledger-v8 below the chain's v9 fork and ledger-v9 from it, and its
+wallets follow a live chain across the boundary, so moth reaches networks on either side with one
+build.
 
 - Wallets start from per-role seeds: `WalletKeys` is now `{shielded, unshielded, dust}` seeds
   rather than ledger key objects, and the wallet holds the keys it derives from them for as long
   as it runs. Transaction-building methods no longer take key material.
 - Transactions travel as version-stamped handles (`FinalizedTransaction`). Hex payloads on the
-  daemon socket and dApp-supplied transactions are read with the ledger the wallets are acting at
-  (`finalizedTransactionFromBytes`, `transactionHashOf`, `activeProtocolVersion`).
+  daemon socket and dApp-supplied transactions are read with the ledger the facade is acting at,
+  through the SDK's `WalletFacade.adoptTransaction`; `transactionHashOf` and
+  `activeProtocolVersion` read hashes and versions off the handles.
 - Proving routes by protocol version: one proof server serves both sides, and the in-process
   prover, including the extension's in-worker one, is registered per ledger version.
 - The client-side dedup of re-sent boundary events (`sync/sdk-dedup.ts`) is removed; the fix
