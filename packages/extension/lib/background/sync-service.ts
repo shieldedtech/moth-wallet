@@ -5,7 +5,9 @@
 
 import { browser, type Browser } from 'wxt/browser';
 import type { NetworkConfig } from '@shieldedtech/moth-browser';
-import { type PortEvent } from '../messaging/protocol';
+import { deserializeBalances, type PortEvent } from '../messaging/protocol';
+import type { TxStage } from '@shieldedtech/moth-browser';
+import { syncHoldsAutoLock } from './auto-lock';
 import { offscreenOn, type RelayState } from '../offscreen/messaging';
 import { offscreen } from './offscreen-client';
 import { acquireKeepalive, releaseKeepalive } from './keepalive';
@@ -31,6 +33,16 @@ let lastRelayState: RelayState | null = null;
 let currentKey: string | null = null;
 // Operations (panel sends, dApp connector builds/submits) currently in flight.
 let opsInFlight = 0;
+// The transaction stage in progress, stamped when it began: replayed to each new port
+// and cleared when the last op ends, so a panel opened mid-proof can show progress.
+let lastTxStage: { stage: TxStage; since: number } | null = null;
+// What the auto-lock needs to know about the running sync (syncDefersAutoLock):
+// whether the latest emission reported synced (null before the first), when progress
+// last moved, and when this sync first deferred an expired window.
+let lastBalancesSynced: boolean | null = null;
+let lastProgressAt: number | null = null;
+let lastProgressPct = -1;
+let syncHoldSince: number | null = null;
 
 // When the extension goes fully idle we don't just stop sync — we close the
 // offscreen document too, so the worker + WASM heap exit with it and the SW
@@ -112,6 +124,10 @@ export async function startSync(session: Session, network: NetworkConfig): Promi
   // same account's data and is exactly what the panel should render immediately.
   if ((await getSnapshotOwner()) !== key) await clearSnapshot();
   sawBalancesSinceStart = false;
+  lastBalancesSynced = null;
+  lastProgressAt = Date.now();
+  lastProgressPct = -1;
+  syncHoldSince = null;
   currentKey = key;
   try {
     await offscreen.syncEnsure({ seedHex: session.seedHex, walletName: session.walletName, network });
@@ -160,6 +176,11 @@ export function beginOp(): void {
 export function endOp(): void {
   opsInFlight = Math.max(0, opsInFlight - 1);
   releaseKeepalive();
+  // The host emits stage starts but no end; the end is the op settling, seen only here.
+  if (opsInFlight === 0 && lastTxStage !== null) {
+    lastTxStage = null;
+    broadcast({ kind: 'txStage', stage: null, since: null });
+  }
   maybeScheduleTeardown();
 }
 
@@ -175,6 +196,10 @@ export function addPort(port: Port): void {
     // Replay the relay state for the same reason: a panel opened during an
     // outage must show it now, not after the next attempt.
     if (lastRelayState) port.postMessage({ kind: 'relayState', state: lastRelayState } satisfies PortEvent);
+    // And the stage of an op still running (see lastTxStage).
+    if (lastTxStage) {
+      port.postMessage({ kind: 'txStage', stage: lastTxStage.stage, since: lastTxStage.since } satisfies PortEvent);
+    }
   } catch {
     /* port closed */
   }
@@ -220,6 +245,22 @@ export function hasOpenPorts(): boolean {
  *  must not lock (drop the seed) underneath one; it waits for the next tick. */
 export function hasWorkInFlight(): boolean {
   return opsInFlight > 0 || hasPendingApproval();
+}
+
+/** Whether a sync the user is watching defers an expired auto-lock right now. Bounded:
+ *  it needs recent progress, and the cap runs from the first deferral of this sync. */
+export function syncDefersAutoLock(now = Date.now()): boolean {
+  const holds = syncHoldsAutoLock({
+    panelOpen: ports.size > 0,
+    syncActive: currentKey !== null,
+    synced: lastBalancesSynced,
+    lastProgressAt,
+    holdSince: syncHoldSince,
+    now,
+  });
+  // Set once per sync and never cleared by a release, or a capped hold could start over.
+  if (holds && syncHoldSince === null) syncHoldSince = now;
+  return holds;
 }
 
 /** Tell every open panel the session was locked out-of-band (auto-lock). */
@@ -304,6 +345,15 @@ export function registerSyncEvents(): void {
       sawBalancesSinceStart = true;
       void recordTiming('marker', 'first balances emission (panel can render)');
     }
+    try {
+      const balances = deserializeBalances(data);
+      const percentage = balances.syncProgress?.percentage ?? -1;
+      if (balances.synced !== lastBalancesSynced || percentage !== lastProgressPct) lastProgressAt = Date.now();
+      lastBalancesSynced = balances.synced === true;
+      lastProgressPct = percentage;
+    } catch {
+      /* an unreadable payload leaves the previous answer standing */
+    }
     void saveSnapshot(data);
     broadcast({ kind: 'balances', data });
   });
@@ -313,7 +363,9 @@ export function registerSyncEvents(): void {
   });
   offscreenOn('os/eventTxStage', ({ data }) => {
     void recordTiming('tx', `tx: ${data}`);
-    broadcast({ kind: 'txStage', stage: data });
+    const since = Date.now();
+    lastTxStage = { stage: data, since };
+    broadcast({ kind: 'txStage', stage: data, since });
   });
   offscreenOn('os/eventRelayState', ({ data }) => {
     // Cached like the balances snapshot: the panel mounts long after the relay

@@ -160,6 +160,9 @@ export function App() {
           balances={events.balances}
           syncMessage={events.syncMessage}
           relayState={events.relayState}
+          txStage={events.txStage}
+          txStageSince={events.txStageSince}
+          proverType={prover.proverType}
           navigate={setScreen}
         />
       )}
@@ -169,6 +172,7 @@ export function App() {
           network={session.status.network}
           balances={events.balances}
           txStage={events.txStage}
+          txStageSince={events.txStageSince}
           proverType={prover.proverType}
           relayState={events.relayState}
           onExit={shared.back}
@@ -183,6 +187,7 @@ export function App() {
         <DustDetail
           balances={events.balances}
           txStage={events.txStage}
+          txStageSince={events.txStageSince}
           proverType={prover.proverType}
           network={session.status.network}
           ownDustAddress={session.status.addresses?.dust?.bech32m?.[session.status.network] ?? ''}

@@ -141,8 +141,8 @@ describe('WalletManager.exportSeedHex', () => {
     await manager.generate('alice', PASS, 'devnet');
 
     const unlocked = await manager.unlock('alice', PASS);
-    // If seedHex ever reappears on the unlocked object, the offscreen's
-    // exportSeedHex detour is no longer needed — revisit walletUnlock.
+    // If seedHex ever reappears on the unlocked object, unlockWithSeedHex (the
+    // extension's single-decrypt key-holder path) is no longer needed.
     expect((unlocked as unknown as { seedHex?: string }).seedHex).toBeUndefined();
     expect(unlocked.walletKeys).toBeDefined();
     expect(unlocked.walletKeys.shieldedSecretKeys).toBeDefined();
@@ -162,6 +162,49 @@ describe('WalletManager.exportSeedHex', () => {
   it('rejects an unknown wallet', async () => {
     const manager = new WalletManager(new MemoryStorage());
     await expect(manager.exportSeedHex('nobody', PASS)).rejects.toThrow('Wallet "nobody" not found');
+  });
+});
+
+// The extension's key-holder needs both the unlocked bundle and the seed from
+// one password entry. unlock() + exportSeedHex() paid the scrypt KDF twice for
+// that; unlockWithSeedHex pays it once and must hand back exactly what the two
+// calls did.
+describe('WalletManager.unlockWithSeedHex', () => {
+  const PASS = 'correct horse battery staple';
+
+  it('returns the seed that reconstructs the wallet, beside a seed-free unlocked bundle', async () => {
+    const manager = new WalletManager(new MemoryStorage());
+    const created = await manager.generate('alice', PASS, 'devnet');
+
+    const { unlocked, seedHex } = await manager.unlockWithSeedHex('alice', PASS);
+
+    expect(seedHex).toBe(await manager.exportSeedHex('alice', PASS));
+    expect(deriveAllAddressesFromSeed(seedHex)).toEqual(created.addresses);
+    expect(unlocked.addresses).toEqual(created.addresses);
+    expect(unlocked.walletKeys.shieldedSecretKeys).toBeDefined();
+    // The D-KM-3 invariant holds for the bundle itself: the seed travels beside
+    // it, never on it.
+    expect((unlocked as unknown as { seedHex?: string }).seedHex).toBeUndefined();
+    unlocked.lock();
+  });
+
+  it('works for a wallet imported from a hex seed (no mnemonic to derive from)', async () => {
+    const manager = new WalletManager(new MemoryStorage());
+    const hex = 'ab'.repeat(32);
+    await manager.importFromSeed('bob', hex, PASS, 'devnet');
+
+    const { unlocked, seedHex } = await manager.unlockWithSeedHex('bob', PASS);
+
+    expect(seedHex).toBe(hex);
+    expect(unlocked.addresses).toEqual(deriveAllAddressesFromSeed(hex));
+    unlocked.lock();
+  });
+
+  it('rejects the wrong passphrase', async () => {
+    const manager = new WalletManager(new MemoryStorage());
+    await manager.generate('alice', PASS, 'devnet');
+
+    await expect(manager.unlockWithSeedHex('alice', 'not the passphrase')).rejects.toThrow();
   });
 });
 

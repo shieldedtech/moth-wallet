@@ -64,6 +64,9 @@ export {
   createProofProvider,
   createWalletProvingService,
   ensureProverReady,
+  setWasmProvingProviderFactory,
+  type WasmProvingProviderFactory,
+  type WasmKeyMaterialProvider,
 } from './proof/provider.js';
 
 // Sync

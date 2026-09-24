@@ -1182,7 +1182,7 @@
     "message": "La cartera nunca se bloquea sola."
   },
   "settings_autoLockDescription": {
-    "message": "Lock and require your password after inactivity."
+    "message": "Lock and require your password after inactivity. A sync you are watching can delay this by up to 30 minutes."
   },
   "settings_autoLockAria": {
     "message": "Tiempo de bloqueo automático"
@@ -1639,5 +1639,38 @@
   },
   "accounts_revealNoPhraseReason": {
     "message": "Esta cuenta se restauró desde un seed hexadecimal, así que no tiene frase de recuperación — una frase no puede deducirse de un seed. Su seed es la copia de seguridad."
+  },
+  "status_provingLocal": {
+    "message": "Proving on this device — a few minutes is normal."
+  },
+  "status_provingLocalDetail": {
+    "message": "Your transaction details never leave this browser."
+  },
+  "status_provingServer": {
+    "message": "Se ejecuta en tu servidor de pruebas, los detalles nunca salen de ahí"
+  },
+  "status_provingLoading": {
+    "message": "Cargando el método de prueba…"
+  },
+  "status_pendingLocalTime": {
+    "message": "Local proving usually takes a few minutes."
+  },
+  "status_elapsed": {
+    "message": "$1 transcurridos"
+  },
+  "status_backgroundTitle": {
+    "message": "Procesando una transacción"
+  },
+  "status_backgroundBuilding": {
+    "message": "Creando la transacción…"
+  },
+  "status_backgroundProving": {
+    "message": "Generando la prueba…"
+  },
+  "status_backgroundSubmitting": {
+    "message": "Enviando a la red…"
+  },
+  "status_backgroundHint": {
+    "message": "Continúa aunque cierres este panel."
   }
 }

@@ -392,6 +392,24 @@ export class WalletManager {
   }
 
   async unlock(name: string, passphrase: string): Promise<UnlockedWallet> {
+    const decrypted = await this.openKeystore(name, passphrase);
+    return this.completeUnlock(name, decrypted);
+  }
+
+  /**
+   * `unlock()` plus the serializable seed from one keystore decrypt, for the extension's
+   * key-holder (the same D-KM-3 opt-in as `exportSeedHex`, without paying scrypt twice).
+   * The returned `UnlockedWallet` is as seed-free as `unlock()`'s.
+   */
+  async unlockWithSeedHex(name: string, passphrase: string): Promise<{ unlocked: UnlockedWallet; seedHex: string }> {
+    const decrypted = await this.openKeystore(name, passphrase);
+    const seedHex = await this.seedHexOf(decrypted);
+    const unlocked = await this.completeUnlock(name, decrypted);
+    return { unlocked, seedHex };
+  }
+
+  /** Read, validate and decrypt a wallet's keystore; upgrades weak KDF parameters in place. */
+  private async openKeystore(name: string, passphrase: string): Promise<string> {
     const restored = await this.readKeystore(name);
 
     // Validate field lengths before attempting decryption (CWE-20).
@@ -418,20 +436,26 @@ export class WalletManager {
         // Non-fatal — the wallet still works with the old parameters
       }
     }
+    return decrypted;
+  }
 
+  /** The hex seed behind a decrypted keystore payload (`seed:` hex, or a BIP-39 phrase). */
+  private async seedHexOf(decrypted: string): Promise<string> {
+    if (decrypted.startsWith('seed:')) return decrypted.slice(5);
+    const seed = await mnemonicToSeed(decrypted);
+    const seedHex = this.seedToHex(seed);
+    seed.fill(0);
+    return seedHex;
+  }
+
+  /** Everything unlock() does after the decrypt: derive, backfill meta, build the seed-free bundle. */
+  private async completeUnlock(name: string, decrypted: string): Promise<UnlockedWallet> {
     // Derive the seed into the typed key bundle, then drop the raw
     // string immediately. The seedHex variable stays scoped to this
     // function — never escapes to the UnlockedWallet object.
     // See docs/spec/wallet-service/05-key-management.md D-KM-3.
-    let seedHex: string;
     const backupKind: BackupKind = decrypted.startsWith('seed:') ? 'seed' : 'mnemonic';
-    if (backupKind === 'seed') {
-      seedHex = decrypted.slice(5);
-    } else {
-      const seed = await mnemonicToSeed(decrypted);
-      seedHex = this.seedToHex(seed);
-      seed.fill(0);
-    }
+    let seedHex = await this.seedHexOf(decrypted);
 
     const addresses = this.deriveAddressesFromSeed(seedHex);
     const meta = await this.loadMeta(name);
@@ -520,17 +544,14 @@ export class WalletManager {
    * rebuild the key bundle after each restart. That secret is the seed.
    *
    * Kept off `unlock()` on purpose so the seed-free invariant holds for every
-   * caller that doesn't explicitly opt in here.
+   * caller that doesn't explicitly opt in here; `unlockWithSeedHex` serves a caller
+   * that needs the seed and the bundle from one password entry.
    * See docs/spec/wallet-service/05-key-management.md D-KM-3.
    */
   async exportSeedHex(name: string, passphrase: string): Promise<string> {
     const restored = await this.readKeystore(name);
     const decrypted = await decryptKeystore(restored, passphrase);
-    if (decrypted.startsWith('seed:')) return decrypted.slice(5);
-    const seed = await mnemonicToSeed(decrypted);
-    const seedHex = this.seedToHex(seed);
-    seed.fill(0);
-    return seedHex;
+    return this.seedHexOf(decrypted);
   }
 
   /**

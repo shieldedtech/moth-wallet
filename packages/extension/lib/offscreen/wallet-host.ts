@@ -33,6 +33,7 @@ import {
   createProvingProvider,
   ensureProverReady,
   resolveProverConfig,
+  setWasmProvingProviderFactory,
   EMPTY_COINS,
   type SyncedWallet,
   type NetworkConfig,
@@ -52,6 +53,7 @@ import type { HistoryEntry } from '@midnight-ntwrk/dapp-connector-api';
 import { serializeBalances } from '../messaging/balances-json';
 import { serializeActivity } from '../messaging/activity-json';
 import { waitForSyncedBalances } from './wait-synced';
+import { createProofPool, type ProofPool } from './proof-pool';
 import { dustHealKey } from './dust-heal';
 import { NIGHT_TOKEN_ID } from '@shieldedtech/moth-wallet/types/tokens';
 import type { NightCoinRow } from '../messaging/protocol';
@@ -74,6 +76,20 @@ import type { DustNotYet } from '../messaging/protocol';
 import type { HostEvent, HostEventData } from './worker-rpc';
 
 const SYNC_WAIT_MS = 60_000;
+
+// Local (WASM) proving runs on the proof-worker pool so a transaction's proofs overlap
+// (see proof-pool.ts). Installed synchronously; the worker module loads lazily because
+// a `?worker` import cannot resolve under `wxt dev`, which keeps the in-thread prover.
+if (!import.meta.env.DEV) {
+  const pool: Promise<ProofPool> = import('./proof-worker?worker').then(({ default: ProofWorker }) =>
+    createProofPool({ spawn: () => new ProofWorker({ name: 'moth-proof-worker' }) }),
+  );
+  setWasmProvingProviderFactory((keyMaterial) => ({
+    check: async (preimage, keyLocation) => (await pool).provider(keyMaterial).check(preimage, keyLocation),
+    prove: async (preimage, keyLocation, overwriteBindingInput) =>
+      (await pool).provider(keyMaterial).prove(preimage, keyLocation, overwriteBindingInput),
+  }));
+}
 
 // Events (balances / sync progress / tx stage) reach the SW through an injected
 // emitter: the production worker entry wires it to postMessage; the dev inline
@@ -252,15 +268,11 @@ export async function walletSetNetwork(
 }
 
 export async function walletUnlock(name: string, passphrase: string, network: string): Promise<UnlockedWallet> {
-  const unlocked = await getMoth(network).wallets.unlock(name, passphrase);
+  // The offscreen is the key-holder: Chrome recreates it at will, so the background
+  // must hold a serializable seed to rebuild the WASM key bundle from (D-KM-3 opt-in).
+  // One decrypt yields both the bundle and the seed; the seed is dropped after each op.
+  const { unlocked, seedHex } = await getMoth(network).wallets.unlockWithSeedHex(name, passphrase);
   try {
-    // The offscreen is the key-holder. Core's unlock() is seed-free (Option A),
-    // so recover the serializable seed explicitly: Chrome tears the offscreen
-    // down at will, and the background must be able to re-supply this seed to
-    // rebuild the WASM key bundle on each restart (walletKeys can't cross the
-    // runtime-message boundary). The seed is dropped again after each op derives
-    // its keys. See core WalletManager.exportSeedHex / D-KM-3.
-    const seedHex = await getMoth(network).wallets.exportSeedHex(name, passphrase);
     const shielded = deriveShieldedPublicKeys(seedHex);
     return {
       name: unlocked.name,
