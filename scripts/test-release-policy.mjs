@@ -71,11 +71,49 @@ function job(name) {
   return nextJob === -1 ? workflow.slice(start) : workflow.slice(start, start + marker.length + nextJob);
 }
 
-for (const name of ['release', 'canary']) {
+for (const name of ['release', 'canary', 'prerelease']) {
   const block = job(name);
   requirePolicy(block.includes('id-token: write'), `${name} must use npm Trusted Publishing`);
   requirePolicy(!credentialPattern.test(block), `${name} must not receive an npm credential`);
   requirePolicy(block.includes('npm@12.0.2'), `${name} must install the reviewed npm version`);
+}
+
+for (const name of ['release', 'canary']) {
+  requirePolicy(
+    job(name).includes("if: ${{ github.event_name == 'push'"),
+    `${name} must run only for pushes to main, never for a dispatched branch`,
+  );
+}
+{
+  const prerelease = job('prerelease');
+  requirePolicy(workflow.includes('  workflow_dispatch:\n'), 'the prerelease channel must be manually dispatched');
+  requirePolicy(
+    prerelease.includes("github.event_name == 'workflow_dispatch'") &&
+      prerelease.includes("github.ref_type == 'branch'") &&
+      prerelease.includes("github.ref != 'refs/heads/main'"),
+    'the prerelease channel must refuse main and anything but a dispatched branch',
+  );
+  requirePolicy(
+    prerelease.includes('yarn changeset publish --tag next --no-git-tag') &&
+      !/--tag (?:latest|canary)\b/u.test(prerelease),
+    'the prerelease channel must publish under the next dist-tag without git tags',
+  );
+  requirePolicy(
+    !prerelease.includes('contents: write') && !prerelease.includes('changesets/action'),
+    'the prerelease channel must not commit, tag, or open version PRs',
+  );
+  requirePolicy(
+    prerelease.includes('yarn changeset status --since=origin/main'),
+    'the prerelease channel must compare against origin/main, since a dispatched branch has no local main',
+  );
+  requirePolicy(
+    prerelease.includes('persist-credentials: false'),
+    'the prerelease channel uploads an artifact, so its checkout must not persist the token',
+  );
+  requirePolicy(
+    prerelease.includes('git merge-base --is-ancestor "$LATEST" HEAD'),
+    'the prerelease channel must refuse a branch that predates the latest release',
+  );
 }
 
 requirePolicy(
