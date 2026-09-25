@@ -59,6 +59,21 @@ function toHex(bytes: Uint8Array): string {
 }
 
 /**
+ * The bech32m DUST address for the wallet's dust-role seed on `network`. Both
+ * ledgers derive the same dust public key from a seed, so the address holds
+ * across the fork.
+ */
+export function dustAddressForSeed(dustSeed: Uint8Array, network: string): string {
+  setNetworkId(network);
+  const key = DustSecretKey.fromSeed(dustSeed);
+  try {
+    return DustAddress.encodePublicKey(network, key.publicKey);
+  } finally {
+    key.clear();
+  }
+}
+
+/**
  * Derive proper Midnight addresses for a specific network.
  *
  * - Unshielded: createKeystore(schnorr secret) → verifying key → bech32m

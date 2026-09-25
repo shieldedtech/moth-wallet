@@ -50,7 +50,7 @@ export type WitnessVerdict =
   | {kind: 'unknown'; reason: string};
 
 /** Derive the subscription endpoint from the indexer's HTTP URL. */
-function wsUrl(indexerUrl: string): string {
+export function wsUrl(indexerUrl: string): string {
   const url = new URL(indexerUrl);
   url.protocol = url.protocol === 'http:' ? 'ws:' : 'wss:';
   url.pathname = `${url.pathname.replace(/\/$/, '')}/ws`;

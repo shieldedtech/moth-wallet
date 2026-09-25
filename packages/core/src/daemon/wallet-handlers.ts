@@ -18,8 +18,10 @@ import type {ConfirmationQueue} from './confirmation-queue.js';
 import type {RpcHandler, ConnectionContext} from './server.js';
 import type {AuditLog, AuditDecision} from './audit-log.js';
 import {
+  parseProveTransactionParams,
   parseSubmitTransactionParams,
   parseTransferTokensParams,
+  PROVE_TTL_DEFAULT_MINUTES,
   parseCallCircuitParams,
   parseDeployContractParams,
   parseDustRegisterParams,
@@ -37,11 +39,13 @@ import type {
   DaemonGetStateResult,
   DaemonInsertVerifierKeyResult,
   DaemonInsertVerifierKeysBatchResult,
+  DaemonProveTransactionResult,
   DaemonSubmitTransactionResult,
   DaemonTransferTokensResult,
 } from './wallet-rpc-types.js';
 
 import {
+  buildTransferTransaction,
   sendTokensWithKeys,
   designateForDustWithKeys,
   dedesignateFromDustWithKeys,
@@ -390,6 +394,85 @@ export function buildWalletHandlers(deps: WalletHandlerDeps): Record<string, Rpc
           return {txId: String(txId)};
         },
         (r) => ({txHash: r.txId}),
+      );
+    },
+
+    // ─────────────────────────────────────────────────────────────────
+    // proveTransaction
+    // ─────────────────────────────────────────────────────────────────
+
+    proveTransaction: async (rawParams: unknown, ctx: ConnectionContext): Promise<DaemonProveTransactionResult> => {
+      const params = parseProveTransactionParams(rawParams);
+      const {facade, walletKeys} = requireReady();
+
+      const amountBig = BigInt(params.amount);
+      const amountLabel =
+        params.tokenId === NIGHT_TOKEN_ID
+          ? `${formatBalance(amountBig, NIGHT_DENOMINATION)} NIGHT`
+          : `${params.amount} raw (token ${shortenHex(params.tokenId)})`;
+      const toLabel = shortenAddress(params.to);
+      const ttlMinutes = params.ttlMinutes ?? PROVE_TTL_DEFAULT_MINUTES;
+
+      return withAudit(
+        'proveTransaction',
+        params.summary ?? `Prove (do not submit) ${amountLabel} to ${toLabel}`,
+        [
+          `Wallet: ${walletName}`,
+          `Network: ${network.id}`,
+          `Type: ${params.type}`,
+          `Token: ${params.tokenId === NIGHT_TOKEN_ID ? 'NIGHT' : params.tokenId}`,
+          `Recipient: ${params.to}`,
+          `Amount: ${amountLabel}`,
+          `Intent ttl: ${ttlMinutes} min`,
+          // Spell out the consequence in the modal: approving this books
+          // fee-side DUST inputs and yields a signed, spendable artifact
+          // even though nothing reaches the chain yet.
+          'Returns a signed transaction for later submission; DUST inputs stay booked until it is submitted or the ttl lapses.',
+          ...(deps.maxSpendRaw !== undefined
+            ? [`Spend cap: ${formatBalance(deps.maxSpendRaw, NIGHT_DENOMINATION)} NIGHT per transfer`]
+            : []),
+          ...(params.details ?? []),
+        ],
+        ctx,
+        async () => {
+          // The cap applies here as much as to transferTokens — the proof
+          // this returns is spendable by whoever holds the hex.
+          if (
+            deps.maxSpendRaw !== undefined &&
+            params.tokenId === NIGHT_TOKEN_ID &&
+            amountBig > deps.maxSpendRaw
+          ) {
+            throw new DaemonProtocolError(
+              'UNAUTHORIZED',
+              `proof of ${amountLabel} exceeds the --max-spend cap of ${formatBalance(deps.maxSpendRaw, NIGHT_DENOMINATION)} NIGHT`,
+            );
+          }
+
+          // One ttl value for both the intent and the reported deadline, so
+          // a client never submits against a window the proof doesn't have.
+          const ttl = new Date(Date.now() + ttlMinutes * 60_000);
+          const finalized = await buildTransferTransaction(
+            facade,
+            walletKeys,
+            network.id,
+            [{
+              type: params.type,
+              tokenId: params.tokenId,
+              amount: amountBig,
+              to: params.to,
+            }],
+            (stage) => log('info', `[proveTransaction] ${stage}`),
+            ttl,
+          );
+
+          const bytes = finalized.serialize();
+          return {
+            hex: Buffer.from(bytes).toString('hex'),
+            ttlUnix: ttl.getTime(),
+            sizeBytes: bytes.length,
+          };
+        },
+        (r) => ({status: `proven, ${r.sizeBytes} bytes, ttl ${new Date(r.ttlUnix).toISOString()}`}),
       );
     },
 

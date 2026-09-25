@@ -22,6 +22,9 @@ build.
   prover, including the extension's in-worker one, is registered per ledger version.
 - The client-side dedup of re-sent boundary events (`sync/sdk-dedup.ts`) is removed; the fix
   landed upstream in both wallet variants.
+- DUST fee balancing keeps its two fixes, largest-first coin selection and a loop that terminates,
+  on both sides of the fork: SDK 2.0 still ships the unbounded loop in both dust variants, so the
+  dust wallet is `DustWallet` rebuilt through `CustomForkingDustWallet` with both fixes on each.
 - Contract deploy/call/maintenance keep authoring ledger-v8 transactions through midnight-js
   4.1.1 and refuse a network that has crossed to ledger-v9.
 - Message signing returns the schnorr hex value of ledger-v9's tagged signature, so the wire

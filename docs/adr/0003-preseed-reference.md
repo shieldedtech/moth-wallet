@@ -133,6 +133,26 @@ Direction matters: a **stale** reference is only slower, because the wallet
 applies everything from its cursor to tip. A reference **newer** than the wallet
 is the dangerous case. Freshness is bounded on both sides.
 
+### The one exception: a dust-only seed proven by the indexer
+
+The birthday rule protects *history*, and it is the only proof the wallet holds
+locally. But for the dust part there is a second proof available from the indexer.
+All of a wallet's DUST descends from generation entries owned by its dust key —
+DUST is generated from registered NIGHT and is not transferable — so if the dust
+address owned no generation entry at the reference height, there is no dust
+history the reference could skip. `Block.dustGenerationEndIndex` at the reference
+height gives the generation tree's size `N` then, and the bounded subscription
+`dustGenerations(dustAddress, 0, N − 1)` ends with `complete`; no owned entry
+before that `complete` is a positive "none" (measured on preprod: ~1.1 s).
+
+When the birthday rule fails (no birthday — a restored wallet — or a birthday below
+the reference) and the dust cache is missing, `startWalletSync` runs that probe and,
+on "none", seeds **dust alone**. Shielded and unshielded still scan from genesis:
+nothing proves them safe, and they are cheap (~40 s on preprod). Anything short of
+"none" — an owned entry, an indexer without the field, a timeout, an error — falls
+back to the genesis walk. The decision is `preSeedPlan` in `sync/preseed-parts.ts`;
+the probe is `sync/dust-history.ts`.
+
 Measured cost of staleness, so it is not guessed at. The same preprod reference,
 at two ages (11 Aug):
 

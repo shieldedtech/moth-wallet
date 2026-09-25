@@ -90,10 +90,13 @@ async function insertViaSDK(options: InsertVerifierKeyOptions): Promise<Transact
   // derived from seedHex (in-process CLI path). D-KM-3.
   const keystore = createKeystore({kind: 'schnorr', secret: unshieldedSecretOf(walletKeys, seedHex, 'insertVerifierKey')}, network.id);
 
-  // Wait for wallet sync + dust stabilization (same as call.ts)
+  // Wait for wallet sync before building the transaction.
   const facade = syncedWallet!.facade;
   const state: any = await Rx.firstValueFrom(
     (facade.state() as Rx.Observable<any>).pipe(
+      // A stale dust tree root is rejected as InvalidDustSpendProof (error 170), so
+      // wait for strict completion. Waiting further for two equal DUST balances, as
+      // this once did, stalled every call on a resident daemon for a full cycle.
       Rx.filter((s: any) => {
         try {
           const unDone = s.unshielded?.progress?.isStrictlyComplete?.() === true;
@@ -101,18 +104,7 @@ async function insertViaSDK(options: InsertVerifierKeyOptions): Promise<Transact
           if (unDone && dustDone) return true;
         } catch {}
         return s.isSynced === true;
-      }),
-      Rx.bufferCount(2, 1),
-      Rx.filter(([a, b]: any[]) => {
-        try {
-          const dustA = a.dust?.balance?.(new Date()) ?? 0n;
-          const dustB = b.dust?.balance?.(new Date()) ?? 0n;
-          return dustA === dustB;
-        } catch {
-          return true;
-        }
-      }),
-      Rx.map(([, b]: any[]) => b)
+      })
     )
   );
 
@@ -298,6 +290,9 @@ async function insertBatchViaSDK(options: InsertVerifierKeysOptions): Promise<Ba
   const facade = syncedWallet!.facade;
   const state: any = await Rx.firstValueFrom(
     (facade.state() as Rx.Observable<any>).pipe(
+      // A stale dust tree root is rejected as InvalidDustSpendProof (error 170), so
+      // wait for strict completion. Waiting further for two equal DUST balances, as
+      // this once did, stalled every call on a resident daemon for a full cycle.
       Rx.filter((s: any) => {
         try {
           const unDone = s.unshielded?.progress?.isStrictlyComplete?.() === true;
@@ -305,18 +300,7 @@ async function insertBatchViaSDK(options: InsertVerifierKeysOptions): Promise<Ba
           if (unDone && dustDone) return true;
         } catch {}
         return s.isSynced === true;
-      }),
-      Rx.bufferCount(2, 1),
-      Rx.filter(([a, b]: any[]) => {
-        try {
-          const dustA = a.dust?.balance?.(new Date()) ?? 0n;
-          const dustB = b.dust?.balance?.(new Date()) ?? 0n;
-          return dustA === dustB;
-        } catch {
-          return true;
-        }
-      }),
-      Rx.map(([, b]: any[]) => b)
+      })
     )
   );
 
@@ -491,5 +475,3 @@ async function insertBatchViaSDK(options: InsertVerifierKeysOptions): Promise<Ba
     entries: results,
   };
 }
-
-/** Sign unshielded transaction intents (copied from call.ts / deploy.ts) */

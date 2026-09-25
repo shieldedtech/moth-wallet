@@ -50,6 +50,7 @@ export { loadBatchFile, executeBatchTransfer, batchExitCode, type BatchTransferE
 // Storage
 export type { StorageAdapter } from './storage/adapter.js';
 export { FilesystemStorageAdapter } from './storage/fs-adapter.js';
+export { mothHome, MOTH_HOME_ENV } from './storage/home.js';
 
 // Network
 export { JsonRpcNodeClient, type NodeClient } from './network/node-client.js';

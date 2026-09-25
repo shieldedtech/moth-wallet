@@ -16,6 +16,10 @@ const NODE_POLYFILLS: PolyfillOptions = {
 
 export default defineConfig({
   modules: ['@wxt-dev/module-react'],
+  // A fixed path outside the repo gives Chrome a stable extension ID, instead
+  // of one that follows the source directory. See README, "Building to a fixed
+  // directory".
+  outDir: process.env.MOTH_EXT_OUT_DIR || '.output',
   zip: {
     name: 'moth-extension',
     artifactTemplate: '{{name}}-{{packageVersion}}-{{browser}}.zip',
@@ -51,6 +55,10 @@ export default defineConfig({
       // them: it grants header rewriting on hosts already declared below, and
       // no new access.
       'declarativeNetRequestWithHostAccess',
+      // Required by the Paste buttons (recipient field, setup seed phrase),
+      // which read the clipboard. Chrome allows that read from an extension
+      // page undeclared; stricter Chromium builds such as Brave refuse it.
+      'clipboardRead',
       // Chrome-only; Firefox gets sidebar_action from the sidepanel entrypoint.
       ...(browser === 'firefox' ? [] : ['sidePanel', 'offscreen']),
     ],

@@ -23,8 +23,12 @@ import {formatDustBalance} from '../wallet/balance-format.js';
 import {ensureEmptyRefCache, preSeedNewWallet} from './preseed.js';
 import {InMemorySyncStateStore, syncStateKey, type SyncStateStore, type WalletPart} from './sync-store.js';
 import {initialDustParameters} from './ledger-routing.js';
+import {TerminatingDustWallet} from './dust-transacting.js';
 import {overallSyncProgress, type SubWallet} from './progress.js';
-import {partsToSeed} from './preseed-parts.js';
+import {partsToSeed, preSeedPlan, birthdayAdmits, type SeedablePart} from './preseed-parts.js';
+import {dustHistoryBefore} from './dust-history.js';
+import {dustAddressForSeed} from '../wallet/address.js';
+import {IndexerClient} from '../network/indexer-client.js';
 import type {WalletKeys} from './operations.js';
 
 // Re-exported so existing importers (core/browser barrels, CLI/TUI) keep working;
@@ -485,51 +489,54 @@ export async function startWalletSync(
   };
   const missingParts = partsToSeed(cached);
 
-  if ((isNewWallet || birthday) && missingParts.length > 0) {
-    onProgress?.('Pre-seeding new wallet from reference...');
+  if (missingParts.length > 0) {
+    onProgress?.('Pre-seed: looking for a reference...');
     try {
       const emptyRef = await ensureEmptyRefCache(network, onProgress, store);
-      // SAFETY: only seed a wallet that cannot have had activity before the
-      // reference's height. The reference holds the chain's state at that height,
-      // so seeding an older wallet would start it past its own history and lose
-      // funds from view. `birthday` is the wallet's creation height, so a wallet
-      // created after the reference was built is safe; anything else — a restore
-      // from mnemonic, a wallet whose cache was cleared or evicted, or a missing
-      // birthday — must take the slow path instead. Without this, the guard above
-      // (`isNewWallet || birthday`) admits any wallet that merely lacks a cache.
-      const seedable = emptyRef !== null && birthday !== undefined && emptyRef.height <= birthday;
-      if (emptyRef && !seedable) {
-        onProgress?.(
-          birthday === undefined
-            ? 'Pre-seed: no wallet birthday to compare — syncing from genesis'
-            : `Pre-seed: reference is newer than this wallet (height ${emptyRef.height} > birthday ${birthday}) — syncing from genesis`,
-        );
-      }
-      if (emptyRef && seedable) {
-        const preSeeded = preSeedNewWallet(keys, network.id, emptyRef);
-        if (preSeeded) {
-          // Only where absent. A part that already has a cache is at least as
-          // far along as the reference, so overwriting it would throw away
-          // progress — and after a DUST rebuild, shielded and unshielded are
-          // precisely the parts that must be left alone.
-          const seeded: string[] = [];
-          if (!cached.shielded) {
-            await saveCachedState(store, name, network.id, 'shielded', preSeeded.shielded);
-            seeded.push('shielded');
-          }
-          if (!cached.unshielded) {
-            await saveCachedState(store, name, network.id, 'unshielded', preSeeded.unshielded);
-            seeded.push('unshielded');
-          }
-          if (!cached.dust && preSeeded.dust) {
-            await saveCachedState(store, name, network.id, 'dust', preSeeded.dust);
-            seeded.push('dust');
-          }
-          onProgress?.(
-            seeded.length > 0
-              ? `Pre-seed complete — ${seeded.join(' + ')} at chain tip`
-              : 'Pre-seed: nothing to seed, every sub-wallet already cached',
+      if (emptyRef) {
+        // Seeding a wallet past its own history would hide funds, so a part is only
+        // seeded when that is impossible: a birthday at or after the reference height
+        // proves it for every part; without one, the indexer can prove it for dust
+        // alone (see preSeedPlan). Shielded and unshielded then scan from genesis,
+        // which is quick, while dust — the hour — starts at the reference.
+        let dustHistory = null;
+        if (!birthdayAdmits(birthday, emptyRef.height) && missingParts.includes('dust')) {
+          onProgress?.('Pre-seed: checking for DUST history before the reference...');
+          dustHistory = await dustHistoryBefore(
+            new IndexerClient(indexerHttpUrl),
+            indexerHttpUrl,
+            dustAddressForSeed(keys.dust, network.id),
+            emptyRef.height
           );
+        }
+        const plan = preSeedPlan({missing: missingParts, birthday, referenceHeight: emptyRef.height, dustHistory});
+        if (plan.kind === 'none') {
+          onProgress?.(`Pre-seed: ${plan.reason}`);
+        } else {
+          const preSeeded = preSeedNewWallet(keys, network.id, emptyRef);
+          if (preSeeded) {
+            const allowed: SeedablePart[] = plan.kind === 'all' ? plan.parts : ['dust'];
+            // Only where absent: a cached part is at least as far along as the
+            // reference, and after a DUST rebuild the others must be left alone.
+            const seeded: string[] = [];
+            if (allowed.includes('shielded') && !cached.shielded) {
+              await saveCachedState(store, name, network.id, 'shielded', preSeeded.shielded);
+              seeded.push('shielded');
+            }
+            if (allowed.includes('unshielded') && !cached.unshielded) {
+              await saveCachedState(store, name, network.id, 'unshielded', preSeeded.unshielded);
+              seeded.push('unshielded');
+            }
+            if (allowed.includes('dust') && !cached.dust && preSeeded.dust) {
+              await saveCachedState(store, name, network.id, 'dust', preSeeded.dust);
+              seeded.push('dust');
+            }
+            onProgress?.(
+              seeded.length > 0
+                ? `Pre-seed complete — ${seeded.join(' + ')} at chain tip${plan.kind === 'dust-only' ? ' (no DUST history before the reference; shielded and unshielded scan from genesis)' : ''}`
+                : 'Pre-seed: nothing to seed, every sub-wallet already cached'
+            );
+          }
         }
       }
     } catch (err) {
@@ -583,7 +590,10 @@ export async function startWalletSync(
 
   // --- Dust wallet: try restore from cache ---
   onProgress?.('Starting dust wallet...');
-  const Dust = DustWallet(walletCfg);
+  // The SDK's dust wallet, but with fee balancing that terminates and pays from
+  // the largest coin first (sync/dust-transacting.ts, sync/dust-coin-selection.ts):
+  // wallet-sdk 2.0 still ships the unbounded loop in both of its variants.
+  const Dust = TerminatingDustWallet(walletCfg);
   let dustWallet: DustWallet | undefined;
   const savedDust = await loadCachedState(store, name, network.id, 'dust');
   if (savedDust) {
