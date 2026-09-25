@@ -50,6 +50,30 @@ When you push to `main`, the GitHub Action will:
    ```
    Canary versions are throwaway snapshots — they never become `latest` and create no git tags.
 
+### Prereleases from a branch (`next`)
+
+Work that has to ship to testers before it can merge into `main` publishes from its own branch:
+
+```bash
+gh workflow run release.yml --ref <branch>
+```
+
+The dispatched `prerelease` job publishes the branch's pending Changesets as a snapshot under the
+`next` dist-tag, versioned like `0.15.0-next.<timestamp>-<sha>`, and attaches an unsigned
+extension ZIP to the workflow run. Install it with:
+
+```bash
+npm install @shieldedtech/moth-wallet@next
+```
+
+Like canaries, these snapshots never become `latest`, create no git tags, and commit nothing, so
+the branch merges into `main` unchanged. The job refuses `main`, and it refuses a branch that
+doesn't yet contain the latest stable release (merge `main` into the branch first). Only one
+branch should use `next` at a time: each dispatch moves the tag.
+
+Do not dispatch **Extension CD** on such a branch. It releases whatever version the branch's
+`packages/extension/package.json` names, and would overwrite that version's published ZIP.
+
 ## Release Workflow
 
 ```
