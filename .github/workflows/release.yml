@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+  # Dispatched on a branch that is not ready for main; see the prerelease job.
+  workflow_dispatch:
 
 permissions: {}
 
@@ -183,3 +185,119 @@ jobs:
           yarn install --mode=update-lockfile
           yarn build
           yarn changeset publish --tag canary --no-git-tag
+
+  # Publishes a snapshot of a branch that runs in parallel with main, under the
+  # `next` dist-tag, when this workflow is dispatched on that branch. Versions look
+  # like 0.15.0-next.<timestamp>-<sha>. Nothing is committed or tagged, so the
+  # branch later merges into main unchanged; main is refused, it has the canary.
+  prerelease:
+    name: Prerelease (next)
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref_type == 'branch' && github.ref != 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write       # npm Trusted Publishing (OIDC) + provenance
+
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: 'yarn'
+          registry-url: https://registry.npmjs.org
+
+      - name: Install npm
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/npm-bin"
+          cat > "$RUNNER_TEMP/npm-bin/npm" <<'EOF'
+          #!/usr/bin/env bash
+          exec npx --yes --package=npm@12.0.2 npm "$@"
+          EOF
+          chmod +x "$RUNNER_TEMP/npm-bin/npm"
+          echo "$RUNNER_TEMP/npm-bin" >> "$GITHUB_PATH"
+
+      - name: Install Dependencies
+        run: yarn install --immutable
+
+      # Snapshot versions are computed from the branch's own package.json, so a
+      # branch that predates main's last release would publish below it.
+      - name: Require the latest release and pending changesets
+        run: |
+          set -euo pipefail
+          LATEST=$(git describe --tags --abbrev=0 --match '@shieldedtech/moth-wallet@*' origin/main)
+          if ! git merge-base --is-ancestor "$LATEST" HEAD; then
+            echo "::error::This branch does not contain ${LATEST}. Merge main into it before publishing a prerelease."
+            exit 1
+          fi
+          rm -f changeset-status.json
+          yarn changeset status --output=changeset-status.json || true
+          COUNT=0
+          if [ -f changeset-status.json ]; then
+            COUNT=$(node -p "require('./changeset-status.json').releases.length" 2>/dev/null || echo 0)
+            rm -f changeset-status.json
+          fi
+          if [ "${COUNT:-0}" -eq 0 ]; then
+            echo "::error::No pending changeset bumps a package, so there is nothing to prerelease."
+            exit 1
+          fi
+
+      - name: Publish next snapshot
+        id: snapshot
+        run: |
+          set -euo pipefail
+          SHORT_SHA=$(git rev-parse --short=7 HEAD)
+          TIMESTAMP=$(date +%Y%m%d%H%M%S)
+
+          # Pin internal sibling ranges to the snapshot version, as the canary does.
+          node -e '
+            const fs = require("fs");
+            const p = ".changeset/config.json";
+            const c = JSON.parse(fs.readFileSync(p, "utf8"));
+            c.___experimentalUnsafeOptions_WILL_CHANGE_IN_PATCH = {
+              ...c.___experimentalUnsafeOptions_WILL_CHANGE_IN_PATCH,
+              updateInternalDependents: "always",
+            };
+            fs.writeFileSync(p, JSON.stringify(c, null, 2) + "\n");
+          '
+
+          yarn changeset version --snapshot "next.${TIMESTAMP}-${SHORT_SHA}"
+          yarn install --mode=update-lockfile
+          yarn build
+          yarn changeset publish --tag next --no-git-tag
+          echo "version=$(node -p "require('./packages/extension/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Build extension ZIP
+        run: yarn workspace @shieldedtech/moth-extension zip
+
+      - name: Verify extension ZIP
+        env:
+          ARTIFACT: packages/extension/.output/moth-extension-${{ steps.snapshot.outputs.version }}-chrome.zip
+        run: |
+          set -euo pipefail
+          test -s "$ARTIFACT"
+          unzip -tq "$ARTIFACT"
+          for network in preview preprod; do
+            for part in manifest.json dust.dat.gz shielded.dat.gz unshielded.dat.gz; do
+              unzip -tq "$ARTIFACT" "preseed/${network}/${part}"
+            done
+          done
+
+      # An unsigned build for testers, kept on the run; the signed GitHub
+      # Release remains Extension CD's job on main.
+      - name: Upload extension ZIP
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: moth-extension-${{ steps.snapshot.outputs.version }}-chrome
+          path: packages/extension/.output/moth-extension-${{ steps.snapshot.outputs.version }}-chrome.zip
+          if-no-files-found: error
+          retention-days: 30
