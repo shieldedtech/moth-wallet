@@ -103,6 +103,14 @@ for (const name of ['release', 'canary']) {
     'the prerelease channel must not commit, tag, or open version PRs',
   );
   requirePolicy(
+    prerelease.includes('yarn changeset status --since=origin/main'),
+    'the prerelease channel must compare against origin/main, since a dispatched branch has no local main',
+  );
+  requirePolicy(
+    prerelease.includes('persist-credentials: false'),
+    'the prerelease channel uploads an artifact, so its checkout must not persist the token',
+  );
+  requirePolicy(
     prerelease.includes('git merge-base --is-ancestor "$LATEST" HEAD'),
     'the prerelease channel must refuse a branch that predates the latest release',
   );

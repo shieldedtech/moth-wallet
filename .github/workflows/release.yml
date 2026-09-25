@@ -203,6 +203,8 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
+          # Nothing here pushes, and the job uploads an artifact; keep the token off disk.
+          persist-credentials: false
 
       - name: Enable Corepack
         run: corepack enable
@@ -239,15 +241,14 @@ jobs:
             echo "::error::This branch does not contain ${LATEST}. Merge main into it before publishing a prerelease."
             exit 1
           fi
+          # A dispatched branch has origin/main but no local main, which is what
+          # status compares against by default.
           rm -f changeset-status.json
-          yarn changeset status --output=changeset-status.json || true
-          COUNT=0
-          if [ -f changeset-status.json ]; then
-            COUNT=$(node -p "require('./changeset-status.json').releases.length" 2>/dev/null || echo 0)
-            rm -f changeset-status.json
-          fi
-          if [ "${COUNT:-0}" -eq 0 ]; then
-            echo "::error::No pending changeset bumps a package, so there is nothing to prerelease."
+          yarn changeset status --since=origin/main --output=changeset-status.json
+          COUNT=$(node -p "require('./changeset-status.json').releases.length")
+          rm -f changeset-status.json
+          if [ "$COUNT" -eq 0 ]; then
+            echo "::error::No changeset on this branch bumps a package, so there is nothing to prerelease."
             exit 1
           fi
 
