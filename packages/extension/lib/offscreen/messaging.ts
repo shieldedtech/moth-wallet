@@ -60,6 +60,20 @@ export interface TxSummaryDTO {
 }
 
 /** Contract circuit material supplied by a connected dApp for one proof call. */
+/** Where the synced wallets stand on the protocol version line, as the wallet SDK
+ *  reports it. Versions travel as numbers: they are small (a 2.x node reports
+ *  2000000) and only ever displayed here. */
+export interface ProtocolStatusDTO {
+  /** The version the facade builds transactions for: the lowest of the three wallets'. */
+  version: number;
+  /** The ledger that version puts the wallet on. */
+  ledger: 'v8' | 'v9';
+  phase:
+    | { kind: 'settled' }
+    | { kind: 'crossing'; from: number; to: number; behind: Array<'shielded' | 'unshielded' | 'dust'> };
+  wallets: { shielded: number; unshielded: number; dust: number };
+}
+
 export interface ProvingKeyMaterialDTO {
   zkir: Uint8Array;
   proverKey: Uint8Array;
@@ -253,6 +267,8 @@ export interface OffscreenProtocol {
    *  wallet once balanced, for the approval prompt. Needs no keys and no sync.
    *  `sealed` selects the deserialization stage, exactly as os/balanceTransaction does. */
   'os/txSummary'(data: { network: NetworkConfig; txHex: string; sealed: boolean }): TxSummaryDTO;
+  /** The live sync session's protocol status; null when no wallet is synced. */
+  'os/protocolStatus'(): ProtocolStatusDTO | null;
 
   /** Build a swap intent (`makeIntent`); returns the unproven, unbound tx hex. */
   'os/makeIntent'(data: {

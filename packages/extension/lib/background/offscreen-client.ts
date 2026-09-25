@@ -211,6 +211,10 @@ export const offscreen = {
     await ensureOffscreen();
     return offscreenSend('os/requestStats', undefined);
   },
+  async protocolStatus() {
+    await ensureOffscreen();
+    return offscreenSend('os/protocolStatus', undefined);
+  },
   async resetRequestStats() {
     await ensureOffscreen();
     return offscreenSend('os/requestStatsReset', undefined);

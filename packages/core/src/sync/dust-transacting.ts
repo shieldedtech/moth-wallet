@@ -14,14 +14,21 @@
 // deficit from coins not yet chosen, so every pass either converges or adds a
 // coin from a finite pool. Termination is a counting argument, not a timeout.
 //
-// It is wired through the documented `V1Builder.withTransacting` seam. The
-// coupling is to the SDK's exported implementation class and three of its
-// public methods; dust-transacting.test.ts pins those so a version bump fails
-// loudly rather than silently reverting to the SDK loop.
+// wallet-sdk 2.0 still ships that loop in both dust variants — V1 (ledger-v8,
+// below the fork) and V2 (ledger-v9, from it) — so each gets the replacement,
+// wired through its builder's documented `withTransacting` seam by
+// `TerminatingDustWallet`. The coupling is to each variant's exported
+// implementation class and three of its public methods; dust-transacting.test.ts
+// pins those so a version bump fails loudly rather than silently reverting to
+// the SDK loop.
 
 import {Either} from 'effect';
 import type * as ledger from '@midnight-ntwrk/ledger-v8';
-import {Transacting, WalletError, type CoinsAndBalances, type CoreWallet, type Dust} from '@midnightntwrk/wallet-sdk/dust/v1';
+import * as ledgerV9 from '@midnightntwrk/wallet-sdk/ledger/v9';
+import {Transacting, WalletError, V1Builder, type CoinsAndBalances, type CoreWallet, type Dust} from '@midnightntwrk/wallet-sdk/dust/v1';
+import * as V2 from '@midnightntwrk/wallet-sdk/dust/v2';
+import {asV8DustParameters, CustomForkingDustWallet, type DustWallet} from '@midnightntwrk/wallet-sdk/dust';
+import {makeIndexerChainVersionProbe} from '@midnightntwrk/wallet-sdk/capabilities';
 import {
   getBalanceRecipe,
   Imbalances,
@@ -188,21 +195,63 @@ export function distributeFeeAcrossInputs<C extends FeeCoin>(inputs: ReadonlyArr
   });
 }
 
+/** A transaction as far as its dust imbalance goes; either ledger's satisfies it. */
+interface Imbalanced {
+  imbalances(segment: number, fee: bigint): Map<{readonly tag: string}, bigint>;
+}
+
 /** Mirror of the SDK's static `feeImbalance`: the dust entry of the transaction's imbalances at `totalFee`. */
-function dustImbalance(transaction: ledger.FinalizedTransaction | ledger.UnprovenTransaction, totalFee: bigint): bigint {
+function dustImbalance(transaction: Imbalanced, totalFee: bigint): bigint {
   for (const [tokenType, imbalance] of transaction.imbalances(0, totalFee).entries()) {
     if (tokenType.tag === 'dust') return imbalance;
   }
   return 0n;
 }
 
+/** Each variant's own error classes, so callers see the types the SDK would have raised. */
+interface VariantErrors<TInsufficient, TOther> {
+  readonly InsufficientFundsError: new (args: {message: string; tokenType: string}) => TInsufficient;
+  readonly OtherWalletError: new (args: {message: string; cause: unknown}) => TOther;
+}
+
+/**
+ * The body of both variants' `computeBalancingRecipe` override: `balanceDustFee`
+ * over the variant's own fee arithmetic, mapped onto the variant's error types.
+ */
+function terminatingRecipe<C extends FeeCoin, TTx extends Imbalanced, TInsufficient, TOther>(args: {
+  readonly transactions: ReadonlyArray<TTx>;
+  readonly calculateFee: (transaction: TTx) => bigint;
+  readonly coins: () => ReadonlyArray<C>;
+  readonly coinSelection: CoinsAndBalances.CoinSelection;
+  readonly feeFor: (inputs: ReadonlyArray<C>) => bigint;
+  readonly onPass: ((pass: DustFeePass) => void) | undefined;
+  readonly errors: VariantErrors<TInsufficient, TOther>;
+}): Either.Either<{fee: bigint; recipeInputs: C[]}, TInsufficient | TOther> {
+  const {transactions, calculateFee, coins, coinSelection, feeFor, onPass, errors} = args;
+  return Either.try({
+    try: () => {
+      const initialImbalance = transactions.reduce(
+        (total, transaction) => total + dustImbalance(transaction, calculateFee(transaction)),
+        0n,
+      );
+      const {fee, inputs} = balanceDustFee({coins: coins(), initialImbalance, coinSelection, feeFor, onPass});
+      return {fee, recipeInputs: distributeFeeAcrossInputs(inputs, fee)};
+    },
+    // Same mapping as the SDK, so callers see the same error types they do today.
+    catch: (err) =>
+      err instanceof BalancingInsufficientFundsError
+        ? new errors.InsufficientFundsError({message: err.message, tokenType: err.tokenType})
+        : new errors.OtherWalletError({message: err instanceof Error ? err.message : 'Dust balancing failed', cause: err}),
+  });
+}
+
 type Configuration = Transacting.DefaultTransactingConfiguration;
 type Context = Transacting.DefaultTransactingContext;
 
 /**
- * The SDK's transacting capability with `computeBalancingRecipe` replaced by
- * `balanceDustFee`. `estimateFee` and `balanceTransactions` both route through
- * that one method, so both the fee preview and the real spend take this path.
+ * The V1 (ledger-v8) variant's transacting capability with `computeBalancingRecipe`
+ * replaced by `balanceDustFee`. `estimateFee` and `balanceTransactions` both route
+ * through that one method, so both the fee preview and the real spend take this path.
  */
 export class TerminatingDustTransacting extends Transacting.TransactingCapabilityImplementation<ledger.FinalizedTransaction> {
   readonly #onPass: ((pass: DustFeePass) => void) | undefined;
@@ -229,30 +278,55 @@ export class TerminatingDustTransacting extends Transacting.TransactingCapabilit
     {fee: bigint; recipeInputs: ReadonlyArray<CoinsAndBalances.CoinWithValue<Dust>>},
     WalletError.InsufficientFundsError | WalletError.OtherWalletError
   > {
-    return Either.try({
-      try: () => {
-        const initialImbalance = transactions.reduce(
-          (total, transaction) => total + dustImbalance(transaction, this.calculateFee(transaction, ledgerParams)),
-          0n,
-        );
-        const coins = this.getCoins().getAvailableCoinsWithGeneratedDust(state, currentTime);
-        const {fee, inputs} = balanceDustFee({
-          coins,
-          initialImbalance,
-          coinSelection: this.getCoinSelection(),
-          feeFor: (chosen) => this.dryRunFee(chosen, transactions, secretKey, state, ttl, currentTime, ledgerParams),
-          onPass: this.#onPass,
-        });
-        return {fee, recipeInputs: distributeFeeAcrossInputs(inputs, fee)};
-      },
-      // Same mapping as the SDK, so callers see the same error types they do today.
-      catch: (err) =>
-        err instanceof BalancingInsufficientFundsError
-          ? new WalletError.InsufficientFundsError({message: err.message, tokenType: err.tokenType})
-          : new WalletError.OtherWalletError({
-              message: err instanceof Error ? err.message : 'Dust balancing failed',
-              cause: err,
-            }),
+    return terminatingRecipe({
+      transactions,
+      calculateFee: (transaction) => this.calculateFee(transaction, ledgerParams),
+      coins: () => this.getCoins().getAvailableCoinsWithGeneratedDust(state, currentTime),
+      coinSelection: this.getCoinSelection(),
+      feeFor: (chosen) => this.dryRunFee(chosen, transactions, secretKey, state, ttl, currentTime, ledgerParams),
+      onPass: this.#onPass,
+      errors: WalletError,
+    });
+  }
+}
+
+type V2Configuration = V2.Transacting.DefaultTransactingConfiguration;
+type V2Context = V2.Transacting.DefaultTransactingContext;
+
+/** The same replacement for the V2 (ledger-v9) variant, over its own ledger's fee arithmetic. */
+export class TerminatingDustTransactingV2 extends V2.Transacting.TransactingCapabilityImplementation<ledgerV9.FinalizedTransaction> {
+  readonly #onPass: ((pass: DustFeePass) => void) | undefined;
+
+  constructor(config: V2Configuration, getContext: () => V2Context, onPass?: (pass: DustFeePass) => void) {
+    super(
+      config.networkId,
+      config.costParameters,
+      () => getContext().coinSelection,
+      () => getContext().coinsAndBalancesCapability,
+      () => getContext().keysCapability,
+    );
+    this.#onPass = onPass;
+  }
+
+  override computeBalancingRecipe(
+    secretKey: ledgerV9.DustSecretKey,
+    state: V2.CoreWallet,
+    transactions: ReadonlyArray<ledgerV9.FinalizedTransaction | ledgerV9.UnprovenTransaction>,
+    ttl: Date,
+    currentTime: Date,
+    ledgerParams: ledgerV9.LedgerParameters,
+  ): Either.Either<
+    {fee: bigint; recipeInputs: ReadonlyArray<V2.CoinsAndBalances.CoinWithValue<V2.Dust>>},
+    V2.WalletError.InsufficientFundsError | V2.WalletError.OtherWalletError
+  > {
+    return terminatingRecipe({
+      transactions,
+      calculateFee: (transaction) => this.calculateFee(transaction, ledgerParams),
+      coins: () => this.getCoins().getAvailableCoinsWithGeneratedDust(state, currentTime),
+      coinSelection: this.getCoinSelection(),
+      feeFor: (chosen) => this.dryRunFee(chosen, transactions, secretKey, state, ttl, currentTime, ledgerParams),
+      onPass: this.#onPass,
+      errors: V2.WalletError,
     });
   }
 }
@@ -265,3 +339,39 @@ export const terminatingDustTransacting =
   (options: {onPass?: (pass: DustFeePass) => void} = {}) =>
   (config: Configuration, getContext: () => Context): TerminatingDustTransacting =>
     new TerminatingDustTransacting(config, getContext, options.onPass);
+
+/** Factory in the shape `V2Builder.withTransacting` expects. */
+export const terminatingDustTransactingV2 =
+  (options: {onPass?: (pass: DustFeePass) => void} = {}) =>
+  (config: V2Configuration, getContext: () => V2Context): TerminatingDustTransactingV2 =>
+    new TerminatingDustTransactingV2(config, getContext, options.onPass);
+
+/**
+ * The SDK's `DustWallet(configuration)` with both variants' fee balancing fixed:
+ * the same two builders, per-variant configuration, migration and chain probe,
+ * plus largest-first coin selection and the terminating loop on each.
+ * `DustWallet` takes no builder options, so this rebuilds it through the SDK's
+ * `CustomForkingDustWallet`.
+ */
+export function TerminatingDustWallet(configuration: Parameters<typeof DustWallet>[0]): ReturnType<typeof DustWallet> {
+  const dustParameters = configuration.dustParameters ?? ledgerV9.LedgerParameters.initialParameters().dust;
+  return CustomForkingDustWallet(
+    {...configuration, chainVersionProbe: configuration.chainVersionProbe ?? makeIndexerChainVersionProbe(configuration)},
+    {
+      builder: new V1Builder()
+        .withDefaults()
+        .withCoinSelection(() => largestDustCoinFirst)
+        .withTransacting(terminatingDustTransacting()),
+      // The V1 variant needs the ledger-v8 rebuild of the rates, as in the SDK's own DustWallet.
+      configuration: {...configuration, dustParameters: asV8DustParameters(dustParameters)},
+    },
+    {
+      builder: new V2.V2Builder()
+        .withDefaults()
+        .withMigration(() => V2.Migration.makeCrossLedgerMigration({dustParameters}))
+        .withCoinSelection(() => largestDustCoinFirst)
+        .withTransacting(terminatingDustTransactingV2()),
+      configuration,
+    },
+  );
+}

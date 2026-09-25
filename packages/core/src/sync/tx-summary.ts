@@ -8,15 +8,24 @@
 // The ledger reports it directly: `Transaction.imbalances(segment)` is the
 // surplus or deficit per token type for one segment, no key material needed.
 //
-// Sign convention (verified against ledger-v8 in tests/unit/sync/tx-summary.test.ts):
+// Sign convention (verified against both ledgers in tests/unit/sync/tx-summary.test.ts):
 // negative means the segment spends more than it provides — the wallet must
 // supply that much — and positive means the segment provides more than it
 // spends, which the wallet collects as change. Segments are summed, because the
 // approval question is "what does this cost me overall": segment 0 is the
 // guaranteed section; every intent (and every fallible Zswap offer) occupies its
 // own numbered segment.
+//
+// The bytes follow one ledger version's rules, and a dApp does not say which.
+// The caller passes the protocol version the wallets are acting at when it has
+// one; the approval prompt can run before a wallet is synced, and then the bytes
+// are tried as ledger-v9 first — where every new chain begins and every forked
+// chain ends up — and as ledger-v8 second.
 
-import * as ledger from '@midnight-ntwrk/ledger-v8';
+import * as ledgerV8 from '@midnightntwrk/wallet-sdk/ledger/v8';
+import * as ledgerV9 from '@midnightntwrk/wallet-sdk/ledger/v9';
+import type {ProtocolVersion} from '@midnightntwrk/wallet-sdk';
+import {isLedgerV9} from './ledger-routing.js';
 
 /** One token amount the balancing step moves in or out of the wallet. */
 export interface TxTokenAmount {
@@ -36,24 +45,26 @@ export interface TransactionSummary {
   contractActions: number;
 }
 
-type AnyTransaction = ledger.Transaction<ledger.Signaturish, ledger.Proofish, ledger.Bindingish>;
+/** A token type as both ledger versions describe one. */
+export type SummaryTokenType = {tag: 'shielded' | 'unshielded'; raw: string} | {tag: 'dust'};
 
-/**
- * Deserialize a transaction at the stage the connector accepts for balancing:
- * signed and proven, sealed (bound) or unsealed (pre-binding). Same markers the
- * balancing path in operations.ts uses, so what is summarized is exactly what
- * will be balanced.
- */
-export function decodeConnectorTransaction(txBytes: Uint8Array, sealed: boolean): AnyTransaction {
-  const Transaction = ledger.Transaction;
+/** The members the summary reads; both ledger versions' transactions have them. */
+export interface SummarizableTransaction {
+  readonly intents?: Map<number, {readonly actions: ReadonlyArray<unknown>}>;
+  readonly fallibleOffer?: Map<number, unknown>;
+  imbalances(segment: number): Map<SummaryTokenType, bigint>;
+}
+
+function decodeV8(txBytes: Uint8Array, sealed: boolean): SummarizableTransaction {
+  const Transaction = ledgerV8.Transaction;
   return sealed
-    ? Transaction.deserialize<ledger.SignatureEnabled, ledger.Proof, ledger.Binding>(
+    ? Transaction.deserialize<ledgerV8.SignatureEnabled, ledgerV8.Proof, ledgerV8.Binding>(
         'signature',
         'proof',
         'binding',
         txBytes
       )
-    : Transaction.deserialize<ledger.SignatureEnabled, ledger.Proof, ledger.PreBinding>(
+    : Transaction.deserialize<ledgerV8.SignatureEnabled, ledgerV8.Proof, ledgerV8.PreBinding>(
         'signature',
         'proof',
         'pre-binding',
@@ -61,19 +72,62 @@ export function decodeConnectorTransaction(txBytes: Uint8Array, sealed: boolean)
       );
 }
 
+function decodeV9(txBytes: Uint8Array, sealed: boolean): SummarizableTransaction {
+  const Transaction = ledgerV9.Transaction;
+  return sealed
+    ? Transaction.deserialize<ledgerV9.SignatureEnabled, ledgerV9.Proof, ledgerV9.Binding>(
+        'signature',
+        'proof',
+        'binding',
+        txBytes
+      )
+    : Transaction.deserialize<ledgerV9.SignatureEnabled, ledgerV9.Proof, ledgerV9.PreBinding>(
+        'signature',
+        'proof',
+        'pre-binding',
+        txBytes
+      );
+}
+
+/**
+ * Deserialize a transaction at the stage the connector accepts for balancing:
+ * signed and proven, sealed (bound) or unsealed (pre-binding). Same markers the
+ * balancing path in operations.ts uses, so what is summarized is exactly what
+ * will be balanced. `protocolVersion` names the ledger; see the module header
+ * for what happens without one.
+ */
+export function decodeConnectorTransaction(
+  txBytes: Uint8Array,
+  sealed: boolean,
+  protocolVersion?: ProtocolVersion.ProtocolVersion,
+): SummarizableTransaction {
+  if (protocolVersion !== undefined) {
+    return isLedgerV9(protocolVersion) ? decodeV9(txBytes, sealed) : decodeV8(txBytes, sealed);
+  }
+  try {
+    return decodeV9(txBytes, sealed);
+  } catch (v9Error) {
+    try {
+      return decodeV8(txBytes, sealed);
+    } catch {
+      throw v9Error;
+    }
+  }
+}
+
 /** Every segment id the transaction carries: the guaranteed section plus one per intent / fallible offer. */
-function segmentIds(tx: AnyTransaction): number[] {
+function segmentIds(tx: SummarizableTransaction): number[] {
   const ids = new Set<number>([0]);
   for (const id of tx.intents?.keys() ?? []) ids.add(id);
   for (const id of tx.fallibleOffer?.keys() ?? []) ids.add(id);
   return [...ids].sort((a, b) => a - b);
 }
 
-function tokenKey(type: ledger.TokenType): string {
+function tokenKey(type: SummaryTokenType): string {
   return type.tag === 'dust' ? 'dust' : `${type.tag}:${type.raw}`;
 }
 
-function toTokenAmount(type: ledger.TokenType, amount: bigint): TxTokenAmount {
+function toTokenAmount(type: SummaryTokenType, amount: bigint): TxTokenAmount {
   return type.tag === 'dust'
     ? {kind: 'dust', tokenId: '', amount}
     : {kind: type.tag, tokenId: type.raw, amount};
@@ -84,8 +138,8 @@ function toTokenAmount(type: ledger.TokenType, amount: bigint): TxTokenAmount {
  * back. Fees are not included: they are computed only once the wallet has
  * balanced and proven its own segment, and they are always paid in DUST.
  */
-export function summarizeTransaction(tx: AnyTransaction): TransactionSummary {
-  const totals = new Map<string, {type: ledger.TokenType; amount: bigint}>();
+export function summarizeTransaction(tx: SummarizableTransaction): TransactionSummary {
+  const totals = new Map<string, {type: SummaryTokenType; amount: bigint}>();
   for (const segment of segmentIds(tx)) {
     for (const [type, delta] of tx.imbalances(segment)) {
       const key = tokenKey(type);
@@ -109,6 +163,10 @@ export function summarizeTransaction(tx: AnyTransaction): TransactionSummary {
 }
 
 /** Decode + summarize in one step, for the connector's approval prompt. */
-export function summarizeConnectorTransaction(txBytes: Uint8Array, sealed: boolean): TransactionSummary {
-  return summarizeTransaction(decodeConnectorTransaction(txBytes, sealed));
+export function summarizeConnectorTransaction(
+  txBytes: Uint8Array,
+  sealed: boolean,
+  protocolVersion?: ProtocolVersion.ProtocolVersion,
+): TransactionSummary {
+  return summarizeTransaction(decodeConnectorTransaction(txBytes, sealed, protocolVersion));
 }

@@ -6,9 +6,14 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import * as ledger from '@midnight-ntwrk/ledger-v8';
+import * as ledger from '@midnightntwrk/wallet-sdk/ledger/v9';
+import * as ledgerV8 from '@midnightntwrk/wallet-sdk/ledger/v8';
 import { signMessage, signedMessageBytes } from '../../../src/wallet/sign-message.js';
 import { testSeedHex as seedHex } from '../../helpers/seed.js';
+
+// signMessage returns the schnorr hex values; ledger-v9 verifies tagged objects.
+const verifies = (verifyingKey: string, payload: Uint8Array, signature: string): boolean =>
+  ledger.verifySignature({ tag: 'schnorr', value: verifyingKey }, payload, { tag: 'schnorr', value: signature });
 
 describe('signMessage', () => {
   it('prepends the midnight_signed_message prefix with the decoded byte length', () => {
@@ -21,12 +26,12 @@ describe('signMessage', () => {
     const { signature, verifyingKey, data } = signMessage(await seedHex(), 'devnet', 'hello world', 'text');
     expect(data).toBe('hello world');
     const payload = signedMessageBytes(new TextEncoder().encode('hello world'));
-    expect(ledger.verifySignature(verifyingKey, payload, signature)).toBe(true);
+    expect(verifies(verifyingKey, payload, signature)).toBe(true);
   });
 
   it('does not verify against the raw unprefixed data (domain separation)', async () => {
     const { signature, verifyingKey } = signMessage(await seedHex(), 'devnet', 'abcd', 'hex');
-    expect(ledger.verifySignature(verifyingKey, new Uint8Array([0xab, 0xcd]), signature)).toBe(false);
+    expect(verifies(verifyingKey, new Uint8Array([0xab, 0xcd]), signature)).toBe(false);
   });
 
   it('treats hex and base64 as the same underlying bytes', async () => {
@@ -34,14 +39,23 @@ describe('signMessage', () => {
     const payload = signedMessageBytes(new TextEncoder().encode('hello'));
     const fromHex = signMessage(sh, 'devnet', '68656c6c6f', 'hex'); // "hello"
     const fromB64 = signMessage(sh, 'devnet', 'aGVsbG8=', 'base64'); // "hello"
-    expect(ledger.verifySignature(fromHex.verifyingKey, payload, fromHex.signature)).toBe(true);
-    expect(ledger.verifySignature(fromB64.verifyingKey, payload, fromB64.signature)).toBe(true);
+    expect(verifies(fromHex.verifyingKey, payload, fromHex.signature)).toBe(true);
+    expect(verifies(fromB64.verifyingKey, payload, fromB64.signature)).toBe(true);
   });
 
   it('rejects malformed hex and base64', async () => {
     const sh = await seedHex();
     expect(() => signMessage(sh, 'devnet', 'xyz', 'hex')).toThrow();
     expect(() => signMessage(sh, 'devnet', '!!!!', 'base64')).toThrow();
+  });
+
+  it('keeps the ledger-v8 wire encoding: the hex values verify under ledger-v8 as plain strings', async () => {
+    // A dApp on a chain still below the v9 fork verifies with ledger-v8, whose
+    // signatures and keys are bare hex strings. Returning the schnorr value
+    // rather than ledger-v9's tagged object is what keeps both readers happy.
+    const { signature, verifyingKey } = signMessage(await seedHex(), 'devnet', 'hello world', 'text');
+    const payload = signedMessageBytes(new TextEncoder().encode('hello world'));
+    expect(ledgerV8.verifySignature(verifyingKey, payload, signature)).toBe(true);
   });
 
   it('derives a network-independent verifying key', async () => {

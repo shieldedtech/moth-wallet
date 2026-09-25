@@ -9,7 +9,7 @@
 // state persists through the async SyncStateStore (browser-safe), so v8's
 // node:fs pre-seed bridge is not used here.
 import {generateMnemonic24, mnemonicToSeed} from '../wallet/mnemonic.js';
-import {createKeystore, PublicKey} from '@midnightntwrk/wallet-sdk/unshielded';
+import {ProtocolVersion} from '@midnightntwrk/wallet-sdk';
 import {setNetworkId} from '@midnight-ntwrk/midnight-js/network-id';
 import type {NetworkConfig} from '../types/network.js';
 import {startWalletSync, resolveSyncStore} from './wallet-sync.js';
@@ -22,6 +22,7 @@ import {
 } from './cursor-witness.js';
 import {IndexerClient} from '../network/indexer-client.js';
 import {deriveWalletKeys, type WalletKeys} from './operations.js';
+import {dustPublicKeyAt, shieldedPublicKeysAt, unshieldedPublicKeyAt} from './ledger-routing.js';
 
 export interface EmptyRefStates {
   shielded: string;
@@ -516,6 +517,11 @@ async function buildEmptyRefCache(
   }
 }
 
+/** The protocol version a snapshot declares; snapshots store the bigint as a decimal string. */
+function snapshotVersion(snapshot: Record<string, unknown>): ProtocolVersion.ProtocolVersion {
+  return ProtocolVersion.ProtocolVersion(BigInt(snapshot.protocolVersion as string | number | bigint));
+}
+
 /**
  * Pre-seed a newly generated wallet's sync state from the empty reference.
  *
@@ -527,6 +533,10 @@ async function buildEmptyRefCache(
  *   own to preserve, so the reference's generation tree and cursor transfer
  *   directly. This is the expensive one to get right: without it dust walks the
  *   whole chain, which is minutes-to-an-hour where shielded takes seconds.
+ *
+ * Each part's keys are encoded by the ledger that wrote the reference, read off
+ * the snapshot's own protocol version: the wallet variant that restores a
+ * snapshot reads only its own key shapes.
  */
 export function preSeedNewWallet(
   walletKeys: WalletKeys,
@@ -536,21 +546,13 @@ export function preSeedNewWallet(
   try {
     setNetworkId(networkId);
 
-    // Keys arrive pre-derived (Option A) — no seed to re-derive from.
-    const shieldedSecretKeys = walletKeys.shieldedSecretKeys;
-    const ks = createKeystore(walletKeys.nightExternalKey, networkId);
-    const pk = PublicKey.fromKeyStore(ks);
-
     // Parse reference states
     const refSh = JSON.parse(emptyRef.shielded) as Record<string, unknown>;
     const refUn = JSON.parse(emptyRef.unshielded) as Record<string, unknown>;
 
     // Shielded: swap public keys, keep reference's tree + offset
     const shieldedSnap: Record<string, unknown> = {
-      publicKeys: {
-        coinPublicKey: shieldedSecretKeys.coinPublicKey,
-        encryptionPublicKey: shieldedSecretKeys.encryptionPublicKey,
-      },
+      publicKeys: shieldedPublicKeysAt(snapshotVersion(refSh), walletKeys.shielded),
       state: refSh.state,
       protocolVersion: refSh.protocolVersion,
       networkId,
@@ -560,7 +562,7 @@ export function preSeedNewWallet(
 
     // Unshielded: swap public key, keep reference's indexer cursor
     const unshieldedSnap: Record<string, unknown> = {
-      publicKey: {publicKey: pk.publicKey, addressHex: pk.addressHex, address: pk.address},
+      publicKey: unshieldedPublicKeyAt(snapshotVersion(refUn), walletKeys.unshielded, networkId),
       state: {availableUtxos: [], pendingUtxos: []},
       protocolVersion: refUn.protocolVersion,
       networkId,
@@ -574,11 +576,9 @@ export function preSeedNewWallet(
     let dustSnap: string | undefined;
     try {
       const refDust = JSON.parse(emptyRef.dust) as Record<string, unknown>;
-      // Swap in the new wallet's dust key, keep everything else. The public
-      // key is a bigint; snapshots store it as a decimal string (JSON.stringify
-      // throws on a raw bigint) — hence the .toString().
+      // Swap in the new wallet's dust key, keep everything else.
       dustSnap = JSON.stringify({
-        publicKey: {publicKey: walletKeys.dustSecretKey.publicKey.toString()},
+        publicKey: {publicKey: dustPublicKeyAt(snapshotVersion(refDust), walletKeys.dust)},
         state: refDust.state,
         protocolVersion: refDust.protocolVersion,
         networkId,

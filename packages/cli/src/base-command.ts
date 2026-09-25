@@ -467,6 +467,8 @@ export abstract class BaseCommand extends Command {
       case 'INVALID_REQUEST':
       case 'METHOD_NOT_FOUND':
         return {category: 'INVALID_INPUT', message: msg};
+      case 'PROTOCOL_VERSION_MISMATCH':
+        return {category: 'INVALID_INPUT', message: `Protocol version mismatch: ${msg}`};
       case 'TIMEOUT':
         return {category: 'TIMEOUT', message: msg};
       case 'CLOSED':

@@ -11,6 +11,7 @@ import type { AddressBookEntry } from '../background/address-book';
 import type { AddressKind } from '../ui/address';
 import type { TimingEntry } from '../background/timings';
 import type { MeterSnapshot } from '../offscreen/request-meter';
+import type { ProtocolStatusDTO } from '../offscreen/messaging';
 
 /**
  * Registration cannot pay its own fee yet.
@@ -381,6 +382,10 @@ interface ProtocolMap {
 
   /** Resolved endpoints for the active network (read-only, for Settings). */
   networkConfigGet(): { id: string; nodeUrl: string; indexerUrl: string; prover: ProverConfig };
+  /** Where the unlocked account's wallets stand on the protocol version line, as
+   *  the wallet SDK reports it (read-only, for Settings); null while locked or
+   *  before a sync session is up. */
+  networkProtocolGet(): ProtocolStatusDTO | null;
 
   permissionsList(): Record<string, OriginGrant>;
   permissionsRevoke(data: { origin: string }): void;

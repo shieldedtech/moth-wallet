@@ -7,6 +7,7 @@ import {
 } from '@shieldedtech/moth-wallet/types/network';
 import { t } from '../lib/i18n';
 import {
+  ProtocolCard,
   NETWORK_DESCRIPTIONS,
   NETWORK_LABELS,
   NetworkFields,
@@ -170,5 +171,65 @@ describe('value-bearing networks', () => {
     );
     expect(html).toContain('Mainnet');
     expect(html).not.toContain('unaudited and unsupported');
+  });
+});
+
+describe('ProtocolCard', () => {
+  it('shows the version the wallet SDK reports, the ledger it implies and a settled status', () => {
+    const html = renderToStaticMarkup(
+      <ProtocolCard
+        networkName="Devnet"
+        protocol={{
+          status: 'known',
+          info: {
+            version: 2_000_000,
+            ledger: 'v9',
+            phase: { kind: 'settled' },
+            wallets: { shielded: 2_000_000, unshielded: 2_000_000, dust: 2_000_000 },
+          },
+        }}
+      />,
+    );
+    expect(html).toContain(escaped(t('network_protocolTitle', ['Devnet'])));
+    expect(html).toContain('2000000');
+    expect(html).toContain(escaped(t('network_ledgerV9')));
+    expect(html).toContain(escaped(t('network_protocolSettled')));
+  });
+
+  it('names ledger-v8 below the fork and says which wallets are still crossing', () => {
+    const html = renderToStaticMarkup(
+      <ProtocolCard
+        networkName="Preprod"
+        protocol={{
+          status: 'known',
+          info: {
+            version: 1_000_000,
+            ledger: 'v8',
+            phase: { kind: 'crossing', from: 1_000_000, to: 2_000_000, behind: ['shielded', 'dust'] },
+            wallets: { shielded: 1_000_000, unshielded: 2_000_000, dust: 1_000_000 },
+          },
+        }}
+      />,
+    );
+    expect(html).toContain(escaped(t('network_ledgerV8')));
+    expect(html).not.toContain(escaped(t('network_ledgerV9')));
+    expect(html).toContain(
+      escaped(
+        t('network_protocolCrossing', [
+          '1000000',
+          '2000000',
+          [t('network_walletShielded'), t('network_walletDust')].join(', '),
+        ]),
+      ),
+    );
+  });
+
+  it('says so while the wallet is being asked, and when no sync session is up', () => {
+    expect(renderToStaticMarkup(<ProtocolCard networkName="Devnet" protocol={{ status: 'checking' }} />)).toContain(
+      escaped(t('network_protocolChecking')),
+    );
+    const unavailable = renderToStaticMarkup(<ProtocolCard networkName="Devnet" protocol={{ status: 'unavailable' }} />);
+    expect(unavailable).toContain(escaped(t('network_protocolUnavailable')));
+    expect(unavailable).not.toContain(escaped(t('network_protocolVersion')));
   });
 });
