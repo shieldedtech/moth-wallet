@@ -32,24 +32,49 @@ export function txSummaryRows(
   labels: NativeAssetLabels,
   tokenNames: Record<string, string> = {},
 ): TxSummaryRow[] {
-  const toRow = (direction: TxSummaryRow['direction']) => (entry: TxTokenAmountDTO): TxSummaryRow => {
-    const raw = parseAmount(entry.amount);
-    if (entry.kind === 'dust') {
-      return { direction, icon: 'dust', amount: formatDustFee(raw), symbol: labels.dust, detail: null };
-    }
-    if (entry.kind === 'unshielded' && entry.tokenId === NIGHT_TOKEN_ID) {
-      return { direction, icon: 'night', amount: formatTokenBalance(raw, 6), symbol: labels.night, detail: null };
-    }
-    const custom = tokenNames[entry.tokenId];
-    return {
-      direction,
-      icon: entry.kind,
-      amount: formatTokenBalance(raw, 0),
-      symbol: custom ?? shortId(entry.tokenId),
-      detail: custom ? shortId(entry.tokenId) : null,
-    };
-  };
+  const toRow = (direction: TxSummaryRow['direction']) => (entry: TxTokenAmountDTO): TxSummaryRow =>
+    summaryRow(direction, entry, labels, tokenNames);
   return [...summary.spends.map(toRow('pay')), ...summary.receives.map(toRow('receive'))];
+}
+
+function summaryRow(
+  direction: TxSummaryRow['direction'],
+  entry: TxTokenAmountDTO,
+  labels: NativeAssetLabels,
+  tokenNames: Record<string, string>,
+): TxSummaryRow {
+  const raw = parseAmount(entry.amount);
+  if (entry.kind === 'dust') {
+    return { direction, icon: 'dust', amount: formatDustFee(raw), symbol: labels.dust, detail: null };
+  }
+  if (entry.kind === 'unshielded' && entry.tokenId === NIGHT_TOKEN_ID) {
+    return { direction, icon: 'night', amount: formatTokenBalance(raw, 6), symbol: labels.night, detail: null };
+  }
+  const custom = tokenNames[entry.tokenId];
+  return {
+    direction,
+    icon: entry.kind,
+    amount: formatTokenBalance(raw, 0),
+    symbol: custom ?? shortId(entry.tokenId),
+    detail: custom ? shortId(entry.tokenId) : null,
+  };
+}
+
+/**
+ * One amount as it reads beside a destination: "2,999 tNIGHT".
+ *
+ * Same denominations as the totals above, so "You pay 3,000 tNIGHT" and the
+ * per-destination lines under it are directly comparable — which is the whole
+ * point of showing them: 2,999 to one address and 1 to another is a drain, and
+ * it looks identical to a legitimate payment until the split is on screen.
+ */
+export function recipientAmountText(
+  entry: TxTokenAmountDTO,
+  labels: NativeAssetLabels,
+  tokenNames: Record<string, string> = {},
+): string {
+  const row = summaryRow('pay', entry, labels, tokenNames);
+  return `${row.amount} ${row.symbol}`;
 }
 
 function parseAmount(value: string): bigint {

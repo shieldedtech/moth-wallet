@@ -819,11 +819,34 @@ export async function transferBuild(
 // own per-segment imbalances, so it needs neither keys nor a synced wallet, and
 // never books or spends anything.
 export async function txSummary(network: NetworkConfig, txHex: string, sealed: boolean): Promise<TxSummaryDTO> {
-  void network; // same signature as the other host methods; the ledger is fixed on this build
-  const summary = summarizeConnectorTransaction(fromHex(txHex), sealed);
+  // Tagged, because the background has to tell "this transaction cannot be
+  // read" from "the wallet could not be reached" — every rejection of this
+  // method used to reach the dApp as InvalidRequest, so an offscreen document
+  // that failed to start told a site its transaction was malformed. The flag is
+  // an own enumerable boolean, so it survives the serialization to the SW.
+  let summary: ReturnType<typeof summarizeConnectorTransaction>;
+  try {
+    summary = summarizeConnectorTransaction(fromHex(txHex), sealed, network.id);
+  } catch (err) {
+    throw Object.assign(new Error(err instanceof Error ? err.message : String(err)), {
+      txUnreadable: true,
+    });
+  }
   const dto = (entries: typeof summary.spends) =>
     entries.map((entry) => ({ kind: entry.kind, tokenId: entry.tokenId, amount: entry.amount.toString() }));
-  return { spends: dto(summary.spends), receives: dto(summary.receives), contractActions: summary.contractActions };
+  return {
+    spends: dto(summary.spends),
+    receives: dto(summary.receives),
+    contractActions: summary.contractActions,
+    // isSelf is filled in by the background, which holds the session addresses;
+    // this host deliberately has no view of which address is the user's.
+    recipients: summary.recipients.map((recipient) => ({
+      address: recipient.address,
+      kind: recipient.kind,
+      amounts: dto(recipient.amounts),
+      isSelf: false,
+    })),
+  };
 }
 
 // Balance a dApp-supplied transaction (connector balance*Transaction). Needs a

@@ -6,7 +6,7 @@ import type { TxSummaryDTO } from '../lib/offscreen/messaging';
 const NIGHT = '0'.repeat(64);
 const TOKEN = 'd'.repeat(64);
 
-const empty: TxSummaryDTO = { spends: [], receives: [], contractActions: 0 };
+const empty: TxSummaryDTO = { spends: [], receives: [], contractActions: 0, recipients: [] };
 
 describe('txSummaryRows', () => {
   it('shows a NIGHT deficit as a payment in NIGHT units with the network label', () => {
@@ -31,6 +31,7 @@ describe('txSummaryRows', () => {
         spends: [{ kind: 'shielded', tokenId: TOKEN, amount: '7' }],
         receives: [{ kind: 'unshielded', tokenId: NIGHT, amount: '2000000' }],
         contractActions: 1,
+        recipients: [],
       },
       TESTNET_NATIVE_ASSET_LABELS,
     );

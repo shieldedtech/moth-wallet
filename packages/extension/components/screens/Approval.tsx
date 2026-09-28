@@ -8,7 +8,7 @@ import { sendMessage } from '../../lib/messaging/protocol';
 import { useTokenNames } from '../../lib/ui/client';
 import { accountLabel } from '../../lib/ui/format';
 import { nativeAssetLabelsForNetwork } from '../../lib/ui/token-labels';
-import { txSummaryRows } from '../../lib/ui/tx-summary-view';
+import { txSummaryRows, recipientAmountText } from '../../lib/ui/tx-summary-view';
 import type { PendingApproval } from '../../lib/background/approvals';
 import type { BalanceApprovalPayload } from '../../lib/background/connector-handlers';
 import { Button } from '../ui/button';
@@ -184,7 +184,6 @@ export function Approval({
           </div>
           <BalanceSummary
             payload={approval.payload as BalanceApprovalPayload}
-            host={host}
             labels={labels}
             tokenNames={tokenNames}
           />
@@ -192,18 +191,20 @@ export function Approval({
             rows={[
               { label: t('approval_fromLabel'), value: shownName ?? '—' },
               { label: t('approval_networkFeeLabel'), value: t('approval_paidIn', [labels.dust]) },
-              ...((approval.payload as BalanceApprovalPayload).summary?.contractActions
+              ...((approval.payload as BalanceApprovalPayload).summary.contractActions
                 ? [
                     {
                       label: t('approval_contractCallsLabel'),
-                      value: String((approval.payload as BalanceApprovalPayload).summary?.contractActions),
+                      value: String((approval.payload as BalanceApprovalPayload).summary.contractActions),
                     },
                   ]
                 : []),
             ]}
           />
           <NoteCard icon={TriangleAlert}>
-            {t('approval_balanceNote')}
+            {hasHiddenDestination(approval.payload as BalanceApprovalPayload)
+              ? t('approval_destinationHidden')
+              : t('approval_balanceNote')}
           </NoteCard>
         </>
       ) : (
@@ -253,33 +254,89 @@ export function Approval({
  * stay quiet: no summary means a visible warning, and a summary with nothing in
  * it says so in words.
  */
+/**
+ * True when the wallet pays out but no destination could be listed — a shielded
+ * output, for instance, which carries no readable owner.
+ *
+ * The note below otherwise tells the user the funds go "to the addresses
+ * above", which in that case points at nothing at all.
+ */
+function hasHiddenDestination(payload: BalanceApprovalPayload): boolean {
+  return payload.summary.spends.length > 0 && payload.summary.recipients.length === 0;
+}
+
+/**
+ * Where the tokens go, and how much to each.
+ *
+ * The address is shown in full. Middle-truncating it defeats the purpose: on
+ * preprod and devnet the first fourteen characters are entirely the network
+ * prefix, identical for every address on that network, so a truncated form
+ * leaves the user comparing the tail alone. The panel is 272px and the span
+ * wraps, which costs two lines and buys an address they can actually check.
+ */
+function RecipientList({
+  recipients,
+  labels,
+  tokenNames,
+}: {
+  recipients: BalanceApprovalPayload['summary']['recipients'];
+  labels: ReturnType<typeof nativeAssetLabelsForNetwork>;
+  tokenNames: Record<string, string>;
+}) {
+  if (recipients.length === 0) return null;
+  return (
+    <Card className="p-0">
+      {recipients.map((recipient, index) => (
+        <div key={recipient.address}>
+          {index > 0 && <Separator />}
+          <div className="px-4 py-[13px]">
+            <div className="flex items-baseline gap-3">
+              <span className="text-[12px] text-muted-foreground">
+                {recipient.kind === 'contract' ? t('approval_contractLabel') : t('approval_toLabel')}
+              </span>
+              {recipient.amounts.length > 0 && (
+                <span className="flex-1 text-[14px] font-bold">
+                  {recipient.amounts.map((entry) => recipientAmountText(entry, labels, tokenNames)).join(', ')}
+                </span>
+              )}
+              {recipient.isSelf && (
+                <span className="ml-auto shrink-0 text-[11.5px] text-muted-foreground">
+                  {t('approval_recipientSelf')}
+                </span>
+              )}
+            </div>
+            <span className="mt-1 block break-all font-mono text-[12px] text-muted-foreground">
+              {recipient.address}
+            </span>
+          </div>
+        </div>
+      ))}
+    </Card>
+  );
+}
+
 function BalanceSummary({
   payload,
-  host,
   labels,
   tokenNames,
 }: {
   payload: BalanceApprovalPayload;
-  host: string;
   labels: ReturnType<typeof nativeAssetLabelsForNetwork>;
   tokenNames: Record<string, string>;
 }) {
-  if (!payload.summary) {
-    return (
-      <NoteCard icon={TriangleAlert}>
-        {t('approval_summaryUnavailable', [host])}
-      </NoteCard>
-    );
-  }
   const rows = txSummaryRows(payload.summary, labels, tokenNames);
   if (rows.length === 0) {
     return (
-      <Card className="p-4">
-        <p className="m-0 text-[13.5px] text-muted-foreground">{t('approval_spendsNothing')}</p>
-      </Card>
+      <>
+        <Card className="p-4">
+          <p className="m-0 text-[13.5px] text-muted-foreground">{t('approval_spendsNothing')}</p>
+        </Card>
+        <RecipientList recipients={payload.summary.recipients} labels={labels} tokenNames={tokenNames} />
+      </>
     );
   }
   return (
+    <>
     <Card className="p-0">
       {rows.map((row, index) => (
         <div key={`${row.direction}-${row.symbol}-${index}`}>
@@ -299,6 +356,8 @@ function BalanceSummary({
         </div>
       ))}
     </Card>
+    <RecipientList recipients={payload.summary.recipients} labels={labels} tokenNames={tokenNames} />
+    </>
   );
 }
 

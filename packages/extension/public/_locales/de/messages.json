@@ -303,7 +303,13 @@
     "message": "Bezahlt in $1"
   },
   "approval_balanceNote": {
-    "message": "Deine Wallet kann eigene Mittel beisteuern, um diese Transaktion auszugleichen. Genehmige nur Transaktionen von Seiten, denen du vertraust."
+    "message": "Ihre Wallet fügt eigene Mittel hinzu, um zu decken, was dieser Transaktion fehlt, und sendet sie an die oben genannten Ziele. Genehmigen Sie nur Transaktionen von Websites, denen Sie vertrauen."
+  },
+  "approval_toLabel": {
+    "message": "An"
+  },
+  "approval_recipientSelf": {
+    "message": "Deine Wallet"
   },
   "approval_youPay": {
     "message": "Du zahlst"
@@ -316,9 +322,6 @@
   },
   "approval_spendsNothing": {
     "message": "Diese Transaktion entnimmt deiner Wallet nichts außer der Netzwerkgebühr."
-  },
-  "approval_summaryUnavailable": {
-    "message": "Moth konnte nicht lesen, was diese Transaktion ausgibt. Genehmige sie nur, wenn du $1 vertraust und weißt, was sie tut."
   },
   "approval_transferSubtitle": {
     "message": "Nichts wird bewegt, bis du genehmigst."
@@ -1639,5 +1642,11 @@
   },
   "accounts_revealNoPhraseReason": {
     "message": "Dieses Konto wurde aus einem Hex-Seed wiederhergestellt und hat daher keine Wiederherstellungsphrase — eine Phrase lässt sich aus einem Seed nicht ermitteln. Der Seed ist das Backup."
+  },
+  "approval_destinationHidden": {
+    "message": "Diese Transaktion entnimmt Ihrer Wallet Mittel, aber ihr Ziel ist shielded und kann nicht angezeigt werden. Genehmigen Sie sie nur, wenn Sie dieser Website vertrauen und wissen, was sie tut."
+  },
+  "approval_contractLabel": {
+    "message": "Vertrag"
   }
 }
