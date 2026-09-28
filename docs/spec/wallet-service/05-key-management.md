@@ -70,18 +70,18 @@ The current model is acceptable for the local single-user developer-tool case th
 
 **Status**: Accepted and implemented as of 2026-06-21.
 
-**Decision**: Before the daemon listens on anything reachable from outside the host (TCP + TLS, or a tunneled-but-network-reachable Unix socket), derive the typed key objects at unlock time and drop the raw seed string immediately.
+**Decision**: Before the daemon listens on anything reachable from outside the host (TCP + TLS, or a tunneled-but-network-reachable Unix socket), derive the per-role key bundle at unlock time and drop the raw master seed string immediately.
 
 **Concretely** (as implemented):
 
-1. `WalletManager.unlock()` reads the keystore, derives the typed `WalletKeys` bundle via `deriveWalletKeys(seedHex)`, then overwrites the local `seedHex` string before returning. The returned `UnlockedWallet` exposes only `walletKeys` and `lock()` — no `seedHex` getter, no `clearSeed()` mechanism. The seed never escapes the function.
-2. `WalletKeys` lives in `types/wallet.ts` so the `UnlockedWallet` interface can reference it without a cross-module import cycle. The concrete value is constructed by `deriveWalletKeys` in `sync/operations.ts`.
-3. Every write path accepts the typed bundle directly. `sendTokens`, `designateForDust`, `dedesignateFromDust` have `*WithKeys` peers; `callCircuit`, `deployContract`, `insertVerifierKey`, `insertVerifierKeys` accept an optional `walletKeys` field alongside the legacy `seedHex` field, with the typed bundle preferred when supplied.
-4. `startWalletSync` and `preSeedNewWallet` now take `WalletKeys` directly. The one place that genuinely needs a seedHex (the empty-reference wallet's brief existence inside `preseed.ts:buildEmptyRefCache`) generates one locally, derives, then `.fill(0)`s the buffer.
+1. `WalletManager.unlock()` reads the keystore, derives the `WalletKeys` bundle via `deriveWalletKeys(seedHex)`, then overwrites the local `seedHex` string before returning. The returned `UnlockedWallet` exposes only `walletKeys` and `lock()` — no `seedHex` getter, no `clearSeed()` mechanism. The seed never escapes the function.
+2. `WalletKeys` lives in `types/wallet.ts` so the `UnlockedWallet` interface can reference it without a cross-module import cycle. The concrete value is constructed by `deriveWalletKeys` in `sync/operations.ts`. Since the wallet-sdk 2.0 upgrade the bundle is the per-role seeds `{ shielded, unshielded, dust }` (the SDK's `WalletSeeds`), because a seed is the one piece of key material that serves both ledger versions across the v9 fork; the SDK derives each version's key objects from them inside the running wallet.
+3. Every write path accepts the bundle directly. `sendTokens`, `designateForDust`, `dedesignateFromDust` have `*WithKeys` peers; `callCircuit`, `deployContract`, `insertVerifierKey`, `insertVerifierKeys` accept an optional `walletKeys` field alongside the legacy `seedHex` field, with the bundle preferred when supplied. The unshielded seed backs the schnorr keystore that signs; the shielded and DUST seeds start the wallet, which then holds the keys itself.
+4. `startWalletSync` and `preSeedNewWallet` take `WalletKeys` directly. The one place that genuinely needs a seedHex (the empty-reference wallet's brief existence inside `preseed.ts:buildEmptyRefCache`) generates one locally, derives, then `.fill(0)`s the buffer.
 
 **Why this is meaningfully better**:
-- The BIP-39 seed is the master secret — recovering it lets an attacker derive ANY child key, not just the ones in use. A process that holds only the derived typed keys leaks "what this wallet has used" but not "the operator's wallet across all derivations".
-- The typed key WASM objects expose `clear()` (we use it nowhere today, but it zeros their internal state). Future tightening can zero those between operations.
+- The BIP-39 seed is the master secret — recovering it lets an attacker derive ANY child key, not just the ones in use. A process that holds only the per-role seeds leaks "what this wallet has used" but not "the operator's wallet across all derivations".
+- The per-role seeds are plain byte arrays, so `lock()` zeros them in place; the SDK drops the key objects it derived from them when the wallet stops.
 
 **Cost paid**: ~200 LoC across `WalletManager`, `startWalletSync`, `preSeedNewWallet`, `executeBatchTransfer`, 10 CLI commands, the TUI's `useBalance`/`useWallet`/`useDaemonHost`/`app.tsx`. No SDK changes required. 126/126 unit tests pass; integration tests unchanged.
 
@@ -103,19 +103,19 @@ sequenceDiagram
   Mgr->>Mgr: Argon2id KDF + AES-256-GCM decrypt
   Note over Mgr: local var: seedHex (hex: 128 chars from BIP-39,<br>64 if imported directly)<br>SCOPE: inside unlock()
   Mgr->>Derive: deriveWalletKeys(seedHex)
-  Derive-->>Mgr: { shieldedSecretKeys,<br>  dustSecretKey, nightExternalKey }
+  Derive-->>Mgr: { shielded, unshielded, dust }<br>  (per-role seeds)
   Mgr->>Mgr: seedHex = '' (overwrite local)
   Note over Mgr: seedHex is now unreachable;<br>V8 will GC the original string
   Mgr->>UW: build with walletKeys
   Mgr-->>Caller: UnlockedWallet (no seedHex)
   Note over UW: holds walletKeys ONLY<br>no getter for seed
   Caller->>UW: walletKeys (for every write op)
-  UW-->>Caller: { shieldedSecretKeys, dustSecretKey, nightExternalKey }
+  UW-->>Caller: { shielded, unshielded, dust }
   Caller->>UW: lock()
-  Note over UW: zeros typed key state
+  Note over UW: zeros the seed buffers
 ```
 
-The BIP-39 seed exists as a JavaScript string for the duration of `WalletManager.unlock()` — typically milliseconds. After return, the only reference held anywhere in the process is the typed `WalletKeys` bundle. An attacker who reads heap memory mid-call might still get the seed, but only inside the narrow unlock window; read after that and they get derived keys only.
+The BIP-39 seed exists as a JavaScript string for the duration of `WalletManager.unlock()` — typically milliseconds. After return, the only reference held anywhere in the process is the `WalletKeys` bundle. An attacker who reads heap memory mid-call might still get the seed, but only inside the narrow unlock window; read after that and they get the per-role seeds only.
 
 ### D-KM-4: `mlock` decrypted key pages before service-mode launch
 

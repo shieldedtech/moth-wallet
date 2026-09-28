@@ -40,7 +40,10 @@ export type RpcErrorCode =
   | 'INTERNAL_ERROR'
   | 'CLOSED'
   | 'TIMEOUT'
-  | 'UNAUTHORIZED';
+  | 'UNAUTHORIZED'
+  // The transaction was built for a protocol version other than the one the
+  // wallet is acting at — the other side of a ledger fork. Rebuild it.
+  | 'PROTOCOL_VERSION_MISMATCH';
 
 export class DaemonProtocolError extends Error {
   constructor(

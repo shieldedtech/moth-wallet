@@ -73,7 +73,7 @@ that. See below.
 ## What that costs you, architecturally
 
 **A birth height does not rescue you.** The wallet SDK exposes no start-index at
-all — `startWithSeed`, `startWithSecretKeys`, `restore`, and nothing else. The
+all — `startWithSeed`, `startWithKeys`, `restore`, and nothing else. The
 indexer's subscriptions do take resume cursors, but they are event-space ids
 (`index`, `id`, `transactionId`), not block heights — and a cursor resumes a
 *stream* while a tree needs *state*. Even with one, the ceiling is 0.8% of the

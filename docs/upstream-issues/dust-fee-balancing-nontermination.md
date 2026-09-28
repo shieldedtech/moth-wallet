@@ -26,6 +26,10 @@ one; it does not and cannot fix the loop itself.
 | `@midnightntwrk/wallet-sdk-capabilities` | `3.3.1` |
 | `@midnight-ntwrk/ledger-v8` | `8.1.0` |
 
+`@midnightntwrk/wallet-sdk` `2.0.0-rc.0` (`wallet-sdk-dust-wallet` `5.0.0-rc.0`) still
+ships the same `computeBalancingRecipe` loop, unchanged, in both its V1 (ledger-v8)
+and V2 (ledger-v9) variants' `Transacting.js`.
+
 ## Summary
 
 `TransactingCapabilityImplementation.computeBalancingRecipe`
@@ -174,7 +178,8 @@ reaching the defect, which is all a client can do from outside.
 ## What Moth changed on the client side in the meantime
 
 `shieldedtech/moth-wallet` replaces the loop through the documented
-`V1Builder.withTransacting` seam
+`withTransacting` seam of both variants' builders, composed with
+`CustomForkingDustWallet` because `DustWallet` takes no builder options
 (`packages/core/src/sync/dust-transacting.ts`). It keeps `dryRunFee` and
 `calculateFee` and changes only the control flow — each pass covers the
 outstanding deficit from coins not yet selected, then re-prices with everything

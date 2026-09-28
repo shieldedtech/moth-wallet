@@ -1639,5 +1639,47 @@
   },
   "accounts_revealNoPhraseReason": {
     "message": "Esta cuenta se restauró desde un seed hexadecimal, así que no tiene frase de recuperación — una frase no puede deducirse de un seed. Su seed es la copia de seguridad."
+  },
+  "network_protocolTitle": {
+    "message": "Protocolo · $1"
+  },
+  "network_protocolVersion": {
+    "message": "Versión del protocolo"
+  },
+  "network_ledger": {
+    "message": "Ledger"
+  },
+  "network_ledgerV8": {
+    "message": "ledger-v8 · antes del fork v9"
+  },
+  "network_ledgerV9": {
+    "message": "ledger-v9 · desde el fork v9"
+  },
+  "network_protocolPhase": {
+    "message": "Estado"
+  },
+  "network_protocolSettled": {
+    "message": "Estable"
+  },
+  "network_protocolCrossing": {
+    "message": "Cruzando de $1 a $2 · esperando a $3"
+  },
+  "network_walletShielded": {
+    "message": "shielded"
+  },
+  "network_walletUnshielded": {
+    "message": "unshielded"
+  },
+  "network_walletDust": {
+    "message": "DUST"
+  },
+  "network_protocolChecking": {
+    "message": "Leyendo la wallet…"
+  },
+  "network_protocolUnavailable": {
+    "message": "Se conoce cuando esta cuenta está sincronizando. La versión la informa la wallet; no es un ajuste."
+  },
+  "network_protocolHelp": {
+    "message": "La wallet lee la versión del protocolo de la cadena mientras sincroniza, y esa versión decide para qué ledger se construyen las transacciones: ledger-v8 antes del fork v9, ledger-v9 desde entonces. En torno a un fork, las tres wallets cruzan una por una; hasta que todas lo hayan hecho, no puede construirse nada que abarque ambos lados."
   }
 }

@@ -1639,5 +1639,47 @@
   },
   "accounts_revealNoPhraseReason": {
     "message": "Ce compte a été restauré depuis un seed hexadécimal : il n’a donc pas de phrase de récupération, et une phrase ne peut pas être déduite d’un seed. Son seed est la sauvegarde."
+  },
+  "network_protocolTitle": {
+    "message": "Protocole · $1"
+  },
+  "network_protocolVersion": {
+    "message": "Version du protocole"
+  },
+  "network_ledger": {
+    "message": "Ledger"
+  },
+  "network_ledgerV8": {
+    "message": "ledger-v8 · avant le fork v9"
+  },
+  "network_ledgerV9": {
+    "message": "ledger-v9 · depuis le fork v9"
+  },
+  "network_protocolPhase": {
+    "message": "État"
+  },
+  "network_protocolSettled": {
+    "message": "Stabilisé"
+  },
+  "network_protocolCrossing": {
+    "message": "Passage de $1 à $2 · en attente de $3"
+  },
+  "network_walletShielded": {
+    "message": "shielded"
+  },
+  "network_walletUnshielded": {
+    "message": "unshielded"
+  },
+  "network_walletDust": {
+    "message": "DUST"
+  },
+  "network_protocolChecking": {
+    "message": "Lecture du portefeuille…"
+  },
+  "network_protocolUnavailable": {
+    "message": "Connue dès que ce compte se synchronise. La version est celle que rapporte le portefeuille, pas un réglage."
+  },
+  "network_protocolHelp": {
+    "message": "Le portefeuille lit la version du protocole sur la chaîne pendant la synchro, et elle décide pour quel ledger les transactions sont construites : ledger-v8 avant le fork v9, ledger-v9 depuis. Autour d’un fork, les trois portefeuilles passent l’un après l’autre ; tant qu’ils ne l’ont pas tous fait, rien qui couvre les deux côtés ne peut être construit."
   }
 }

@@ -54,7 +54,7 @@ The TUI and `daemon serve` are the two ways to host the daemon socket. In-proces
 | In-process CLI commands (`moth transfer`, `moth deploy`, …) | Yes, per-invocation | Inherited from terminal | The CLI invocation itself |
 | Daemon-mode CLI commands (`moth daemon transfer`, `moth daemon deploy`, …) | No — connects to a hosting daemon | Inherited from terminal | The CLI invocation itself |
 
-A daemon and an in-process CLI on the same host **must not** sync the same wallet at the same time — both would open WS subscriptions to the indexer, double the reconnect-induced re-sent boundary events that trigger the SDK off-by-one we work around in `sync/sdk-dedup.ts`, and race on the on-disk sync cache. The daemon-mode CLI commands exist precisely to make this avoidable: if a daemon is running, every CLI invocation routes through it; the CLI does not start its own wallet sync.
+A daemon and an in-process CLI on the same host **must not** sync the same wallet at the same time — both would open WS subscriptions to the indexer, double the reconnect-induced re-sent boundary events, and race on the on-disk sync cache. The daemon-mode CLI commands exist precisely to make this avoidable: if a daemon is running, every CLI invocation routes through it; the CLI does not start its own wallet sync.
 
 ## Transport per stage
 

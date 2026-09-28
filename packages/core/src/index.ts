@@ -86,7 +86,11 @@ export {
   designateForDust, designateForDustWithKeys, estimateDustRegistration,
   dedesignateFromDust, dedesignateFromDustWithKeys,
   listNightUtxos,
-  type SendRequest, type TxStage, type NightUtxo, type FinalizedTransaction, type WalletKeys,
+  // Transactions travel as version-stamped handles; these read hashes and bytes
+  // through the ledger version the wallets are acting at.
+  transactionHashOf, activeProtocolVersion, protocolStatus,
+  type SendRequest, type TxStage, type NightUtxo, type FinalizedTransaction, type UnprovenTransaction,
+  type WalletKeys, type ProtocolStatus, type LedgerVersion,
 } from './sync/operations.js';
 export {
   InMemorySyncStateStore, syncStateKey, emptyRefStateKey, emptyRefMnemonicKey, emptyRefHeightKey,

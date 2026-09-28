@@ -52,6 +52,7 @@ export const hostDispatch: Dispatch = {
   'os/relayRetry': (host) => host.relayRetry(),
   'os/nightCoins': (host, data) => host.nightCoins(data.seedHex, data.walletName, data.network),
   'os/requestStats': (host) => host.requestStats(),
+  'os/protocolStatus': (host) => host.protocolStatus(),
   'os/requestStatsReset': (host) => host.resetRequestStats(),
   'os/dustRebuild': (host, d) => host.dustRebuild(d.seedHex, d.walletName, d.network),
   'os/transferBuild': (host, d) => host.transferBuild(d.seedHex, d.walletName, d.network, d.requests),

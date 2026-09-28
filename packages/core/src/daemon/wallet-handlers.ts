@@ -10,7 +10,7 @@
 import {resolve as resolvePath} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {Buffer} from 'node:buffer';
-import * as ledger from '@midnight-ntwrk/ledger-v8';
+import {ProtocolVersionMismatchError, WireFormatError} from '@midnightntwrk/wallet-sdk';
 import type {WalletFacade} from '@midnightntwrk/wallet-sdk/facade';
 
 import {DaemonProtocolError} from './protocol.js';
@@ -49,8 +49,10 @@ import {
   sendTokensWithKeys,
   designateForDustWithKeys,
   dedesignateFromDustWithKeys,
+  type FinalizedTransaction,
 } from '../sync/operations.js';
 import {submitWithHealthTracking} from '../sync/dust-ledger-health.js';
+import {ledgerReading} from '../sync/ledger-routing.js';
 import type {WalletKeys} from '../sync/operations.js';
 import {callCircuit} from '../contract/call.js';
 import {deployContract} from '../contract/deploy.js';
@@ -80,6 +82,19 @@ const DUMMY_DERIVED_KEYS: DerivedKeys = {
   zswap: new Uint8Array(),
   metadata: new Uint8Array(),
 };
+
+/**
+ * Why submitTransaction's hex could not be read. The facade refuses junk and a
+ * transaction built across the fork alike; a ledger that does read the bytes
+ * is what makes it a version mismatch rather than bad params.
+ */
+function unreadableTransaction(err: unknown, bytes: Uint8Array): DaemonProtocolError {
+  const msg = err instanceof Error ? err.message : String(err);
+  const builtWith = err instanceof WireFormatError ? ledgerReading(bytes, 'Finalized') : undefined;
+  return builtWith
+    ? new DaemonProtocolError('PROTOCOL_VERSION_MISMATCH', `transaction was built with ledger-${builtWith}: ${msg}`)
+    : new DaemonProtocolError('INVALID_PARAMS', `failed to deserialize hex as FinalizedTransaction: ${msg}`);
+}
 
 export interface WalletHandlerDeps {
   /** Identifier echoed in modal payloads. */
@@ -289,20 +304,25 @@ export function buildWalletHandlers(deps: WalletHandlerDeps): Record<string, Rpc
         ],
         ctx,
         async () => {
-          let tx: ledger.FinalizedTransaction;
+          const bytes = Buffer.from(params.hex, 'hex');
+          let tx: FinalizedTransaction;
           try {
-            tx = ledger.Transaction.deserialize(
-              'signature' as never,
-              'proof' as never,
-              'binding' as never,
-              Buffer.from(params.hex, 'hex'),
-            ) as ledger.FinalizedTransaction;
+            // The hex carries no protocol version of its own; the facade reads it
+            // with the ledger it is acting at.
+            tx = facade.adoptTransaction(bytes, 'Finalized');
           } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            throw new DaemonProtocolError('INVALID_PARAMS', `failed to deserialize hex as FinalizedTransaction: ${msg}`);
+            throw unreadableTransaction(err, bytes);
           }
-          const txId = await facade.submitTransaction(tx);
-          return {txId: String(txId)};
+          try {
+            const txId = await facade.submitTransaction(tx);
+            return {txId: String(txId)};
+          } catch (err) {
+            // The wallets crossed the fork between reading the bytes and submitting them.
+            if (err instanceof ProtocolVersionMismatchError) {
+              throw new DaemonProtocolError('PROTOCOL_VERSION_MISMATCH', err.message);
+            }
+            throw err;
+          }
         },
         (r) => ({txHash: r.txId}),
       );

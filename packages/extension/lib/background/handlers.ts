@@ -414,6 +414,9 @@ export function registerHandlers(): void {
   });
 
   onMessage('networkConfigSave', ({ data }) => saveNetworkConfig(data));
+  // Locked means no sync session, so there is nothing to ask the offscreen for —
+  // and asking would bring the document up for nothing.
+  onMessage('networkProtocolGet', async () => ((await getSession()) ? offscreen.protocolStatus() : null));
 
   onMessage('sessionUnlock', async ({ data }) => {
     await recordTiming('marker', 'unlock: start (keystore decrypt + offscreen + WASM ahead)');
