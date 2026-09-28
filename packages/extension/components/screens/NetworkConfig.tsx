@@ -160,7 +160,7 @@ export interface NetworkConfigState {
   needsValueWarning: boolean;
   pick: (next: SupportedNetwork) => void;
   edit: (field: 'nodeUrl' | 'indexerUrl') => (value: string) => void;
-  editAuthHeader: (field: 'name' | 'value') => (value: string) => void;
+  editAuthHeader: (target: AuthHeaderField, field: 'name' | 'value') => (value: string) => void;
   setProverType: (type: ProverConfig['type']) => void;
   editProverUrl: (value: string) => void;
   resetEndpoints: () => void;
