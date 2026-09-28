@@ -297,7 +297,15 @@ export function DustDetail({
         )}
         {view.canRebuild && (
           <>
-            <NoteCard icon={Moon}>{t('dust_rebuildNote', [labels.night, labels.dust])}</NoteCard>
+            <NoteCard icon={Moon}>
+              {t('dust_rebuildNote', [labels.night, labels.dust])}
+              {view.viewProblem && (
+                <>
+                  {' '}
+                  <span className="text-muted-foreground">({view.viewProblem})</span>
+                </>
+              )}
+            </NoteCard>
             <Button
               variant="outline"
               className="self-center"

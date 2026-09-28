@@ -94,6 +94,7 @@ export function App({ networkId: networkIdProp }: AppProps) {
     synced: balance.synced,
     coins: balance.coins,
     subProgress: balance.subProgress,
+    dustView: balance.dustView ?? undefined,
   };
   const confirmationQueue = useMemo(() => new ConfirmationQueue(), []);
   const [hasPendingConfirmation, setHasPendingConfirmation] = useState(false);
@@ -107,6 +108,7 @@ export function App({ networkId: networkIdProp }: AppProps) {
     walletName: wallet.activeWallet?.name,
     balancesRef,
     getFacade: balance.getFacade,
+    getSyncedWallet: balance.getSyncedWallet,
     getWalletKeys: wallet.getActiveWalletKeys,
     queue: confirmationQueue,
     daemonVersion: '0.1.0',
@@ -334,6 +336,7 @@ export function App({ networkId: networkIdProp }: AppProps) {
         dustBalance={balance.dustRaw}
         coins={balance.coins}
         subProgress={balance.subProgress}
+        dustView={balance.dustView}
         unreadLogs={unreadLogs}
         onQuit={quit}
         onViewLogs={() => setLastLogsSeen(logs.count)}

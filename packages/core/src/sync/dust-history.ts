@@ -29,14 +29,20 @@ const SUBSCRIPTION_ID = '1';
 
 // The indexer's range is inclusive and its `dustGenerationEndIndex` exclusive, so the
 // last entry at the reference height is `endIndex - 1`.
-const QUERY = `subscription ($address: DustAddress!, $end: Int!) {
-  dustGenerations(dustAddress: $address, startIndex: 0, endIndex: $end) {
+//
+// The integers are inlined rather than sent as variables. Sent as variables the
+// public preprod indexer intermittently answers `Invalid value for argument
+// "endIndex", expected type "Int"` — the same request with the ints in the query
+// text succeeds. The probe mapped that to `unknown`, which is the safe direction
+// (sync from genesis), but it made the fast path fail for no reason.
+export function dustHistoryQuery(dustAddress: string, endIndexInclusive: number): string {
+  return `subscription { dustGenerations(dustAddress: ${JSON.stringify(dustAddress)}, startIndex: 0, endIndex: ${Math.max(0, Math.floor(endIndexInclusive))}) {
     __typename
     ... on DustGenerationsItem { generationMtIndex }
     ... on DustGenerationDtimeUpdateItem { generationMtIndex }
     ... on DustGenerationsProgress { highestIndex }
-  }
-}`;
+  } }`;
+}
 
 export type DustGenerationsMessage =
   | {kind: 'ack'}
@@ -133,7 +139,7 @@ export function probeDustGenerations(
             JSON.stringify({
               id: SUBSCRIPTION_ID,
               type: 'subscribe',
-              payload: {query: QUERY, variables: {address: dustAddress, end: endIndexExclusive - 1}},
+              payload: {query: dustHistoryQuery(dustAddress, endIndexExclusive - 1)},
             }),
           );
           return;

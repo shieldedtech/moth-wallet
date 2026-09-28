@@ -24,8 +24,11 @@ export interface DustView {
   unregisteredNight: boolean;
   /** True when the local dust view looks stale enough to be worth rebuilding:
    *  registered NIGHT old enough that its generation records must exist, yet
-   *  still missing from the local capacity. Offers the rebuild; never runs it. */
+   *  still missing from the local capacity — or the sync engine's own check
+   *  against the chain found the view incomplete. Offers the rebuild; never runs it. */
   canRebuild: boolean;
+  /** The engine's reason when its chain check found the view incomplete; null otherwise. */
+  viewProblem: string | null;
 }
 
 export function dustView(
@@ -65,7 +68,14 @@ export function dustView(
   // to "synced, registered, deficit, newest registration older than the grace
   // period". That is the right gate for *offering* a rebuild; the engine-side
   // guards still apply to running one.
-  const canRebuild = shouldRepairDustView(balances, Date.now(), null);
+  //
+  // The engine also compares the view with the indexer's generation entries and
+  // tip (core/sync/dust-view.ts). When that says the view is missing coins, a
+  // rebuild is the remedy whatever the capacity heuristic above concludes — and
+  // the ETA below is then right to say the records are missing rather than
+  // merely settling.
+  const viewProblem = balances.dustView?.status === 'incomplete' ? balances.dustView.reason : null;
+  const canRebuild = viewProblem !== null || shouldRepairDustView(balances, Date.now(), null);
 
   // Mid-sync amounts move as coins apply, so never claim "Fully generated"
   // (or an ETA) until the dust sub-wallet has caught up.
@@ -117,5 +127,6 @@ export function dustView(
     capacityUnknown,
     unregisteredNight,
     canRebuild,
+    viewProblem,
   };
 }

@@ -35,6 +35,22 @@ import {dustHistoryBefore} from './dust-history.js';
 import {dustAddressForKey} from '../wallet/address.js';
 import {IndexerClient} from '../network/indexer-client.js';
 import type {WalletKeys} from './operations.js';
+import type {SyncInconsistency} from './sdk-dedup.js';
+import {fetchDustGenerations, readDustTip} from './dust-generations.js';
+import {
+  EMPTY_DUST_VIEW,
+  assessDustView,
+  countRevertedSubmission,
+  localDustCoins,
+  markCheckFailed,
+  markInconsistent,
+  mergeDustView,
+  type DustViewHealth,
+} from './dust-view.js';
+import {watchInclusion, type InclusionWatch} from './tx-watch.js';
+
+export type {DustViewHealth, DustViewMissing, DustViewStatus, LocalDustCoin} from './dust-view.js';
+export {EMPTY_DUST_VIEW} from './dust-view.js';
 
 // Re-exported so existing importers (core/browser barrels, CLI/TUI) keep working;
 // the definitions live in the WASM-free ../types/tokens module.
@@ -60,11 +76,20 @@ export {NIGHT_TOKEN_ID, formatNight};
  */
 function makeSubmittedOnlySubmissionService(
   relayURL: URL,
+  /** Runs once the pool has accepted the transaction — the moment 'Submitted' stops meaning 'landed'. */
+  afterSubmit?: (tx: ledger.FinalizedTransaction) => void,
 ): SubmissionService<ledger.FinalizedTransaction> {
   const inner = makeDefaultSubmissionService<ledger.FinalizedTransaction>({relayURL});
   return {
-    submitTransaction: ((tx: ledger.FinalizedTransaction) =>
-      inner.submitTransaction(tx, 'Submitted')) as SubmissionService<ledger.FinalizedTransaction>['submitTransaction'],
+    submitTransaction: (async (tx: ledger.FinalizedTransaction) => {
+      const result = await inner.submitTransaction(tx, 'Submitted');
+      try {
+        afterSubmit?.(tx);
+      } catch {
+        /* the watch is best-effort; the submission itself succeeded */
+      }
+      return result;
+    }) as SubmissionService<ledger.FinalizedTransaction>['submitTransaction'],
     close: () => inner.close(),
   };
 }
@@ -258,6 +283,14 @@ export interface DustCoinInfo {
   maxCapReachedAt: Date;
   /** Set when the underlying NIGHT UTXO has been deregistered. */
   dtime: Date | null;
+  /** The backing NIGHT UTXO's initial nonce (hex) — matches the indexer's generation entry. */
+  backingNight?: string;
+  /** How many times this coin's chain has been spent; each fee advances it by one. */
+  seq?: number;
+  /** Value at the coin's creation (its last spend), in SPECK. */
+  initialValue?: bigint;
+  /** When the coin was created, i.e. the declared time of its last spend. */
+  ctime?: Date;
 }
 
 export interface WalletCoinDetails {
@@ -283,6 +316,13 @@ export interface WalletBalances {
   coins: WalletCoinDetails;
   /** Per-sub-wallet sync progress as raw applied/total. */
   subProgress: SubWalletProgress;
+  /**
+   * Whether the dust view is whole, from comparing it against the chain (see
+   * sync/dust-view.ts). When it is not, `syncProgress.dustSynced` is false as
+   * well, and this says why. Absent only from balances built outside a sync
+   * session (stubs, fixtures).
+   */
+  dustView?: DustViewHealth;
 }
 
 export const EMPTY_COINS: WalletCoinDetails = {
@@ -297,6 +337,12 @@ export const EMPTY_SUB_PROGRESS: SubWalletProgress = {
   dust: {applied: 0, total: 0},
 };
 
+/** Outcome of a requested rebuild or restart of the sync session. */
+export interface SyncRestartResult {
+  started: boolean;
+  reason?: string;
+}
+
 export interface SyncedWallet {
   facade: WalletFacade;
   balances: WalletBalances;
@@ -304,6 +350,17 @@ export interface SyncedWallet {
   refresh: () => Promise<WalletBalances>;
   /** Subscribe to progressive balance updates. Returns unsubscribe function. */
   subscribe: (cb: (balances: WalletBalances) => void) => () => void;
+  /** Compare the dust view against the chain now and return the verdict. */
+  checkDustView?: () => Promise<DustViewHealth>;
+  /**
+   * Evict the dust cache and start the sync again, so the dust view is rebuilt
+   * from the chain — from the pre-seed reference when the indexer proves that
+   * safe, from genesis otherwise. Shielded, unshielded and history stay warm.
+   * The facade is replaced: hold `SyncedWallet`, not `facade`, across it.
+   */
+  rebuildDust?: () => Promise<SyncRestartResult>;
+  /** Stop and start the sync again from the caches, re-subscribing to the indexer. */
+  restartSync?: () => Promise<SyncRestartResult>;
 }
 
 // ---------------------------------------------------------------------------
@@ -392,6 +449,32 @@ export interface BatchUpdatesOptions {
   spacing?: number;
 }
 
+export interface DustViewCheckOptions {
+  /** Compare the dust view against the indexer periodically once dust is synced. Default true. */
+  enabled?: boolean;
+  /** Time between checks. Default 5 minutes. */
+  intervalMs?: number;
+  /** Time to the next attempt after a check that could not reach the indexer. Default 30 seconds. */
+  retryMs?: number;
+  /** How long a live generation entry may lack a coin before the view is called incomplete. Default 10 minutes. */
+  missingGraceMs?: number;
+  /**
+   * When a check finds the dust cursor stalled while the indexer's tip advances,
+   * stop and restart the sync from its caches. The SDK's subscription client
+   * does not retry a failed socket, so a wallet that lived through an indexer
+   * outage otherwise stays frozen until its process restarts. Default true.
+   */
+  restartOnStall?: boolean;
+}
+
+export interface InclusionWatchOptions {
+  /** Watch each submitted transaction until the indexer shows it, reverting its bookkeeping if it never does. Default true. */
+  enabled?: boolean;
+  /** How long a pool-accepted transaction may go unseen before it is presumed dropped. Default 10 minutes. */
+  timeoutMs?: number;
+  pollMs?: number;
+}
+
 export interface WalletSyncOptions {
   /** Where serialized sync state is cached. Defaults to the filesystem store in Node, in-memory elsewhere. */
   syncStore?: SyncStateStore;
@@ -401,6 +484,45 @@ export interface WalletSyncOptions {
    * pass smaller batches so each synchronous WASM apply stays short.
    */
   batchUpdates?: BatchUpdatesOptions;
+  /** The periodic dust view check (sync/dust-view.ts). */
+  dustView?: DustViewCheckOptions;
+  /** The per-submission inclusion watch (sync/tx-watch.ts). */
+  inclusionWatch?: InclusionWatchOptions;
+  /**
+   * When the ledger rejects a replay for a part (the "inserted non-linearly"
+   * failure), evict that part's cache and restart the sync instead of retrying
+   * the same batch forever. Default true. At most once per part per hour; a
+   * second failure inside that window is reported and left alone.
+   */
+  autoRebuildOnInconsistency?: boolean;
+}
+
+const DEFAULT_DUST_CHECK_INTERVAL_MS = 5 * 60_000;
+const DEFAULT_DUST_CHECK_RETRY_MS = 30_000;
+/** A check that has not settled by then is treated as failed; the indexer client's own timeouts are shorter. */
+const DUST_CHECK_DEADLINE_MS = 90_000;
+/** First check runs this long after dust first reports synced, so a just-restored cache has settled. */
+const FIRST_DUST_CHECK_DELAY_MS = 30_000;
+/** Minimum time between two automatic rebuilds of the same part. */
+const AUTO_REBUILD_COOLDOWN_MS = 60 * 60_000;
+/** Minimum time between two automatic restarts for a stalled cursor. */
+const STALL_RESTART_COOLDOWN_MS = 10 * 60_000;
+
+/** What a sync session reports back to the wrapper that owns it. */
+interface SessionControl {
+  onInconsistent: (info: SyncInconsistency) => void;
+  /** The dust cursor has not moved between two checks while the indexer's has. */
+  onStalled: (info: {localApplied: number | null; indexerMaxId: number | null}) => void;
+}
+
+/** One run of the facade. `startWalletSync` owns a sequence of these. */
+interface SyncSession {
+  readonly facade: WalletFacade;
+  readonly balances: WalletBalances;
+  stop(): Promise<void>;
+  refresh(): Promise<WalletBalances>;
+  subscribe(cb: (b: WalletBalances) => void): () => void;
+  checkDustView(): Promise<DustViewHealth>;
 }
 
 /** Bound on the SDK's own teardown. A healthy stop takes tens of milliseconds, so
@@ -430,14 +552,123 @@ export async function startWalletSync(
   birthday?: number,
   options?: WalletSyncOptions
 ): Promise<SyncedWallet> {
+  void isNewWallet;
   installLogSuppression();
   await ensureWebSocket();
   const store = await resolveSyncStore(options?.syncStore);
+  const name = walletName ?? 'default';
 
+  // The wrapper owns a sequence of sessions. A rebuild or restart stops the
+  // current one and starts another over the same caches (minus whatever was
+  // evicted); subscribers and the facade getter follow along, so hosts that
+  // hold the SyncedWallet see the new session without re-wiring.
+  const subscribers: Array<(b: WalletBalances) => void> = [];
+  const fanout = (b: WalletBalances) => {
+    for (const cb of subscribers) {
+      try {
+        cb(b);
+      } catch {
+        /* subscriber error */
+      }
+    }
+  };
+  let current!: SyncSession;
+  let unsubscribeCurrent: (() => void) | null = null;
+  let restarting: Promise<SyncRestartResult> | null = null;
+  const lastAutoRebuild = new Map<WalletPart, number>();
+
+  const restart = (evict: readonly WalletPart[], why: string): Promise<SyncRestartResult> => {
+    if (restarting) return Promise.resolve({started: false, reason: 'a restart is already in progress'});
+    restarting = (async () => {
+      try {
+        onProgress?.(`${why} — stopping sync${evict.length > 0 ? `, evicting ${evict.join(' + ')} cache` : ''}...`);
+        unsubscribeCurrent?.();
+        unsubscribeCurrent = null;
+        await current.stop();
+        for (const part of evict) await evictCachedState(store, name, network.id, part);
+        current = await startSyncSession(keys, network, onProgress, name, birthday, options, store, control);
+        unsubscribeCurrent = current.subscribe(fanout);
+        return {started: true};
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        onProgress?.(`Sync restart failed: ${reason}`);
+        return {started: false, reason};
+      } finally {
+        restarting = null;
+      }
+    })();
+    return restarting;
+  };
+
+  let lastStallRestart = 0;
+  const control: SessionControl = {
+    onStalled: (info) => {
+      if (options?.dustView?.restartOnStall === false) return;
+      if (Date.now() - lastStallRestart < STALL_RESTART_COOLDOWN_MS) return;
+      lastStallRestart = Date.now();
+      void restart([], `dust cursor stalled at ${info.localApplied} while the indexer is at ${info.indexerMaxId}`);
+    },
+    onInconsistent: (info) => {
+      if (options?.autoRebuildOnInconsistency === false) return;
+      const part: WalletPart = info.part;
+      const last = lastAutoRebuild.get(part) ?? 0;
+      if (Date.now() - last < AUTO_REBUILD_COOLDOWN_MS) {
+        onProgress?.(
+          `${part} sync cache is inconsistent again within an hour of its last rebuild — leaving it alone; clear the cache by hand`,
+        );
+        return;
+      }
+      lastAutoRebuild.set(part, Date.now());
+      // Deferred: this fires from inside the SDK's applyUpdate, whose error must
+      // propagate first. The session is stopped from the outside a tick later.
+      setTimeout(() => {
+        void restart([part], `${part} sync cache rejected by the ledger (${info.range})`);
+      }, 0);
+    },
+  };
+
+  current = await startSyncSession(keys, network, onProgress, name, birthday, options, store, control);
+  unsubscribeCurrent = current.subscribe(fanout);
+
+  return {
+    get facade(): WalletFacade {
+      return current.facade;
+    },
+    get balances(): WalletBalances {
+      return current.balances;
+    },
+    stop: async () => {
+      unsubscribeCurrent?.();
+      unsubscribeCurrent = null;
+      await current.stop();
+    },
+    refresh: () => current.refresh(),
+    subscribe: (cb) => {
+      subscribers.push(cb);
+      cb(current.balances);
+      return () => {
+        const idx = subscribers.indexOf(cb);
+        if (idx >= 0) subscribers.splice(idx, 1);
+      };
+    },
+    checkDustView: () => current.checkDustView(),
+    rebuildDust: () => restart(['dust'], 'Rebuilding the dust view from the chain'),
+    restartSync: () => restart([], 'Restarting sync'),
+  };
+}
+
+async function startSyncSession(
+  keys: WalletKeys,
+  network: NetworkConfig,
+  onProgress: ((msg: string) => void) | undefined,
+  name: string,
+  birthday: number | undefined,
+  options: WalletSyncOptions | undefined,
+  store: SyncStateStore,
+  control: SessionControl
+): Promise<SyncSession> {
   setNetworkId(network.id);
   onProgress?.('Deriving keys...');
-
-  const name = walletName ?? 'default';
 
   // Option A: keys arrive pre-derived; the seed was dropped at unlock.
   const shieldedSecretKeys = keys.shieldedSecretKeys;
@@ -555,7 +786,12 @@ export async function startWalletSync(
   // (see sync/sdk-dedup.ts for the upstream bug context).
   onProgress?.('Starting shielded wallet...');
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const shieldedBuilder = dedupingShieldedBuilder() as any;
+  const shieldedBuilder = dedupingShieldedBuilder({
+    onInconsistent: (info) => {
+      onProgress?.(`${info.part} sync cache is inconsistent with the event stream (batch ${info.range})`);
+      control.onInconsistent(info);
+    },
+  }) as any;
   let shieldedWallet: ShieldedWallet | undefined;
   let restoredFromCache = false;
   const savedShielded = await loadCachedState(store, name, network.id, 'shielded');
@@ -605,8 +841,17 @@ export async function startWalletSync(
   // out of dedupingDustBuilder so that module stays about the dedup fix alone:
   // largest-first coin selection (sync/dust-coin-selection.ts) and a balancing
   // loop that terminates (sync/dust-transacting.ts).
+  // The view health record for this session. Session-scoped, not per emission:
+  // an inconsistency hook or an indexer check updates it, and every balance
+  // snapshot after that carries it (see applyDustView below).
+  let dustView: DustViewHealth = EMPTY_DUST_VIEW;
+  const onInconsistent = (info: SyncInconsistency) => {
+    if (info.part === 'dust') dustView = markInconsistent(dustView, `ledger rejected dust replay at ${info.range}`);
+    onProgress?.(`${info.part} sync cache is inconsistent with the event stream (batch ${info.range})`);
+    control.onInconsistent(info);
+  };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const dustBuilder = (dedupingDustBuilder() as any)
+  const dustBuilder = (dedupingDustBuilder({onInconsistent}) as any)
     .withCoinSelection(() => largestDustCoinFirst)
     .withTransacting(terminatingDustTransacting());
   let dustWallet: DustWallet | undefined;
@@ -633,6 +878,41 @@ export async function startWalletSync(
 
   // --- WalletFacade ---
   onProgress?.('Initializing wallet facade...');
+  const indexer = new IndexerClient(indexerHttpUrl);
+  const watches = new Set<InclusionWatch>();
+  // Resolving at 'Submitted' means the wallet books a fee the moment the pool
+  // accepts a transaction. If the chain never includes it, the dust coin that
+  // paid stays hidden for the ledger's three-hour grace period (sync/tx-watch.ts).
+  // So each submission is watched, and reverted when it is not seen in time.
+  const afterSubmit = (tx: ledger.FinalizedTransaction) => {
+    if (options?.inclusionWatch?.enabled === false) return;
+    let hash: string;
+    try {
+      hash = tx.transactionHash();
+    } catch {
+      return;
+    }
+    const watch = watchInclusion({
+      hash,
+      timeoutMs: options?.inclusionWatch?.timeoutMs,
+      pollMs: options?.inclusionWatch?.pollMs,
+      isIncluded: async (h) => (await indexer.getTransactions({hash: h})).length > 0,
+      revert: () => facade.revertTransaction(tx),
+      onOutcome: (outcome) => {
+        watches.delete(watch);
+        if (outcome.kind === 'reverted') {
+          dustView = countRevertedSubmission(dustView);
+          latestBalances = applyDustView(latestBalances);
+          onProgress?.(
+            `Transaction ${hash.slice(0, 12)}… was accepted by the pool but not seen on chain within ${Math.round(outcome.afterMs / 1000)}s — its fee coin has been released`,
+          );
+        } else if (outcome.kind === 'revert-failed') {
+          onProgress?.(`Transaction ${hash.slice(0, 12)}… was not seen on chain and its fee could not be released: ${outcome.error}`);
+        }
+      },
+    });
+    watches.add(watch);
+  };
   const facade = await WalletFacade.init({
     configuration: walletCfg,
     // The SDK defaults to a proof server. Supply the service explicitly so
@@ -641,7 +921,7 @@ export async function startWalletSync(
     // Resolve submissions at 'Submitted' instead of the default 'Finalized' so a
     // send doesn't block its message round-trip on finalization — see
     // makeSubmittedOnlySubmissionService.
-    submissionService: (cfg) => makeSubmittedOnlySubmissionService(cfg.relayURL),
+    submissionService: (cfg) => makeSubmittedOnlySubmissionService(cfg.relayURL, afterSubmit),
     shielded: () => shieldedWallet!,
     unshielded: () => unshieldedWallet!,
     dust: () => dustWallet!,
@@ -670,12 +950,119 @@ export async function startWalletSync(
     synced: false,
     coins: EMPTY_COINS,
     subProgress: EMPTY_SUB_PROGRESS,
+    dustView: EMPTY_DUST_VIEW,
   };
   let emissionCount = 0;
   const subscribers: Array<(b: WalletBalances) => void> = [];
   const syncStartTime = Date.now();
   let lastProgressPct = 0;
   const progressBaseline: ProgressBaseline = {value: null};
+
+  /**
+   * Fold the session's view health into a balance snapshot. The emission
+   * contributes the local facts (coins the SDK excludes); the session holds
+   * what the indexer said and what the hooks reported. A view that is not
+   * whole is not synced in any sense a caller can act on, so `dustSynced` says
+   * so — a fee attempt against it fails, and a bot gating on the flag should wait.
+   */
+  const applyDustView = (b: WalletBalances): WalletBalances => {
+    const {view, withholdSynced} = mergeDustView(dustView, b.dustView?.excluded ?? 0, Date.now());
+    return {
+      ...b,
+      dustView: view,
+      syncProgress: withholdSynced ? {...b.syncProgress, dustSynced: false} : b.syncProgress,
+    };
+  };
+
+  // --- Dust view check against the indexer (sync/dust-view.ts) ---
+  const dustAddress = dustAddressForKey(dustSecretKey, network.id);
+  const checkIntervalMs = options?.dustView?.intervalMs ?? DEFAULT_DUST_CHECK_INTERVAL_MS;
+  const checkRetryMs = options?.dustView?.retryMs ?? DEFAULT_DUST_CHECK_RETRY_MS;
+  let latestFacadeState: FacadeState | null = null;
+  let dustSyncedSince: number | null = null;
+  let lastDustCheckAt = 0;
+  let lastDustCheckFailed = false;
+  let dustCheck: Promise<DustViewHealth> | null = null;
+  const runDustCheck = (): Promise<DustViewHealth> => {
+    if (dustCheck) return dustCheck;
+    dustCheck = (async () => {
+      const now = Date.now();
+      lastDustCheckAt = now;
+      try {
+        const dustState = latestFacadeState?.dust?.state;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const localCoins = localDustCoins((dustState as any)?.state);
+        const applied = dustState?.progress?.appliedIndex;
+        const localApplied = applied === undefined ? null : Number(applied);
+        const gather = (async () => {
+          const block = await indexer.getBlock();
+          const end = block ? await indexer.getDustGenerationEndIndex(block.height) : null;
+          if (end === null) throw new Error('indexer does not report the generation tree size at the tip');
+          return Promise.all([
+            fetchDustGenerations(indexerHttpUrl, dustAddress, end),
+            // The tip is what tells a stall apart from a catch-up; a failure to
+            // read it is a failed check, not a check with no lag.
+            localApplied === null ? Promise.resolve(null) : readDustTip(indexerHttpUrl, localApplied),
+          ]);
+        })();
+        let deadline: ReturnType<typeof setTimeout> | undefined;
+        const [gens, tip] = await Promise.race([
+          gather,
+          new Promise<never>((_, reject) => {
+            deadline = setTimeout(() => reject(new Error(`no answer from the indexer within ${DUST_CHECK_DEADLINE_MS / 1000}s`)), DUST_CHECK_DEADLINE_MS);
+          }),
+        ]).finally(() => clearTimeout(deadline));
+        const before = dustView;
+        dustView = assessDustView({
+          now,
+          live: gens.live,
+          localCoins,
+          localApplied,
+          indexerMaxId: tip?.maxId ?? null,
+          previous: before,
+          missingGraceMs: options?.dustView?.missingGraceMs,
+        });
+        lastDustCheckFailed = false;
+        if (dustView.status === 'incomplete' && (before.status !== 'incomplete' || before.reason !== dustView.reason)) {
+          onProgress?.(`Dust view is incomplete: ${dustView.reason}`);
+        } else if (dustView.status === 'complete' && before.status !== 'complete') {
+          onProgress?.(before.status === 'unchecked' ? 'Dust view checked against the chain: whole' : 'Dust view is whole again');
+        }
+        if (dustView.stalled) control.onStalled({localApplied: dustView.localApplied, indexerMaxId: dustView.indexerMaxId});
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (!lastDustCheckFailed) onProgress?.(`Dust view check could not reach the indexer: ${message}`);
+        lastDustCheckFailed = true;
+        dustView = markCheckFailed(dustView, now, message);
+      } finally {
+        dustCheck = null;
+      }
+      latestBalances = applyDustView(latestBalances);
+      for (const cb of subscribers) {
+        try {
+          cb(latestBalances);
+        } catch {
+          /* subscriber error */
+        }
+      }
+      return latestBalances.dustView ?? dustView;
+    })();
+    return dustCheck;
+  };
+  const maybeCheckDustView = (sdkDustSynced: boolean) => {
+    if (options?.dustView?.enabled === false) return;
+    const now = Date.now();
+    if (!sdkDustSynced) {
+      dustSyncedSince = null;
+      return;
+    }
+    dustSyncedSince ??= now;
+    // A failed attempt is retried soon: the indexer coming back must lift an
+    // unknown verdict promptly, not at the next scheduled check.
+    const wait = lastDustCheckFailed ? checkRetryMs : checkIntervalMs;
+    const due = lastDustCheckAt === 0 ? now - dustSyncedSince >= FIRST_DUST_CHECK_DELAY_MS : now - lastDustCheckAt >= wait;
+    if (due && !dustCheck) void runDustCheck();
+  };
 
   let hasSavedCache = false;
   let lastCacheSaveTime = 0;
@@ -685,9 +1072,12 @@ export async function startWalletSync(
     .subscribe({
       next: (s: FacadeState) => {
         emissionCount++;
-        const balances = extractBalancesPartial(s, syncStartTime, lastProgressPct, progressBaseline, latestBalances);
+        latestFacadeState = s;
+        const raw = extractBalancesPartial(s, syncStartTime, lastProgressPct, progressBaseline, latestBalances);
+        const balances = applyDustView(raw);
         latestBalances = balances;
         lastProgressPct = balances.syncProgress.percentage;
+        maybeCheckDustView(raw.syncProgress.dustSynced);
 
         const nightTotal = (balances.unshielded[NIGHT_TOKEN_ID] ?? 0n) + (balances.shielded[NIGHT_TOKEN_ID] ?? 0n);
         const pct = Math.round(balances.syncProgress.percentage * 100);
@@ -752,7 +1142,8 @@ export async function startWalletSync(
       .state()
       .pipe(Rx.first())
       .subscribe((s: FacadeState) => {
-        latestBalances = extractBalancesPartial(s);
+        latestFacadeState = s;
+        latestBalances = applyDustView(extractBalancesPartial(s));
         clearTimeout(timeout);
         earlyCheck.unsubscribe();
         resolve();
@@ -775,6 +1166,8 @@ export async function startWalletSync(
 
   const stop = async () => {
     subscription.unsubscribe();
+    for (const w of watches) w.cancel();
+    watches.clear();
     await saveCache(store, facade, txHistoryStorage, name, network.id).catch(() => {});
 
     // `facade.stop()` never settles against an unreachable node: it awaits a
@@ -806,6 +1199,7 @@ export async function startWalletSync(
     stop,
     refresh,
     subscribe,
+    checkDustView: runDustCheck,
   };
 }
 
@@ -898,6 +1292,7 @@ function extractBalancesPartial(
   let unshielded: Record<string, bigint> = {};
   let dust = 0n;
   let dustGeneration: DustGeneration | null = null;
+  let dustExcluded = 0;
   let synced = false;
 
   // Per-sub-wallet sync status
@@ -1011,22 +1406,28 @@ function extractBalancesPartial(
     // Dust sub-wallet synced check
     if (synced) dustSynced = true;
     // Per-coin breakdown — dust coins carry max-cap + dtime
-    for (const c of state.dust?.availableCoins ?? []) {
-      coins.dust.available.push({
-        generatedNow: c.generatedNow ?? 0n,
-        maxCap: c.maxCap ?? 0n,
-        maxCapReachedAt: c.maxCapReachedAt instanceof Date ? c.maxCapReachedAt : new Date(c.maxCapReachedAt ?? 0),
-        dtime: c.dtime ? (c.dtime instanceof Date ? c.dtime : new Date(c.dtime)) : null,
-      });
+    // Evaluated at the same instant as the headline balance above. The SDK's
+    // `availableCoins` getter values each coin at the state's sync time, so
+    // under a stalled sync the per-coin figures froze while the headline kept
+    // growing — 1,391 against coins summing to 1,217 on preprod.
+    const coinsNow = new Date();
+    const cab = state.dust?.capabilities?.coinsAndBalances;
+    const availableNow =
+      typeof cab?.getAvailableCoins === 'function' ? cab.getAvailableCoins(state.dust.state, coinsNow) : state.dust?.availableCoins ?? [];
+    const pendingNow =
+      typeof cab?.getPendingCoins === 'function' ? cab.getPendingCoins(state.dust.state, coinsNow) : state.dust?.pendingCoins ?? [];
+    for (const c of availableNow) {
+      coins.dust.available.push(toDustCoinInfo(c));
     }
-    for (const c of state.dust?.pendingCoins ?? []) {
-      coins.dust.pending.push({
-        generatedNow: c.generatedNow ?? 0n,
-        maxCap: c.maxCap ?? 0n,
-        maxCapReachedAt: c.maxCapReachedAt instanceof Date ? c.maxCapReachedAt : new Date(c.maxCapReachedAt ?? 0),
-        dtime: c.dtime ? (c.dtime instanceof Date ? c.dtime : new Date(c.dtime)) : null,
-      });
+    for (const c of pendingNow) {
+      coins.dust.pending.push(toDustCoinInfo(c));
     }
+    // Coins the ledger state holds that the SDK leaves out of every list above,
+    // because it has no generation record for them (CoinsAndBalances.toFullInfo).
+    // They are invisible to balance and fee selection while still being coins.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const held = localDustCoins((state.dust?.state as any)?.state);
+    dustExcluded = held.filter((c) => !c.hasGenerationInfo).length;
     // v4 SDK dust SyncProgress shares the abstractions shape with shielded
     const dp = state.dust?.progress;
     const duApplied = dp?.appliedIndex ?? 0n;
@@ -1164,7 +1565,34 @@ function extractBalancesPartial(
   }
 
   const syncProgress: SyncProgress = {percentage, etaSeconds, slowest, shieldedSynced, unshieldedSynced, dustSynced};
-  return {shielded, unshielded, dust, dustGeneration, syncProgress, synced, coins, subProgress};
+  // Only the local fact this emission can establish; the session folds in the
+  // indexer's verdict (see applyDustView in startSyncSession).
+  const dustView: DustViewHealth = {...(previous?.dustView ?? EMPTY_DUST_VIEW), excluded: dustExcluded};
+  return {shielded, unshielded, dust, dustGeneration, syncProgress, synced, coins, subProgress, dustView};
+}
+
+/** The SDK's DustFullInfo, as the per-coin breakdown reports it. */
+function toDustCoinInfo(c: {
+  generatedNow?: bigint;
+  maxCap?: bigint;
+  maxCapReachedAt?: Date | number;
+  dtime?: Date | number | null;
+  token?: {backingNight?: unknown; seq?: number; initialValue?: bigint; ctime?: Date};
+}): DustCoinInfo {
+  const info: DustCoinInfo = {
+    generatedNow: c.generatedNow ?? 0n,
+    maxCap: c.maxCap ?? 0n,
+    maxCapReachedAt: c.maxCapReachedAt instanceof Date ? c.maxCapReachedAt : new Date(c.maxCapReachedAt ?? 0),
+    dtime: c.dtime ? (c.dtime instanceof Date ? c.dtime : new Date(c.dtime)) : null,
+  };
+  const t = c.token;
+  if (t) {
+    if (t.backingNight !== undefined) info.backingNight = String(t.backingNight);
+    if (typeof t.seq === 'number') info.seq = t.seq;
+    if (typeof t.initialValue === 'bigint') info.initialValue = t.initialValue;
+    if (t.ctime instanceof Date) info.ctime = t.ctime;
+  }
+  return info;
 }
 
 function extractBalances(state: FacadeState): WalletBalances {

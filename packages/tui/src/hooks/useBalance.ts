@@ -15,6 +15,7 @@ import {
   type WalletCoinDetails,
   type SubWalletProgress,
   type WalletKeys,
+  type DustViewHealth,
 } from '@shieldedtech/moth-wallet';
 
 interface BalanceState {
@@ -31,6 +32,8 @@ interface BalanceState {
   syncProgress: SyncProgress | null;
   coins: WalletCoinDetails;
   subProgress: SubWalletProgress;
+  /** Whether the dust view is whole against the chain (core/sync/dust-view.ts). */
+  dustView: DustViewHealth | null;
 }
 
 const EMPTY_STATE: BalanceState = {
@@ -39,6 +42,7 @@ const EMPTY_STATE: BalanceState = {
   synced: false, syncStatus: '', loading: false,
   dustGeneration: null, syncProgress: null,
   coins: EMPTY_COINS, subProgress: EMPTY_SUB_PROGRESS,
+  dustView: null,
 };
 
 function balancesToState(b: WalletBalances, status?: string): BalanceState {
@@ -59,6 +63,7 @@ function balancesToState(b: WalletBalances, status?: string): BalanceState {
     syncProgress: b.syncProgress,
     coins: b.coins,
     subProgress: b.subProgress,
+    dustView: b.dustView ?? null,
   };
 }
 
@@ -157,6 +162,8 @@ export function useBalance(
   }, []);
 
   const getFacade = useCallback(() => syncRef.current?.facade ?? null, []);
+  /** The live sync session, for hosts that need more than the facade (dust rebuild, view check). */
+  const getSyncedWallet = useCallback(() => syncRef.current, []);
 
   /**
    * Stop syncing and wait for it, before anything frees the keys.
@@ -181,5 +188,5 @@ export function useBalance(
     ]);
   }, []);
 
-  return { ...state, refresh, getFacade, stop };
+  return { ...state, refresh, getFacade, getSyncedWallet, stop };
 }

@@ -175,6 +175,9 @@ export default class DaemonServe extends BaseCommand {
       queue,
       auditLog,
       maxSpendRaw,
+      checkDustView: synced.checkDustView,
+      rebuildDust: synced.rebuildDust,
+      restartSync: synced.restartSync,
       log: (level, msg) => {
         if (level === 'info') this.log_verbose(`[daemon] ${msg}`);
         else process.stderr.write(`[daemon ${level}] ${msg}\n`);
