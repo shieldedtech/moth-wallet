@@ -46,6 +46,16 @@ export const NOT_IMPLEMENTED_METHODS = [] as const;
  *  and proposed upstream separately. See specs/003-derive-app-secret. */
 export const EXTENSION_METHODS = [
   'deriveAppSecret',
+  // Spendable shielded coin detail. A Compact circuit that takes a coin as an
+  // argument needs a full QualifiedShieldedCoinInfo {nonce, type, value,
+  // mt_index}, and a DApp cannot derive it: the connector API has no coin
+  // enumeration, and the indexer's queryZSwapAndContractState returns a
+  // CONTRACT-FILTERED Zswap state whose firstFree is 0, so it cannot yield a
+  // global Merkle index. Only the wallet tracks the global commitment tree for
+  // its own coins. Without this, every spend-a-user-coin contract pattern
+  // (vaults, wrappers, escrow, DEX) is uncallable from the browser.
+  // Non-standard pending an upstream connector-API addition.
+  'getShieldedCoins',
 ] as const;
 
 /** Private RPC calls used by the page-local ProvingProvider proxy. */

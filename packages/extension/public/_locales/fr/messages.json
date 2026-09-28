@@ -1205,6 +1205,15 @@
   "settings_autoLockNever": {
     "message": "Ne jamais verrouiller"
   },
+  "settings_lockNow": {
+    "message": "Verrouiller maintenant"
+  },
+  "settings_lockNowDescription": {
+    "message": "Lock this account and forget its keys until you enter your password again. Your accounts and settings stay on this device."
+  },
+  "settings_lockNowAction": {
+    "message": "Verrouiller"
+  },
   "settings_sectionAppearance": {
     "message": "Apparence"
   },
@@ -1228,6 +1237,9 @@
   },
   "settings_version": {
     "message": "Version $1"
+  },
+  "settings_buildTime": {
+    "message": "Compilation $1"
   },
   "setup_taglineLine1": {
     "message": "Portefeuille"
@@ -1639,5 +1651,17 @@
   },
   "accounts_revealNoPhraseReason": {
     "message": "Ce compte a été restauré depuis un seed hexadécimal : il n’a donc pas de phrase de récupération, et une phrase ne peut pas être déduite d’un seed. Son seed est la sauvegarde."
+  },
+  "settings_rebuildShielded": {
+    "message": "Reconstruire les données des pièces shielded"
+  },
+  "settings_rebuildShieldedDesc": {
+    "message": "Réanalyse les pièces shielded depuis la chaîne. À utiliser si un solde shielded semble incorrect ou obsolète. Ne dépense rien et ne touche pas au DUST, beaucoup plus lent à synchroniser."
+  },
+  "settings_rebuildShieldedAction": {
+    "message": "Reconstruire"
+  },
+  "settings_rebuildShieldedBusy": {
+    "message": "Reconstruction…"
   }
 }

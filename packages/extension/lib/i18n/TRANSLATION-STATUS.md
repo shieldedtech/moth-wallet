@@ -11,6 +11,8 @@ The English catalog (`messages/`) is the source of truth. Shipped locales live i
   buttons, activity labels): **AI-assisted drafts, NOT reviewed by a native speaker.**
   Safe UI chrome only (buttons, labels, titles, durations). Review recommended before
   a user-facing release, but low-risk.
+- **`settings_lockNow`, `settings_lockNowAction`, `settings_buildTime`**: AI-assisted drafts
+  on the same terms, reusing each locale's existing auto-lock vocabulary.
 - **Sensitive copy: intentionally left in English**, pending native-speaker review.
   These carry security / financial / consequence meaning where a mistranslation could
   mislead, so they were NOT machine-drafted. Translate these with care and review:
@@ -22,6 +24,9 @@ The English catalog (`messages/`) is the source of truth. Shipped locales live i
   - `send_provingFootnote`, `dust_provingFootnote` — prover-choice guidance
   - `network_wasmDesc`, `network_proofServerDesc`, `network_provingHelp` — prover guidance
   - `settings_autoLockDemo`, `settings_autoLockDescription` — auto-lock/demo-mode meaning
+  - `settings_lockNowDescription` — states what locking forgets (keys) and what it keeps
+    (accounts, settings); a mistranslation reading as "delete" would scare a user off the
+    one control that protects an unattended wallet
   - `dust_noteRegisteredHold`, `dust_noteRegisterPrompt`, `dust_noteUnregisteredSome`,
     `dust_noteNotGenerating` — DUST-generation advisories
   - `dust_generateBodyReceiver`, `dust_deregisterBody`, `dust_deregisteredSub`,

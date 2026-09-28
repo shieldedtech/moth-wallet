@@ -100,9 +100,28 @@ export function App() {
     URL.revokeObjectURL(url);
   };
 
-  // The slowest phases are what this page exists to surface.
-  const slowest = [...entries].sort((a, b) => b.deltaMs - a.deltaMs).slice(0, 3);
-  const slowestAt = new Set(slowest.map((e) => e.at));
+  // What each label COST, which is the gap to the entry after it — not the
+  // stored `deltaMs`, which is the gap to the entry before.
+  //
+  // Every label is a start marker: core stamps "Initializing wallet facade..."
+  // and then does the work. Pairing a row with the gap that ENDED at it
+  // therefore credits every phase's cost to whatever ran next. Observed: a
+  // 1m30s dust-state deserialize reported against "Initializing wallet
+  // facade...", which the same timeline showed taking 7ms — and the red
+  // slowest-phase highlight pointed at the innocent row, which is worse than
+  // not highlighting at all.
+  //
+  // The final row has nothing after it, so its phase has not finished and it
+  // gets no figure rather than a made-up one.
+  const costOf = (i: number): number | null => (i + 1 < entries.length ? entries[i + 1]!.at - entries[i]!.at : null);
+  const slowestAt = new Set(
+    entries
+      .map((e, i) => ({ at: e.at, cost: costOf(i) }))
+      .filter((e): e is { at: number; cost: number } => e.cost !== null)
+      .sort((a, b) => b.cost - a.cost)
+      .slice(0, 3)
+      .map((e) => e.at),
+  );
 
   return (
     <div className="mx-auto max-w-[900px] p-6 font-sans">
@@ -290,7 +309,8 @@ export function App() {
           <thead>
             <tr className="border-b border-border text-left text-muted-foreground">
               <th className="py-2 pr-3 font-medium">Time</th>
-              <th className="py-2 pr-3 font-medium">Δ</th>
+              {/* "Took", not "Δ": this is the cost of the phase the row names. */}
+              <th className="py-2 pr-3 font-medium">Took</th>
               <th className="py-2 pr-3 font-medium">Source</th>
               <th className="py-2 font-medium">Phase</th>
             </tr>
@@ -304,7 +324,7 @@ export function App() {
                     slowestAt.has(e.at) ? 'text-destructive' : ''
                   }`}
                 >
-                  {fmtMs(e.deltaMs)}
+                  {costOf(i) === null ? <span className="text-muted-foreground">—</span> : fmtMs(costOf(i)!)}
                 </td>
                 <td className="py-1.5 pr-3 text-muted-foreground">{e.source}</td>
                 <td className="py-1.5">

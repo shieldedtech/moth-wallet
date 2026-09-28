@@ -205,7 +205,17 @@ export function App() {
           onNewAccount={() => openSetupTab()}
         />
       )}
-      {screen === 'settings' && <Settings onBack={shared.back} navigate={setScreen} />}
+      {screen === 'settings' && (
+        <Settings
+          onBack={shared.back}
+          navigate={setScreen}
+          // Locking clears the session; the status refresh that follows flips
+          // this shell to the Unlock screen, and the `locked` effect above
+          // drops the streamed balances so nothing of this account survives
+          // the switch.
+          onLock={() => void session.lock()}
+        />
+      )}
       {screen === 'connected-sites' && <ConnectedSites onBack={() => setScreen('settings')} />}
       {screen === 'address-book' && <AddressBook onBack={() => setScreen('settings')} />}
       {screen === 'network-config' && (

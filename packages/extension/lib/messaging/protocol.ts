@@ -341,6 +341,9 @@ interface ProtocolMap {
     applied: number;
     total: number;
   };
+  /** Rebuild only the shielded sub-wallet's cache and rescan. Does not touch
+   *  DUST, which is far slower to resync. */
+  shieldedRebuild(): { started: boolean };
   dustRebuild(): { started: boolean };
 
   /** Activity feed (on-chain history + pending local submissions), newest

@@ -20,6 +20,7 @@ import { PanelScreen, PanelHeader } from '../moth/panel';
 import { networkLabel } from './NetworkConfig';
 import { preseedControl } from '../../lib/ui/preseed-control';
 import { buildDiagnosticsReport } from '../../lib/ui/diagnostics-report';
+import { formatBuildTime } from '../../lib/ui/build-info';
 import type { Screen } from './navigation';
 
 // Inactivity timeout options. `null` is demo mode (never locks). Kept here (UI
@@ -39,7 +40,17 @@ const THEME_OPTIONS: Array<{ value: ThemePreference; labelKey: MessageKey }> = [
   { value: 'dark', labelKey: 'settings_themeDark' },
 ];
 
-export function Settings({ onBack, navigate }: { onBack: () => void; navigate: (screen: Screen) => void }) {
+export function Settings({
+  onBack,
+  navigate,
+  onLock,
+}: {
+  onBack: () => void;
+  navigate: (screen: Screen) => void;
+  /** Lock the session now. Owned by the shell, which holds the session and
+   *  re-renders to the Unlock screen once the status comes back locked. */
+  onLock: () => void;
+}) {
   const [settings, setSettings] = useState<ExtensionSettings | null>(null);
 
   // Reference readiness + live build progress, polled rather than pushed: the
@@ -58,6 +69,7 @@ export function Settings({ onBack, navigate }: { onBack: () => void; navigate: (
   const [resolverDraft, setResolverDraft] = useState('');
   const [appearance, setAppearance] = useState<Appearance>(() => loadAppearance());
   const [copiedDiagnostics, setCopiedDiagnostics] = useState(false);
+  const [rebuildingShielded, setRebuildingShielded] = useState(false);
   // "Clear cache and resync": confirm first, because it discards an hour of
   // sync on a slow network even though it moves no funds.
   const [confirmingResync, setConfirmingResync] = useState(false);
@@ -143,6 +155,19 @@ export function Settings({ onBack, navigate }: { onBack: () => void; navigate: (
   // already holds — no extra round trip — and deliberately excludes addresses,
   // account names and balances, because a user pastes this into a public issue
   // without reading it first. See lib/ui/diagnostics-report.ts.
+  // Evict the shielded sync cache and rescan. Nothing is spent and nothing can
+  // be stranded: on failure the existing cache is either intact or already
+  // rebuilding, so just release the button and let the sync indicator speak.
+  const rebuildShielded = async () => {
+    if (rebuildingShielded) return;
+    setRebuildingShielded(true);
+    try {
+      await sendMessage('shieldedRebuild', undefined);
+    } catch {
+      setRebuildingShielded(false);
+    }
+  };
+
   const copyDiagnostics = async () => {
     if (!settings) return;
     const report = buildDiagnosticsReport({
@@ -182,6 +207,10 @@ export function Settings({ onBack, navigate }: { onBack: () => void; navigate: (
   // Which of the three states this network's row is in — see lib/ui/preseed-control.ts
   // for why an on-device build is not offered everywhere any more.
   const control = preseedControl(preseed);
+
+  // null when the bundle carries no stamp, which hides the line rather than
+  // printing an empty "Built".
+  const buildStamp = formatBuildTime();
 
   if (!settings) {
     return (
@@ -365,6 +394,28 @@ export function Settings({ onBack, navigate }: { onBack: () => void; navigate: (
             />
           </span>
         </div>
+
+        <Separator />
+
+        {/*
+          Manual lock. The background has had `sessionLock` and the client hook
+          has had `lock()` since auto-lock landed, but nothing ever called
+          them — the only way to lock was to wait out the inactivity timer.
+          Locking drops the seed and closes the offscreen host, so the next use
+          costs a full unlock + sync; that is the point, and the description
+          says what is and is not forgotten so it does not read as "delete".
+        */}
+        <div className="flex items-center justify-between px-4 py-[13px]">
+          <span className="min-w-0 pr-3">
+            <span className="block text-sm font-medium">{t('settings_lockNow')}</span>
+            <span className="block text-[12.5px] text-muted-foreground">
+              {t('settings_lockNowDescription')}
+            </span>
+          </span>
+          <Button size="sm" variant="secondary" className="shrink-0" onClick={onLock}>
+            {t('settings_lockNowAction')}
+          </Button>
+        </div>
       </Section>
 
       <Section label={t('settings_sectionAppearance')}>
@@ -429,11 +480,36 @@ export function Settings({ onBack, navigate }: { onBack: () => void; navigate: (
             {copiedDiagnostics ? t('settings_copyDiagnosticsDone') : t('settings_copyDiagnostics')}
           </Button>
         </div>
+
+        <Separator />
+
+        {/*
+          Rebuilds ONLY the shielded sub-wallet. Deliberately not a full cache
+          clear: DUST is by far the slowest part to resync, and a shielded coin
+          problem should not cost a DUST rescan. Spends nothing, so there is no
+          confirm step — the sync indicator reports the rescan.
+        */}
+        <div className="flex items-center justify-between px-4 py-[13px]">
+          <span className="min-w-0 pr-3">
+            <span className="block text-sm font-medium">{t('settings_rebuildShielded')}</span>
+            <span className="block text-[12.5px] text-muted-foreground">{t('settings_rebuildShieldedDesc')}</span>
+          </span>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="shrink-0"
+            disabled={rebuildingShielded}
+            onClick={() => void rebuildShielded()}
+          >
+            {rebuildingShielded ? t('settings_rebuildShieldedBusy') : t('settings_rebuildShieldedAction')}
+          </Button>
+        </div>
       </Section>
 
-      <p className="m-0 pb-2 text-center text-xs text-muted-foreground">
-        {t('settings_version', [browser.runtime.getManifest().version])}
-      </p>
+      <div className="pb-2 text-center text-xs text-muted-foreground">
+        <p className="m-0">{t('settings_version', [browser.runtime.getManifest().version])}</p>
+        {buildStamp && <p className="m-0">{t('settings_buildTime', [buildStamp])}</p>}
+      </div>
 
       <DialogShell
         open={confirmingResync}

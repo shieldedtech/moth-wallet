@@ -15,6 +15,45 @@ export interface SubProgressSnapshot {
 /** Which sub-wallet the reported percentage belongs to. */
 export type SubWallet = 'shielded' | 'unshielded' | 'dust';
 
+/**
+ * A single sub-wallet's progress, as a whole percent that never reads 100 while
+ * the part is incomplete — the same rule overallSyncProgress applies to the
+ * total, which the per-part figures used to contradict inside one sentence.
+ *
+ * Lives here, with the export consumed by both the core log line and the
+ * extension's popover rows, because the two carried separate copies of this
+ * arithmetic and drifted: core rounded 99.96% up to 100% while the overall
+ * figure beside it was clamped to 99%.
+ *
+ * A part with nothing to apply (total 0) is complete, not stalled — a fresh
+ * wallet's unshielded progress is legitimately 0/0. That matches subPct and
+ * fraction() below; the extension previously read the same state as 0%.
+ */
+export function subProgressPercent(sub: SubProgressSnapshot, done: boolean): number {
+  if (done) return 100;
+  if (sub.total <= 0) return 100;
+  const raw = Math.min(1, sub.applied / sub.total);
+  // floor, not round, and capped below 100: both directions of "do not overstate".
+  return Math.min(99, Math.floor(raw * 100));
+}
+
+/**
+ * The same figure for a log line, printing raw indices once the percentage has
+ * stopped carrying information.
+ *
+ * At 99%+ the gap is what the reader needs — a few events behind a moving tip is
+ * a different situation from thousands. Printing it is what exposed a dust
+ * cursor frozen 6,401 short, and an `applied` exceeding its own `total`, both of
+ * which the rounded 100% had been hiding.
+ */
+export function formatSubProgress(sub: SubProgressSnapshot, done: boolean): string {
+  if (done) return '100%';
+  if (sub.total <= 0) return '100%';
+  const pct = subProgressPercent(sub, done);
+  if (pct >= 99) return `99%+ (${sub.applied}/${sub.total})`;
+  return `${pct}%`;
+}
+
 export interface OverallProgressInput {
   shielded: SubProgressSnapshot;
   unshielded: SubProgressSnapshot;
