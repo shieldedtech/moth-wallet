@@ -64,13 +64,16 @@ export type {
 } from './wallet-rpc-types.js';
 
 import {join} from 'node:path';
-import {homedir} from 'node:os';
+
+import {mothHome} from '../storage/home.js';
 
 /**
  * Canonical socket path for a (network, wallet) pair. Sits inside the same
- * `~/.moth/sync/<network>/` directory tree that the wallet sync cache uses,
- * so the L1 0700 directory perms protect both atomically.
+ * `<moth-home>/sync/<network>/` directory tree that the wallet sync cache
+ * uses, so the L1 0700 directory perms protect both atomically. Resolves
+ * MOTH_HOME through the same helper the storage adapter uses — a socket and
+ * its wallet must never end up under different roots.
  */
 export function daemonSocketPath(networkId: string, walletName: string): string {
-  return join(homedir(), '.moth', 'sync', networkId, `${walletName}.sock`);
+  return join(mothHome(), 'sync', networkId, `${walletName}.sock`);
 }

@@ -1,17 +1,17 @@
 import { readFile, writeFile, unlink, readdir, stat, mkdir, chmod, open, rename } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
-import { homedir } from 'node:os';
 import type { StorageAdapter } from './adapter.js';
 import { safePath } from './safe-path.js';
-
-const DEFAULT_DIR = join(homedir(), '.moth');
+import { mothHome } from './home.js';
 const LOCK_SUFFIX = '.lock';
 const LOCK_STALE_MS = 30_000; // Consider lock stale after 30s
 
 export class FilesystemStorageAdapter implements StorageAdapter {
   private readonly baseDir: string;
 
-  constructor(baseDir = DEFAULT_DIR) {
+  // Resolved per instance rather than at module load, so a process that
+  // sets MOTH_HOME after import still lands in the directory it asked for.
+  constructor(baseDir = mothHome()) {
     this.baseDir = baseDir;
   }
 

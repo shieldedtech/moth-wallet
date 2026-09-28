@@ -349,14 +349,36 @@ export async function syncEnsure(
   current = { key, synced, walletKeys };
 
   const wallet = await synced.catch((err) => {
-    current = null;
+    // Only disown the session if it is still ours. `current` can have moved on
+    // across this await, and syncStop bounds its wait at STOP_TIMEOUT_MS — so a
+    // start that fails after that bound would otherwise null the record of the
+    // wallet the user switched to, and every later op would report no wallet
+    // synced.
+    if (current?.key === key) current = null;
     throw err;
   });
 
+  // A subscription must not outlive its wallet's turn as the active one.
+  //
+  // `current` can change across the await above, and core's `subscribe` invokes
+  // the callback synchronously with that wallet's own balances before returning
+  // (sync/wallet-sync.ts). So an unguarded callback publishes a superseded
+  // wallet's balance into the shared channel at the instant it subscribes —
+  // which the panel then shows, attributed to the wallet the user is looking at,
+  // until the active wallet next emits. A synced wallet emits only on change,
+  // audited at 1s, so "until" can be minutes.
   const unsubscribe = wallet.subscribe((balances) => {
+    if (current?.key !== key) return;
     emit('os/eventBalances', serializeForClients(balances));
   });
-  if (current?.key === key) current.unsubscribe = unsubscribe;
+  if (current?.key === key) {
+    current.unsubscribe = unsubscribe;
+  } else {
+    // Superseded while starting: no record will ever hold this handle, so
+    // syncStop could not reach it. Drop it here rather than leaving the callback
+    // in core's subscriber list for the lifetime of the document.
+    unsubscribe();
+  }
   return wallet;
 }
 

@@ -1,5 +1,90 @@
 # @shieldedtech/moth-extension
 
+## 0.14.1
+
+### Patch Changes
+
+- 5ce7ed2: Stop a superseded wallet publishing its balance after a wallet switch.
+
+  `syncEnsure` records the session in `current` before awaiting the sync start, so
+  switching wallets while one is still starting supersedes that record. When the
+  first start finally resolved it subscribed unconditionally — and core's
+  `subscribe` invokes the callback synchronously with that wallet's own balances
+  before returning — so the superseded wallet published one `os/eventBalances`
+  into the shared channel after the user had already moved on. The panel showed it
+  as the balance of the wallet being viewed.
+
+  It shows until the active wallet next emits, and a synced wallet emits only on
+  change, audited at one second — so the wrong figure can sit on screen for
+  minutes rather than flicker. Two wallets whose balances differ made this look
+  like a balance flipping between two values.
+
+  The emission is now dropped unless its wallet is still the active one. Where the
+  existing `current?.key === key` guard fails, the unsubscribe handle is called
+  rather than discarded: nothing would ever have stored it, so `syncStop` could
+  not have reached it and the callback stayed in core's subscriber list for the
+  lifetime of the document.
+
+  The rejection path is guarded the same way. It nulled `current` without checking
+  whose it was, so a start failing after `syncStop`'s 30s bound would have torn
+  down the session of the wallet the user had switched to.
+
+  No arithmetic changed. Both balances were always correct; only the attribution
+  was wrong.
+- Updated dependencies [0f0afa3]
+  - @shieldedtech/moth-wallet@0.14.1
+  - @shieldedtech/moth-browser@0.14.1
+
+## 0.14.0
+
+### Patch Changes
+
+- 8cd2eae: Keep the underscores in an address visible, by naming a real monospace face
+  ahead of the generic one.
+
+  `--font-mono` ended in `ui-monospace, 'SF Mono', Menlo, monospace`, which lists
+  only faces that exist on macOS. Everywhere else it fell through to the generic
+  `monospace`, which on most Linux desktops resolves to DejaVu Sans Mono — and
+  inside an `<input>` at 14px Chromium renders that face's underscore as no
+  pixels at all, so `mn_addr_undeployed1…` read as `mn addr undeployed1…`. An
+  address is exactly the string where a silently dropped character matters.
+
+  The loss is specific to the combination: the same face renders the underscore
+  in a plain element, and at 13px or 15px in the same input. Line-height,
+  padding and box height do not move it, so the font stack is the only lever.
+  Consolas covers Windows and Liberation Mono and Noto Sans Mono cover Linux,
+  each of which renders the underscore at every size in the 12–16px range.
+- 320b6c5: Declare `clipboardRead`, so the Paste button on a recipient address works
+  outside Chrome.
+
+  Both Paste affordances — the one on the recipient field in Send and the DUST
+  designation dialog (`components/moth/address-picker.tsx`), and the seed-phrase
+  one in setup — call `navigator.clipboard.readText()`, but the manifest never
+  asked for the permission that read requires. Chrome serves the read to an
+  extension page off a user gesture regardless of whether it was declared, so the
+  omission was invisible there and the buttons worked. Stricter Chromium builds
+  enforce the declaration: on Brave the promise rejected, and the picker's
+  `catch` discarded the rejection without touching the field or saying anything,
+  so Paste was a button that did nothing.
+
+  The rejection is now logged rather than swallowed. It still leaves the field
+  alone — a keyboard paste was never affected and remains the fallback — but a
+  refused read raises no UI of its own, so silence made a permission problem
+  indistinguishable from a dead button.
+
+  A guard test resolves the manifest for both targets and asserts the permission
+  is present, since the only builds that would otherwise notice its absence are
+  the ones we do not test on.
+- Updated dependencies [3b39fb6]
+- Updated dependencies [3b39fb6]
+- Updated dependencies [3b39fb6]
+- Updated dependencies [55a878c]
+- Updated dependencies [77edf22]
+- Updated dependencies [aa3c276]
+- Updated dependencies [19a1a23]
+  - @shieldedtech/moth-wallet@0.14.0
+  - @shieldedtech/moth-browser@0.14.0
+
 ## 0.13.0
 
 ### Minor Changes

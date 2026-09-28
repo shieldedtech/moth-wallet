@@ -38,6 +38,9 @@ Trusted Publishing releases automatically.
 2. A push to `main` makes `release.yml` open or update the
    `chore: version packages` PR.
 3. Pending Changesets also publish a snapshot under the `canary` dist-tag.
+   A branch that ships in parallel with `main` publishes snapshots under the
+   `next` dist-tag when `release.yml` is dispatched on it; see RELEASE.md.
+   The dispatch uses the same trusted publisher, so no npm configuration changes.
 4. After review, merging the version PR makes the same workflow publish the
    stable versions, push tags, and create GitHub Releases.
 
