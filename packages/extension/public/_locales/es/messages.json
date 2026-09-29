@@ -692,6 +692,9 @@
   "home_seeAll": {
     "message": "Ver todo"
   },
+  "home_noActivity": {
+    "message": "Aún no hay actividad. Tus transferencias aparecerán aquí."
+  },
   "home_nameTokenAria": {
     "message": "Nombrar token $1"
   },

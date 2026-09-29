@@ -27,3 +27,9 @@ wallet learned when it balanced or built the transaction (the deficits it
 covered, or the transfer it was asked for) is kept until the dApp submits it,
 so a contract call that takes NIGHT out of the wallet shows as a pending send
 of that amount, and is marked failed on the same terms as a wallet send.
+
+Home always shows the Recent activity section with its "See all" link, over an
+empty state when there is nothing yet. It used to hide the section, and with it
+the only way into the full feed, whenever the feed was empty or had not been
+read. A failed feed read is now retried with backoff instead of leaving the
+section blank until the next transaction.

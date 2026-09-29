@@ -221,13 +221,18 @@ export function useAddressBook() {
  * The activity feed for the unlocked account. Refetches when a sub-wallet
  * applies new transactions (the applied indices are a cheap change signal that
  * avoids a round-trip per balance emission at steady state) — that's also what
- * flips a pending row to applied. `null` until the first response.
+ * flips a pending row to applied. `null` until the first successful response;
+ * a failed read is retried with backoff.
  */
 export function useActivity(balances: WalletBalances | null): ActivityEntry[] | null {
   const [entries, setEntries] = useState<ActivityEntry[] | null>(null);
   // Bumped when the host records a submission or rules one failed. Neither
   // moves the applied counters below, which only follow chain sync.
   const [localVersion, setLocalVersion] = useState(0);
+  // Bumped to retry a failed read: a synced, idle wallet triggers no other
+  // read, so one lost response would hide the feed until the next transaction.
+  const [retry, setRetry] = useState(0);
+  const failures = useRef(0);
   const applied = balances
     ? `${balances.subProgress.shielded.applied}/${balances.subProgress.unshielded.applied}/${balances.subProgress.dust.applied}`
     : '';
@@ -240,19 +245,31 @@ export function useActivity(balances: WalletBalances | null): ActivityEntry[] | 
 
   useEffect(() => {
     let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
     sendMessage('activityGet', undefined)
       .then((payload) => {
-        if (!cancelled) setEntries(deserializeActivity(payload));
+        if (cancelled) return;
+        failures.current = 0;
+        setEntries(deserializeActivity(payload));
       })
       .catch(() => {
-        /* locked or transient — keep whatever we had */
+        // Locked or transient: keep whatever we had and try again.
+        if (cancelled) return;
+        failures.current += 1;
+        timer = setTimeout(() => setRetry((n) => n + 1), activityRetryDelayMs(failures.current));
       });
     return () => {
       cancelled = true;
+      if (timer) clearTimeout(timer);
     };
-  }, [applied, localVersion]);
+  }, [applied, localVersion, retry]);
 
   return entries;
+}
+
+/** Delay before retrying the feed after `failures` consecutive failed reads. */
+export function activityRetryDelayMs(failures: number): number {
+  return Math.min(30_000, 1_000 * 2 ** Math.max(0, failures - 1));
 }
 
 export interface PanelEvents {
