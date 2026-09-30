@@ -101,6 +101,7 @@ the release tag manually.
   amount the wallet has to supply, and any change it gets back — read from the
   transaction's own per-segment imbalances (`Transaction.imbalances`) before
   anything is spent. Fees are not in that list: they are only known once the
-  wallet has balanced and proven its segment, and are always paid in DUST. If
-  the transaction cannot be decoded, the screen says so instead of showing an
-  empty list.
+  wallet has balanced and proven its segment, and are paid in DUST. A dApp that
+  passes `payFees: false` gets the transaction back without a fee, and the screen
+  says the wallet is not paying it. If the transaction cannot be decoded, the
+  screen says so instead of showing an empty list.

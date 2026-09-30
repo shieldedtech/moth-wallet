@@ -54,7 +54,7 @@ export const hostDispatch: Dispatch = {
   'os/requestStats': (host) => host.requestStats(),
   'os/requestStatsReset': (host) => host.resetRequestStats(),
   'os/dustRebuild': (host, d) => host.dustRebuild(d.seedHex, d.walletName, d.network),
-  'os/transferBuild': (host, d) => host.transferBuild(d.seedHex, d.walletName, d.network, d.requests),
+  'os/transferBuild': (host, d) => host.transferBuild(d.seedHex, d.walletName, d.network, d.requests, d.payFees),
   'os/transferSubmit': (host, d) => host.transferSubmit(d.seedHex, d.walletName, d.network, d.txHex),
   'os/txHistoryGet': (host, d) => host.txHistoryGet(d.seedHex, d.walletName, d.network, d.pageNumber, d.pageSize),
   'os/activityGet': (host, d) => host.activityGet(d.seedHex, d.walletName, d.network),
@@ -82,7 +82,7 @@ export const hostDispatch: Dispatch = {
     return encodeBigintJson(result);
   },
   'os/balanceTransaction': (host, d) =>
-    host.balanceTransaction(d.seedHex, d.walletName, d.network, d.txHex, d.sealed),
+    host.balanceTransaction(d.seedHex, d.walletName, d.network, d.txHex, d.sealed, d.payFees),
   'os/makeIntent': (host, d) =>
     host.makeIntent(d.seedHex, d.walletName, d.network, d.inputs, d.outputs, d.payFees),
   'os/txSummary': (host, d) => host.txSummary(d.network, d.txHex, d.sealed),
