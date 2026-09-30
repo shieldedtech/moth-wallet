@@ -452,13 +452,72 @@ Every command accepts:
 | `moth dust deregister` | Deregister from DUST |
 | `moth dust status` | Show generation status, rate, capacity |
 
+### Cardano (cNIGHT)
+
+DUST is generated either by NIGHT held on Midnight (above) or by cNIGHT held on
+Cardano. The Cardano route needs a transaction on Cardano: it maps your Cardano
+**stake** key to a Midnight coin public key, and the ledger then generates DUST
+to that key for as long as the mapping stands.
+
+Cardano keys are derived from the account's existing recovery phrase (CIP-1852,
+account 0), so there is nothing extra to back up — but an account imported from
+a raw hex seed has no Cardano address at all, because CIP-1852 starts from
+BIP-39 entropy and a seed cannot be turned back into it.
+
+Reads and submission go through Blockfrost. Set a project id first — get one
+free at [blockfrost.io](https://blockfrost.io):
+
+```bash
+moth config set blockfrost-project-id <id>   # or MOTH_BLOCKFROST_PROJECT_ID
+moth cardano status
+moth cardano register                        # DUST to this wallet
+```
+
+The CLI, TUI and daemon share `~/.moth/config`, so that one command covers all
+three; the TUI can also set it in place, on the Network screen (`n`) under
+Cardano. The extension keeps its own copy in Settings → Cardano. The value is
+masked everywhere it is shown back.
+
+| Command | Description |
+|---------|-------------|
+| `moth cardano address` | Cardano payment and stake addresses for this account, plus its Midnight coin public key |
+| `moth cardano balance` | ADA and cNIGHT held on Cardano |
+| `moth cardano status` | cNIGHT holdings, the on-chain mapping, and what Midnight has observed of it |
+| `moth cardano register [--receiver <coin-pubkey>]` | Map this Cardano stake key to a Midnight coin public key (default: this wallet's) |
+| `moth cardano deregister` | Burn the mapping and stop generating |
+| `moth cardano update <coin-pubkey>` | Point an existing mapping at a different Midnight address |
+| `moth cardano send <to> [--ada <n>] [--cnight <n>]` | Send ADA and/or cNIGHT. Refuses an address for the wrong network, and warns when sending cNIGHT that is generating DUST |
+| `moth cardano account list [--addresses]` | List Cardano accounts and which is active |
+| `moth cardano account add [<label>]` | Next CIP-1852 index of the wallet's phrase — own address, own registration, nothing extra to back up |
+| `moth cardano account import [--label <l>]` | Cardano-only account from a separate phrase, read from stdin, encrypted under the wallet passphrase |
+| `moth cardano account use <id\|label>` | Switch the active account |
+| `moth cardano account remove <id\|label>` | Remove an account; for an imported one this deletes its only stored phrase |
+
+Every `moth cardano` command takes `--account <id\|label>` to act on one without
+switching.
+
+The Cardano network follows `--network` (mainnet↔Mainnet, preprod↔Preprod,
+everything else↔Preview) unless `--cardano-network` or
+`moth config set cardano-network` says otherwise.
+
+Two things surprise people, so they are worth stating:
+
+- **Every cNIGHT UTXO is spent** by register, deregister and update, back to
+  your own address. DUST accrues against a UTXO from the moment it was created
+  and the ledger only re-reads its registration when it moves — so leaving one
+  untouched would leave it generating under the mapping you just changed.
+- **Cardano and Midnight disagree for a few minutes.** Cardano confirms in
+  seconds; the Midnight indexer takes longer to observe the mapping.
+  `cardano status` reports both sides rather than one flag, because a correct,
+  fresh registration otherwise reads as a failed one.
+
 ### Utility
 
 | Command | Description |
 |---------|-------------|
 | `moth info` | Network and node status |
 | `moth airdrop` | **Stub** — does not move funds. On the local `undeployed` stack, fund from genesis via `npx midnight-wallet-cli midnight airdrop <amt> --wallet <bech32m>` (see [§2. Fund the Wallet](#2-fund-the-wallet-local-devnet-only)) |
-| `moth config get/set/unset <key> [<value>]` | Read, write, or clear a `~/.moth/config.json` key |
+| `moth config get/set/unset <key> [<value>]` | Read, write, or clear a `~/.moth/config.json` key. Cardano keys: `cardano-network`, `blockfrost-project-id` (never echoed back), `blockfrost-url`, `cnight-policy-id`, `cnight-asset-name` |
 | `moth tui` | Launch interactive dashboard |
 
 > For the exhaustive reference — including every `moth daemon …` subcommand (serve, transfer, call, deploy, submit-tx, dust, key gen/list/revoke, maintenance) and the full on-disk lifecycle — see [`docs/spec/wallet-service/COMMANDS.md`](docs/spec/wallet-service/COMMANDS.md).

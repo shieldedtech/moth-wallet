@@ -226,3 +226,99 @@ export type DaemonInsertVerifierKeysBatchResult = {
     readonly error?: string;
   }>;
 };
+
+// ─────────────────────────────────────────────────────────────────────
+// cardanoAddress / cardanoBalance / cardanoStatus
+// cardanoRegister / cardanoDeregister / cardanoUpdate
+//
+// Cardano verbs are only present on hosts that hold the wallet's mnemonic —
+// CIP-1852 derivation needs BIP-39 entropy, which the daemon's derive-and-drop
+// key bundle does not carry. Hosts that cannot supply one still answer these
+// verbs, with a refusal that says why.
+// ─────────────────────────────────────────────────────────────────────
+
+export type DaemonCardanoAddressParams = Record<string, never> | null;
+
+export type DaemonCardanoAddressResult = {
+  readonly cardanoNetwork: string;
+  readonly address: string;
+  readonly rewardAddress: string;
+  readonly stakeKeyHash: string;
+  readonly paymentKeyHash: string;
+  readonly midnightCoinPublicKey: string;
+};
+
+export type DaemonCardanoBalanceParams = Record<string, never> | null;
+
+export type DaemonCardanoBalanceResult = {
+  readonly cardanoNetwork: string;
+  /** Raw lovelace, as a decimal string — amounts exceed Number's safe range. */
+  readonly lovelace: string;
+  readonly cnight: string;
+  readonly cnightUtxos: number;
+  readonly cnightUnit: string;
+};
+
+export type DaemonCardanoStatusParams = Record<string, never> | null;
+
+export type DaemonCardanoStatusResult = {
+  readonly cardanoNetwork: string;
+  readonly address: string;
+  readonly rewardAddress: string;
+  readonly lovelace: string;
+  readonly cnight: string;
+  readonly cnightUtxos: number;
+  readonly registered: boolean;
+  readonly registeredCoinPublicKey: string | null;
+  readonly registeredToThisWallet: boolean;
+  readonly registrationUtxo: string | null;
+  readonly mappingValidator: string;
+  /** Midnight-side view; null until the indexer has observed the registration. */
+  readonly dustGeneration: unknown | null;
+};
+
+export type DaemonCardanoRegisterParams = {
+  /** Midnight coin public key, 64 hex chars. Defaults to this wallet's own. */
+  readonly receiver?: string;
+  readonly summary?: string;
+  readonly details?: readonly string[];
+};
+
+export type DaemonCardanoRegisterResult = {
+  readonly txHash: string;
+  readonly receiver: string;
+};
+
+export type DaemonCardanoDeregisterParams = {
+  readonly summary?: string;
+  readonly details?: readonly string[];
+};
+
+export type DaemonCardanoDeregisterResult = {
+  readonly txHash: string;
+};
+
+export type DaemonCardanoUpdateParams = {
+  /** Midnight coin public key, 64 hex chars. Required — this verb exists to change it. */
+  readonly receiver: string;
+  readonly summary?: string;
+  readonly details?: readonly string[];
+};
+
+export type DaemonCardanoUpdateResult = {
+  readonly txHash: string;
+  readonly receiver: string;
+};
+
+export type DaemonCardanoSendParams = {
+  readonly to: string;
+  /** Decimal strings — lovelace and token counts both exceed Number's range. */
+  readonly lovelace?: string;
+  readonly cnight?: string;
+  readonly summary?: string;
+  readonly details?: readonly string[];
+};
+
+export type DaemonCardanoSendResult = {
+  readonly txHash: string;
+};

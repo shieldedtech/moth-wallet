@@ -47,6 +47,7 @@ import {
   type NativeAssetLabels,
 } from '../../lib/ui/token-labels';
 import { formatTokenBalance } from '../../lib/ui/format';
+import { toast } from 'sonner';
 import { NoteCard } from '../moth/note-card';
 import { StatusHero, StepChecklist, DetailCard, type StepState } from '../moth/status';
 import { Button } from '../ui/button';
@@ -250,6 +251,30 @@ export function DustDetail({
           </p>
           <p className="m-0 text-center text-[12.5px] text-muted-foreground">{view.etaText}</p>
         </div>
+        {/* The address DUST generation pays to. Not a "receive" address —
+            nobody can send DUST — but it is what you hand to another wallet, or
+            to a Cardano registration, to point generation here. It had no home
+            in the extension at all before. */}
+        {ownDustAddress && (
+          <Card className="flex flex-col gap-2 p-3.5">
+            <span className="text-[12.5px] text-muted-foreground">
+              {t('dust_addressRow', [labels.dust])}
+            </span>
+            <span className="break-all font-mono text-[12.5px]">{ownDustAddress}</span>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                void navigator.clipboard
+                  .writeText(ownDustAddress)
+                  .then(() => toast(t('dust_addressCopied')));
+              }}
+            >
+              {t('dust_addressCopy')}
+            </Button>
+          </Card>
+        )}
+
         <DetailCard
           rows={[
             { label: t('dust_generatedNow'), value: t('dust_amountLabel', [view.current, labels.dust]) },

@@ -27,6 +27,11 @@ import {
   type WalletBalances,
   type AuthHandler,
 } from '@shieldedtech/moth-wallet';
+import {
+  deriveShieldedPublicKeys,
+  mnemonicToSeed,
+} from '@shieldedtech/moth-wallet';
+import {loadCardanoConfig} from '@shieldedtech/moth-wallet/cardano';
 import {BaseCommand} from '../../base-command.js';
 import {getPassphrase} from '../../adapters/passphrase.js';
 
@@ -138,6 +143,31 @@ export default class DaemonServe extends BaseCommand {
     // never exposed (D-KM-3).
     const walletKeys = unlocked.walletKeys;
 
+    // Cardano capability. Held here rather than in the key bundle because
+    // CIP-1852 derives from BIP-39 entropy, which unlock() deliberately drops —
+    // so the mnemonic is re-read once, kept for the daemon's lifetime, and
+    // cleared alongside the Midnight keys on shutdown.
+    //
+    // A hex-seed wallet has no mnemonic and never will; `cardanoMnemonic` stays
+    // null and the cardano* verbs refuse with that reason.
+    const cardanoConfig = await loadCardanoConfig(this.storage, network.id);
+    const phrase = await this.walletManager.exportPhrase(walletName, passphrase);
+    let cardanoMnemonic: string | null = phrase.kind === 'mnemonic' ? phrase.value : null;
+    let cardanoCoinPublicKey = '';
+    if (cardanoMnemonic) {
+      const seed = await mnemonicToSeed(cardanoMnemonic);
+      const seedHex = Array.from(seed).map((b) => b.toString(16).padStart(2, '0')).join('');
+      seed.fill(0);
+      cardanoCoinPublicKey = deriveShieldedPublicKeys(seedHex)
+        .coinPublicKey.replace(/^0x/, '')
+        .toLowerCase();
+    }
+    process.stderr.write(
+      cardanoMnemonic
+        ? `[daemon-serve] Cardano enabled on ${cardanoConfig.network}\n`
+        : '[daemon-serve] Cardano unavailable — wallet has no mnemonic (hex-seed import)\n',
+    );
+
     process.stderr.write('[daemon-serve] starting wallet sync\n');
     const synced: SyncedWallet = await startWalletSync(
       walletKeys,
@@ -175,6 +205,11 @@ export default class DaemonServe extends BaseCommand {
       queue,
       auditLog,
       maxSpendRaw,
+      cardano: {
+        config: cardanoConfig,
+        getMnemonic: () => cardanoMnemonic,
+        getCoinPublicKey: () => cardanoCoinPublicKey,
+      },
       log: (level, msg) => {
         if (level === 'info') this.log_verbose(`[daemon] ${msg}`);
         else process.stderr.write(`[daemon ${level}] ${msg}\n`);
@@ -308,6 +343,12 @@ export default class DaemonServe extends BaseCommand {
       } catch (err) {
         process.stderr.write(`[daemon-serve] wallet lock error: ${err}\n`);
       }
+      // Drop the Cardano secret on the same beat as the Midnight keys. A JS
+      // string cannot be zeroed, but releasing the only reference is what makes
+      // it collectable — holding it past lock() would outlive the keys it sits
+      // beside.
+      cardanoMnemonic = null;
+      cardanoCoinPublicKey = '';
       auditLog.recordLifecycle({wallet: walletName, network: network.id, event: 'daemon-stop'});
       process.stderr.write('[daemon-serve] stopped\n');
       // Exit cleanly past oclif's catch chain.

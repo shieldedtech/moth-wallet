@@ -47,6 +47,18 @@ import {
   diagnoseSubmissionFailure,
 } from '@shieldedtech/moth-browser';
 import { deriveAllAddressesFromSeed } from '@shieldedtech/moth-wallet/wallet/address';
+// The accounts module is storage-only — no Lucid, no WASM — so it is safe to
+// import for real here rather than lazily.
+import {
+  addDerivedCardanoAccount,
+  importCardanoAccount,
+  listCardanoAccounts,
+  removeCardanoAccount,
+  renameCardanoAccount,
+  resolveCardanoAccountKey,
+  setActiveCardanoAccount,
+  type CardanoAccountList,
+} from '@shieldedtech/moth-wallet/cardano/accounts';
 import * as ledger from '@midnight-ntwrk/ledger-v8';
 import type { HistoryEntry } from '@midnight-ntwrk/dapp-connector-api';
 import { serializeBalances } from '../messaging/balances-json';
@@ -1045,4 +1057,154 @@ export async function activityGet(
     await saveSubmissions(store, network.id, walletName, kept).catch(() => {});
   }
   return serializeActivity(merged);
+}
+
+
+// ---------------------------------------------------------------------------
+// Cardano accounts
+//
+// Storage lives here, in the offscreen document, because that is where the
+// wallet's IndexedDB adapter is. Key material does NOT: the background resolves
+// which phrase to sign with from its session, and passes it in per call.
+// ---------------------------------------------------------------------------
+
+export async function cardanoAccountList(network: string, walletName: string): Promise<CardanoAccountList> {
+  return listCardanoAccounts(getMoth(network).storage, walletName);
+}
+
+export async function cardanoAccountAdd(
+  network: string,
+  walletName: string,
+  label?: string,
+): Promise<CardanoAccountList> {
+  const { list } = await addDerivedCardanoAccount(getMoth(network).storage, walletName, label);
+  return list;
+}
+
+export async function cardanoAccountImport(
+  network: string,
+  walletName: string,
+  mnemonic: string,
+  passphrase: string,
+  label?: string,
+): Promise<{ list: CardanoAccountList; id: string }> {
+  const { list, account } = await importCardanoAccount(
+    getMoth(network).storage,
+    walletName,
+    mnemonic,
+    passphrase,
+    label,
+  );
+  return { list, id: account.id };
+}
+
+export async function cardanoAccountSelect(
+  network: string,
+  walletName: string,
+  id: string,
+): Promise<CardanoAccountList> {
+  return setActiveCardanoAccount(getMoth(network).storage, walletName, id);
+}
+
+export async function cardanoAccountRemove(
+  network: string,
+  walletName: string,
+  id: string,
+): Promise<CardanoAccountList> {
+  return removeCardanoAccount(getMoth(network).storage, walletName, id);
+}
+
+export async function cardanoAccountRename(
+  network: string,
+  walletName: string,
+  id: string,
+  label: string,
+): Promise<CardanoAccountList> {
+  return renameCardanoAccount(getMoth(network).storage, walletName, id, label);
+}
+
+/**
+ * Decrypt every imported Cardano phrase for a wallet.
+ *
+ * Called once at unlock, while the passphrase is in hand, so the background can
+ * hold the plaintexts in its memory-only session for as long as the wallet is
+ * unlocked — the same lifetime as the wallet's own key material. Without this,
+ * using an imported account would mean re-prompting for the passphrase on every
+ * Cardano transaction.
+ */
+export async function cardanoImportedPhrases(
+  network: string,
+  walletName: string,
+  passphrase: string,
+): Promise<Record<string, string>> {
+  const storage = getMoth(network).storage;
+  const { accounts } = await listCardanoAccounts(storage, walletName);
+  const out: Record<string, string> = {};
+  for (const account of accounts) {
+    if (account.kind !== 'imported') continue;
+    try {
+      const key = await resolveCardanoAccountKey(storage, walletName, account, null, passphrase);
+      out[account.id] = key.mnemonic;
+    } catch {
+      // A phrase that will not decrypt is a broken account, not a broken
+      // unlock. It surfaces when that account is selected.
+    }
+  }
+  return out;
+}
+
+
+/**
+ * Midnight accounts that can be named as a DUST receiver, with the coin public
+ * key a Cardano registration datum needs.
+ *
+ * Derived from each account's PUBLIC shielded address, so no account has to be
+ * unlocked — the wallet holding the cNIGHT is usually not the one being paid.
+ * Lives offscreen because the decode needs the ledger WASM, which must not be
+ * bundled into the side panel.
+ */
+export async function cardanoReceiverAccounts(
+  network: string,
+): Promise<Array<{
+  name: string;
+  label: string;
+  shieldedAddress: string;
+  dustAddress: string;
+  coinPublicKey: string;
+}>> {
+  const { coinPublicKeyFromShieldedAddress } = await import(
+    '@shieldedtech/moth-wallet/cardano/registration'
+  );
+  const wallets = await getMoth(network).wallets.list();
+  return wallets.flatMap((w) => {
+    // Keyed by the network being asked about, not the account's home network.
+    // The same DUST key encodes differently per network, and using w.network
+    // handed out a preview encoding while the wallet was on preprod.
+    const shielded = w.addresses?.zswap?.bech32m?.[network];
+    if (!shielded) return [];
+    try {
+      return [{
+        name: w.name,
+        label: w.label ?? w.name,
+        shieldedAddress: shielded,
+        // Empty for an account last written before the manager persisted it;
+        // it fills in on that account's next unlock.
+        dustAddress: w.addresses?.dust?.bech32m?.[network] ?? '',
+        coinPublicKey: coinPublicKeyFromShieldedAddress(shielded),
+      }];
+    } catch {
+      // An address that will not decode is simply not offered as a receiver.
+      return [];
+    }
+  });
+}
+
+
+/**
+ * Turn whatever the user pasted into the coin public key a registration takes.
+ * Offscreen because the bech32 decode needs the ledger WASM.
+ */
+export async function cardanoResolveReceiver(input: string): Promise<{ coinPublicKey: string }> {
+  const { resolveDustReceiver } = await import('@shieldedtech/moth-wallet/cardano/registration');
+  return { coinPublicKey: resolveDustReceiver(input) };
 }

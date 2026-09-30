@@ -58,6 +58,26 @@ interface WalletMeta {
   /** Public night receive address (bech32m). Absent for wallets created before this field existed. */
   address?: string;
   /**
+   * Public shielded and DUST addresses (bech32m), keyed by network.
+   *
+   * Stored in the clear beside `address` for the same reason: a UI has to be
+   * able to name an account as a *destination* without unlocking it. Offering
+   * another account as a DUST receiver is exactly that — the account holding
+   * the cNIGHT is usually not the one being paid — and `list()` cannot derive
+   * these, because deriving needs the seed.
+   *
+   * Keyed by network, not flattened to the wallet's own one. A DUST key is the
+   * same on every network but its bech32m encoding is not, and storing a single
+   * string made `list()` hand out (say) the preview encoding while the wallet
+   * was on preprod. Derivation produces every network at once, so keeping them
+   * all costs nothing.
+   *
+   * Absent on wallets last written before this field; backfilled on unlock,
+   * which is the one moment they can be derived.
+   */
+  shieldedAddresses?: Record<string, string>;
+  dustAddresses?: Record<string, string>;
+  /**
    * Chain tip height at creation, for the network the wallet was created on.
    * Superseded by `birthdays`; kept so wallets written before that field are
    * still readable, and migrated on first load. Never written for new wallets.
@@ -264,6 +284,8 @@ export class WalletManager {
       network,
       createdAt: new Date().toISOString(),
       address,
+      shieldedAddresses: addresses.zswap.bech32m,
+      dustAddresses: addresses.dust.bech32m,
       createdHere: true,
       backupKind: 'mnemonic',
       ...(birthday !== undefined ? { birthdays: { [network]: birthday } } : {}),
@@ -304,6 +326,8 @@ export class WalletManager {
 
     const meta: WalletMeta = {
       name, network, createdAt: new Date().toISOString(), address,
+      shieldedAddresses: addresses.zswap.bech32m,
+      dustAddresses: addresses.dust.bech32m,
       createdHere: false, backupKind: 'mnemonic',
     };
     await this.saveMeta(meta);
@@ -342,6 +366,8 @@ export class WalletManager {
     await this.storage.write(walletKey(name), encoder.encode(JSON.stringify(keystore)));
     const meta: WalletMeta = {
       name, network, createdAt: new Date().toISOString(), address,
+      shieldedAddresses: addresses.zswap.bech32m,
+      dustAddresses: addresses.dust.bech32m,
       createdHere: false, backupKind: 'seed',
     };
     await this.saveMeta(meta);
@@ -447,8 +473,16 @@ export class WalletManager {
     // mnemonic. Unlock is the one moment that knowledge exists, so it is
     // persisted here rather than left unknown for ever. Written only when
     // missing or wrong, so a normal unlock does not touch storage.
-    if (meta && (meta.address !== address || meta.backupKind !== backupKind)) {
-      await this.saveMeta({ ...meta, address, backupKind });
+    // Backfilled on the same write: every network's public shielded and DUST
+    // address, so this account can be named as a destination while locked, on
+    // whichever network the caller is looking at.
+    const shieldedAddresses = addresses.zswap.bech32m;
+    const dustAddresses = addresses.dust.bech32m;
+    const addressesStale =
+      meta?.shieldedAddresses?.[network] !== shieldedAddresses[network]
+      || meta?.dustAddresses?.[network] !== dustAddresses[network];
+    if (meta && (meta.address !== address || meta.backupKind !== backupKind || addressesStale)) {
+      await this.saveMeta({ ...meta, address, backupKind, shieldedAddresses, dustAddresses });
     }
     const rawKeys = deriveRawKeys(seedHex);
     const keys: DerivedKeys = {
@@ -606,11 +640,21 @@ export class WalletManager {
 
     for (const name of config.wallets) {
       const meta = await this.loadMeta(name);
+      const network = meta?.network ?? config.defaultNetwork;
+      // Only the addresses stored in the clear. Everything else stays empty —
+      // this is still a locked view, not a derived one.
+      const publicAddresses: WalletAddresses = {
+        ...lockedAddresses,
+        ...(meta?.shieldedAddresses
+          ? { zswap: { hex: '', bech32m: meta.shieldedAddresses } }
+          : {}),
+        ...(meta?.dustAddresses ? { dust: { hex: '', bech32m: meta.dustAddresses } } : {}),
+      };
       wallets.push({
         name,
         address: meta?.address ?? '(locked)',
-        addresses: lockedAddresses,
-        network: meta?.network ?? config.defaultNetwork,
+        addresses: publicAddresses,
+        network,
         active: config.activeWallet === name,
         birthday: meta ? birthdayFor(meta, meta.network) : undefined,
         label: meta?.label,
