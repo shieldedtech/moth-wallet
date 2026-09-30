@@ -25,6 +25,7 @@ export type {
   SyncedWallet,
   WalletBalances,
 } from '@shieldedtech/moth-wallet/sync/wallet-sync';
+export type { DustFeePass } from '@shieldedtech/moth-wallet/sync/dust-transacting';
 export type {
   SendRequest,
   TxStage,

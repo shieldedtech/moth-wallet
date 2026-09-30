@@ -1,5 +1,7 @@
 // Display helpers — style mirrors midnight-wallet-cli (Apache-2.0). See NOTICE.
 
+import { secondsUntilFull } from '@shieldedtech/moth-wallet';
+
 /** Days/hours/minutes remaining until targetDate, or 'Complete' if past. */
 export function formatTimeRemaining(targetDate: Date, now: Date = new Date()): string {
   const diffMs = targetDate.getTime() - now.getTime();
@@ -13,6 +15,23 @@ export function formatTimeRemaining(targetDate: Date, now: Date = new Date()): s
   if (days > 0) return `${days}d ${hours}h`;
   if (hours > 0) return `${hours}h ${minutes}m`;
   return `${minutes}m`;
+}
+
+/**
+ * How long until a DUST coin reaches its cap, from what it still has to climb.
+ *
+ * Not from the coin's `maxCapReachedAt`: that is its creation time plus the
+ * whole time-to-cap however full it already is, and paying a fee gives the
+ * change coin a fresh creation time, so it reported the from-nothing wait
+ * after every send.
+ */
+export function formatDustFillRemaining(
+  coin: { maxCap: bigint; generatedNow: bigint; rate: bigint },
+  now: Date = new Date(),
+): string {
+  const seconds = secondsUntilFull(coin);
+  if (seconds === null) return 'Unknown';
+  return formatTimeRemaining(new Date(now.getTime() + Number(seconds) * 1000), now);
 }
 
 /**

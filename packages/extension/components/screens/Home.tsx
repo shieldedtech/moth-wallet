@@ -219,7 +219,7 @@ export function Home({
   );
 }
 
-function NetworkBadge({ network }: { network: string }) {
+export function NetworkBadge({ network }: { network: string }) {
   const label = networkLabel(network);
 
   return (

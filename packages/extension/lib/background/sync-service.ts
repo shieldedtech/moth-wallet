@@ -130,8 +130,19 @@ export async function startSync(session: Session, network: NetworkConfig): Promi
  * A repair rather than teardown()'s exit: the caller starts syncing next.
  */
 export async function stopSync(): Promise<void> {
+  // Started here but not yet emitted: the engine is still restoring its caches,
+  // and the dust restore is one synchronous WASM call that holds the worker for
+  // minutes on preprod. It cannot answer a stop until that call returns, and it
+  // has nothing to save that is not already on disk, so close it outright —
+  // otherwise a network switch made from the loading screen waits out the full
+  // timeout below.
+  const restoring = currentKey !== null && !sawBalancesSinceStart;
   currentKey = null;
   if (!(await offscreen.exists())) return; // nothing running to stop
+  if (restoring) {
+    await offscreen.close().catch(() => {});
+    return;
+  }
   let answered = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   await new Promise<void>((resolve) => {

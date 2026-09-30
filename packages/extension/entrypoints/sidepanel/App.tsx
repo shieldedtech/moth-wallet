@@ -24,6 +24,12 @@ import { NetworkConfig } from '../../components/screens/NetworkConfig';
 import { AddressBook } from '../../components/screens/AddressBook';
 import { Approval } from '../../components/screens/Approval';
 
+// Reachable before the first balance snapshot, from the loading screen's
+// Settings button. None of them reads wallet state, and one of them is the way
+// out of a restore the user did not want: on preprod that restore holds the
+// wallet worker for minutes, and the network is changed from here.
+const LOADING_SCREENS: ReadonlySet<Screen> = new Set(['settings', 'connected-sites', 'address-book', 'network-config']);
+
 export function App() {
   const session = useSession();
   const { wallets, refresh: refreshWallets } = useWallets();
@@ -77,11 +83,15 @@ export function App() {
     setupWasOpen.current = setupOpen;
   }, [setupOpen, refreshWallets, sessionRefresh]);
 
-  if (!session.status || wallets === null) return null;
+  // Only the session gates the first paint. The account list comes from the
+  // wallet worker, which answers nothing while it restores a large chain, and an
+  // unlocked session already carries its account and network — so only the
+  // screens that list accounts wait for it.
+  if (!session.status) return null;
 
   // Screens that only display the account show the user-set label (falling
   // back to the formatted storage name); unlock flows keep the storage name.
-  const activeWallet = wallets.find((w) => w.active);
+  const activeWallet = wallets?.find((w) => w.active);
   const activeDisplayName = session.status.walletName
     ? accountLabel(session.status.walletName, session.status.walletLabel)
     : null;
@@ -105,9 +115,10 @@ export function App() {
 
   if (events.setupOpen) return <SetupInProgress />;
 
-  if (wallets.length === 0) return <GetStarted />;
+  if (wallets?.length === 0) return <GetStarted />;
 
   if (session.status.locked) {
+    if (!wallets) return <WalletLoading syncMessage="" />;
     const activeName = wallets.find((w) => w.active)?.name ?? wallets[0]!.name;
     return (
       <Unlock
@@ -128,7 +139,7 @@ export function App() {
   // unlocked and syncing. Cancel drops back to it unchanged; a successful
   // unlock swaps the session (and active account) over.
   if (unlockTarget) {
-    const target = wallets.find((w) => w.name === unlockTarget);
+    const target = wallets?.find((w) => w.name === unlockTarget);
     return (
       <Unlock
         walletName={unlockTarget}
@@ -144,7 +155,16 @@ export function App() {
     );
   }
 
-  if (!events.balances) return <WalletLoading syncMessage={events.syncMessage} />;
+  const balances = events.balances;
+  if (!LOADING_SCREENS.has(screen) && (!balances || (screen === 'accounts' && !wallets))) {
+    return (
+      <WalletLoading
+        syncMessage={events.syncMessage}
+        network={session.status.network}
+        onSettings={() => setScreen('settings')}
+      />
+    );
+  }
 
   const shared = {
     navigate: setScreen,
@@ -153,21 +173,21 @@ export function App() {
 
   return (
     <>
-      {screen === 'home' && (
+      {screen === 'home' && balances && (
         <Home
           walletName={activeDisplayName!}
           network={session.status.network}
-          balances={events.balances}
+          balances={balances}
           syncMessage={events.syncMessage}
           relayState={events.relayState}
           navigate={setScreen}
         />
       )}
-      {screen === 'send' && (
+      {screen === 'send' && balances && (
         <SendFlow
           walletName={activeDisplayName!}
           network={session.status.network}
-          balances={events.balances}
+          balances={balances}
           txStage={events.txStage}
           proverType={prover.proverType}
           relayState={events.relayState}
@@ -176,12 +196,12 @@ export function App() {
         />
       )}
       {screen === 'receive' && <Receive status={session.status} onBack={shared.back} />}
-      {screen === 'activity' && (
-        <Activity network={session.status.network} balances={events.balances} onBack={shared.back} />
+      {screen === 'activity' && balances && (
+        <Activity network={session.status.network} balances={balances} onBack={shared.back} />
       )}
-      {screen === 'dust' && (
+      {screen === 'dust' && balances && (
         <DustDetail
-          balances={events.balances}
+          balances={balances}
           txStage={events.txStage}
           proverType={prover.proverType}
           network={session.status.network}
@@ -189,7 +209,7 @@ export function App() {
           onBack={shared.back}
         />
       )}
-      {screen === 'accounts' && (
+      {screen === 'accounts' && wallets && (
         <Accounts
           wallets={wallets}
           activeName={session.status.walletName!}
