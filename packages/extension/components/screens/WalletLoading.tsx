@@ -1,5 +1,7 @@
+import { Settings as SettingsIcon } from 'lucide-react';
 import { t } from '../../lib/i18n';
 import { PanelScreen, OrbitingMoth } from '../moth/panel';
+import { NetworkBadge } from './Home';
 
 function loadingDetail(syncMessage: string): string {
   const message = syncMessage.toLowerCase();
@@ -16,10 +18,41 @@ function loadingDetail(syncMessage: string): string {
 
 /** Full-panel interstitial shown until the first complete balance snapshot is
  * available. It keeps half-restored account values out of view while the SDK
- * rebuilds its shielded, unshielded, and DUST state. */
-export function WalletLoading({ syncMessage }: { syncMessage: string }) {
+ * rebuilds its shielded, unshielded, and DUST state.
+ *
+ * That rebuild takes minutes on a large chain, so an unlocked wallet gets the
+ * network it is loading and a way into Settings: the user who opened the wrong
+ * network must be able to leave it without waiting for it to finish. */
+export function WalletLoading({
+  syncMessage,
+  network,
+  onSettings,
+}: {
+  syncMessage: string;
+  network?: string;
+  onSettings?: () => void;
+}) {
   return (
     <PanelScreen dark className="relative isolate overflow-hidden">
+      {(network || onSettings) && (
+        <div className="flex items-center gap-2 pt-[18px]">
+          {network && <NetworkBadge network={network} />}
+          {onSettings && (
+            <button
+              onClick={onSettings}
+              className="group ml-auto flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border-0 bg-muted transition duration-150 hover:bg-border active:scale-90"
+              aria-label={t('home_settingsAria')}
+            >
+              <SettingsIcon
+                size={16}
+                strokeWidth={2}
+                className="transition-transform duration-300 ease-out group-hover:rotate-90"
+              />
+            </button>
+          )}
+        </div>
+      )}
+
       <div className="flex flex-1 flex-col items-center justify-center px-2 text-center" role="status" aria-live="polite">
         <div className="mb-7">
           <OrbitingMoth />

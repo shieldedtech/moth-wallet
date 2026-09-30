@@ -74,6 +74,8 @@ export {
   type SubWalletSyncProgress, type SubWalletProgress, type WalletCoinDetails,
   type ShieldedCoinInfo, type UnshieldedCoinInfo, type DustCoinInfo,
 } from './sync/wallet-sync.js';
+export type {DustFeePass} from './sync/dust-transacting.js';
+export {secondsUntilFull} from './sync/dust-generation.js';
 export {
   summarizeTransaction, summarizeConnectorTransaction, decodeConnectorTransaction,
   type TransactionSummary, type TxTokenAmount,
@@ -86,7 +88,7 @@ export {
   designateForDust, designateForDustWithKeys, estimateDustRegistration,
   dedesignateFromDust, dedesignateFromDustWithKeys,
   listNightUtxos,
-  type SendRequest, type TxStage, type NightUtxo, type FinalizedTransaction, type WalletKeys,
+  type SendRequest, type TxStage, type NightUtxo, type FinalizedTransaction, type TokenKindsToBalance, type WalletKeys,
 } from './sync/operations.js';
 export {
   InMemorySyncStateStore, syncStateKey, emptyRefStateKey, emptyRefMnemonicKey, emptyRefHeightKey,

@@ -151,7 +151,23 @@ function addressFor(session: Session, role: keyof Session['addresses'], networkI
  *  could not be read; the screen then says so instead of showing nothing. */
 export interface BalanceApprovalPayload {
   sealed: boolean;
+  payFees: boolean;
   summary: TxSummaryDTO | null;
+}
+
+/** Display data for a `transfer` approval (makeTransfer / makeIntent). */
+export interface TransferApprovalPayload {
+  outputs: Array<{ kind: string; type: string; value: string; recipient: string }>;
+  payFees: boolean;
+}
+
+// Connector options default to the wallet paying fees; only an explicit false opts out.
+function payFeesOption(options: unknown): boolean {
+  const value = (options as { payFees?: unknown } | null | undefined)?.payFees;
+  if (value !== undefined && typeof value !== 'boolean') {
+    throw connectorError('InvalidRequest', 'payFees must be a boolean');
+  }
+  return value !== false;
 }
 
 // Shared by balanceSealedTransaction / balanceUnsealedTransaction: validate the
@@ -168,10 +184,7 @@ async function balance(
 ): Promise<{ tx: string }> {
   const session = await requireConnected(origin);
   const tx = assertTxHex(String(params[0] ?? ''));
-  const options = (params[1] ?? {}) as { payFees?: boolean };
-  if (options.payFees === false) {
-    throw connectorError('InvalidRequest', 'Moth always pays fees; payFees: false is unsupported');
-  }
+  const payFees = payFeesOption(params[1]);
   const network = await getNetworkConfig();
   // The user is about to authorize spending, so the approval must say what
   // leaves the wallet. A summary that cannot be produced (a stage the ledger
@@ -181,10 +194,12 @@ async function balance(
   let summary: TxSummaryDTO | null = null;
   try {
     summary = await offscreen.txSummary({ network, txHex: tx, sealed });
+    // Without fee payment the wallet leaves DUST imbalances for another payer.
+    if (!payFees) summary = { ...summary, spends: summary.spends.filter((entry) => entry.kind !== 'dust') };
   } catch {
     summary = null;
   }
-  const payload: BalanceApprovalPayload = { sealed, summary };
+  const payload: BalanceApprovalPayload = { sealed, payFees, summary };
   const approved = await requestApproval('balance', origin, payload, senderTabId, preparedPanel);
   if (!approved) throw connectorError('Rejected', 'User rejected the transaction');
 
@@ -194,6 +209,7 @@ async function balance(
     network,
     txHex: tx,
     sealed,
+    payFees,
   });
   return { tx: txHex };
 }
@@ -451,12 +467,9 @@ async function dispatchMethod(
       const session = await requireConnected(origin);
       const inputs = (params[0] ?? []) as DesiredInput[];
       const outputs = (params[1] ?? []) as DesiredOutput[];
-      const options = (params[2] ?? {}) as { payFees?: boolean };
+      const payFees = payFeesOption(params[2]);
       if (!Array.isArray(inputs) || !Array.isArray(outputs) || inputs.length + outputs.length === 0) {
         throw connectorError('InvalidRequest', 'makeIntent requires at least one input or output');
-      }
-      if (options.payFees === false) {
-        throw connectorError('InvalidRequest', 'Moth always pays fees; payFees: false is unsupported');
       }
       const inputDtos: SwapInputDTO[] = inputs.map((input) => {
         if (input.kind !== 'shielded' && input.kind !== 'unshielded') {
@@ -474,7 +487,10 @@ async function dispatchMethod(
       const approved = await requestApproval(
         'transfer',
         origin,
-        { outputs: outputs.map((out) => ({ ...out, value: out.value.toString() })) },
+        {
+          outputs: outputs.map((out) => ({ ...out, value: out.value.toString() })),
+          payFees,
+        } satisfies TransferApprovalPayload,
         senderTabId,
         preparedPanel,
       );
@@ -487,7 +503,7 @@ async function dispatchMethod(
         network,
         inputs: inputDtos,
         outputs: outputDtos,
-        payFees: true,
+        payFees,
       });
       return { tx: txHex };
     }
@@ -495,12 +511,9 @@ async function dispatchMethod(
     case 'makeTransfer': {
       const session = await requireConnected(origin);
       const outputs = (params[0] ?? []) as DesiredOutput[];
-      const options = (params[1] ?? {}) as { payFees?: boolean };
+      const payFees = payFeesOption(params[1]);
       if (!Array.isArray(outputs) || outputs.length === 0) {
         throw connectorError('InvalidRequest', 'makeTransfer requires at least one desired output');
-      }
-      if (options.payFees === false) {
-        throw connectorError('InvalidRequest', 'Moth always pays fees; payFees: false is unsupported');
       }
       const requests: TransferRequestDTO[] = outputs.map((out) => {
         if (out.kind !== 'shielded' && out.kind !== 'unshielded') {
@@ -512,7 +525,10 @@ async function dispatchMethod(
       const approved = await requestApproval(
         'transfer',
         origin,
-        { outputs: outputs.map((out) => ({ ...out, value: out.value.toString() })) },
+        {
+          outputs: outputs.map((out) => ({ ...out, value: out.value.toString() })),
+          payFees,
+        } satisfies TransferApprovalPayload,
         senderTabId,
         preparedPanel,
       );
@@ -524,6 +540,7 @@ async function dispatchMethod(
         walletName: session.walletName,
         network,
         requests,
+        payFees,
       });
       return { tx: txHex };
     }

@@ -19,6 +19,8 @@ The English catalog (`messages/`) is the source of truth. Shipped locales live i
   - `send_overspent`, `send_addressKindInvalid` — amount / address validation
   - `send_failureSubSingle`, `send_failureSubMulti` — "Nothing was spent" assurance
   - `send_oneTransactionNote` — combined-fee semantics
+  - `approval_balanceSubtitleNoFees`, `approval_notPaidByWallet`, `approval_spendsNothingNoFees`
+    — who pays the network fee
   - `send_provingFootnote`, `dust_provingFootnote` — prover-choice guidance
   - `network_wasmDesc`, `network_proofServerDesc`, `network_provingHelp` — prover guidance
   - `settings_autoLockDemo`, `settings_autoLockDescription` — auto-lock/demo-mode meaning
