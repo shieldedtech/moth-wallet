@@ -8,6 +8,7 @@
 
 import type { CardanoNetworkConfig } from '@shieldedtech/moth-wallet/cardano/network';
 import type { CardanoSession } from '@shieldedtech/moth-wallet/cardano/session';
+import type { Cip30Result } from './messaging';
 
 export interface CardanoAddressesResult {
   cardanoNetwork: string;
@@ -23,7 +24,7 @@ export interface CardanoStatusResult extends CardanoAddressesResult {
   cnight: string;
   cnightUtxos: number;
   registered: boolean;
-  registeredCoinPublicKey: string | null;
+  registeredDustAddress: string | null;
   registrationUtxo: string | null;
   generationRate: string | null;
   /**
@@ -35,6 +36,15 @@ export interface CardanoStatusResult extends CardanoAddressesResult {
   /** Unix seconds Midnight is expected to act on the registration; null if unknown. */
   generatingFrom: number | null;
   secondsRemaining: number | null;
+  /** null = Midnight has no record; false = ingested and rejected; true = live. */
+  midnightValid: boolean | null;
+  /** >1 forces deregistration, so it is a fault to surface. */
+  registrationCount: number;
+  /**
+   * The registration records something that is not a 33-byte DUST address, so
+   * it can never generate DUST. `update` rewrites it in one transaction.
+   */
+  legacyDustAddress: boolean;
 }
 
 async function openSession<T>(
@@ -77,7 +87,7 @@ export async function cardanoStatus(
       cnight: status.balance.cnight.toString(),
       cnightUtxos: status.balance.cnightUtxoCount,
       registered: status.registered,
-      registeredCoinPublicKey: status.coinPublicKey,
+      registeredDustAddress: status.dustAddress,
       registrationUtxo: status.registrationUtxo
         ? `${status.registrationUtxo.txHash}#${status.registrationUtxo.outputIndex}`
         : null,
@@ -86,6 +96,9 @@ export async function cardanoStatus(
       maxCapacity: status.generation?.maxCapacity ?? null,
       generatingFrom: status.finality?.generatingFrom ?? null,
       secondsRemaining: status.finality?.secondsRemaining ?? null,
+      midnightValid: status.midnightRegistration?.valid ?? null,
+      registrationCount: status.registrationCount,
+      legacyDustAddress: status.legacyDustAddress,
     };
   }, accountIndex);
 }
@@ -106,11 +119,9 @@ export async function cardanoDeregister(
   mnemonic: string,
   config: CardanoNetworkConfig,
   accountIndex?: number,
-): Promise<{ txHash: string }> {
+): Promise<{ txHash: string; cleared: number }> {
   const { deregisterFromDust } = await import('@shieldedtech/moth-wallet/cardano');
-  return openSession(mnemonic, config, async (session) => ({
-    txHash: await deregisterFromDust(session),
-  }), accountIndex);
+  return openSession(mnemonic, config, (session) => deregisterFromDust(session), accountIndex);
 }
 
 export async function cardanoUpdate(
@@ -141,4 +152,85 @@ export async function cardanoSend(
       cnight: BigInt(request.cnight),
     }),
   }), accountIndex);
+}
+
+
+/** CIP-30 methods moth answers. */
+export type Cip30Method =
+  | 'getNetworkId'
+  | 'getBalance'
+  | 'getUtxos'
+  | 'getCollateral'
+  | 'getUsedAddresses'
+  | 'getUnusedAddresses'
+  | 'getChangeAddress'
+  | 'getRewardAddresses'
+  | 'getExtensions'
+  | 'signTx'
+  | 'signData'
+  | 'submitTx';
+
+/**
+ * Run one CIP-30 method against the wallet.
+ *
+ * A single entry point rather than eleven messaging keys: every method takes
+ * the same session and returns a JSON-safe value, so the only thing that
+ * varies is the name and the arguments.
+ *
+ * The methods that touch no chain — network id and the address getters — avoid
+ * opening a Blockfrost-backed session, so a dApp can read addresses before a
+ * project id is configured.
+ */
+export async function cardanoCip30(
+  mnemonic: string,
+  config: CardanoNetworkConfig,
+  method: Cip30Method,
+  params: unknown[],
+  accountIndex?: number,
+): Promise<Cip30Result> {
+  const cip30 = await import('@shieldedtech/moth-wallet/cardano/cip30');
+  const { deriveCardanoAddresses } = await import('@shieldedtech/moth-wallet/cardano');
+
+  if (method === 'getNetworkId') return config.networkId;
+  // Answerable without keys or chain access at all.
+  if (method === 'getExtensions') return cip30.getExtensions();
+
+  if (
+    method === 'getUsedAddresses'
+    || method === 'getUnusedAddresses'
+    || method === 'getChangeAddress'
+    || method === 'getRewardAddresses'
+  ) {
+    const addresses = await deriveCardanoAddresses(mnemonic, config, accountIndex);
+    const session = { config, addresses } as never;
+    if (method === 'getUnusedAddresses') return cip30.getUnusedAddresses();
+    if (method === 'getChangeAddress') return cip30.getChangeAddress(session);
+    if (method === 'getRewardAddresses') return cip30.getRewardAddresses(session);
+    return cip30.getUsedAddresses(session, params[0] as never);
+  }
+
+  return openSession(mnemonic, config, async (session) => {
+    switch (method) {
+      case 'getBalance':
+        return cip30.getBalance(session);
+      // CIP-30 order: getUtxos(amount, paginate), getCollateral({ amount }).
+      // Both amounts are CBOR hex, never decimal — see valueFromCbor.
+      case 'getUtxos':
+        return cip30.getUtxos(
+          session,
+          params[0] === undefined || params[0] === null ? undefined : String(params[0]),
+          params[1] as never,
+        );
+      case 'getCollateral':
+        return cip30.getCollateral(session, (params[0] ?? undefined) as never);
+      case 'signTx':
+        return cip30.signTx(session, String(params[0] ?? ''));
+      case 'signData':
+        return cip30.signData(session, String(params[0] ?? ''), String(params[1] ?? ''));
+      case 'submitTx':
+        return cip30.submitTx(session, String(params[0] ?? ''));
+      default:
+        throw cip30.cip30Error(cip30.CIP30_ERROR.InvalidRequest, `unknown method ${method}`);
+    }
+  }, accountIndex);
 }

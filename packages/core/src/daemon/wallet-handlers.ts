@@ -138,7 +138,7 @@ export interface WalletHandlerDeps {
     /** The wallet's mnemonic, or null when it has none (hex-seed import). */
     readonly getMnemonic: () => string | null;
     /** The wallet's own Midnight coin public key — the default DUST receiver. */
-    readonly getCoinPublicKey: () => string;
+    readonly getDustAddress: () => string;
   };
 }
 
@@ -174,7 +174,7 @@ export function buildWalletHandlers(deps: WalletHandlerDeps): Record<string, Rpc
   const requireCardano = (): {
     config: CardanoNetworkConfig;
     mnemonic: string;
-    coinPublicKey: string;
+    dustAddress: string;
   } => {
     const cardano = deps.cardano;
     if (!cardano) {
@@ -190,7 +190,7 @@ export function buildWalletHandlers(deps: WalletHandlerDeps): Record<string, Rpc
         `wallet "${walletName}" was imported from a raw hex seed, so it has no Cardano address`,
       );
     }
-    return {config: cardano.config, mnemonic, coinPublicKey: cardano.getCoinPublicKey()};
+    return {config: cardano.config, mnemonic, dustAddress: cardano.getDustAddress()};
   };
 
   /** Open a Cardano session for `fn`, mapping core's errors onto the wire. */
@@ -775,7 +775,7 @@ export function buildWalletHandlers(deps: WalletHandlerDeps): Record<string, Rpc
     // ─────────────────────────────────────────────────────────────────
 
     cardanoAddress: async (): Promise<DaemonCardanoAddressResult> => {
-      const {mnemonic, config, coinPublicKey} = requireCardano();
+      const {mnemonic, config, dustAddress} = requireCardano();
       const {deriveCardanoAddresses} = await import('../cardano/session.js');
       const addresses = await deriveCardanoAddresses(mnemonic, config);
       return {
@@ -784,7 +784,7 @@ export function buildWalletHandlers(deps: WalletHandlerDeps): Record<string, Rpc
         rewardAddress: addresses.rewardAddress,
         stakeKeyHash: addresses.stakeKeyHash,
         paymentKeyHash: addresses.paymentKeyHash,
-        midnightCoinPublicKey: coinPublicKey,
+        midnightDustAddress: dustAddress,
       };
     },
 
@@ -808,7 +808,7 @@ export function buildWalletHandlers(deps: WalletHandlerDeps): Record<string, Rpc
       withCardano('cardanoStatus', async (session) => {
         const {readCardanoDustStatus} = await import('../cardano/status.js');
         const status = await readCardanoDustStatus(session, network.indexerUrl);
-        const own = requireCardano().coinPublicKey;
+        const own = requireCardano().dustAddress;
         return {
           cardanoNetwork: status.network,
           address: status.addresses.address,
@@ -817,8 +817,9 @@ export function buildWalletHandlers(deps: WalletHandlerDeps): Record<string, Rpc
           cnight: status.balance.cnight.toString(),
           cnightUtxos: status.balance.cnightUtxoCount,
           registered: status.registered,
-          registeredCoinPublicKey: status.coinPublicKey,
-          registeredToThisWallet: status.coinPublicKey === own,
+          registeredDustAddress: status.dustAddress,
+          registeredToThisWallet: status.dustAddress === own,
+          legacyDustAddress: status.legacyDustAddress,
           registrationUtxo: status.registrationUtxo
             ? `${status.registrationUtxo.txHash}#${status.registrationUtxo.outputIndex}`
             : null,
@@ -829,7 +830,7 @@ export function buildWalletHandlers(deps: WalletHandlerDeps): Record<string, Rpc
 
     cardanoRegister: async (rawParams: unknown, ctx: ConnectionContext): Promise<DaemonCardanoRegisterResult> => {
       const params = parseCardanoRegisterParams(rawParams);
-      const {coinPublicKey: own, config} = requireCardano();
+      const {dustAddress: own, config} = requireCardano();
       const receiver = params.receiver ?? own;
       return withAudit(
         'cardanoRegister',
@@ -865,7 +866,7 @@ export function buildWalletHandlers(deps: WalletHandlerDeps): Record<string, Rpc
         [
           `Wallet: ${walletName}`,
           `Cardano network: ${config.network}`,
-          'Scope: burns the registration token and spends every cNIGHT UTXO',
+          'Scope: burns EVERY registration token for this stake key, and spends every cNIGHT UTXO',
           'Effect: DUST will stop generating from this Cardano stake key.',
           ...(params.details ?? []),
         ],
@@ -873,10 +874,9 @@ export function buildWalletHandlers(deps: WalletHandlerDeps): Record<string, Rpc
         async () =>
           withCardano('cardanoDeregister', async (session) => {
             const {deregisterFromDust} = await import('../cardano/registration.js');
-            const txHash = await deregisterFromDust(session, (stage) =>
+            return deregisterFromDust(session, (stage) =>
               log('info', `[cardanoDeregister] ${stage}`),
             );
-            return {txHash};
           }),
         (r) => ({txHash: r.txHash}),
       );
@@ -924,7 +924,7 @@ export function buildWalletHandlers(deps: WalletHandlerDeps): Record<string, Rpc
 
     cardanoUpdate: async (rawParams: unknown, ctx: ConnectionContext): Promise<DaemonCardanoUpdateResult> => {
       const params = parseCardanoUpdateParams(rawParams);
-      const {coinPublicKey: own, config} = requireCardano();
+      const {dustAddress: own, config} = requireCardano();
       return withAudit(
         'cardanoUpdate',
         params.summary ?? 'Change where cNIGHT generates DUST to',

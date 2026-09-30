@@ -27,10 +27,19 @@ import {
   unitRedeemer,
 } from '../../../src/cardano/datum.js';
 import { resolveCardanoNetwork } from '../../../src/cardano/network.js';
-import { assertCoinPublicKey } from '../../../src/cardano/registration.js';
+import { resolveDustReceiver } from '../../../src/cardano/registration.js';
 
-const STAKE_KEY_HASH = 'abfff883edcf7a2e38628015cebb72952e361b2c8a2262f7daf9c16e';
-const COIN_PUBLIC_KEY = '11'.repeat(32);
+const STAKE_KEY_HASH = '070c2f801567402df8e4e630ed3819e1c29219d1d918266758e3a063';
+/**
+ * A real serialized DUST address — the bech32m payload of
+ * mn_dust_preprod1wwxhaf472uhxnltad72rmph52gdpef7a7ytq78vneqs2secjdyjzyh4t0ey.
+ *
+ * 33 bytes, NOT the 32-byte shielded coin public key. Both are plausible, both
+ * encode cleanly, and the wrong one yields a registration that is valid on
+ * Cardano and silently never matched by the bridge.
+ */
+const DUST_ADDRESS_BYTES =
+  '738d7ea6be572e69fd7d6f943d86f4521a1ca7ddf1160f1d93c820a86712692422';
 
 describe('compiled validator', () => {
   it('hashes to the value the blueprint declares', () => {
@@ -74,35 +83,59 @@ describe('compiled validator', () => {
 });
 
 describe('DustMappingDatum', () => {
-  it('serializes to the exact bytes the dApp produces', () => {
-    // Cross-checked against @blaze-cardano/data serializing the dApp's own
-    // generated blueprint type for the same inputs. constr 0 [constr 0
-    // [bytes28], bytes32] — the stake key hash, then the coin public key.
-    const cbor = encodeDustMappingDatum(buildDustMappingDatum(STAKE_KEY_HASH, COIN_PUBLIC_KEY));
+  it('encodes the 33-byte DUST address, not a 32-byte coin public key', () => {
+    // 5821 is a 33-byte bytestring header; 5820 would be 32 and is the bug
+    // this pins against — it produced a registration no bridge ever matched.
+    const cbor = encodeDustMappingDatum(buildDustMappingDatum(STAKE_KEY_HASH, DUST_ADDRESS_BYTES));
     expect(cbor).toBe(
-      'd8799fd8799f581cabfff883edcf7a2e38628015cebb72952e361b2c8a2262f7daf9c16e' +
-        'ff58201111111111111111111111111111111111111111111111111111111111111111ff',
+      'd8799fd8799f581c070c2f801567402df8e4e630ed3819e1c29219d1d918266758e3a063'
+        + 'ff5821738d7ea6be572e69fd7d6f943d86f4521a1ca7ddf1160f1d93c820a86712692422ff',
     );
+    expect(cbor).toContain('5821');
+    expect(cbor).not.toContain('5820');
   });
 
   it('round-trips', () => {
-    const datum = buildDustMappingDatum(STAKE_KEY_HASH, COIN_PUBLIC_KEY);
+    const datum = buildDustMappingDatum(STAKE_KEY_HASH, DUST_ADDRESS_BYTES);
     expect(decodeDustMappingDatum(encodeDustMappingDatum(datum))).toEqual(datum);
   });
 
   it('reads back the stake key hash that decides whose registration it is', () => {
     const datum = decodeDustMappingDatum(
-      encodeDustMappingDatum(buildDustMappingDatum(STAKE_KEY_HASH, COIN_PUBLIC_KEY)),
+      encodeDustMappingDatum(buildDustMappingDatum(STAKE_KEY_HASH, DUST_ADDRESS_BYTES)),
     );
     expect(datumStakeKeyHash(datum)).toBe(STAKE_KEY_HASH);
   });
 
   it('rejects a stake key hash that is not 28 bytes', () => {
-    expect(() => encodeDustMappingDatum(buildDustMappingDatum('abcd', COIN_PUBLIC_KEY))).toThrow();
+    expect(() => encodeDustMappingDatum(buildDustMappingDatum('abcd', DUST_ADDRESS_BYTES))).toThrow();
   });
 
-  it('rejects a coin public key that is not 32 bytes', () => {
-    expect(() => encodeDustMappingDatum(buildDustMappingDatum(STAKE_KEY_HASH, 'ab'))).toThrow();
+  it('rejects a 32-byte receiver at the point moth writes one', () => {
+    // The guard is resolveDustReceiver, not the datum schema. Keeping it out of
+    // the schema is deliberate — see the decode test below.
+    expect(() => resolveDustReceiver('11'.repeat(32))).toThrow();
+  });
+
+  it('still decodes a legacy 32-byte registration already on chain', () => {
+    // preprod 7052cbb8aa3236ce…#0, written before the encoding was fixed. The
+    // validator allows anything up to 33 bytes, so this really is out there.
+    // A schema pinned to exactly 33 does not reject such a datum, it *hides*
+    // it: findRegistrations skips what it cannot decode, the UI reports "Not
+    // registered", and the next register mints a second auth NFT against a
+    // stake key that already has one — which the validator kills at Mint[0].
+    const datum = decodeDustMappingDatum(
+      'd8799fd8799f581c070c2f801567402df8e4e630ed3819e1c29219d1d918266758e3a063'
+        + 'ff5820ae6b465d766ce0a13265ef00859bddd523c9d858523b687903a60bcebd95a7a7ff',
+    );
+    expect(datumStakeKeyHash(datum)).toBe(STAKE_KEY_HASH);
+    expect(datum.dust_address).toHaveLength(64); // 32 bytes: unusable, but visible
+  });
+
+  it('rejects a receiver longer than the validator\'s 33-byte bound', () => {
+    expect(() =>
+      encodeDustMappingDatum(buildDustMappingDatum(STAKE_KEY_HASH, '11'.repeat(34))),
+    ).toThrow();
   });
 });
 
@@ -114,17 +147,33 @@ describe('redeemers', () => {
   });
 });
 
-describe('assertCoinPublicKey', () => {
-  it('normalizes a 0x prefix and case', () => {
-    expect(assertCoinPublicKey(`0x${'AB'.repeat(32)}`)).toBe('ab'.repeat(32));
+describe('resolveDustReceiver', () => {
+  const DUST =
+    'mn_dust_preprod1wwxhaf472uhxnltad72rmph52gdpef7a7ytq78vneqs2secjdyjzyh4t0ey';
+  const SHIELDED =
+    'mn_shield-addr1ehmxwu6u7vz8wjs5ddm0e409hk7p7kud3gz5e6v3p0xqj44wderqrpwkgz4zhffyx47k0tv9qudcd6qxh7vmgjsjt00ah88hltw3pucuz795u';
+
+  it('serializes a DUST address to the bytes a datum records', () => {
+    expect(resolveDustReceiver(DUST)).toBe(DUST_ADDRESS_BYTES);
   });
 
-  it('rejects anything that is not 32 bytes of hex', () => {
-    // A bech32m shielded address is the mistake this exists to catch: it is
-    // what a user has to hand, and it would otherwise reach the datum.
-    expect(() => assertCoinPublicKey('mn_shield-addr1ehmxwu6u7vz8wjs5ddm0e409hk7p7kud3gz5e6')).toThrow(
-      /32 bytes of hex/,
-    );
-    expect(() => assertCoinPublicKey('ab'.repeat(31))).toThrow(/62 characters/);
+  it('accepts the raw 33-byte hex too', () => {
+    expect(resolveDustReceiver(DUST_ADDRESS_BYTES)).toBe(DUST_ADDRESS_BYTES);
+    expect(resolveDustReceiver(`0x${DUST_ADDRESS_BYTES}`)).toBe(DUST_ADDRESS_BYTES);
+  });
+
+  it('refuses a shielded address by name', () => {
+    // The other plausible paste, and what an earlier version of the dApp used.
+    // Accepting it silently is what cost twelve hours of waiting for DUST that
+    // could never arrive.
+    expect(() => resolveDustReceiver(SHIELDED)).toThrow(/DUST address/);
+  });
+
+  it('refuses a 32-byte coin public key', () => {
+    expect(() => resolveDustReceiver('ab'.repeat(32))).toThrow(/DUST address/);
+  });
+
+  it('refuses anything that is not a Midnight address', () => {
+    expect(() => resolveDustReceiver('not-an-address')).toThrow();
   });
 });

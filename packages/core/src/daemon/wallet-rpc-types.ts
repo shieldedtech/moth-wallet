@@ -245,7 +245,7 @@ export type DaemonCardanoAddressResult = {
   readonly rewardAddress: string;
   readonly stakeKeyHash: string;
   readonly paymentKeyHash: string;
-  readonly midnightCoinPublicKey: string;
+  readonly midnightDustAddress: string;
 };
 
 export type DaemonCardanoBalanceParams = Record<string, never> | null;
@@ -269,8 +269,13 @@ export type DaemonCardanoStatusResult = {
   readonly cnight: string;
   readonly cnightUtxos: number;
   readonly registered: boolean;
-  readonly registeredCoinPublicKey: string | null;
+  readonly registeredDustAddress: string | null;
   readonly registeredToThisWallet: boolean;
+  /**
+   * The registration records something that is not a 33-byte DUST address, so
+   * Midnight can never match it: valid on Cardano, generating nothing.
+   */
+  readonly legacyDustAddress: boolean;
   readonly registrationUtxo: string | null;
   readonly mappingValidator: string;
   /** Midnight-side view; null until the indexer has observed the registration. */
@@ -296,6 +301,9 @@ export type DaemonCardanoDeregisterParams = {
 
 export type DaemonCardanoDeregisterResult = {
   readonly txHash: string;
+  /** Registrations cleared. More than one means the stake key was in the
+   *  duplicate state, where nothing generates. */
+  readonly cleared: number;
 };
 
 export type DaemonCardanoUpdateParams = {

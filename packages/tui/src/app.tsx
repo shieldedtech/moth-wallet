@@ -166,7 +166,7 @@ export function App({ networkId: networkIdProp }: AppProps) {
           cardano: {
             config: cardanoConfig,
             getMnemonic: () => wallet.getActiveCardano()?.mnemonic ?? null,
-            getCoinPublicKey: () => wallet.getActiveCardano()?.coinPublicKey ?? '',
+            getDustAddress: () => wallet.getActiveCardano()?.dustAddress ?? '',
           },
         }
       : {}),
@@ -684,7 +684,7 @@ export function App({ networkId: networkIdProp }: AppProps) {
                   cardanoNetwork: cardanoConfig.network,
                   address: addresses.address,
                   rewardAddress: addresses.rewardAddress,
-                  midnightCoinPublicKey: secret.coinPublicKey,
+                  midnightDustAddress: secret.dustAddress,
                 };
               }}
               loadAccounts={async () => {
@@ -741,8 +741,9 @@ export function App({ networkId: networkIdProp }: AppProps) {
                   cnight: status.balance.cnight,
                   cnightUtxos: status.balance.cnightUtxoCount,
                   registered: status.registered,
-                  registeredCoinPublicKey: status.coinPublicKey,
-                  registeredToThisWallet: status.coinPublicKey === secret.coinPublicKey,
+                  registeredDustAddress: status.dustAddress,
+                  registeredToThisWallet: status.dustAddress === secret.dustAddress,
+                  legacyDustAddress: status.legacyDustAddress,
                   generationRate: status.generation?.generationRate ?? null,
                   secondsRemaining: status.finality?.secondsRemaining ?? null,
                 };
@@ -752,7 +753,7 @@ export function App({ networkId: networkIdProp }: AppProps) {
                   const { registerForDust } = await import('@shieldedtech/moth-wallet/cardano');
                   return registerForDust(
                     session,
-                    receiver ?? secret!.coinPublicKey,
+                    receiver ?? secret!.dustAddress,
                     (stage) => logs.info(`Cardano register: ${stage}`),
                   );
                 })
@@ -760,7 +761,11 @@ export function App({ networkId: networkIdProp }: AppProps) {
               onDeregister={() =>
                 run('deregister', async (session) => {
                   const { deregisterFromDust } = await import('@shieldedtech/moth-wallet/cardano');
-                  return deregisterFromDust(session, (stage) => logs.info(`Cardano deregister: ${stage}`));
+                  const r = await deregisterFromDust(session, (stage) =>
+                    logs.info(`Cardano deregister: ${stage}`),
+                  );
+                  logs.info(`Cardano: cleared ${r.cleared} registration(s)`);
+                  return r.txHash;
                 })
               }
               onUpdate={(receiver) =>

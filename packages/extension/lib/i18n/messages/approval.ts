@@ -48,4 +48,12 @@ export const approval = {
   approval_wrongPassword: "That password doesn't match. Try again.",
   approval_unlocking: 'Unlocking…',
   approval_unlock: 'Unlock',
+  approval_cardanoSignTitle:
+    'Sign on Cardano',
+  approval_cardanoSignSubtitle:
+    '$1 is asking your Cardano key to sign',
+  approval_cardanoMethodLabel:
+    'Request',
+  approval_cardanoSignWarning:
+    'Moth cannot yet show what this transaction does — the site supplies it already encoded. Approve only if you trust this site.',
 } as const;

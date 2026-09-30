@@ -40,7 +40,7 @@ export default class CardanoUpdate extends CardanoCommand {
           'Cardano net': config.network,
           'Wallet': walletName,
           'Account': `${account.label} (${account.kind})`,
-          ...(existing ? { 'Currently to': existing.coinPublicKey } : {}),
+          ...(existing ? { 'Currently to': existing.dustAddress } : {}),
           'New DUST to': args.receiver,
         },
         flags,

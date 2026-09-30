@@ -365,7 +365,7 @@ export function parseInsertVerifierKeysBatchParams(raw: unknown): DaemonInsertVe
  * than only in core so a malformed value is refused as INVALID_PARAMS on the
  * wire, before a Cardano session is opened and a Blockfrost call is spent.
  */
-function parseCoinPublicKey(value: unknown, fieldName: string): string {
+function parseDustAddressBytes(value: unknown, fieldName: string): string {
   if (typeof value !== 'string') {
     throw new DaemonProtocolError('INVALID_PARAMS', `${fieldName} must be a string`);
   }
@@ -386,7 +386,7 @@ export function parseCardanoRegisterParams(raw: unknown): DaemonCardanoRegisterP
   }
   const p = raw as Record<string, unknown>;
   return {
-    receiver: p.receiver === undefined ? undefined : parseCoinPublicKey(p.receiver, 'cardanoRegister.receiver'),
+    receiver: p.receiver === undefined ? undefined : parseDustAddressBytes(p.receiver, 'cardanoRegister.receiver'),
     summary: typeof p.summary === 'string' ? p.summary : undefined,
     details: parseOptionalStringArray(p.details, 'cardanoRegister.details'),
   };
@@ -410,7 +410,7 @@ export function parseCardanoUpdateParams(raw: unknown): DaemonCardanoUpdateParam
   }
   const p = raw as Record<string, unknown>;
   return {
-    receiver: parseCoinPublicKey(p.receiver, 'cardanoUpdate.receiver'),
+    receiver: parseDustAddressBytes(p.receiver, 'cardanoUpdate.receiver'),
     summary: typeof p.summary === 'string' ? p.summary : undefined,
     details: parseOptionalStringArray(p.details, 'cardanoUpdate.details'),
   };

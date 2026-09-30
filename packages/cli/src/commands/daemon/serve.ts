@@ -28,10 +28,10 @@ import {
   type AuthHandler,
 } from '@shieldedtech/moth-wallet';
 import {
-  deriveShieldedPublicKeys,
+  deriveAllAddressesFromSeed,
   mnemonicToSeed,
 } from '@shieldedtech/moth-wallet';
-import {loadCardanoConfig} from '@shieldedtech/moth-wallet/cardano';
+import {dustAddressBytes, loadCardanoConfig} from '@shieldedtech/moth-wallet/cardano';
 import {BaseCommand} from '../../base-command.js';
 import {getPassphrase} from '../../adapters/passphrase.js';
 
@@ -153,14 +153,16 @@ export default class DaemonServe extends BaseCommand {
     const cardanoConfig = await loadCardanoConfig(this.storage, network.id);
     const phrase = await this.walletManager.exportPhrase(walletName, passphrase);
     let cardanoMnemonic: string | null = phrase.kind === 'mnemonic' ? phrase.value : null;
-    let cardanoCoinPublicKey = '';
+    // The default DUST receiver: this wallet's own DUST address, serialized.
+    // NOT the shielded coin public key — the registration datum records a DUST
+    // address, and the two are different keys.
+    let cardanoDustAddress = '';
     if (cardanoMnemonic) {
       const seed = await mnemonicToSeed(cardanoMnemonic);
       const seedHex = Array.from(seed).map((b) => b.toString(16).padStart(2, '0')).join('');
       seed.fill(0);
-      cardanoCoinPublicKey = deriveShieldedPublicKeys(seedHex)
-        .coinPublicKey.replace(/^0x/, '')
-        .toLowerCase();
+      const bech32 = deriveAllAddressesFromSeed(seedHex).dust.bech32m[network.id];
+      cardanoDustAddress = bech32 ? dustAddressBytes(bech32) : '';
     }
     process.stderr.write(
       cardanoMnemonic
@@ -208,7 +210,7 @@ export default class DaemonServe extends BaseCommand {
       cardano: {
         config: cardanoConfig,
         getMnemonic: () => cardanoMnemonic,
-        getCoinPublicKey: () => cardanoCoinPublicKey,
+        getDustAddress: () => cardanoDustAddress,
       },
       log: (level, msg) => {
         if (level === 'info') this.log_verbose(`[daemon] ${msg}`);
@@ -348,7 +350,7 @@ export default class DaemonServe extends BaseCommand {
       // it collectable — holding it past lock() would outlive the keys it sits
       // beside.
       cardanoMnemonic = null;
-      cardanoCoinPublicKey = '';
+      cardanoDustAddress = '';
       auditLog.recordLifecycle({wallet: walletName, network: network.id, event: 'daemon-stop'});
       process.stderr.write('[daemon-serve] stopped\n');
       // Exit cleanly past oclif's catch chain.

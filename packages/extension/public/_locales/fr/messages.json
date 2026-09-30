@@ -1724,6 +1724,9 @@
   "cardano_notYetObserved": {
     "message": "Pas encore vu sur Midnight"
   },
+  "cardano_legacyDustAddress": {
+    "message": "Cet enregistrement référence un destinataire ancien et inutilisable : il ne générera donc jamais de DUST — Cardano l'a accepté, mais Midnight ne peut pas le faire correspondre. Utilisez « Changer l'adresse DUST » pour le pointer vers votre adresse DUST actuelle ; il n'est pas nécessaire de se désenregistrer d'abord."
+  },
   "cardano_notYetObservedHint": {
     "message": "Cardano a l'enregistrement ; Midnight n'a pas encore agi dessus. C'est normal juste après l'enregistrement."
   },
@@ -1770,16 +1773,16 @@
     "message": "Enregistré. Le DUST s'accumule dès maintenant et devient utilisable une fois que Cardano a finalisé l'enregistrement — environ 12 heures."
   },
   "cardano_receiverLabel": {
-    "message": "Adresse Midnight shielded"
+    "message": "Adresse DUST Midnight"
   },
   "cardano_receiverPlaceholder": {
-    "message": "mn_shield-addr…"
+    "message": "mn_dust_…"
   },
   "cardano_receiverUseThisWallet": {
     "message": "Utiliser ce portefeuille"
   },
   "cardano_receiverInvalid": {
-    "message": "Collez une adresse Midnight shielded (mn_shield-addr…) ou une clé publique de pièce de 64 caractères."
+    "message": "Collez une adresse DUST Midnight (mn_dust_…) ou son hexadécimal de 66 caractères."
   },
   "cardano_errorLocked": {
     "message": "Déverrouillez votre portefeuille pour utiliser Cardano."
@@ -2026,5 +2029,44 @@
   },
   "cardano_settingsNoNetwork": {
     "message": "Aucun réseau Cardano n'est associé à $1."
+  },
+  "cardano_midnightRow": {
+    "message": "Sur Midnight"
+  },
+  "cardano_midnightPending": {
+    "message": "Pas encore vue"
+  },
+  "cardano_midnightRejected": {
+    "message": "Rejetée"
+  },
+  "cardano_midnightLive": {
+    "message": "Génère"
+  },
+  "cardano_midnightPendingHint": {
+    "message": "Cardano a l'enregistrement et Midnight ne l'a pas encore repris. Avant la finalité c'est normal ; longtemps après, le pont n'ingère peut-être pas les enregistrements."
+  },
+  "cardano_midnightRejectedHint": {
+    "message": "Midnight a lu cet enregistrement et l'a rejeté. Attendre n'y changera rien — désenregistrez-vous puis recommencez."
+  },
+  "cardano_multipleRegistrations": {
+    "message": "Cette clé de stake Cardano a $1 enregistrements. Plus d'un force le désenregistrement, donc rien ne génère. Désenregistrez-vous pour les effacer, puis enregistrez une seule fois."
+  },
+  "cardano_deregisteredCleared": {
+    "message": "$1 enregistrements effacés. Ce doublon expliquait l'absence de génération — vous pouvez maintenant vous enregistrer une seule fois."
+  },
+  "approval_cardanoSignTitle": {
+    "message": "Signer sur Cardano"
+  },
+  "approval_cardanoSignSubtitle": {
+    "message": "$1 demande à votre clé Cardano de signer"
+  },
+  "approval_cardanoMethodLabel": {
+    "message": "Requête"
+  },
+  "approval_cardanoSignWarning": {
+    "message": "Moth ne peut pas encore montrer ce que fait cette transaction : le site la fournit déjà encodée. N'approuvez que si vous faites confiance à ce site."
+  },
+  "cardano_errorNoDustAddress": {
+    "message": "Ce portefeuille n'a pas d'adresse DUST sur le réseau actuel : le DUST généré n'aurait nulle part où aller."
   }
 }

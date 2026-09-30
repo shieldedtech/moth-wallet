@@ -6,7 +6,6 @@ import {
   cnightGeneratesDustScript,
   dustAuthUnit,
   dustValidatorAddress,
-  dustValidatorRewardAddress,
 } from './blueprint.js';
 import {
   buildDustMappingDatum,
@@ -18,11 +17,11 @@ import {
 } from './datum.js';
 import { cnightUnit } from './network.js';
 import type { CardanoSession } from './session.js';
-import { decodeBech32mAddress } from '../wallet/address.js';
+import { DustAddress, MidnightBech32m } from '@midnightntwrk/wallet-sdk/address-format';
 
-/** Indirection kept so this module's only ledger-WASM dependency is explicit. */
-function requireAddressCodec(): { decodeBech32mAddress: typeof decodeBech32mAddress } {
-  return { decodeBech32mAddress };
+/** Indirection kept so this module's only WASM dependency is explicit. */
+function requireAddressCodec() {
+  return { MidnightBech32m, DustAddress };
 }
 
 export type RegistrationStage =
@@ -43,10 +42,22 @@ export interface CardanoBalance {
 
 export interface RegistrationRecord {
   readonly utxo: UTxO;
-  /** Midnight coin public key this Cardano stake key currently generates DUST to. */
-  readonly coinPublicKey: string;
+  /** Serialized DUST address this Cardano stake key currently generates DUST to. */
+  readonly dustAddress: string;
   readonly stakeKeyHash: string;
+  /**
+   * True when `dustAddress` is not a 33-byte serialized DUST address — in
+   * practice, a registration written against the 32-byte shielded coin public
+   * key. The validator accepts anything up to 33 bytes, so this is valid on
+   * Cardano and useless on Midnight: the bridge never matches it and DUST
+   * never arrives, with nothing anywhere reporting an error. Surfaced so the
+   * UI can say so instead of showing a healthy-looking registration.
+   */
+  readonly legacyDustAddress: boolean;
 }
+
+/** A serialized DUST address is 33 bytes; anything else cannot be matched by the bridge. */
+const DUST_ADDRESS_HEX_LENGTH = 66;
 
 export class NoCnightError extends WalletError {
   constructor(action: string) {
@@ -66,10 +77,10 @@ export class NotRegisteredError extends WalletError {
 }
 
 export class AlreadyRegisteredError extends WalletError {
-  constructor(coinPublicKey: string) {
+  constructor(dustAddress: string) {
     super(
       'WALLET_ERROR',
-      `This Cardano stake key is already registered, generating DUST to ${coinPublicKey}.`,
+      `This Cardano stake key is already registered, generating DUST to ${dustAddress}.`,
     );
     this.name = 'AlreadyRegisteredError';
   }
@@ -100,57 +111,60 @@ export function assertCoinPublicKey(value: string): string {
  * since the wallet holding the cNIGHT is rarely the one being paid.
  */
 /**
- * Resolve whatever the user pasted into the coin public key a registration
- * datum takes.
+ * Serialized bytes of a Midnight DUST address — what a registration datum
+ * records, 33 bytes.
  *
- * Accepts a shielded address or raw 32-byte hex. A DUST address is rejected
- * *by name*, because it is the most reasonable thing to paste into a field
- * about where DUST goes and it is the wrong value: `mn_dust_…` encodes a
- * 33-byte DUST public key, which is a different key from the 32-byte coin
- * public key the datum carries. Telling someone "enter 64 hex characters"
- * when they pasted a DUST address explains nothing.
+ * Not the shielded coin public key, which is 32 bytes and a different key
+ * entirely. Both decode cleanly from their own address type, so nothing
+ * downstream catches the swap: the registration is valid on Cardano and the
+ * bridge simply never matches it.
+ */
+export function dustAddressBytes(address: string): string {
+  const { MidnightBech32m, DustAddress } = requireAddressCodec();
+  const text = address.trim();
+  let parsed;
+  try {
+    parsed = MidnightBech32m.parse(text);
+  } catch {
+    throw new InvalidInputError('That is not a valid Midnight address.');
+  }
+  if (parsed.type !== 'dust') {
+    throw new InvalidInputError(
+      `That is a ${parsed.type} address. A cNIGHT registration records a DUST `
+        + 'address — paste your mn_dust_… address.',
+    );
+  }
+  // Decoded against the address's own network: the payload is network-agnostic,
+  // but parsing has to agree with the prefix it was written with.
+  const decoded = parsed.decode(DustAddress, parsed.network);
+  return Buffer.from(decoded.serialize()).toString('hex').toLowerCase();
+}
+
+/** A serialized DUST address is 33 bytes; reject anything else before a datum. */
+export function assertDustAddressBytes(value: string): string {
+  const hex = value.startsWith('0x') ? value.slice(2) : value;
+  if (!/^[0-9a-fA-F]{66}$/.test(hex)) {
+    throw new InvalidInputError(
+      `A DUST address is 33 bytes of hex (66 characters), got ${hex.length} characters.`,
+    );
+  }
+  return hex.toLowerCase();
+}
+
+/**
+ * Turn whatever the user pasted into the bytes a registration datum takes.
+ *
+ * Accepts an `mn_dust_…` address or its raw 33-byte hex. A *shielded* address
+ * is rejected by name: it is the other plausible thing to paste, it is what an
+ * earlier version of the dApp used, and its coin public key is the wrong value.
  */
 export function resolveDustReceiver(input: string): string {
   const text = input.trim();
-  if (/^(0x)?[0-9a-fA-F]{64}$/.test(text)) return assertCoinPublicKey(text);
-  if (text.startsWith('mn_')) {
-    const { decodeBech32mAddress } = requireAddressCodec();
-    let kind: string;
-    try {
-      kind = decodeBech32mAddress(text).type;
-    } catch {
-      throw new InvalidInputError('That is not a valid Midnight address.');
-    }
-    if (kind === 'shield-addr') return coinPublicKeyFromShieldedAddress(text);
-    if (kind === 'dust') {
-      throw new InvalidInputError(
-        'That is a DUST address. Cardano registration records the shielded '
-          + "address's coin public key instead — paste your mn_shield-addr… address.",
-      );
-    }
-    throw new InvalidInputError(
-      `That is a ${kind} address. Paste a shielded (mn_shield-addr…) address instead.`,
-    );
-  }
+  if (/^(0x)?[0-9a-fA-F]{66}$/.test(text)) return assertDustAddressBytes(text);
+  if (text.startsWith('mn_')) return dustAddressBytes(text);
   throw new InvalidInputError(
-    'Paste a Midnight shielded address (mn_shield-addr…) or a 64-character coin public key.',
+    'Paste a Midnight DUST address (mn_dust_…) or its 66-character hex.',
   );
-}
-
-export function coinPublicKeyFromShieldedAddress(address: string): string {
-  const { decodeBech32mAddress } = requireAddressCodec();
-  const decoded = decodeBech32mAddress(address.trim());
-  if (decoded.type !== 'shield-addr') {
-    throw new InvalidInputError(
-      `Expected a Midnight shielded address, got ${decoded.type}.`,
-    );
-  }
-  if (decoded.data.length < 32) {
-    throw new InvalidInputError('That shielded address is too short to contain a coin public key.');
-  }
-  return Array.from(decoded.data.slice(0, 32))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
 }
 
 export async function readCardanoBalance(session: CardanoSession): Promise<CardanoBalance> {
@@ -196,9 +210,10 @@ async function collectCnightUtxos(session: CardanoSession, action: string): Prom
  * registration on the network shares it — the lookup returns all of them and
  * the stake key hash in the datum is what narrows it to ours.
  */
-export async function findRegistration(session: CardanoSession): Promise<RegistrationRecord | null> {
+export async function findRegistrations(session: CardanoSession): Promise<RegistrationRecord[]> {
   const validatorAddress = await dustValidatorAddress(session.config);
   const candidates = await session.lucid.utxosAtWithUnit(validatorAddress, dustAuthUnit);
+  const found: RegistrationRecord[] = [];
   for (const utxo of candidates) {
     if (!utxo.datum) continue;
     let decoded;
@@ -210,9 +225,38 @@ export async function findRegistration(session: CardanoSession): Promise<Registr
     }
     const stakeKeyHash = datumStakeKeyHash(decoded);
     if (stakeKeyHash !== session.addresses.stakeKeyHash) continue;
-    return { utxo, coinPublicKey: decoded.dust_address, stakeKeyHash };
+    found.push({
+      utxo,
+      dustAddress: decoded.dust_address,
+      stakeKeyHash,
+      legacyDustAddress: decoded.dust_address.length !== DUST_ADDRESS_HEX_LENGTH,
+    });
   }
-  return null;
+  return found;
+}
+
+/**
+ * This wallet's registration, or null.
+ *
+ * Returns the first of several if the stake key somehow has more than one —
+ * callers that care use `findRegistrations`. More than one is a broken state,
+ * not a richer one: a second registration against the same stake key forces
+ * DEREGISTRATION, so the wallet must never create one and should say so when
+ * it finds one.
+ */
+export async function findRegistration(session: CardanoSession): Promise<RegistrationRecord | null> {
+  return (await findRegistrations(session))[0] ?? null;
+}
+
+export class MultipleRegistrationsError extends WalletError {
+  constructor(count: number) {
+    super(
+      'WALLET_ERROR',
+      `This Cardano stake key has ${count} registrations. More than one forces `
+        + 'deregistration, so nothing is generating. Deregister to clear them, then register once.',
+    );
+    this.name = 'MultipleRegistrationsError';
+  }
 }
 
 function assertEnoughAda(balance: CardanoBalance): void {
@@ -252,21 +296,25 @@ async function signAndSubmit(
 }
 
 /**
- * Register this Cardano stake key so its cNIGHT generates DUST to `coinPublicKey`.
+ * Register this Cardano stake key so its cNIGHT generates DUST to `dustAddress`.
  *
  * Mints the auth NFT and parks it at the mapping validator alongside an inline
  * datum, spending every cNIGHT UTXO on the way through.
  */
 export async function registerForDust(
   session: CardanoSession,
-  coinPublicKey: string,
+  dustAddress: string,
   onStage?: StageReporter,
 ): Promise<string> {
-  const coinPkHex = assertCoinPublicKey(coinPublicKey);
+  const dustHex = resolveDustReceiver(dustAddress);
 
   onStage?.('collecting-utxos');
-  const existing = await findRegistration(session);
-  if (existing) throw new AlreadyRegisteredError(existing.coinPublicKey);
+  // Checked against ALL registrations, not just the first. A second
+  // registration on one stake key forces deregistration — the wallet creating
+  // that state would be worse than refusing.
+  const existing = await findRegistrations(session);
+  if (existing.length > 1) throw new MultipleRegistrationsError(existing.length);
+  if (existing.length === 1) throw new AlreadyRegisteredError(existing[0]!.dustAddress);
 
   const cnightUtxos = await collectCnightUtxos(session, 'register');
   assertEnoughAda(await readCardanoBalance(session));
@@ -274,7 +322,7 @@ export async function registerForDust(
   onStage?.('building');
   const validatorAddress = await dustValidatorAddress(session.config);
   const datum = encodeDustMappingDatum(
-    buildDustMappingDatum(session.addresses.stakeKeyHash, coinPkHex),
+    buildDustMappingDatum(session.addresses.stakeKeyHash, dustHex),
   );
 
   const builder = session.lucid.newTx();
@@ -299,26 +347,51 @@ export async function registerForDust(
  * UTXOs generating under the mapping that was just deleted, which is why every
  * cNIGHT UTXO is spent in the same transaction.
  */
+export interface DeregisterResult {
+  readonly txHash: string;
+  /** How many registrations this transaction cleared. */
+  readonly cleared: number;
+}
+
+/**
+ * Stop DUST generation: burn every auth NFT this stake key holds and consume
+ * every registration UTXO, in one transaction.
+ *
+ * ALL of them, not the first. A stake key with more than one registration is
+ * not generating — a second registration forces deregistration — and clearing
+ * one at a time would leave the wallet in a state whose meaning depends on
+ * rules we do not control. One transaction ends with zero, which is
+ * unambiguous under any reading, and is the state `register` can build on.
+ *
+ * Rotation matters as much as the burn. Already-existing cNIGHT UTXOs keep
+ * generating under the mapping that was just deleted until they move, which is
+ * why every cNIGHT UTXO is spent in the same transaction.
+ */
 export async function deregisterFromDust(
   session: CardanoSession,
   onStage?: StageReporter,
-): Promise<string> {
+): Promise<DeregisterResult> {
   onStage?.('collecting-utxos');
-  const registration = await findRegistration(session);
-  if (!registration) throw new NotRegisteredError();
+  const registrations = await findRegistrations(session);
+  if (registrations.length === 0) throw new NotRegisteredError();
   const cnightUtxos = await collectCnightUtxos(session, 'deregister');
 
   onStage?.('building');
   const builder = session.lucid.newTx();
   builder.collectFrom(cnightUtxos);
-  builder.mintAssets({ [dustAuthUnit]: -1n }, encodeMintRedeemer('Burn'));
+  // One NFT per registration UTXO, so the burn has to match the count or the
+  // transaction does not balance.
+  builder.mintAssets(
+    { [dustAuthUnit]: -BigInt(registrations.length) },
+    encodeMintRedeemer('Burn'),
+  );
   builder.attach.MintingPolicy(cnightGeneratesDustScript);
-  builder.collectFrom([registration.utxo], unitRedeemer());
+  builder.collectFrom(registrations.map((r) => r.utxo), unitRedeemer());
   builder.attach.SpendingValidator(cnightGeneratesDustScript);
   await addSigners(builder, session);
 
   const completed = await builder.complete();
-  return signAndSubmit(completed, onStage);
+  return { txHash: await signAndSubmit(completed, onStage), cleared: registrations.length };
 }
 
 /**
@@ -332,24 +405,23 @@ export async function deregisterFromDust(
  */
 export async function updateDustAddress(
   session: CardanoSession,
-  newCoinPublicKey: string,
+  newDustAddress: string,
   onStage?: StageReporter,
 ): Promise<string> {
-  const coinPkHex = assertCoinPublicKey(newCoinPublicKey);
+  const dustHex = resolveDustReceiver(newDustAddress);
 
   onStage?.('collecting-utxos');
   const registration = await findRegistration(session);
   if (!registration) throw new NotRegisteredError();
-  if (registration.coinPublicKey === coinPkHex) {
+  if (registration.dustAddress === dustHex) {
     throw new InvalidInputError('That is already the registered DUST address.');
   }
   const cnightUtxos = await collectCnightUtxos(session, 'update');
 
   onStage?.('building');
   const validatorAddress = await dustValidatorAddress(session.config);
-  const validatorRewardAddress = await dustValidatorRewardAddress(session.config);
   const datum = encodeDustMappingDatum(
-    buildDustMappingDatum(session.addresses.stakeKeyHash, coinPkHex),
+    buildDustMappingDatum(session.addresses.stakeKeyHash, dustHex),
   );
 
   const builder = session.lucid.newTx();
@@ -361,8 +433,14 @@ export async function updateDustAddress(
     { kind: 'inline', value: datum },
     { lovelace: LOVELACE_FOR_REGISTRATION, [dustAuthUnit]: 1n },
   );
-  builder.withdraw(validatorRewardAddress, 0n, unitRedeemer());
-  builder.attach.WithdrawalValidator(cnightGeneratesDustScript);
+  // Deliberately NO withdrawal. The spend validator authorises through
+  // `check_auth(c_wallet, extra_signatories, withdrawals)`, which is an
+  // either/or: a VerificationKey credential — what every moth account has —
+  // is satisfied by signing with the stake key, and only a Script credential
+  // needs the withdrawal route. Adding one anyway invokes the withdrawal
+  // validator, a separate entry point whose redeemer is an OutputReference it
+  // uses to find an input. Handing it the unit redeemer made it destructure an
+  // empty constructor and abort: "Withdraw[0] the validator crashed".
   await addSigners(builder, session);
 
   const completed = await builder.complete();

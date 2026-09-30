@@ -20,7 +20,7 @@ export default class CardanoStatus extends CardanoCommand {
     const config = await this.getCardanoConfig(flags.network, flags);
     const passphrase = await getPassphrase();
 
-    const ownCoinPublicKey = await this.getOwnCoinPublicKey(walletName, passphrase);
+    const ownDustAddress = await this.getOwnDustAddress(walletName, passphrase, flags.network);
     const { status, account } = await this.withCardano(
       walletName,
       passphrase,
@@ -45,11 +45,15 @@ export default class CardanoStatus extends CardanoCommand {
       cnightUtxos: status.balance.cnightUtxoCount,
       lovelace: status.balance.lovelace.toString(),
       registered: status.registered,
-      registeredCoinPublicKey: status.coinPublicKey,
+      registeredDustAddress: status.dustAddress,
       // Whether the registration points at THIS wallet. A registration made
       // from another Midnight wallet is still a valid registration, and reading
       // `registered: true` alone would hide that the DUST goes elsewhere.
-      registeredToThisWallet: status.coinPublicKey === ownCoinPublicKey,
+      registeredToThisWallet: status.dustAddress === ownDustAddress,
+      // Valid on Cardano, unmatchable by Midnight: the registration looks
+      // healthy and generates nothing. Reported as its own field so a script
+      // can act on it rather than diffing address lengths.
+      legacyDustAddress: status.legacyDustAddress,
       registrationUtxo: status.registrationUtxo
         ? `${status.registrationUtxo.txHash}#${status.registrationUtxo.outputIndex}`
         : null,

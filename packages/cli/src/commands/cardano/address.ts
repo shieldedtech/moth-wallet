@@ -24,7 +24,7 @@ export default class CardanoAddress extends CardanoCommand {
     const account = await this.getCardanoAccount(walletName, flags);
     const { mnemonic, accountIndex } = await this.resolveAccountKey(walletName, passphrase, account);
     const addresses = await deriveCardanoAddresses(mnemonic, config, accountIndex);
-    const coinPublicKey = await this.getOwnCoinPublicKey(walletName, passphrase);
+    const dustAddress = await this.getOwnDustAddress(walletName, passphrase, flags.network);
 
     this.outputSuccess({
       wallet: walletName,
@@ -37,7 +37,7 @@ export default class CardanoAddress extends CardanoCommand {
       rewardAddress: addresses.rewardAddress,
       stakeKeyHash: addresses.stakeKeyHash,
       paymentKeyHash: addresses.paymentKeyHash,
-      midnightCoinPublicKey: coinPublicKey,
+      midnightDustAddress: dustAddress,
     });
   }
 }

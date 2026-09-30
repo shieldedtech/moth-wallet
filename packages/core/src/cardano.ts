@@ -14,5 +14,6 @@ export * from './cardano/datum.js';
 export * from './cardano/session.js';
 export * from './cardano/registration.js';
 export * from './cardano/send.js';
+export * from './cardano/cip30.js';
 export * from './cardano/status.js';
 export * from './cardano/finality.js';

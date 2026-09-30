@@ -31,6 +31,20 @@ export const cardano = {
   cardano_dustToThisWallet: 'This wallet',
   cardano_generatingRow: 'Generating',
   cardano_notYetObserved: 'Not yet observed on Midnight',
+  cardano_midnightRow: 'On Midnight',
+  cardano_midnightPending: 'Not seen yet',
+  cardano_midnightRejected: 'Rejected',
+  cardano_midnightLive: 'Generating',
+  cardano_midnightPendingHint:
+    'Cardano has the registration and Midnight has not picked it up. Before finality that is expected; long after it, the bridge may not be ingesting registrations.',
+  cardano_midnightRejectedHint:
+    'Midnight read this registration and rejected it. Waiting will not change that \u2014 deregister and register again.',
+  cardano_deregisteredCleared:
+    'Cleared $1 registrations. That duplicate state was why nothing was generating \u2014 you can register once now.',
+  cardano_multipleRegistrations:
+    'This Cardano stake key has $1 registrations. More than one forces deregistration, so nothing is generating. Deregister to clear them, then register once.',
+  cardano_legacyDustAddress:
+    'This registration records an older, unusable receiver, so it will never generate DUST — Cardano accepted it, but Midnight cannot match it. Use Update to point it at your current DUST address; you do not need to deregister first.',
   cardano_notYetObservedHint:
     'Cardano has the registration; Midnight has not acted on it yet. This is normal right after registering.',
   cardano_generatingAccruing: 'Accruing since registration',
@@ -67,16 +81,18 @@ export const cardano = {
   // Receiver entry
   cardano_receiverPickAccount: 'Send DUST to one of your accounts',
   cardano_receiverSelected: 'Selected',
-  cardano_receiverLabel: 'Midnight shielded address',
-  cardano_receiverPlaceholder: 'mn_shield-addr\u2026',
+  cardano_receiverLabel: 'Midnight DUST address',
+  cardano_receiverPlaceholder: 'mn_dust_\u2026',
   cardano_receiverUseThisWallet: 'Use this wallet',
   cardano_receiverInvalid:
-    'Paste a Midnight shielded address (mn_shield-addr\u2026) or a 64-character coin public key.',
+    'Paste a Midnight DUST address (mn_dust_\u2026) or its 66-character hex.',
 
   // Errors / unavailable states
   cardano_errorLocked: 'Unlock your wallet to use Cardano.',
   cardano_errorImportedLocked:
     'This imported account could not be unlocked. Lock and unlock your wallet, then try again.',
+  cardano_errorNoDustAddress:
+    'This wallet has no DUST address on the current network, so there is nowhere to send generated DUST.',
   cardano_errorNoMnemonic:
     'This account was restored from a hex seed, so it has no Cardano address. Cardano keys come from a recovery phrase.',
   cardano_errorNoBlockfrostKey:

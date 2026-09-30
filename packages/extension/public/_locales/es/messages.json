@@ -1724,6 +1724,9 @@
   "cardano_notYetObserved": {
     "message": "Aún no visto en Midnight"
   },
+  "cardano_legacyDustAddress": {
+    "message": "Este registro apunta a un receptor antiguo e inservible, por lo que nunca generará DUST — Cardano lo aceptó, pero Midnight no puede emparejarlo. Usa «Cambiar dirección DUST» para apuntarlo a tu dirección DUST actual; no hace falta cancelar el registro primero."
+  },
   "cardano_notYetObservedHint": {
     "message": "Cardano tiene el registro; Midnight aún no ha actuado sobre él. Es normal justo después de registrarse."
   },
@@ -1770,16 +1773,16 @@
     "message": "Registrado. El DUST se acumula desde ahora y pasa a ser utilizable cuando Cardano finaliza el registro: unas 12 horas."
   },
   "cardano_receiverLabel": {
-    "message": "Dirección shielded de Midnight"
+    "message": "Dirección DUST de Midnight"
   },
   "cardano_receiverPlaceholder": {
-    "message": "mn_shield-addr…"
+    "message": "mn_dust_…"
   },
   "cardano_receiverUseThisWallet": {
     "message": "Usar esta cartera"
   },
   "cardano_receiverInvalid": {
-    "message": "Pega una dirección shielded de Midnight (mn_shield-addr…) o una clave pública de moneda de 64 caracteres."
+    "message": "Pega una dirección DUST de Midnight (mn_dust_…) o su hexadecimal de 66 caracteres."
   },
   "cardano_errorLocked": {
     "message": "Desbloquea tu cartera para usar Cardano."
@@ -2026,5 +2029,44 @@
   },
   "cardano_settingsNoNetwork": {
     "message": "No hay ninguna red de Cardano emparejada con $1."
+  },
+  "cardano_midnightRow": {
+    "message": "En Midnight"
+  },
+  "cardano_midnightPending": {
+    "message": "Aún no vista"
+  },
+  "cardano_midnightRejected": {
+    "message": "Rechazada"
+  },
+  "cardano_midnightLive": {
+    "message": "Generando"
+  },
+  "cardano_midnightPendingHint": {
+    "message": "Cardano tiene el registro y Midnight aún no lo ha recogido. Antes de la finalidad es normal; mucho después, puede que el puente no esté ingiriendo registros."
+  },
+  "cardano_midnightRejectedHint": {
+    "message": "Midnight leyó este registro y lo rechazó. Esperar no lo cambiará: cancela el registro y vuelve a registrarte."
+  },
+  "cardano_multipleRegistrations": {
+    "message": "Esta clave de stake de Cardano tiene $1 registros. Más de uno fuerza la cancelación, así que no se genera nada. Cancela el registro para limpiarlos y luego regístrate una sola vez."
+  },
+  "cardano_deregisteredCleared": {
+    "message": "Se eliminaron $1 registros. Ese estado duplicado era la razón de que no se generara nada: ahora puedes registrarte una sola vez."
+  },
+  "approval_cardanoSignTitle": {
+    "message": "Firmar en Cardano"
+  },
+  "approval_cardanoSignSubtitle": {
+    "message": "$1 pide a tu clave de Cardano que firme"
+  },
+  "approval_cardanoMethodLabel": {
+    "message": "Solicitud"
+  },
+  "approval_cardanoSignWarning": {
+    "message": "Moth aún no puede mostrar qué hace esta transacción: el sitio la envía ya codificada. Apruébala solo si confías en este sitio."
+  },
+  "cardano_errorNoDustAddress": {
+    "message": "Esta cartera no tiene dirección DUST en la red actual, así que el DUST generado no tendría destino."
   }
 }

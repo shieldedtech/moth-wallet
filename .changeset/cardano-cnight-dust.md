@@ -9,7 +9,7 @@ Register cNIGHT on Cardano for DUST generation, from all four surfaces.
 
 DUST can be generated from NIGHT held on Midnight or from cNIGHT held on
 Cardano. moth only did the first. The second needs a Cardano transaction that
-maps a Cardano stake key to a Midnight coin public key, so it needed Cardano
+maps a Cardano stake key to a Midnight DUST address, so it needed Cardano
 keys, the `cnight_generates_dust` Plutus validator and a chain provider — none
 of which the wallet had.
 
@@ -88,9 +88,9 @@ chain, so it survives a reinstall and is right for a registration made from the
 dApp or the CLI — and says what the wait is for.
 
 Registering also offers your Midnight accounts as DUST receivers instead of only
-taking 64 hex characters by hand. The coin public key is read out of each
-account's public shielded address, so locked accounts are offered too — the
-account holding the cNIGHT is usually not the one being paid.
+taking 66 hex characters by hand. The DUST address is read out of each account,
+so locked accounts are offered too — the account holding the cNIGHT is usually
+not the one being paid.
 
 The extension can show its DUST address again: Receive gained a DUST tab and the
 DUST screen shows the address with a copy button. Neither had it, while the TUI
@@ -101,3 +101,28 @@ registration to point generation at yourself.
 Also fixes `moth dust status`, which passed the wallet's Midnight address to an
 indexer query keyed by Cardano *reward* address and so reported "not registered"
 for every wallet, registered or not.
+
+The registration datum records a 33-byte serialized DUST address. An earlier
+draft wrote the 32-byte shielded coin public key instead: both encode cleanly,
+Cardano accepts either, and the bridge silently matches neither — DUST simply
+never arrives and there is nothing to read anywhere that says why.
+
+Registrations written that way still exist on chain, so the datum is read back
+with the validator's own bound (`<= 33`) rather than a fixed 33. Pinning the
+reader to 33 does not reject such a registration, it hides it: the datum stops
+decoding, the wallet reports "not registered", and registering again mints a
+second auth NFT onto a stake key that already has one, which the validator
+rejects. A registration that cannot generate DUST is now labelled as such in all
+four surfaces, with `update` offered to repoint it.
+
+Changing the DUST address no longer adds a zero withdrawal. The validator
+authorises a key-based stake credential by signature; the withdrawal route is
+for script credentials, and its redeemer is an output reference rather than the
+unit value, so including one aborted the transaction.
+
+The extension's Cardano provider now implements CIP-30 in full: `getExtensions`,
+`getUtxos(amount, paginate)` with amount filtering, `getCollateral({ amount })`
+reading `cbor<Coin>`, pagination on `getUsedAddresses`, and `enable(extensions)`.
+Errors reach dApps in the shapes the spec fixes — numeric `APIError` codes,
+`PaginateError { maxSize }`, and the per-method decline codes — where previously
+every CIP-30 failure arrived as `[object Object]` with its detail dropped.

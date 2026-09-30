@@ -51,6 +51,8 @@ export const hostDispatch: Dispatch = {
   'os/cardanoStatus': (_host, d) => cardano.cardanoStatus(d.mnemonic, d.config, d.indexerUrl, d.accountIndex),
   'os/cardanoRegister': (_host, d) => cardano.cardanoRegister(d.mnemonic, d.config, d.receiver, d.accountIndex),
   'os/cardanoDeregister': (_host, d) => cardano.cardanoDeregister(d.mnemonic, d.config, d.accountIndex),
+  'os/cardanoCip30': (_host, d) =>
+    cardano.cardanoCip30(d.mnemonic, d.config, d.method as never, d.params, d.accountIndex),
   'os/cardanoSend': (_host, d) => cardano.cardanoSend(d.mnemonic, d.config, d.request, d.accountIndex),
   'os/cardanoUpdate': (_host, d) => cardano.cardanoUpdate(d.mnemonic, d.config, d.receiver, d.accountIndex),
   'os/walletUnlock': (host, d) => host.walletUnlock(d.name, d.passphrase, d.network),

@@ -12,7 +12,7 @@ import { hasOpenPorts, broadcastApproval } from './sync-service';
 
 export interface PendingApproval {
   id: string;
-  kind: 'connect' | 'transfer' | 'signData' | 'deriveAppSecret' | 'balance';
+  kind: 'connect' | 'transfer' | 'signData' | 'deriveAppSecret' | 'balance' | 'cardanoSign';
   origin: string;
   /** kind-specific display data (amounts as strings) */
   payload: unknown;

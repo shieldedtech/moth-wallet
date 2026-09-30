@@ -19,8 +19,14 @@ export interface CardanoStatusView {
   readonly cnight: bigint;
   readonly cnightUtxos: number;
   readonly registered: boolean;
-  readonly registeredCoinPublicKey: string | null;
+  readonly registeredDustAddress: string | null;
   readonly registeredToThisWallet: boolean;
+  /**
+   * The registration records something that is not a 33-byte DUST address, so
+   * Midnight can never match it and no DUST will ever arrive. Valid on Cardano,
+   * which is exactly why it has to be said out loud here.
+   */
+  readonly legacyDustAddress: boolean;
   /** Midnight-side generation view; null until the indexer has caught up. */
   readonly generationRate: string | null;
   /** Seconds until Cardano finality; null means not in a block yet / unknown. */
@@ -36,7 +42,7 @@ export interface CardanoAccountView {
   readonly cardanoNetwork: string;
   readonly address: string;
   readonly rewardAddress: string;
-  readonly midnightCoinPublicKey: string;
+  readonly midnightDustAddress: string;
 }
 
 /** One Cardano account as the account list shows it. */
@@ -743,10 +749,19 @@ export function Cardano({
                   <Text dimColor>not registered</Text>
                 )}
               </Box>
-              {s.registered && s.registeredCoinPublicKey && (
+              {s.registered && s.registeredDustAddress && (
                 <Box>
                   <Text dimColor>{'DUST to'.padEnd(14)}</Text>
-                  <Text>{shorten(s.registeredCoinPublicKey, 16, 8)}</Text>
+                  <Text>{shorten(s.registeredDustAddress, 16, 8)}</Text>
+                </Box>
+              )}
+              {s.legacyDustAddress && (
+                <Box flexDirection="column" marginTop={1}>
+                  <Text color="red">This registration will never generate DUST.</Text>
+                  <Text dimColor>
+                    It records an older, unusable receiver. Use "change DUST address" to point
+                    it at your current one — you do not need to deregister first.
+                  </Text>
                 </Box>
               )}
               <Box>

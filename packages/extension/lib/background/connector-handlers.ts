@@ -11,7 +11,15 @@ import type { WalletBalances } from '@shieldedtech/moth-browser';
 import { resolveProverConfig } from '@shieldedtech/moth-wallet/types/network';
 import { onMessage, deserializeBalances } from '../messaging/protocol';
 import { encodeBigintJson, decodeBigintJson } from '../messaging/bigint-json';
-import { connectorError, describeErrorFields, serializeError, type ErrorCode } from '../connector/errors';
+import {
+  asCip30Error,
+  CIP30_CODES,
+  connectorError,
+  describeCip30Error,
+  describeErrorFields,
+  serializeError,
+  type ErrorCode,
+} from '../connector/errors';
 import { NOT_IMPLEMENTED_METHODS, type ConnectorMethod } from '../connector/constants';
 import type { TransferRequestDTO, SwapInputDTO, ProvingKeyMaterialDTO, TxSummaryDTO } from '../offscreen/messaging';
 import { getSettings, getNetworkConfig } from './settings';
@@ -27,6 +35,7 @@ import {
 import { beginOp, endOp } from './sync-service';
 import { recordActivity } from './auto-lock';
 import { offscreen } from './offscreen-client';
+import type { CardanoSignApprovalPayload } from '../messaging/protocol';
 
 // These methods can display an approval. Their panel-open attempt starts at
 // dispatch entry, before any permission/session/storage await consumes the
@@ -248,6 +257,14 @@ async function dispatchMethod(
   senderTabId?: number,
   preparedPanel?: Promise<boolean>,
 ): Promise<unknown> {
+  // CIP-30 shares this transport and its origin permissions, but not its
+  // method namespace: `cardano.*` is the Cardano bridge, everything else is the
+  // Midnight connector. Two wallets behind one relay, deliberately separate so
+  // a dApp on one chain can never reach the other's methods.
+  if (method.startsWith('cardano.')) {
+    return dispatchCip30(origin, method.slice('cardano.'.length), params, senderTabId);
+  }
+
   if ((NOT_IMPLEMENTED_METHODS as readonly string[]).includes(method)) {
     throw connectorError('InternalError', `${method} is not implemented by Moth (reference wallet MVP)`);
   }
@@ -586,6 +603,14 @@ export function registerConnectorHandlers(): void {
       const result = await dispatch(origin, data.method as ConnectorMethod, params, sender?.tab?.id);
       return { ok: true as const, resultJson: encodeBigintJson(result ?? null) };
     } catch (err) {
+      // A CIP-30 error is a plain object with a NUMERIC code (or only
+      // `maxSize`), so the Midnight path below would stringify it to
+      // "[object Object]" and lose `info`. Carry it through intact instead.
+      const cip30 = asCip30Error(err);
+      if (cip30) {
+        const reason = describeCip30Error(cip30);
+        return { ok: false as const, error: { ...serializeError('InternalError', reason), cip30 } };
+      }
       const code: ErrorCode = (err as { code?: ErrorCode }).code ?? 'InternalError';
       const base = (err as { reason?: string; message?: string }).reason ?? (err as Error).message ?? String(err);
       // Fold the error's structured fields into the reason. Without this a DApp
@@ -628,4 +653,75 @@ export function registerConnectorHandlers(): void {
   onMessage('permissionsRevoke', async ({ data }) => {
     await revoke(data.origin);
   });
+}
+
+
+/** CIP-30 methods that only derive, so they need no Blockfrost project id. */
+const CIP30_OFFLINE = new Set([
+  'getNetworkId',
+  'getUsedAddresses',
+  'getUnusedAddresses',
+  'getChangeAddress',
+  'getRewardAddresses',
+  // Answered from a constant: it must work before a project id is configured,
+  // because dApps call it during feature detection, ahead of any chain read.
+  'getExtensions',
+]);
+
+/** CIP-30 methods that spend or sign, and so must be approved every time. */
+const CIP30_SIGNING = new Set(['signTx', 'signData', 'submitTx']);
+
+/**
+ * Route one CIP-30 call.
+ *
+ * `enable` is the only method that may prompt for authorization; everything
+ * else requires the origin to already hold a grant, exactly as CIP-30 says.
+ * Signing methods additionally take a per-call approval: a granted origin may
+ * read addresses freely, but must not be able to sign silently.
+ */
+async function dispatchCip30(
+  origin: string,
+  method: string,
+  params: unknown[],
+  senderTabId?: number,
+): Promise<unknown> {
+  const { requireCardano } = await import('./cardano-session');
+
+  if (method === 'isEnabled') return isAllowed(origin);
+
+  if (method === 'enable') {
+    const settings = await getSettings();
+    await ensureConnected(origin, settings.network, senderTabId);
+    // Fail here rather than at the first getBalance: a dApp that enabled
+    // successfully reasonably assumes the wallet can answer.
+    await requireCardano(false);
+    return true;
+  }
+
+  // Past this point every rejection is reported in CIP-30's own vocabulary
+  // rather than the Midnight connector's. A Cardano dApp switches on these
+  // numbers, and a string code like 'Rejected' matches none of its branches.
+  if (!(await isAllowed(origin))) {
+    throw { code: CIP30_CODES.apiRefused, info: `${origin} is not authorized; call enable() first` };
+  }
+
+  if (CIP30_SIGNING.has(method)) {
+    const approved = await requestApproval(
+      'cardanoSign',
+      origin,
+      { method } satisfies CardanoSignApprovalPayload,
+      senderTabId,
+    );
+    if (!approved) {
+      // Each signing method has its own "user said no" code; APIError.Refused
+      // is not one of them, and a dApp waiting on TxSignError would hang.
+      const info = 'User rejected the request';
+      if (method === 'signTx') throw { code: CIP30_CODES.txSignUserDeclined, info };
+      if (method === 'signData') throw { code: CIP30_CODES.dataSignUserDeclined, info };
+      throw { code: CIP30_CODES.txSendRefused, info };
+    }
+  }
+
+  const { config, mnemonic, accountIndex } = await requireCardano(!CIP30_OFFLINE.has(method));
+  return offscreen.cardanoCip30({ mnemonic, config, method, params, accountIndex });
 }

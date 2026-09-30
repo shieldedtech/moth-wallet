@@ -1170,9 +1170,9 @@ export async function cardanoReceiverAccounts(
   label: string;
   shieldedAddress: string;
   dustAddress: string;
-  coinPublicKey: string;
+  dustAddressBytes: string;
 }>> {
-  const { coinPublicKeyFromShieldedAddress } = await import(
+  const { dustAddressBytes } = await import(
     '@shieldedtech/moth-wallet/cardano/registration'
   );
   const wallets = await getMoth(network).wallets.list();
@@ -1190,7 +1190,11 @@ export async function cardanoReceiverAccounts(
         // Empty for an account last written before the manager persisted it;
         // it fills in on that account's next unlock.
         dustAddress: w.addresses?.dust?.bech32m?.[network] ?? '',
-        coinPublicKey: coinPublicKeyFromShieldedAddress(shielded),
+        // The datum value: this account's DUST address, serialized.
+        dustAddressBytes: (() => {
+          const bech32 = w.addresses?.dust?.bech32m?.[network];
+          try { return bech32 ? dustAddressBytes(bech32) : ''; } catch { return ''; }
+        })(),
       }];
     } catch {
       // An address that will not decode is simply not offered as a receiver.
@@ -1204,7 +1208,7 @@ export async function cardanoReceiverAccounts(
  * Turn whatever the user pasted into the coin public key a registration takes.
  * Offscreen because the bech32 decode needs the ledger WASM.
  */
-export async function cardanoResolveReceiver(input: string): Promise<{ coinPublicKey: string }> {
+export async function cardanoResolveReceiver(input: string): Promise<{ dustAddressBytes: string }> {
   const { resolveDustReceiver } = await import('@shieldedtech/moth-wallet/cardano/registration');
-  return { coinPublicKey: resolveDustReceiver(input) };
+  return { dustAddressBytes: resolveDustReceiver(input) };
 }

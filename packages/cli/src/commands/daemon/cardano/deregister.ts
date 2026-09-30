@@ -31,13 +31,16 @@ export default class DaemonCardanoDeregister extends BaseCommand {
     if (!client) return;
 
     try {
-      const result = await client.call<{txHash: string}>('cardanoDeregister', null, {
+      const result = await client.call<{txHash: string; cleared: number}>('cardanoDeregister', null, {
         timeoutMs: flags['timeout-ms'],
       });
       if (this.outputFormat === 'json') {
         this.outputSuccess(result);
       } else {
-        this.log(`Deregistered on Cardano. Transaction: ${result.txHash}`);
+        this.log(
+          `Deregistered on Cardano (${result.cleared} registration${result.cleared === 1 ? '' : 's'} cleared). `
+            + `Transaction: ${result.txHash}`,
+        );
       }
     } catch (err) {
       const {category, message} = this.renderDaemonError(err);

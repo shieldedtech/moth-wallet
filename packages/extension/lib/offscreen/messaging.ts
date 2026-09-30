@@ -21,6 +21,14 @@ import type { CardanoNetworkConfig } from '@shieldedtech/moth-wallet/cardano/net
 import type { CardanoAddressesResult, CardanoStatusResult } from './cardano-host';
 import type { CardanoAccountList } from '@shieldedtech/moth-wallet/cardano/accounts';
 
+/**
+ * Everything a CIP-30 method can return, across all of them.
+ *
+ * Spelled out rather than `unknown`: the protocol map is a mapped type, and one
+ * `unknown` member widens the inference for every other method in it.
+ */
+export type Cip30Result = number | string | string[] | null | { signature: string; key: string };
+
 export type { RelayState };
 
 /** A transfer output, with the bigint amount carried as a decimal string. */
@@ -175,13 +183,15 @@ export interface OffscreenProtocol {
     passphrase: string;
   }): Record<string, string>;
 
-  'os/cardanoResolveReceiver'(data: { input: string }): { coinPublicKey: string };
+  'os/cardanoResolveReceiver'(data: { input: string }): { dustAddressBytes: string };
   'os/cardanoReceiverAccounts'(data: { network: string }): Array<{
     name: string;
     label: string;
     shieldedAddress: string;
+    /** bech32m, for display. */
     dustAddress: string;
-    coinPublicKey: string;
+    /** Serialized DUST address — what a registration datum records. */
+    dustAddressBytes: string;
   }>;
   'os/cardanoAddresses'(data: {
     mnemonic: string;
@@ -204,7 +214,14 @@ export interface OffscreenProtocol {
     mnemonic: string;
     config: CardanoNetworkConfig;
     accountIndex?: number;
-  }): { txHash: string };
+  }): { txHash: string; cleared: number };
+  'os/cardanoCip30'(data: {
+    mnemonic: string;
+    config: CardanoNetworkConfig;
+    method: string;
+    params: unknown[];
+    accountIndex?: number;
+  }): Cip30Result;
   'os/cardanoSend'(data: {
     mnemonic: string;
     config: CardanoNetworkConfig;

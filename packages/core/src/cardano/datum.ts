@@ -18,14 +18,27 @@ const CredentialSchema = Data.Enum([
  * generation follows the stake credential so that moving cNIGHT between a
  * wallet's own payment addresses does not break the mapping.
  *
- * `dust_address` is the Midnight coin public key, 32 raw bytes. It is not a
- * bech32m address and not the night address; passing either produces a
- * registration that looks fine on Cardano and silently generates DUST nobody
- * can spend.
+ * `dust_address` is a serialized Midnight DUST address: 33 bytes, exactly the
+ * payload of an `mn_dust_…` bech32m string. NOT the 32-byte shielded coin
+ * public key — those are different keys, both plausible, and the wrong one
+ * produces a registration that is well-formed on Cardano, correctly signed,
+ * and simply never matched by the bridge. There is no error; DUST just never
+ * arrives, and you find out twelve hours later.
+ *
+ * The bound here is the validator's own — `length_of_bytearray(dust_address)
+ * <= 33` — and NOT a fixed 33, because this schema also has to *read* what is
+ * already on chain. Registrations written against the 32-byte coin public key
+ * exist, and a stricter schema does not reject them so much as hide them: the
+ * datum stops decoding, `findRegistrations` returns nothing, the UI reports
+ * "Not registered", and the next register mints a second auth NFT against a
+ * stake key that already has one — which the validator kills at Mint[0].
+ * Being unable to see a bad registration is strictly worse than reading it,
+ * because you cannot deregister what you cannot find. What moth *writes* stays
+ * pinned to 33 by assertDustAddressBytes, upstream in registration.ts.
  */
 const DustMappingDatumSchema = Data.Object({
   c_wallet: CredentialSchema,
-  dust_address: Data.Bytes({ minLength: 32, maxLength: 32 }),
+  dust_address: Data.Bytes({ minLength: 1, maxLength: 33 }),
 });
 
 export type DustMappingDatum = Data.Static<typeof DustMappingDatumSchema>;
@@ -36,10 +49,13 @@ const DustActionSchema = Data.Enum([Data.Literal('Create'), Data.Literal('Burn')
 export type DustAction = Data.Static<typeof DustActionSchema>;
 export const DustAction = DustActionSchema as unknown as DustAction;
 
-export function buildDustMappingDatum(stakeKeyHash: string, coinPublicKeyHex: string): DustMappingDatum {
+export function buildDustMappingDatum(
+  stakeKeyHash: string,
+  dustAddressHex: string,
+): DustMappingDatum {
   return {
     c_wallet: { VerificationKey: [stakeKeyHash] },
-    dust_address: coinPublicKeyHex,
+    dust_address: dustAddressHex,
   };
 }
 

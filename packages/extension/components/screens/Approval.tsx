@@ -169,6 +169,29 @@ export function Approval({
             {t('approval_deriveNote')}
           </NoteCard>
         </>
+      ) : approval.kind === 'cardanoSign' ? (
+        <>
+          <SiteChip origin={approval.origin} />
+          <div className="text-center">
+            <h1 className="m-0 font-display text-[26px] font-extrabold leading-tight">
+              {t('approval_cardanoSignTitle')}
+            </h1>
+            <p className="m-0 pt-1.5 text-[13.5px] text-muted-foreground">
+              {t('approval_cardanoSignSubtitle', [host])}
+            </p>
+          </div>
+          <DetailCard
+            rows={[
+              { label: t('approval_cardanoMethodLabel'), value: String((approval.payload as { method?: string })?.method ?? '—') },
+            ]}
+          />
+          {/* Deliberately not a transaction summary. The dApp supplies CBOR
+              and moth does not decode it yet; showing an amount it has not
+              verified would be worse than showing none. */}
+          <NoteCard variant="error" icon={TriangleAlert}>
+            {t('approval_cardanoSignWarning')}
+          </NoteCard>
+        </>
       ) : approval.kind === 'balance' ? (
         <>
           <SiteChip origin={approval.origin} />

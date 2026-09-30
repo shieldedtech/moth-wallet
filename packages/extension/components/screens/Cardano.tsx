@@ -54,7 +54,7 @@ type Mode =
   | { kind: 'overview' }
   | { kind: 'receiver'; action: 'register' | 'update' }
   | { kind: 'pending'; action: Action }
-  | { kind: 'done'; action: Action; txHash: string; explorer: string }
+  | { kind: 'done'; action: Action; txHash: string; explorer: string; cleared?: number }
   | { kind: 'failed'; action: Action; message: string };
 
 type Action = 'register' | 'deregister' | 'update' | 'send';
@@ -178,7 +178,7 @@ export function Cardano({
       label: string;
       shieldedAddress: string;
       dustAddress: string;
-      coinPublicKey: string;
+      dustAddressBytes: string;
     }>
   >([]);
   // Ticks once a minute so the countdown moves without re-querying the chain.
@@ -224,16 +224,27 @@ export function Cardano({
     void refresh();
   }, [refresh]);
 
-  const run = async (action: Action, coinPublicKey?: string) => {
+  const run = async (action: Action, dustAddress?: string) => {
     setMode({ kind: 'pending', action });
     try {
       const result =
         action === 'register'
-          ? await sendMessage('cardanoRegister', coinPublicKey ? { coinPublicKey } : undefined)
+          ? await sendMessage('cardanoRegister', dustAddress ? { dustAddress } : undefined)
           : action === 'deregister'
             ? await sendMessage('cardanoDeregister', undefined)
-            : await sendMessage('cardanoUpdate', { coinPublicKey: coinPublicKey! });
-      setMode({ kind: 'done', action, txHash: result.txHash, explorer: result.explorer });
+            : await sendMessage('cardanoUpdate', { dustAddress: dustAddress! });
+      setMode({
+        kind: 'done',
+        action,
+        txHash: result.txHash,
+        explorer: result.explorer,
+        // Only cardanoDeregister returns a count; the union does not narrow
+        // usefully across four different message results.
+        ...(() => {
+          const cleared = (result as { cleared?: number }).cleared;
+          return cleared === undefined ? {} : { cleared };
+        })(),
+      });
     } catch (err) {
       setMode({ kind: 'failed', action, message: err instanceof Error ? err.message : String(err) });
     }
@@ -248,15 +259,15 @@ export function Cardano({
     try {
       // Resolved in the background: it accepts a shielded address as well as
       // raw hex, and names the DUST-address mistake specifically.
-      const { coinPublicKey } = await sendMessage('cardanoResolveReceiver', { input: raw });
+      const { dustAddressBytes } = await sendMessage('cardanoResolveReceiver', { input: raw });
       // Refused here rather than by the builder. Core rejects a no-op update
       // too, but arriving at it through the pending screen presents a
       // pre-flight refusal as a failed transaction.
-      if (action === 'update' && coinPublicKey === status?.registeredCoinPublicKey) {
+      if (action === 'update' && dustAddressBytes === status?.registeredDustAddress) {
         setReceiverError(t('cardano_receiverUnchanged'));
         return;
       }
-      void run(action, coinPublicKey);
+      void run(action, dustAddressBytes);
     } catch (err) {
       setReceiverError(err instanceof Error ? err.message : t('cardano_receiverInvalid'));
     }
@@ -749,6 +760,13 @@ export function Cardano({
             {t('cardano_afterRegisterNote')}
           </NoteCard>
         )}
+        {/* Naming the count matters when it is more than one: that is the
+            duplicate state, and clearing it is what makes registering work. */}
+        {mode.action === 'deregister' && mode.cleared !== undefined && mode.cleared > 1 && (
+          <NoteCard variant="info" icon={Link2}>
+            {t('cardano_deregisteredCleared', [mode.cleared])}
+          </NoteCard>
+        )}
       </PanelScreen>
     );
   }
@@ -793,7 +811,7 @@ export function Cardano({
             {midnightAccounts.map((a) => (
               <button
                 key={a.name}
-                onClick={() => { setReceiver(a.coinPublicKey); setReceiverError(null); }}
+                onClick={() => { setReceiver(a.dustAddress); setReceiverError(null); }}
                 className="flex cursor-pointer items-center justify-between gap-2 rounded-[14px] border-0 bg-transparent px-2 py-2 text-left transition duration-150 hover:bg-muted"
               >
                 <span className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -802,7 +820,7 @@ export function Cardano({
                     {displayAddress(a.shieldedAddress)}
                   </span>
                 </span>
-                {receiver === a.coinPublicKey && (
+                {receiver === a.dustAddress && (
                   <span className="shrink-0 text-[12px] text-muted-foreground">
                     {t('cardano_receiverSelected')}
                   </span>
@@ -848,7 +866,7 @@ export function Cardano({
   // Only when the registration points at an account this wallet knows. A
   // registration to someone else's key has a DUST address we cannot name.
   const registeredDustAddress =
-    midnightAccounts.find((a) => a.coinPublicKey === status.registeredCoinPublicKey)?.dustAddress || '';
+    midnightAccounts.find((a) => a.dustAddressBytes === status.registeredDustAddress)?.dustAddress || '';
 
   return (
     <PanelScreen
@@ -952,13 +970,13 @@ export function Cardano({
             value: designation,
             error: status.registered && !status.registeredToThisWallet,
           },
-          ...(status.registered && status.registeredCoinPublicKey
+          ...(status.registered && status.registeredDustAddress
             ? [
                 {
                   label: t('cardano_dustToRow'),
                   value: status.registeredToThisWallet
                     ? t('cardano_dustToThisWallet')
-                    : shorten(status.registeredCoinPublicKey),
+                    : shorten(status.registeredDustAddress),
                   mono: !status.registeredToThisWallet,
                 },
               ]
@@ -980,6 +998,19 @@ export function Cardano({
                       : t('cardano_generatingAccruing'),
                 },
                 {
+                  // The state that was invisible: Cardano-side "Registered"
+                  // said nothing about whether Midnight had ingested it, and a
+                  // rejected registration looked identical to a pending one.
+                  label: t('cardano_midnightRow'),
+                  value:
+                    status.midnightValid === true
+                      ? t('cardano_midnightLive')
+                      : status.midnightValid === false
+                        ? t('cardano_midnightRejected')
+                        : t('cardano_midnightPending'),
+                  error: status.midnightValid === false,
+                },
+                {
                   label: t('cardano_usableRow'),
                   // Three states, not two. Null means the registration is not
                   // in a block yet or Blockfrost could not say — unknown, which
@@ -994,12 +1025,14 @@ export function Cardano({
               ]
             : []),
         ]}
-        {...(status.registered && status.generationRate === null
+        {...(status.registered && status.midnightValid !== true
           ? {
               footnote:
-                status.secondsRemaining !== null
-                  ? t('cardano_finalityHint')
-                  : t('cardano_notYetObservedHint'),
+                status.midnightValid === false
+                  ? t('cardano_midnightRejectedHint')
+                  : status.secondsRemaining !== null && status.secondsRemaining > 0
+                    ? t('cardano_finalityHint')
+                    : t('cardano_midnightPendingHint'),
             }
           : {})}
       />
@@ -1022,6 +1055,21 @@ export function Cardano({
       {/* Only when there is something to say. Once registered, the Deregister
           button already says what deregistering does — a note repeating it is
           noise. */}
+      {status.registrationCount > 1 && (
+        <NoteCard variant="error" icon={TriangleAlert}>
+          {t('cardano_multipleRegistrations', [status.registrationCount])}
+        </NoteCard>
+      )}
+
+      {/* Valid on Cardano, invisible to Midnight. Without this the screen shows
+          a healthy registration and the only symptom is DUST that never
+          arrives — the failure that cost twelve hours to find. */}
+      {status.legacyDustAddress && (
+        <NoteCard variant="error" icon={TriangleAlert}>
+          {t('cardano_legacyDustAddress')}
+        </NoteCard>
+      )}
+
       {!hasCnight ? (
         <NoteCard variant="error" icon={TriangleAlert}>
           {t('cardano_errorNoCnight')}

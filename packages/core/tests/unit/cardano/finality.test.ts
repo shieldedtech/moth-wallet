@@ -4,7 +4,7 @@ import {
   describeCountdown,
   finalityCountdown,
 } from '../../../src/cardano/finality.js';
-import { coinPublicKeyFromShieldedAddress } from '../../../src/cardano/registration.js';
+import { dustAddressBytes } from '../../../src/cardano/registration.js';
 
 describe('CNIGHT_FINALITY_SECONDS', () => {
   it('is Cardano k=2160 at ~20s a block — the 12 hours users see', () => {
@@ -48,30 +48,36 @@ describe('describeCountdown', () => {
   });
 });
 
-describe('coinPublicKeyFromShieldedAddress', () => {
-  // The published test-vector account used across these tests.
-  const SHIELDED =
-    'mn_shield-addr1ehmxwu6u7vz8wjs5ddm0e409hk7p7kud3gz5e6v3p0xqj44wderqrpwkgz4zhffyx47k0tv9qudcd6qxh7vmgjsjt00ah88hltw3pucuz795u';
+describe('dustAddressBytes', () => {
+  const DUST =
+    'mn_dust_preprod1wwxhaf472uhxnltad72rmph52gdpef7a7ytq78vneqs2secjdyjzyh4t0ey';
 
-  it('recovers the same coin public key the seed derives', () => {
-    // This is what lets a locked account be offered as a DUST receiver: the
-    // public address alone is enough, no unlock required.
-    expect(coinPublicKeyFromShieldedAddress(SHIELDED)).toBe(
-      'cdf667735cf304774a146b76fcd5e5bdbc1f5b8d8a054ce9910bcc0956ae6e46',
+  it('serializes to the 33 bytes a registration datum records', () => {
+    // Confirmed against the wallet SDK: DustAddress.serialize() is exactly the
+    // bech32m payload, 33 bytes.
+    expect(dustAddressBytes(DUST)).toBe(
+      '738d7ea6be572e69fd7d6f943d86f4521a1ca7ddf1160f1d93c820a86712692422',
     );
   });
 
-  it('refuses an address that is not shielded', () => {
-    // A DUST or night address decodes fine but holds a different key, and
-    // registering it would send DUST somewhere unspendable.
+  it('is network-agnostic — the same key on preview and preprod', () => {
+    // Only the prefix and checksum differ between networks; the payload is the
+    // key itself, which is why a registration made on one reads correctly on
+    // the other.
+    const preview =
+      'mn_dust_preview1wwxhaf472uhxnltad72rmph52gdpef7a7ytq78vneqs2secjdyjzyktmuyy';
+    expect(dustAddressBytes(preview)).toBe(dustAddressBytes(DUST));
+  });
+
+  it('refuses a shielded address by name', () => {
     expect(() =>
-      coinPublicKeyFromShieldedAddress(
-        'mn_dust_preview1wdfagtl9j990yv8qdk8ezgwqtumlp977s00885wd6rmvsnngzlt9xjp8mfe',
+      dustAddressBytes(
+        'mn_shield-addr1ehmxwu6u7vz8wjs5ddm0e409hk7p7kud3gz5e6v3p0xqj44wderqrpwkgz4zhffyx47k0tv9qudcd6qxh7vmgjsjt00ah88hltw3pucuz795u',
       ),
-    ).toThrow(/shielded address/);
+    ).toThrow(/DUST address/);
   });
 
   it('refuses something that is not an address at all', () => {
-    expect(() => coinPublicKeyFromShieldedAddress('not-an-address')).toThrow();
+    expect(() => dustAddressBytes('not-an-address')).toThrow();
   });
 });

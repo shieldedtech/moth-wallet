@@ -30,7 +30,7 @@ export default class CardanoRegister extends CardanoCommand {
     const config = await this.getCardanoConfig(flags.network, flags);
     const passphrase = await getPassphrase();
 
-    const own = await this.getOwnCoinPublicKey(walletName, passphrase);
+    const own = await this.getOwnDustAddress(walletName, passphrase, flags.network);
     const txHash = await this.withCardano(walletName, passphrase, config, flags, async (session, account) => {
       const receiver = flags.receiver ?? own;
 

@@ -22,6 +22,7 @@ import { getAddressBook, saveAddressEntry, removeAddressEntry } from './address-
 import { offscreen } from './offscreen-client';
 import { record as recordTiming, getTimings, clearTimings, setTimingsEnabled, timingsEnabled } from './timings';
 import { applyNodeAuthHeader } from './node-auth-header';
+import { requireCardano } from './cardano-session';
 import { t } from '../i18n';
 // Pure config resolution — no Lucid, so it is safe in the service worker.
 import { cardanoNetworkFor, explorerTxUrl, resolveCardanoNetwork } from '@shieldedtech/moth-wallet/cardano/network';
@@ -668,48 +669,6 @@ export function registerHandlers(): void {
    * Resolve the session and the Cardano config together, because every verb
    * needs both and each has its own distinct failure the user can act on.
    */
-  const requireCardano = async (needsBlockfrost: boolean) => {
-    const session = await getSession();
-    if (!session) throw new Error(t('cardano_errorLocked'));
-    const settings = await getSettings();
-    const { accounts, activeId } = await offscreen.cardanoAccountList({
-      network: session.network,
-      walletName: session.walletName,
-    });
-    const account = accounts.find((a) => a.id === activeId) ?? accounts[0]!;
-
-    // Which phrase signs for this account, and at which CIP-1852 index.
-    // A derived account needs the wallet's own phrase — which a hex-seed
-    // account does not have — while an imported one carries its own.
-    let mnemonic: string | undefined;
-    if (account.kind === 'imported') {
-      mnemonic = session.cardanoImported?.[account.id];
-      if (!mnemonic) throw new Error(t('cardano_errorImportedLocked'));
-    } else {
-      mnemonic = session.cardanoMnemonic;
-      if (!mnemonic) throw new Error(t('cardano_errorNoMnemonic'));
-    }
-    if (needsBlockfrost && !settings.blockfrostProjectId) {
-      throw new Error(t('cardano_errorNoBlockfrostKey'));
-    }
-    // The Cardano network is derived from the Midnight one and cannot be set
-    // independently — a mismatched pair registers on a chain the other side
-    // never reads, and says nothing for twelve hours.
-    const cardanoNetworkName = cardanoNetworkFor(session.network) ?? '';
-    const config = resolveCardanoNetwork(session.network, {
-      ...(settings.blockfrostUrl ? { blockfrostUrl: settings.blockfrostUrl } : {}),
-      // Per network first; the single legacy value is the fallback.
-      ...(settings.blockfrostProjectIds[cardanoNetworkName] ?? settings.blockfrostProjectId
-        ? {
-            blockfrostProjectId:
-              settings.blockfrostProjectIds[cardanoNetworkName] ?? settings.blockfrostProjectId!,
-          }
-        : {}),
-      ...(settings.cnightPolicyId ? { cnightPolicyId: settings.cnightPolicyId } : {}),
-      ...(settings.cnightAssetName !== null ? { cnightAssetName: settings.cnightAssetName } : {}),
-    });
-    return { session, config, mnemonic, account, accountIndex: account.accountIndex };
-  };
 
   /** Session + wallet name, or the locked error. Accounts need no config. */
   const requireCardanoWallet = async () => {
@@ -804,13 +763,21 @@ export function registerHandlers(): void {
       // account is unlocked, and a registration pointing at some *other*
       // wallet is still a valid registration — just not one that pays you.
       registeredToThisWallet:
-        status.registeredCoinPublicKey === session.shieldedCoinPublicKey.replace(/^0x/, '').toLowerCase(),
+        status.registeredDustAddress === session.shieldedCoinPublicKey.replace(/^0x/, '').toLowerCase(),
     };
   });
 
   onMessage('cardanoRegister', async ({ data }) => {
     const { config, mnemonic, session, accountIndex } = await requireCardano(true);
-    const receiver = data?.coinPublicKey ?? session.shieldedCoinPublicKey.replace(/^0x/, '').toLowerCase();
+    // This wallet's own DUST address, serialized — the datum records a DUST
+    // address, not the shielded coin public key.
+    const ownBech32 = session.addresses?.dust?.bech32m?.[session.network] ?? '';
+    if (!data?.dustAddress && !ownBech32) {
+      throw new Error(t('cardano_errorNoDustAddress'));
+    }
+    const receiver =
+      data?.dustAddress
+      ?? (await offscreen.cardanoResolveReceiver({ input: ownBech32 })).dustAddressBytes;
     const r = await offscreen.cardanoRegister({ mnemonic, config, receiver, accountIndex });
     return { ...r, explorer: explorerTxUrl(config, r.txHash) };
   });
@@ -834,7 +801,7 @@ export function registerHandlers(): void {
 
   onMessage('cardanoUpdate', async ({ data }) => {
     const { config, mnemonic, accountIndex } = await requireCardano(true);
-    const r = await offscreen.cardanoUpdate({ mnemonic, config, receiver: data.coinPublicKey, accountIndex });
+    const r = await offscreen.cardanoUpdate({ mnemonic, config, receiver: data.dustAddress, accountIndex });
     return { ...r, explorer: explorerTxUrl(config, r.txHash) };
   });
 

@@ -48,7 +48,7 @@ export interface UseDaemonHostOptions {
   readonly cardano?: {
     readonly config: CardanoNetworkConfig;
     readonly getMnemonic: () => string | null;
-    readonly getCoinPublicKey: () => string;
+    readonly getDustAddress: () => string;
   };
   readonly daemonVersion: string;
   readonly logs?: {
@@ -128,7 +128,7 @@ export function useDaemonHost(opts: UseDaemonHostOptions): UseDaemonHostState {
             cardano: {
               config: cardano.config,
               getMnemonic: () => cardanoRef.current?.getMnemonic() ?? null,
-              getCoinPublicKey: () => cardanoRef.current?.getCoinPublicKey() ?? '',
+              getDustAddress: () => cardanoRef.current?.getDustAddress() ?? '',
             },
           }
         : {}),

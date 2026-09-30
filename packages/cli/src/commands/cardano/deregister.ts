@@ -25,7 +25,7 @@ export default class CardanoDeregister extends CardanoCommand {
     const config = await this.getCardanoConfig(flags.network, flags);
     const passphrase = await getPassphrase();
 
-    const txHash = await this.withCardano(walletName, passphrase, config, flags, async (session, account) => {
+    const result = await this.withCardano(walletName, passphrase, config, flags, async (session, account) => {
       const existing = await findRegistration(session);
       await this.confirmTransaction(
         {
@@ -33,8 +33,9 @@ export default class CardanoDeregister extends CardanoCommand {
           'Cardano net': config.network,
           'Wallet': walletName,
           'Account': `${account.label} (${account.kind})`,
+          'Scope': 'every registration for this stake key',
           'Cardano addr': session.addresses.address,
-          ...(existing ? { 'Currently to': existing.coinPublicKey } : {}),
+          ...(existing ? { 'Currently to': existing.dustAddress } : {}),
         },
         flags,
       );
@@ -46,8 +47,9 @@ export default class CardanoDeregister extends CardanoCommand {
 
     this.outputSuccess({
       status: 'deregistered',
-      txHash,
-      explorer: explorerTxUrl(config, txHash),
+      txHash: result.txHash,
+      cleared: result.cleared,
+      explorer: explorerTxUrl(config, result.txHash),
       wallet: walletName,
       cardanoNetwork: config.network,
       note: 'Registration burned and every cNIGHT UTXO rotated, so nothing keeps generating under the old mapping.',

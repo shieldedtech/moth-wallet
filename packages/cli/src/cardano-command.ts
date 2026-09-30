@@ -1,8 +1,9 @@
 import { Flags } from '@oclif/core';
 import { BaseCommand } from './base-command.js';
-import { WalletError, canonicalNetworkId, deriveShieldedPublicKeys } from '@shieldedtech/moth-wallet';
+import { WalletError, canonicalNetworkId, deriveAllAddressesFromSeed } from '@shieldedtech/moth-wallet';
 import {
   getActiveCardanoAccount,
+  dustAddressBytes,
   loadCardanoConfig,
   resolveCardanoAccountKey,
   withCardanoSession,
@@ -113,9 +114,17 @@ export abstract class CardanoCommand extends BaseCommand {
    * hex-seed wallet, which can still own imported Cardano accounts and so
    * still needs somewhere for their DUST to go.
    */
-  protected async getOwnCoinPublicKey(walletName: string, passphrase: string): Promise<string> {
+  protected async getOwnDustAddress(
+    walletName: string,
+    passphrase: string,
+    midnightNetworkId: string,
+  ): Promise<string> {
     const seedHex = await this.walletManager.exportSeedHex(walletName, passphrase);
-    return deriveShieldedPublicKeys(seedHex).coinPublicKey.replace(/^0x/, '').toLowerCase();
+    const bech32 = deriveAllAddressesFromSeed(seedHex).dust.bech32m[canonicalNetworkId(midnightNetworkId)];
+    if (!bech32) {
+      throw new WalletError('WALLET_ERROR', `No DUST address for network "${midnightNetworkId}"`);
+    }
+    return dustAddressBytes(bech32);
   }
 
   /**

@@ -198,6 +198,15 @@ export interface CardanoAccountListDTO {
   readonly activeId: string;
 }
 
+/**
+ * What a CIP-30 signing approval shows. Only the method name: a dApp-supplied
+ * transaction is CBOR, and decoding it to display amounts is a separate piece
+ * of work that must not be faked with a reassuring summary in the meantime.
+ */
+export interface CardanoSignApprovalPayload {
+  readonly method: string;
+}
+
 /** Result of resolving a `.shielded` name to a send target (send-to-name). */
 export interface NameResolution {
   /** The bare registry name that was queried. */
@@ -422,8 +431,10 @@ interface ProtocolMap {
     name: string;
     label: string;
     shieldedAddress: string;
+    /** bech32m, for display. */
     dustAddress: string;
-    coinPublicKey: string;
+    /** Serialized DUST address — what a registration datum records. */
+    dustAddressBytes: string;
   }>;
 
   /**
@@ -431,7 +442,7 @@ interface ProtocolMap {
    * Rejects a DUST address by name — it is the obvious thing to paste and the
    * wrong value.
    */
-  cardanoResolveReceiver(data: { input: string }): { coinPublicKey: string };
+  cardanoResolveReceiver(data: { input: string }): { dustAddressBytes: string };
 
   /** Derived Cardano addresses for the unlocked account. No network access. */
   cardanoAddresses(): {
@@ -452,7 +463,7 @@ interface ProtocolMap {
     cnight: string;
     cnightUtxos: number;
     registered: boolean;
-    registeredCoinPublicKey: string | null;
+    registeredDustAddress: string | null;
     /** True when the registration points at THIS account's coin public key. */
     registeredToThisWallet: boolean;
     registrationUtxo: string | null;
@@ -469,12 +480,25 @@ interface ProtocolMap {
      */
     generatingFrom: number | null;
     secondsRemaining: number | null;
+    /**
+     * What Midnight made of the registration. null = no record (not yet seen,
+     * or finality has not passed); false = ingested and REJECTED, which waiting
+     * will not fix; true = generating.
+     */
+    midnightValid: boolean | null;
+    /** More than one registration on a stake key forces deregistration. */
+    registrationCount: number;
+    /**
+     * The registration records something that is not a 33-byte DUST address,
+     * so it can never generate DUST. `update` rewrites it in one transaction.
+     */
+    legacyDustAddress: boolean;
   };
 
-  /** `coinPublicKey` omitted means this account's own. */
-  cardanoRegister(data: { coinPublicKey?: string } | undefined): { txHash: string; explorer: string };
-  cardanoDeregister(): { txHash: string; explorer: string };
-  cardanoUpdate(data: { coinPublicKey: string }): { txHash: string; explorer: string };
+  /** `dustAddress` omitted means this account's own. */
+  cardanoRegister(data: { dustAddress?: string } | undefined): { txHash: string; explorer: string };
+  cardanoDeregister(): { txHash: string; explorer: string; cleared: number };
+  cardanoUpdate(data: { dustAddress: string }): { txHash: string; explorer: string };
 
   /**
    * Send ADA and/or cNIGHT from the active Cardano account.
