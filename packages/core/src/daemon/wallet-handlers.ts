@@ -450,7 +450,7 @@ export function buildWalletHandlers(deps: WalletHandlerDeps): Record<string, Rpc
               to: params.to,
             }],
             (stage) => log('info', `[proveTransaction] ${stage}`),
-            ttl,
+            {ttl},
           );
 
           const bytes = finalized.serialize();
