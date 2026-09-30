@@ -381,11 +381,13 @@ describe('connector dispatch', () => {
     expect(requestApproval).toHaveBeenCalledWith(
       'balance',
       ORIGIN,
-      { sealed: true, summary: NIGHT_SPEND },
+      { sealed: true, payFees: true, summary: NIGHT_SPEND },
       undefined,
       preparedPanel,
     );
-    expect(balanceTransaction).toHaveBeenCalledWith(expect.objectContaining({ txHex: 'abcd', sealed: true }));
+    expect(balanceTransaction).toHaveBeenCalledWith(
+      expect.objectContaining({ txHex: 'abcd', sealed: true, payFees: true }),
+    );
   });
 
   // The user is authorizing a spend, so what the transaction takes from the
@@ -423,7 +425,7 @@ describe('connector dispatch', () => {
     expect(requestApproval).toHaveBeenCalledWith(
       'balance',
       ORIGIN,
-      { sealed: true, summary: null },
+      { sealed: true, payFees: true, summary: null },
       undefined,
       preparedPanel,
     );
@@ -436,10 +438,32 @@ describe('connector dispatch', () => {
     expect(balanceTransaction).not.toHaveBeenCalled();
   });
 
-  it('rejects balanceSealedTransaction with payFees:false as InvalidRequest', async () => {
+  it.each([
+    ['balanceSealedTransaction', true],
+    ['balanceUnsealedTransaction', false],
+  ] as const)('%s with payFees:false balances without fees', async (method, sealed) => {
+    await connect();
+    requestApproval.mockResolvedValue(true);
+    const dustFee = { kind: 'dust', tokenId: '', amount: '5000' };
+    txSummary.mockResolvedValue({ ...NIGHT_SPEND, spends: [...NIGHT_SPEND.spends, dustFee] });
+    balanceTransaction.mockResolvedValue({ txHex: 'beef' });
+
+    await expect(dispatch(ORIGIN, method, ['abcd', { payFees: false }])).resolves.toEqual({ tx: 'beef' });
+    // The wallet leaves the DUST imbalance for another payer, so the prompt must not show it as spent.
+    expect(requestApproval).toHaveBeenCalledWith(
+      'balance',
+      ORIGIN,
+      { sealed, payFees: false, summary: NIGHT_SPEND },
+      undefined,
+      preparedPanel,
+    );
+    expect(balanceTransaction).toHaveBeenCalledWith(expect.objectContaining({ sealed, payFees: false }));
+  });
+
+  it('rejects a non-boolean payFees as InvalidRequest', async () => {
     await connect();
     await expect(
-      dispatch(ORIGIN, 'balanceSealedTransaction', ['abcd', { payFees: false }]),
+      dispatch(ORIGIN, 'balanceSealedTransaction', ['abcd', { payFees: 'no' }]),
     ).rejects.toMatchObject({ code: 'InvalidRequest' });
     expect(requestApproval).not.toHaveBeenCalled();
   });
@@ -468,7 +492,7 @@ describe('connector dispatch', () => {
     expect(requestApproval).toHaveBeenCalledWith(
       'balance',
       ORIGIN,
-      { sealed: false, summary: NIGHT_SPEND },
+      { sealed: false, payFees: true, summary: NIGHT_SPEND },
       undefined,
       preparedPanel,
     );
@@ -494,7 +518,10 @@ describe('connector dispatch', () => {
     expect(requestApproval).toHaveBeenCalledWith(
       'transfer',
       ORIGIN,
-      { outputs: [{ kind: 'shielded', type: 'b'.repeat(64), value: '3', recipient: 'mn_shield_devnet' }] },
+      {
+        outputs: [{ kind: 'shielded', type: 'b'.repeat(64), value: '3', recipient: 'mn_shield_devnet' }],
+        payFees: true,
+      },
       undefined,
       preparedPanel,
     );
@@ -504,6 +531,52 @@ describe('connector dispatch', () => {
         inputs: [{ type: 'unshielded', tokenId: 'a'.repeat(64), amount: '5' }],
         outputs: [{ type: 'shielded', tokenId: 'b'.repeat(64), amount: '3', to: 'mn_shield_devnet' }],
         payFees: true,
+      }),
+    );
+  });
+
+  it('builds a swap intent without fees when payFees is false', async () => {
+    await connect();
+    requestApproval.mockResolvedValue(true);
+    makeIntent.mockResolvedValue({ txHex: 'f00d' });
+    const outputs = [{ kind: 'shielded', type: 'b'.repeat(64), value: 3n, recipient: 'mn_shield_devnet' }];
+    await dispatch(ORIGIN, 'makeIntent', [[], outputs, { intentId: 'random', payFees: false }]);
+    expect(requestApproval).toHaveBeenCalledWith(
+      'transfer',
+      ORIGIN,
+      expect.objectContaining({ payFees: false }),
+      undefined,
+      preparedPanel,
+    );
+    expect(makeIntent).toHaveBeenCalledWith(expect.objectContaining({ payFees: false }));
+  });
+
+  it.each([
+    [undefined, true],
+    [{}, true],
+    [{ payFees: true }, true],
+    [{ payFees: false }, false],
+  ])('makeTransfer with options %j builds with payFees %s', async (options, payFees) => {
+    await connect();
+    requestApproval.mockResolvedValue(true);
+    transferBuild.mockResolvedValue({ txHex: 'd00d' });
+    const outputs = [{ kind: 'unshielded', type: '0'.repeat(64), value: 7n, recipient: 'mn_unshield_devnet' }];
+    const res = await dispatch(ORIGIN, 'makeTransfer', options === undefined ? [outputs] : [outputs, options]);
+    expect(res).toEqual({ tx: 'd00d' });
+    expect(requestApproval).toHaveBeenCalledWith(
+      'transfer',
+      ORIGIN,
+      {
+        outputs: [{ kind: 'unshielded', type: '0'.repeat(64), value: '7', recipient: 'mn_unshield_devnet' }],
+        payFees,
+      },
+      undefined,
+      preparedPanel,
+    );
+    expect(transferBuild).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requests: [{ type: 'unshielded', tokenId: '0'.repeat(64), amount: '7', to: 'mn_unshield_devnet' }],
+        payFees,
       }),
     );
   });

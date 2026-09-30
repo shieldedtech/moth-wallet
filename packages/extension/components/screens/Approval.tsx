@@ -10,7 +10,7 @@ import { accountLabel } from '../../lib/ui/format';
 import { nativeAssetLabelsForNetwork } from '../../lib/ui/token-labels';
 import { txSummaryRows } from '../../lib/ui/tx-summary-view';
 import type { PendingApproval } from '../../lib/background/approvals';
-import type { BalanceApprovalPayload } from '../../lib/background/connector-handlers';
+import type { BalanceApprovalPayload, TransferApprovalPayload } from '../../lib/background/connector-handlers';
 import { Button } from '../ui/button';
 import { Badge, Card, Separator } from '../ui/card';
 import { Input } from '../ui/input';
@@ -19,10 +19,6 @@ import { SitePair, SiteChip, PermissionList, originHost } from '../moth/dapp';
 import { NoteCard } from '../moth/note-card';
 import { DetailCard } from '../moth/status';
 import { TokenIcon, truncateAddress } from '../moth/token';
-
-interface TransferPayload {
-  outputs: Array<{ kind: string; type: string; value: string; recipient: string }>;
-}
 
 interface SignDataPayload {
   encoding: string;
@@ -179,7 +175,9 @@ export function Approval({
           <div className="text-center">
             <h1 className="m-0 font-display text-[26px] font-extrabold leading-tight">{t('approval_approveTitle')}</h1>
             <p className="m-0 pt-1.5 text-[13.5px] text-muted-foreground">
-              {t('approval_balanceSubtitle', [host])}
+              {(approval.payload as BalanceApprovalPayload).payFees !== false
+                ? t('approval_balanceSubtitle', [host])
+                : t('approval_balanceSubtitleNoFees', [host])}
             </p>
           </div>
           <BalanceSummary
@@ -191,7 +189,10 @@ export function Approval({
           <DetailCard
             rows={[
               { label: t('approval_fromLabel'), value: shownName ?? '—' },
-              { label: t('approval_networkFeeLabel'), value: t('approval_paidIn', [labels.dust]) },
+              {
+                label: t('approval_networkFeeLabel'),
+                value: feeValue((approval.payload as BalanceApprovalPayload).payFees, labels.dust),
+              },
               ...((approval.payload as BalanceApprovalPayload).summary?.contractActions
                 ? [
                     {
@@ -214,7 +215,7 @@ export function Approval({
             <p className="m-0 pt-1.5 text-[13.5px] text-muted-foreground">{t('approval_transferSubtitle')}</p>
           </div>
           <Card className="p-0">
-            {(approval.payload as TransferPayload).outputs.map((out, index) => (
+            {(approval.payload as TransferApprovalPayload).outputs.map((out, index) => (
               <div key={index}>
                 {index > 0 && <Separator />}
                 <div className="flex items-center gap-3 px-4 py-[15px]">
@@ -232,7 +233,10 @@ export function Approval({
           </Card>
           <DetailCard
             rows={[
-              { label: t('approval_networkFeeLabel'), value: t('approval_paidIn', [labels.dust]) },
+              {
+                label: t('approval_networkFeeLabel'),
+                value: feeValue((approval.payload as TransferApprovalPayload).payFees, labels.dust),
+              },
               ...(shownName ? [{ label: t('approval_usingLabel'), value: shownName }] : []),
             ]}
           />
@@ -245,6 +249,10 @@ export function Approval({
       {locked && <ApprovalUnlock walletName={walletName} onUnlocked={onUnlocked} />}
     </PanelScreen>
   );
+}
+
+function feeValue(payFees: boolean, dustLabel: string): string {
+  return payFees !== false ? t('approval_paidIn', [dustLabel]) : t('approval_notPaidByWallet');
 }
 
 /**
@@ -275,7 +283,9 @@ function BalanceSummary({
   if (rows.length === 0) {
     return (
       <Card className="p-4">
-        <p className="m-0 text-[13.5px] text-muted-foreground">{t('approval_spendsNothing')}</p>
+        <p className="m-0 text-[13.5px] text-muted-foreground">
+          {payload.payFees !== false ? t('approval_spendsNothing') : t('approval_spendsNothingNoFees')}
+        </p>
       </Card>
     );
   }
