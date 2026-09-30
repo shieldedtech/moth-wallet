@@ -177,7 +177,9 @@ export type PortEvent =
   | { kind: 'balances'; data: string /* serializeBalances */ }
   | { kind: 'syncMessage'; message: string }
   | { kind: 'syncReset' }
-  | { kind: 'txStage'; stage: TxStage }
+  // `since`: when this stage began (epoch ms), so a panel that mounts mid-op
+  // can show elapsed time. `null` stage: the op ended (success or failure).
+  | { kind: 'txStage'; stage: TxStage | null; since: number | null }
   | { kind: 'relayState'; state: RelayState }
   | { kind: 'approval'; id: string | null }
   | { kind: 'setupOpen'; open: boolean }

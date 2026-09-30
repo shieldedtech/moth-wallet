@@ -64,3 +64,32 @@ export function armAutoLock(autoLockMinutes: number | null): void {
 export function clearAutoLock(): void {
   void browser.alarms.clear(AUTO_LOCK_ALARM);
 }
+
+/** Longest a watched sync may defer the lock past the inactivity window. */
+export const SYNC_HOLD_MAX_MS = 30 * 60_000;
+/** A sync that has reported no progress for this long is stalled and stops deferring. */
+export const SYNC_STALL_MS = 3 * 60_000;
+
+export interface SyncHoldInput {
+  panelOpen: boolean;
+  syncActive: boolean;
+  synced: boolean | null;
+  /** When the engine started or last reported progress (epoch ms). */
+  lastProgressAt: number | null;
+  /** When this sync first deferred an expired window, or null if it never has. */
+  holdSince: number | null;
+  now: number;
+}
+
+/**
+ * Whether a sync the user is watching defers the auto-lock: panel open, engine running,
+ * not yet synced, still making progress, and within the hard cap. Deferral only — the
+ * inactivity clock is never touched, so the lock lands as soon as the hold ends.
+ */
+export function syncHoldsAutoLock(input: SyncHoldInput): boolean {
+  const { panelOpen, syncActive, synced, lastProgressAt, holdSince, now } = input;
+  if (!panelOpen || !syncActive || synced === true) return false;
+  if (lastProgressAt === null || now - lastProgressAt >= SYNC_STALL_MS) return false;
+  if (holdSince !== null && now - holdSince >= SYNC_HOLD_MAX_MS) return false;
+  return true;
+}

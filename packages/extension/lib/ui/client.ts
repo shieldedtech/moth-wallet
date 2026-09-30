@@ -249,6 +249,8 @@ export interface PanelEvents {
   balances: WalletBalances | null;
   syncMessage: string;
   txStage: TxStage | null;
+  /** When the current txStage began (epoch ms), or null when none is running. */
+  txStageSince: number | null;
   /** id of a dApp approval awaiting a decision, or null */
   approvalId: string | null;
   /** A setup tab is creating/importing an account right now. */
@@ -272,6 +274,7 @@ export function usePanelEvents(): PanelEvents {
   const [balances, setBalances] = useState<WalletBalances | null>(null);
   const [syncMessage, setSyncMessage] = useState('');
   const [txStage, setTxStage] = useState<TxStage | null>(null);
+  const [txStageSince, setTxStageSince] = useState<number | null>(null);
   const [approvalId, setApprovalId] = useState<string | null>(null);
   const [setupOpen, setSetupOpen] = useState(false);
   const [relayState, setRelayState] = useState<RelayState | null>(null);
@@ -329,7 +332,11 @@ export function usePanelEvents(): PanelEvents {
           setBalances(null);
           setSyncMessage('');
           setTxStage(null);
-        } else if (event.kind === 'txStage') setTxStage(event.stage);
+          setTxStageSince(null);
+        } else if (event.kind === 'txStage') {
+          setTxStage(event.stage);
+          setTxStageSince(event.since);
+        }
         else if (event.kind === 'relayState') setRelayState(event.state);
         else if (event.kind === 'approval') {
           liveApproval = true;
@@ -383,10 +390,11 @@ export function usePanelEvents(): PanelEvents {
     setBalances(null);
     setSyncMessage('');
     setTxStage(null);
+    setTxStageSince(null);
   }, []);
 
   // relayState is deliberately NOT cleared by reset(): it describes the node
   // endpoint, not the account, and survives a lock or an account switch exactly
   // as the outage itself does.
-  return { balances, syncMessage, txStage, approvalId, setupOpen, relayState, reset };
+  return { balances, syncMessage, txStage, txStageSince, approvalId, setupOpen, relayState, reset };
 }

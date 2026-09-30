@@ -89,3 +89,14 @@ export const hostDispatch: Dispatch = {
 };
 
 export const HOST_METHODS = Object.keys(hostDispatch) as HostMethod[];
+
+/**
+ * Which worker answers a method. The sync engine's cache restore blocks its thread for
+ * a minute or more, so the panel's first paint and a dApp approval's summary go to a
+ * second instance of the worker. Fast-lane methods must touch no sync-session state.
+ */
+export type HostLane = 'sync' | 'fast';
+export const FAST_LANE_METHODS: ReadonlySet<HostMethod> = new Set<HostMethod>(['os/walletList', 'os/txSummary']);
+export function laneFor(method: HostMethod): HostLane {
+  return FAST_LANE_METHODS.has(method) ? 'fast' : 'sync';
+}
