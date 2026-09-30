@@ -317,6 +317,15 @@
   "approval_spendsNothing": {
     "message": "Esta transacción no toma nada de tu billetera aparte de la comisión de red."
   },
+  "approval_balanceSubtitleNoFees": {
+    "message": "$1 built a transaction and needs your wallet to finalize it. Your wallet will not pay the network fee."
+  },
+  "approval_notPaidByWallet": {
+    "message": "Not paid by this wallet"
+  },
+  "approval_spendsNothingNoFees": {
+    "message": "This transaction takes nothing from your wallet."
+  },
   "approval_summaryUnavailable": {
     "message": "Moth no pudo leer qué gasta esta transacción. Apruébala solo si confías en $1 y sabes lo que hace."
   },

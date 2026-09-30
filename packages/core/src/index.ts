@@ -88,7 +88,7 @@ export {
   designateForDust, designateForDustWithKeys, estimateDustRegistration,
   dedesignateFromDust, dedesignateFromDustWithKeys,
   listNightUtxos,
-  type SendRequest, type TxStage, type NightUtxo, type FinalizedTransaction, type WalletKeys,
+  type SendRequest, type TxStage, type NightUtxo, type FinalizedTransaction, type TokenKindsToBalance, type WalletKeys,
 } from './sync/operations.js';
 export {
   InMemorySyncStateStore, syncStateKey, emptyRefStateKey, emptyRefMnemonicKey, emptyRefHeightKey,
