@@ -1,5 +1,217 @@
 # @shieldedtech/moth-extension
 
+## 0.15.0
+
+### Minor Changes
+
+- c59cb7e: Honour `payFees: false` on the dApp connector.
+
+  `makeTransfer`, `makeIntent`, `balanceSealedTransaction` and
+  `balanceUnsealedTransaction` used to reject `payFees: false` with
+  `InvalidRequest`. With it, the wallet now builds or balances without adding
+  DUST, leaving the network fee to another party. This lets a dApp or a
+  counterparty sponsor fees. Leaving the option out, or passing `true`, still
+  means the wallet pays. A non-boolean `payFees` is rejected.
+
+  This applies to the extension's dApp connector only. The daemon, CLI and TUI
+  have no connector, so their transactions still always pay their own fees.
+
+  In core, `buildTransferTransaction`, `buildSwapIntent` and
+  `balanceTransaction` each take a trailing `options` object, which is passed
+  on to the matching facade call. `buildTransferTransaction` takes
+  `{ ttl, payFees }`; this replaces its old trailing `ttlOverride` argument.
+  `buildSwapIntent` takes `{ payFees }`. `balanceTransaction` takes
+  `{ tokenKindsToBalance }`, and core now exports the `TokenKindsToBalance`
+  type. The balancing calls have no fee flag, so the extension asks for
+  shielded and unshielded tokens only when a dApp passes `payFees: false`. If
+  `dust` is left out and the transaction needs nothing else, the SDK throws "No
+  balancing transaction was created". In that case a sealed transaction is
+  returned unchanged and an unsealed one is only bound.
+
+  A transaction built this way cannot be submitted until someone adds the fee.
+  Pass it to `balanceSealedTransaction` with fees enabled, from this wallet or
+  another one.
+
+  The approval screen now says whether this wallet pays the network fee. When
+  it does not, the DUST shortfall is left off the "You pay" rows, because the
+  wallet will not cover it. The new copy stays in English in de/fr/es until
+  someone reviews the translations.
+
+  `makeIntent` now returns a sealed transaction (signed, proven and bound)
+  instead of the unproven output of `initSwap`. The connector API completes a
+  swap with `balanceSealedTransaction`, and Lace-compatible services reject the
+  unproven form with "expected header tag
+  'midnight:transaction[v9](signature[v1],proof,pedersen-schnorr[v1]):'". In
+  core, `buildSwapIntent` now returns a `FinalizedTransaction`. Because the
+  intent is now proven, `makeIntent` needs the configured prover.
+
+### Patch Changes
+
+- 68408b1: Show a token's name in the activity feed, not its id.
+
+  A feed row read `Sent to mn_shiel…z9e5  -2 24419f09…` for a token the asset list
+  already called `stNIGHT`, because the user had named it. The feed now uses that
+  name, in the amount and in the swap and received titles.
+
+  The id stays visible beside the name, as it is on the asset list: a token a user
+  names `tNIGHT` would otherwise produce a row indistinguishable from a real NIGHT
+  send.
+- 55c47e0: Using a connected dApp now counts as activity for the auto-lock, and the
+  default inactivity window is one hour.
+
+  The inactivity clock was reset only by the side panel — opening it, clicking or
+  typing in it. A user working in a dApp with the panel closed produced no
+  activity at all, so the wallet locked out from under them mid-session as soon as
+  the window elapsed between two requests; only an operation actually in flight
+  was protected. Every successful connector request from a connected origin now
+  records activity, so a dApp session stays unlocked for as long as it keeps
+  talking to the wallet. Requests from origins the user has not connected, and
+  requests that fail, do not count.
+
+  The default window moves from 15 minutes to 1 hour. Installs that have saved an
+  explicit choice keep it.
+- 83f1e8a: Carry an error's structured fields through to the dApp, by allowlist.
+
+  `serializeError` reduces every failure to `{code, reason}` with `reason` a plain
+  string, so a dApp receives the message and nothing else. Wallet SDK errors keep
+  the useful part in their fields: `InsufficientFundsError` carries `tokenType`
+  and `amount` — exactly which token is short and by how much. Debugging a
+  contract call that could not be balanced, the page saw only
+
+  ```
+  Insufficient funds for fallible segment 31897
+  ```
+
+  with no way to tell whether the shortfall was the contract's token or the fee
+  token, which need entirely different fixes.
+
+  `describeErrorFields` now folds a fixed set of fields — `tokenType` and
+  `amount` — from an error and its `cause` chain into the reason, with per-value
+  and total length caps, following only `cause` values that are themselves
+  Errors.
+
+  Errors crossing the offscreen → service worker hop now have their bigints
+  converted to decimal strings first. That hop is JSON, and @webext-core
+  serializes an Error by spreading its own enumerable properties, so the SDK's
+  `amount` reached `JSON.stringify` and threw "Do not know how to serialize a
+  BigInt" — failing the entire reply rather than dropping one field. The error a
+  dApp most needs was the one that could not arrive.
+
+  An allowlist rather than a denylist because this is a trust boundary into an
+  untrusted page. Forwarding every scalar own property, as the first version of
+  this did, reached further than intended: a probe with an HTTP context hung off
+  a cause produced `url=https://user:tok@indexer.example/...`, its `status` and
+  its response `body`; a 200 KB `responseText` was copied whole; and the
+  `originalStack` that `core/contract/deploy.ts` attaches to a failed deploy
+  would have put a stack trace on the page. It also changed `reason` for errors
+  that were never the point — every `WalletError` gained `[category=...]`, and a
+  thrown array rendered as `0=a, 1=b, length=2` — which would break a dApp
+  matching exact reason strings.
+- 6eeba08: Keep the DUST capacity steady while a submitted transaction lands.
+
+  The capacity was read off the dust sub-wallet's available coins. Submitting a
+  transaction moves the coin it spends out of that list at once, so the meter
+  fell to "of 0 · not registered yet"; when the spend landed, the old coin's
+  remainder kept its full cap while it decayed next to the fresh coin for the
+  change UTXO, so the meter doubled; and the dust and unshielded sub-wallets
+  apply the same transaction at different moments, so it settled only after
+  both had caught up.
+
+  The capacity is now derived from the registered NIGHT UTXOs, counting the
+  inputs booked by an in-flight transaction the way the NIGHT balance already
+  does, and dust coins whose backing NIGHT was spent no longer count toward it.
+  The arithmetic lives in `sync/dust-generation.ts`, which is unit-tested
+  without WASM.
+- b6bcea2: A DUST balance whose generation records have not been applied locally now
+  reports its capacity as **unknown** rather than as zero, so a wallet holding
+  real DUST no longer reads "3,301.04 of 0" at "0% generated" beside a detail
+  screen saying it is registered and generating. While the records are still
+  settling — the normal window after registering — the wallet says so instead of
+  reporting them missing. Rebuilding the records now says it can take up to an
+  hour, which is the honest figure for a wallet that has to walk the chain.
+- 891e7f3: Hold the DUST balance steady while a fee is in flight, tell the truth about
+  when DUST fills, and log the fee a send actually pays.
+
+  Paying a fee moves the whole DUST coin out of the ledger's spendable set until
+  the transaction lands, and the change only arrives with the chain event, so the
+  displayed balance fell by the size of the coin rather than the size of the fee:
+  12,959.88 to 9,354.74 and back on a preprod send. With largest-coin-first
+  selection that is the largest drop available. Booked coins now count toward the
+  balance, as booked NIGHT inputs already did.
+
+  The fill-time estimate came from the SDK's `maxCapReachedAt`, which is the
+  coin's creation time plus the whole time-to-cap however full the coin already
+  is. Every spend gives the change coin a fresh creation time, so a wallet at 39%
+  was told "full in about 7 days" after each send. The meter's estimate now comes
+  from the meter: the fraction of the climb still ahead, at the rate the whole
+  registered balance generates. That wallet reads about 4 days. Reading the
+  slowest individual coin instead would not have helped, because every send
+  leaves a fresh change UTXO whose own coin starts low, pinning the estimate near
+  the full climb for any wallet in use.
+
+  The TUI shows a countdown per coin, where the remaining climb over that coin's
+  rate is the right answer, so `DustCoinInfo` now carries the coin's rate and the
+  shared `secondsUntilFull` replaces `maxCapReachedAt` there.
+
+  `startWalletSync` takes an `onDustFeePass` callback carrying each pass of the
+  DUST fee-balancing loop, and the extension logs it alongside the quote the
+  confirm screen shows. The preview and the real spend share the SDK's balancing
+  recipe, so both appear, which is what makes a quote that disagrees with the
+  spend visible without querying the chain.
+- 2e37d10: The side panel no longer stays blank while a large chain restores. It shows the
+  loading screen right away, with the network being loaded and a Settings
+  button, so a wallet opened on the wrong network can switch without waiting for
+  the restore to finish. A network switch made during the restore closes the
+  still-restoring engine immediately instead of waiting 45 seconds for a stop it
+  cannot answer.
+- 6859a83: Saving a setting no longer freezes every other setting at its current default.
+
+  `updateSettings` merged the caller's patch into the fully *resolved* settings and
+  wrote the result, so the first write persisted all six keys — including the ones
+  the caller never mentioned, carrying whatever the defaults happened to be. Every
+  unlock performs such a write (it saves the account's network), so any install
+  that had been unlocked once held a complete settings object, and changing a
+  default in code could never reach it. That is why raising the auto-lock default
+  to an hour had no effect on existing installs.
+
+  Writes now merge into the stored object rather than the resolved one, so a key
+  nobody has set stays absent and keeps tracking the default. An explicitly saved
+  value — including `null` for demo mode — is still honoured and still wins.
+
+  Existing installs keep the auto-lock value already written to their storage,
+  which for most is the old 15 minutes; it can be changed in Settings. Values are
+  deliberately not migrated: raising someone's lock timeout without asking would
+  weaken a security setting they may have chosen on purpose.
+- 2c4d4b5: Stop the sync indicator claiming more than it knows.
+
+  **A rebuild was reported as "Synced".** The regression grace held "Synced" and
+  forced every displayed percentage to 100 after any regression. That is right for
+  an ordinary tip advance, which dips a fraction of a percent. It is wrong for a
+  cache rebuild, which drops progress to near zero — the user asked for the
+  rescan, and the UI answered that there was nothing to do. A drop below 90% is
+  now reported immediately, treating only small dips as noise. Applied to all
+  three call sites, so the DUST rebuild — which had the same latent bug — is
+  fixed too.
+
+  **The ETA existed and was being thrown away.** `SyncProgress.etaSeconds` was
+  already baseline-corrected for resumed syncs and already reached the extension,
+  which then dropped it; the CLI showed it. A rescan with no duration signal
+  leaves no way to tell a slow job from a stuck one, so it now appears beside the
+  percentage.
+
+  It is deliberately coarse — five-second buckets under a minute, then whole
+  minutes and hours — because it is a rate extrapolation and finer precision would
+  imply accuracy it does not have. Suppressed when not estimable rather than
+  showing a misleading `0s`, and hidden while synced so an ETA never sits beside a
+  completion state. The unit is part of each translated string, so it is not an
+  English `min` inside a localised sentence.
+- Updated dependencies [c59cb7e]
+- Updated dependencies [6eeba08]
+- Updated dependencies [891e7f3]
+- Updated dependencies [844ee29]
+  - @shieldedtech/moth-wallet@0.15.0
+  - @shieldedtech/moth-browser@0.15.0
+
 ## 0.14.1
 
 ### Patch Changes
