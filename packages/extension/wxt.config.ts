@@ -64,6 +64,8 @@ export default defineConfig({
     ],
     host_permissions: [
       'https://*.midnight.network/*',
+      // The mainnet indexer (DEFAULT_NETWORKS.mainnet in core).
+      'https://*.shielded.tools/*',
       'https://midnight-s3-fileshare-dev-eu-west-1.s3.eu-west-1.amazonaws.com/*',
       'http://localhost/*',
     ],

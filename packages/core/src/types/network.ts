@@ -93,7 +93,8 @@ export const DEFAULT_NETWORKS: Record<string, NetworkConfig> = {
   mainnet: {
     id: 'mainnet',
     nodeUrl: 'https://rpc.mainnet.midnight.network',
-    indexerUrl: 'https://indexer.mainnet.midnight.network/api/v4/graphql',
+    // Mainnet's indexer is served from shielded.tools, reachable only over the Shielded VPN.
+    indexerUrl: 'https://indexer.mainnet.shielded.tools/api/v4/graphql',
     prover: serverProver(),
   },
   preprod: {
