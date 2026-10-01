@@ -16,6 +16,18 @@ export interface NetworkEndpoints {
    * WebSocket handshake, and the node connection is a WebSocket.
    */
   readonly nodeAuthHeader?: { readonly name: string; readonly value: string };
+  /**
+   * Optional header attached to every request to the indexer — HTTP queries
+   * and WebSocket subscriptions alike — for indexers whose edge rate-limits by
+   * source address and hands operators an exemption header. SECRET, like the
+   * node header: never logged, never in diagnostics, never persisted by the CLI.
+   *
+   * Applied in Node by core/network/indexer-auth.ts (a process-wide fetch and
+   * WebSocket wrapper scoped to the indexer's origin, covering moth's own
+   * client, the wallet SDK's and midnight-js's); in the extension by a
+   * declarativeNetRequest rule like the node header's.
+   */
+  readonly indexerAuthHeader?: { readonly name: string; readonly value: string };
 }
 
 /**
