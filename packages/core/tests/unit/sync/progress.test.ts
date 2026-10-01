@@ -332,6 +332,29 @@ describe('ETA follows the current rate', () => {
     }
   });
 
+  // Seen on a mainnet wallet: the countdown ran to 1 min, then jumped to 5.
+  // Near the end the DUST walk reaches the chain tip and new events arrive at
+  // block pace, so the measured rate collapses — but nothing is being
+  // replayed any more, and a raise there announces minutes of work that do
+  // not exist.
+  it('never raises the estimate at the chain tip, and hides it once the promise runs out', () => {
+    const rate = new ProgressRateTracker();
+    // A steady walk: 2 points per 30s, promising ~45s (×1.5) at 97%.
+    for (let t = 0, f = 0.91; f <= 0.97 + 1e-9; t += 30_000, f += 0.02) dustAlone(f, t, rate);
+    const promised = dustAlone(0.98, 120_000, rate).etaSeconds!;
+    expect(promised).toBeGreaterThan(0);
+    // Then a crawl at the tip: 0.1 point per 30s would read as 10 minutes.
+    const shown: Array<number | null> = [];
+    for (let t = 150_000, f = 0.981; t <= 330_000; t += 30_000, f += 0.001) shown.push(dustAlone(f, t, rate).etaSeconds);
+    const numbers = shown.filter((n): n is number => n !== null);
+    // Counts down from the promise…
+    expect(numbers[0]!).toBeLessThan(promised);
+    for (let i = 1; i < numbers.length; i++) expect(numbers[i]!).toBeLessThanOrEqual(numbers[i - 1]!);
+    // …and is hidden, never raised, once the promise has run out.
+    expect(shown.at(-1)).toBeNull();
+    expect(Math.max(...numbers)).toBeLessThan(promised);
+  });
+
   it('re-estimates upward only when the pace clearly collapsed, and only once it persisted', () => {
     const rate = new ProgressRateTracker();
     // Fast: 1 point per second → from 10% that promises 90s.

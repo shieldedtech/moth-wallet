@@ -55,6 +55,9 @@ const PESSIMISM = 1.5;
 const RAISE_FACTOR = 1.5;
 const RAISE_SLACK_MS = 30_000;
 const RAISE_HOLD_MS = 30_000;
+/** From here on the walk is at the chain tip, where events arrive at block
+ *  pace: the measured rate collapses, but nothing is being replayed. */
+const TIP_FRACTION = 0.98;
 
 /**
  * The samples the ETA is measured over, and the deadline it counts down to.
@@ -121,6 +124,11 @@ export class ProgressRateTracker {
     if (this.deadlineMs === null || candidate < this.deadlineMs) {
       this.deadlineMs = candidate;
       this.raisePendingSinceMs = null;
+    } else if (sample.fraction >= TIP_FRACTION) {
+      // At the tip the rate reads as a collapse that is not one. Keep the
+      // promise counting down, and once it has run out say nothing rather
+      // than announce minutes more for a walk that is waiting on blocks.
+      if (this.deadlineMs - sample.elapsedMs < 1_000) return null;
     } else {
       const shownMs = this.deadlineMs - sample.elapsedMs;
       if (rawMs > shownMs * RAISE_FACTOR + RAISE_SLACK_MS) {
