@@ -196,17 +196,19 @@ describe('ETA on a resumed sync', () => {
   });
 
   it('measures the rate over this session only', () => {
-    // 10 points in 100s → 0.1 points/s → 50 points left → 500s.
+    // 10 points in 100s → 0.1 points/s → 50 points left → 500s, shown with
+    // the 1.5x margin as 750s.
     const rate = new ProgressRateTracker();
     dustAlone(0.4, 0, rate);
-    expect(dustAlone(0.5, 100_000, rate).etaSeconds).toBe(500);
+    expect(dustAlone(0.5, 100_000, rate).etaSeconds).toBe(750);
   });
 
   it('accounts for a first sample taken after the clock started', () => {
-    // First sample at 20s/40%, now 120s/60%: 20 points in 100s → 40 left → 200s.
+    // First sample at 20s/40%, now 120s/60%: 20 points in 100s → 40 left →
+    // 200s, shown as 300s with the margin.
     const rate = new ProgressRateTracker();
     dustAlone(0.4, 20_000, rate);
-    expect(dustAlone(0.6, 120_000, rate).etaSeconds).toBe(200);
+    expect(dustAlone(0.6, 120_000, rate).etaSeconds).toBe(300);
   });
 
   it('says nothing rather than guessing before there is movement to measure', () => {
@@ -278,57 +280,121 @@ describe('ETA follows the current rate', () => {
     });
     // Shielded done: dust is alone and its rate starts over.
     expect(dustAlone(8_433 / 185_388, 159_000, rate).etaSeconds).toBeNull();
-    const eta = dustAlone(14_870 / 185_388, 174_000, rate).etaSeconds!;
-    // 6,437 events in 15s → ~170,500 left → ~400s. The whole-session rate
-    // (14,870 in 174s) would have said ~2,000s.
+    expect(dustAlone(14_870 / 185_388, 174_000, rate).etaSeconds).toBeNull();
+    const eta = dustAlone(30_000 / 185_388, 189_000, rate).etaSeconds!;
+    // 21,567 events in 30s → ~155,000 left → ~215s, shown as ~325s with the
+    // margin. The whole-session rate (30,000 in 189s) would have said ~980s.
     expect(eta).toBeGreaterThan(300);
-    expect(eta).toBeLessThan(500);
+    expect(eta).toBeLessThan(400);
   });
 
-  it('measures over a window, so an early slow stretch stops weighing on it', () => {
+  it('measures over a window, so an early slow stretch stops weighing on it once it leaves', () => {
     const rate = new ProgressRateTracker();
     dustAlone(0.01, 0, rate);
-    // A slow minute: 1 point in 100s would be ~9,900s remaining.
+    // A slow stretch: 1 point in 100s would be ~9,900s remaining.
     dustAlone(0.02, 100_000, rate);
-    // Then 1 point per second.
-    dustAlone(0.3, 130_000, rate);
-    dustAlone(0.6, 160_000, rate);
-    const eta = dustAlone(0.9, 200_000, rate).etaSeconds!;
-    // Measured from the 100s sample once the window has dropped the first:
-    // 88 points in 100s → 10 left → ~11s.
-    expect(eta).toBeLessThan(20);
+    // Then 0.2 points per second.
+    let before: number | null = null;
+    for (let t = 130_000, f = 0.08; t <= 250_000; t += 30_000, f += 0.06) before = dustAlone(f, t, rate).etaSeconds;
+    // While the slow stretch is still inside the three-minute window the
+    // slowest bin is that stretch, and the estimate stays huge.
+    expect(before!).toBeGreaterThan(1_000);
+    // The first sample after it has left: 62 points at 0.2/s → 310s, ×1.5 → 465s.
+    const after = dustAlone(0.38, 280_000, rate).etaSeconds!;
+    expect(after).toBeLessThan(500);
+  });
+
+  // The DUST-only phase of a real mainnet sync, sampled every 30s: dust events
+  // applied out of 185,390, with the seconds that were actually left. The walk
+  // arrives in bursts (t+214s carried 55k events; its neighbours ~10-15k), and
+  // the slope between window endpoints read those bursts as the trend: the
+  // display went 106s, 94, 81, then back UP to 148, 164, 169 while the bar
+  // barely moved. A countdown is only believable if it counts down.
+  const MAINNET_DUST_PHASE: Array<[elapsedS: number, applied: number, actualLeftS: number]> = [
+    [154, 12_807, 363], [184, 26_837, 333], [214, 82_550, 303], [244, 97_411, 273],
+    [274, 110_894, 243], [304, 120_432, 213], [334, 128_765, 183], [364, 136_512, 153],
+    [394, 145_350, 123], [424, 155_121, 93], [454, 165_442, 63], [484, 175_608, 33], [514, 184_538, 3],
+  ];
+
+  it('counts down monotonically through a bursty DUST walk', () => {
+    const rate = new ProgressRateTracker();
+    const shown = MAINNET_DUST_PHASE.map(([s, applied]) => dustAlone(applied / 185_390, s * 1000, rate).etaSeconds);
+    // The first sample of the phase has nothing to measure from.
+    expect(shown[0]).toBeNull();
+    const numbers = shown.slice(1) as number[];
+    numbers.forEach((n) => expect(n).not.toBeNull());
+    // Never goes back up.
+    for (let i = 1; i < numbers.length; i++) expect(numbers[i]!).toBeLessThanOrEqual(numbers[i - 1]!);
+    // And converges: within a minute of the truth over the second half.
+    const half = Math.floor(MAINNET_DUST_PHASE.length / 2);
+    for (let i = half; i < MAINNET_DUST_PHASE.length; i++) {
+      expect(Math.abs(shown[i]! - MAINNET_DUST_PHASE[i]![2])).toBeLessThan(60);
+    }
+  });
+
+  it('re-estimates upward only when the pace clearly collapsed, and only once it persisted', () => {
+    const rate = new ProgressRateTracker();
+    // Fast: 1 point per second → from 10% that promises 90s.
+    dustAlone(0.10, 0, rate);
+    dustAlone(0.25, 15_000, rate);
+    const promised = dustAlone(0.40, 30_000, rate).etaSeconds!;
+    expect(promised).toBeLessThanOrEqual(100);
+    // Then a crawl: 0.1 point per second. For the first 30s the display keeps
+    // counting down what it promised…
+    const during = dustAlone(0.41, 40_000, rate).etaSeconds!;
+    expect(during).toBeLessThan(promised);
+    // …and once the collapse has held long enough it is allowed to say so.
+    let after: number | null = null;
+    for (let t = 50_000, f = 0.42; t <= 120_000; t += 10_000, f += 0.01) after = dustAlone(f, t, rate).etaSeconds;
+    expect(after!).toBeGreaterThan(during);
   });
 });
 
 describe('ProgressRateTracker', () => {
   const phase = 'dust';
+  const at = (fraction: number, elapsedMs: number) => ({fraction, elapsedMs});
 
-  it('has nothing to measure from on the first sample of a phase', () => {
-    expect(new ProgressRateTracker().observe(phase, {fraction: 0.1, elapsedMs: 0})).toBeUndefined();
+  it('has nothing to say on the first sample of a phase, or before a whole bin has passed', () => {
+    const rate = new ProgressRateTracker();
+    expect(rate.observe(phase, at(0.1, 0))).toBeNull();
+    expect(rate.observe(phase, at(0.2, 10_000))).toBeNull();
+    expect(rate.observe(phase, at(0.25, 15_000))).toBeNull();
+    // 30s of samples is a rate: 0.2 per 30s → 0.7 left → 105s, ×1.5 → 158s.
+    expect(rate.observe(phase, at(0.3, 30_000))).toBe(158);
   });
 
-  it('measures from the oldest sample still inside the window', () => {
-    const rate = new ProgressRateTracker();
-    rate.observe(phase, {fraction: 0, elapsedMs: 0}, 10_000);
-    expect(rate.observe(phase, {fraction: 0.1, elapsedMs: 5_000}, 10_000)).toEqual({fraction: 0, elapsedMs: 0});
-    expect(rate.observe(phase, {fraction: 0.2, elapsedMs: 12_000}, 10_000)).toEqual({fraction: 0, elapsedMs: 0});
-    expect(rate.observe(phase, {fraction: 0.3, elapsedMs: 16_000}, 10_000)).toEqual({fraction: 0.1, elapsedMs: 5_000});
+  it('uses the slowest bin, so one burst does not become the trend', () => {
+    const steady = new ProgressRateTracker();
+    const bursty = new ProgressRateTracker();
+    for (let t = 0, f = 0; t <= 60_000; t += 10_000, f += 0.05) steady.observe(phase, at(f, t));
+    // Same samples, except one interval carries ten times the movement.
+    const burstFractions = [0, 0.05, 0.10, 0.60, 0.65, 0.70, 0.75];
+    let burstEta: number | null = null;
+    burstFractions.forEach((f, i) => { burstEta = bursty.observe(phase, at(f, i * 10_000)); });
+    const steadyEta = steady.observe(phase, at(0.35, 70_000));
+    // Steady: 0.05/10s → 0.65 left → 130s, ×1.5 → 195s. Bursty at 75%: 0.25
+    // left at the slow bin's rate → 50s raw, not the ~12s the burst-inflated
+    // slope would say.
+    expect(steadyEta).toBe(195);
+    expect(burstEta!).toBeGreaterThan(40);
   });
 
   it('starts over when the set of replaying sub-wallets changes', () => {
     const rate = new ProgressRateTracker();
-    rate.observe('shielded+dust', {fraction: 0.001, elapsedMs: 0});
-    expect(rate.observe('shielded+dust', {fraction: 0.002, elapsedMs: 60_000})).toEqual({fraction: 0.001, elapsedMs: 0});
-    expect(rate.observe('dust', {fraction: 0.01, elapsedMs: 150_000})).toBeUndefined();
-    expect(rate.observe('dust', {fraction: 0.05, elapsedMs: 160_000})).toEqual({fraction: 0.01, elapsedMs: 150_000});
+    rate.observe('shielded+dust', at(0.001, 0));
+    expect(rate.observe('shielded+dust', at(0.002, 60_000))).not.toBeNull();
+    expect(rate.observe('dust', at(0.01, 150_000))).toBeNull();
+    expect(rate.observe('dust', at(0.02, 160_000))).toBeNull();
+    expect(rate.observe('dust', at(0.05, 180_000))).not.toBeNull();
   });
 
-  it('keeps the two newest samples through a stall longer than the window', () => {
+  it('keeps counting down through a stall rather than inventing a rate from nothing', () => {
     const rate = new ProgressRateTracker();
-    rate.observe(phase, {fraction: 0.1, elapsedMs: 0}, 10_000);
-    rate.observe(phase, {fraction: 0.2, elapsedMs: 5_000}, 10_000);
-    // Nothing for a minute, then one more: the 5s sample is kept so the stall
-    // reads as a slow rate rather than as no rate at all.
-    expect(rate.observe(phase, {fraction: 0.21, elapsedMs: 65_000}, 10_000)).toEqual({fraction: 0.2, elapsedMs: 5_000});
+    rate.observe(phase, at(0.1, 0));
+    rate.observe(phase, at(0.2, 15_000));
+    const promised = rate.observe(phase, at(0.3, 30_000))!;
+    // No movement for a while: the deadline keeps approaching.
+    const stalled = rate.observe(phase, at(0.3, 50_000))!;
+    expect(stalled).toBe(promised - 20);
   });
 });
