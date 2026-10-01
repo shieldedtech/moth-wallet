@@ -81,7 +81,7 @@ the release tag manually.
 ## Notes
 
 - **tsconfig deviation:** this package extends WXT's generated `.wxt/tsconfig.json` (path aliases, extension globals) instead of the repo's `tsconfig.base.json` — the base config's `rootDir`/`outDir`/`declaration` assumptions don't fit a Vite-bundled app. Run `yarn workspace @shieldedtech/moth-extension compile` for a typecheck.
-- Wallet keys live encrypted (ChaCha20-Poly1305) in IndexedDB via `@shieldedtech/moth-browser`; the unlocked seed is held only in `browser.storage.session` (memory-backed, cleared when the browser exits). Locking is explicit — lock button, account removal, network switch; there is no inactivity auto-lock for now (its timer used to kill a sync in progress).
+- Wallet keys live encrypted (ChaCha20-Poly1305) in IndexedDB via `@shieldedtech/moth-browser`; the unlocked seed is held only in `browser.storage.session` (memory-backed, cleared when the browser exits). Locking is explicit — lock button, account removal, network switch — or by the inactivity auto-lock (Settings; default 1 hour). Activity is panel input and any successful request from a connected dApp; the lock defers while a transaction is in flight.
 - **Settings → Network → Clear cache and resync** forgets everything synced for
   the active account on its network — sync state, cached balances, pending
   activity, and the network's pre-seed reference — and syncs again from genesis.
