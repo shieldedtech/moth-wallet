@@ -701,6 +701,9 @@
   "home_seeAll": {
     "message": "Alle anzeigen"
   },
+  "home_noActivity": {
+    "message": "Noch keine Aktivität. Deine Transfers erscheinen hier."
+  },
   "home_nameTokenAria": {
     "message": "Token $1 benennen"
   },

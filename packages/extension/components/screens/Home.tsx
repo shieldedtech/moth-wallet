@@ -193,22 +193,28 @@ export function Home({
         />
       )}
 
-      {activity !== null && activity.length > 0 && (
-        <div className="pb-2">
-          <div className="mb-1 flex items-center justify-between">
-            <p className="m-0 font-display text-[15px] font-bold">{t('home_recentActivity')}</p>
-            <button
-              onClick={() => navigate('activity')}
-              className="cursor-pointer border-0 bg-transparent p-0 text-[13px] font-semibold text-link transition duration-150 hover:opacity-75"
-            >
-              {t('home_seeAll')}
-            </button>
-          </div>
-          {activity.slice(0, 2).map((entry) => (
-            <ActivityRow key={entry.hash} view={activityRowView(entry, labels, { tokenNames })} />
-          ))}
+      {/* Always present: this is the only way into the full feed, so it must
+          not disappear with the rows when the feed is empty or not yet read. */}
+      <div className="pb-2">
+        <div className="mb-1 flex items-center justify-between">
+          <p className="m-0 font-display text-[15px] font-bold">{t('home_recentActivity')}</p>
+          <button
+            onClick={() => navigate('activity')}
+            className="cursor-pointer border-0 bg-transparent p-0 text-[13px] font-semibold text-link transition duration-150 hover:opacity-75"
+          >
+            {t('home_seeAll')}
+          </button>
         </div>
-      )}
+        {activity !== null && activity.length === 0 ? (
+          <Card className="p-0">
+            <p className="m-0 px-4 py-[15px] text-[12.5px] text-muted-foreground">{t('home_noActivity')}</p>
+          </Card>
+        ) : (
+          activity?.slice(0, 2).map((entry) => (
+            <ActivityRow key={entry.hash} view={activityRowView(entry, labels, { tokenNames })} />
+          ))
+        )}
+      </div>
     </PanelScreen>
   );
 }

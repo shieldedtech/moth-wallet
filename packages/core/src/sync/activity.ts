@@ -137,3 +137,49 @@ export function sortActivity<T extends {timestamp: Date | null}>(entries: T[]): 
 export function deriveActivity(entries: readonly WalletEntry[], ownAddress: string): ActivityEntry[] {
   return sortActivity(entries.map((entry) => deriveActivityEntry(entry, ownAddress)));
 }
+
+// ---------------------------------------------------------------------------
+// Outcomes of locally submitted transactions
+// ---------------------------------------------------------------------------
+
+/** The verdicts the SDK's pending-transaction tracker reaches for a
+ *  transaction that did not go through. A success is not a verdict here: it
+ *  arrives as a history entry through sync. */
+export type TransactionOutcomeStatus = 'FAILURE' | 'PARTIAL_SUCCESS';
+
+export interface TransactionOutcome {
+  transactionHash: string;
+  /** Logical identifiers the transaction was submitted under. */
+  identifiers: string[];
+  status: TransactionOutcomeStatus;
+}
+
+/** The slice of a finalized transaction this module reads, structural so the
+ *  module keeps its type-only relationship with the ledger. */
+export interface PendingTransactionLike {
+  transactionHash(): string;
+  identifiers(): readonly string[];
+}
+
+export interface PendingTransactionsLike {
+  all: ReadonlyArray<{tx: PendingTransactionLike; result?: {status: string}}>;
+}
+
+/**
+ * Failed verdicts newly present in a pending-transactions snapshot. The facade
+ * reverts and clears a failed item as soon as its verdict lands, so the verdict
+ * is visible only in the emissions between those two updates; `seen` lets a
+ * caller subscribed to every emission report each transaction once.
+ */
+export function collectFailedOutcomes(pending: PendingTransactionsLike, seen: Set<string>): TransactionOutcome[] {
+  const outcomes: TransactionOutcome[] = [];
+  for (const item of pending.all) {
+    const status = item.result?.status;
+    if (status !== 'FAILURE' && status !== 'PARTIAL_SUCCESS') continue;
+    const transactionHash = item.tx.transactionHash();
+    if (seen.has(transactionHash)) continue;
+    seen.add(transactionHash);
+    outcomes.push({transactionHash, identifiers: [...item.tx.identifiers()], status});
+  }
+  return outcomes;
+}
