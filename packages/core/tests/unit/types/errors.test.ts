@@ -5,6 +5,7 @@
 // submission failure — the failure screen, the retry classifiers, the
 // wedged-dust-ledger detector — depends on it.
 
+import {Data, Effect} from 'effect';
 import {describe, expect, it} from 'vitest';
 import {
   errorChainMessage,
@@ -43,6 +44,34 @@ describe('errorChainMessages', () => {
     const inner = new Error('socket hang up');
     const outer = Object.assign(new Error('Wallet.Sync'), {failure: inner});
     expect(errorChainMessages(outer)).toEqual(['Wallet.Sync', 'socket hang up']);
+  });
+
+  // The submission service runs its Effect with `runPromise`, which rejects
+  // with a FiberFailure: its message is the SDK placeholder and its cause sits
+  // behind a symbol, with no `cause` property. A mainnet send that the node
+  // refused reached the failure screen as the bare "Transaction submission
+  // error" because the walk stopped there.
+  it('opens an Effect FiberFailure to reach the node verdict behind it', async () => {
+    class SubmissionError extends Data.TaggedError('SubmissionError')<{message: string; cause: unknown}> {}
+    const verdict = new Error('1010: Invalid Transaction: Custom error: 170');
+    const failure = new SubmissionError({
+      message: 'Transaction submission error',
+      cause: new SubmissionError({message: 'Transaction submission failed', cause: verdict}),
+    });
+    const rejected = await Effect.runPromise(Effect.fail(failure)).catch((e: unknown) => e);
+
+    expect((rejected as Error).message).toBe('Transaction submission error');
+    expect('cause' in (rejected as object)).toBe(false);
+    expect(errorChainMessages(rejected)).toEqual([
+      'Transaction submission error',
+      'Transaction submission failed',
+      '1010: Invalid Transaction: Custom error: 170',
+    ]);
+  });
+
+  it('opens a FiberFailure carrying a defect, too', async () => {
+    const rejected = await Effect.runPromise(Effect.die(new Error('wasm trap'))).catch((e: unknown) => e);
+    expect(errorChainMessages(rejected)).toEqual(['wasm trap']);
   });
 
   it('keeps a plain error to its one message', () => {
