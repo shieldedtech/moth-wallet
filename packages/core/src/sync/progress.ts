@@ -27,17 +27,61 @@ export interface OverallProgressInput {
   /** Time since this sync started, for the ETA. 0 disables the estimate. */
   elapsedMs: number;
   /**
-   * Where this session actually began: the fraction already complete when it
-   * started, and the elapsed reading at that moment.
-   *
-   * Without it the ETA assumes the sync began at 0% when the process began,
-   * which is false for every resumed sync — and dust resumes constantly. A run
-   * that restored a cache at 65% and then ran for 152s was read as "67% in 152s",
-   * a rate 15x too fast, so the estimate came out 4-5x short and CLIMBED as
-   * elapsed time slowly corrected the fiction. Measured on preprod: 1m15s
-   * predicted at 67%, 2m23s at 81%, against a true ~10m.
+   * Recent samples the ETA's rate is measured over; without one there is no
+   * estimate. Stateful by design and held per session: the daemon and TUI sync
+   * several wallets in one process, and a shared tracker would hand each of
+   * them the others' history.
    */
-  baseline?: {readonly fraction: number; readonly elapsedMs: number};
+  rate?: ProgressRateTracker;
+}
+
+export interface ProgressSample {
+  /** The binding sub-wallet's fraction at this emission. */
+  readonly fraction: number;
+  readonly elapsedMs: number;
+}
+
+/** How far back the rate looks: long enough to smooth a bursty replay, short
+ *  enough that a changed rate shows within a couple of minutes. */
+export const RATE_WINDOW_MS = 90_000;
+
+/**
+ * The samples the ETA's rate is measured over.
+ *
+ * The rate used to be measured from the session's first sample, which reads
+ * the whole run as one rate — and a replay has no one rate. A sub-wallet is
+ * starved while another replays beside it: on mainnet the DUST walk ran at
+ * ~25 events/s until the shielded walk finished, then at ~1,500/s, so an
+ * estimate made at 1% promised "3h 19m" of a sync that ended seven minutes
+ * later, and shrank only as slowly as the early samples lost weight. Hence a
+ * sliding window, emptied whenever the set of sub-wallets still replaying
+ * changes, since that is where the rate jumps.
+ *
+ * Measuring from a first sample rather than from the session start is also
+ * what keeps a resumed sync honest: a run that restored a cache at 65% and ran
+ * for 152s was once read as "67% in 152s", 15x the real rate.
+ */
+export class ProgressRateTracker {
+  private phase: string | null = null;
+  private samples: ProgressSample[] = [];
+
+  /**
+   * Record a sample and return the one the rate should be measured from, or
+   * undefined when this phase has nothing earlier to measure against.
+   */
+  observe(phase: string, sample: ProgressSample, windowMs = RATE_WINDOW_MS): ProgressSample | undefined {
+    if (phase !== this.phase) {
+      this.phase = phase;
+      this.samples = [sample];
+      return undefined;
+    }
+    this.samples.push(sample);
+    // Drop samples that have fallen out of the window, but keep the two newest
+    // so a stall longer than the window still has a rate to report as slow.
+    const cutoff = sample.elapsedMs - windowMs;
+    while (this.samples.length > 2 && this.samples[1]!.elapsedMs <= cutoff) this.samples.shift();
+    return this.samples[0];
+  }
 }
 
 /**
@@ -91,26 +135,22 @@ export function overallSyncProgress(input: OverallProgressInput): {
   if (percentage >= 0.995) percentage = 0.99;
 
   // ETA against the same fraction, so it reflects whichever sub-wallet is behind
-  // rather than one that finished a minute in.
-  //
-  // Rate comes from progress made THIS session, not from cumulative percentage
-  // over session elapsed — see the note on `baseline`. Both forms are kept
-  // because a sync that genuinely starts at zero has no baseline to measure
-  // from until its second sample.
+  // rather than one that finished a minute in. The rate is measured over the
+  // tracker's recent samples (see ProgressRateTracker), and only while a single
+  // sub-wallet is replaying: with two, the one behind is starved by the other,
+  // and its rate says nothing about how fast it will run once alone.
+  const replaying = fractions.filter((f) => f.value < 1).map((f) => f.sub);
+  const from = input.rate?.observe(replaying.join('+'), { fraction: percentage, elapsedMs: input.elapsedMs });
   let etaSeconds: number | null = null;
-  const b = input.baseline;
-  if (b && input.elapsedMs > b.elapsedMs && percentage > b.fraction) {
+  if (from && replaying.length === 1 && input.elapsedMs > from.elapsedMs && percentage > from.fraction) {
     // Enough movement to divide by. Below that the rate is noise and a number
     // derived from it is worse than admitting the estimate is not ready.
-    const advanced = percentage - b.fraction;
-    const overMs = input.elapsedMs - b.elapsedMs;
-    if (advanced >= 0.002 && overMs >= 1_000) {
+    const advanced = percentage - from.fraction;
+    const overMs = input.elapsedMs - from.elapsedMs;
+    if (advanced >= 0.002 && overMs >= 5_000) {
       const remaining = Math.max(0, 1 - percentage);
       etaSeconds = Math.max(0, Math.round((remaining * overMs) / advanced / 1000));
     }
-  } else if (!b && input.elapsedMs > 0 && percentage > 0.01) {
-    const totalEstMs = input.elapsedMs / percentage;
-    etaSeconds = Math.max(0, Math.round((totalEstMs - input.elapsedMs) / 1000));
   }
 
   return { percentage, etaSeconds, slowest };
