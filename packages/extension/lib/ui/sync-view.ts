@@ -13,6 +13,7 @@ export function syncStatusView(balances: WalletBalances): SyncStatusView {
     shielded: percent(sub.shielded.applied, sub.shielded.total, progress.shieldedSynced),
     unshielded: percent(sub.unshielded.applied, sub.unshielded.total, progress.unshieldedSynced),
     dust: percent(sub.dust.applied, sub.dust.total, progress.dustSynced),
+    synced: balances.synced,
     etaSeconds: progress.etaSeconds,
   };
 }
