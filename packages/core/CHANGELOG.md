@@ -1,5 +1,137 @@
 # @shieldedtech/moth-wallet
 
+## 0.15.0
+
+### Minor Changes
+
+- c59cb7e: Honour `payFees: false` on the dApp connector.
+
+  `makeTransfer`, `makeIntent`, `balanceSealedTransaction` and
+  `balanceUnsealedTransaction` used to reject `payFees: false` with
+  `InvalidRequest`. With it, the wallet now builds or balances without adding
+  DUST, leaving the network fee to another party. This lets a dApp or a
+  counterparty sponsor fees. Leaving the option out, or passing `true`, still
+  means the wallet pays. A non-boolean `payFees` is rejected.
+
+  This applies to the extension's dApp connector only. The daemon, CLI and TUI
+  have no connector, so their transactions still always pay their own fees.
+
+  In core, `buildTransferTransaction`, `buildSwapIntent` and
+  `balanceTransaction` each take a trailing `options` object, which is passed
+  on to the matching facade call. `buildTransferTransaction` takes
+  `{ ttl, payFees }`; this replaces its old trailing `ttlOverride` argument.
+  `buildSwapIntent` takes `{ payFees }`. `balanceTransaction` takes
+  `{ tokenKindsToBalance }`, and core now exports the `TokenKindsToBalance`
+  type. The balancing calls have no fee flag, so the extension asks for
+  shielded and unshielded tokens only when a dApp passes `payFees: false`. If
+  `dust` is left out and the transaction needs nothing else, the SDK throws "No
+  balancing transaction was created". In that case a sealed transaction is
+  returned unchanged and an unsealed one is only bound.
+
+  A transaction built this way cannot be submitted until someone adds the fee.
+  Pass it to `balanceSealedTransaction` with fees enabled, from this wallet or
+  another one.
+
+  The approval screen now says whether this wallet pays the network fee. When
+  it does not, the DUST shortfall is left off the "You pay" rows, because the
+  wallet will not cover it. The new copy stays in English in de/fr/es until
+  someone reviews the translations.
+
+  `makeIntent` now returns a sealed transaction (signed, proven and bound)
+  instead of the unproven output of `initSwap`. The connector API completes a
+  swap with `balanceSealedTransaction`, and Lace-compatible services reject the
+  unproven form with "expected header tag
+  'midnight:transaction[v9](signature[v1],proof,pedersen-schnorr[v1]):'". In
+  core, `buildSwapIntent` now returns a `FinalizedTransaction`. Because the
+  intent is now proven, `makeIntent` needs the configured prover.
+
+### Patch Changes
+
+- 6eeba08: Keep the DUST capacity steady while a submitted transaction lands.
+
+  The capacity was read off the dust sub-wallet's available coins. Submitting a
+  transaction moves the coin it spends out of that list at once, so the meter
+  fell to "of 0 · not registered yet"; when the spend landed, the old coin's
+  remainder kept its full cap while it decayed next to the fresh coin for the
+  change UTXO, so the meter doubled; and the dust and unshielded sub-wallets
+  apply the same transaction at different moments, so it settled only after
+  both had caught up.
+
+  The capacity is now derived from the registered NIGHT UTXOs, counting the
+  inputs booked by an in-flight transaction the way the NIGHT balance already
+  does, and dust coins whose backing NIGHT was spent no longer count toward it.
+  The arithmetic lives in `sync/dust-generation.ts`, which is unit-tested
+  without WASM.
+- 891e7f3: Hold the DUST balance steady while a fee is in flight, tell the truth about
+  when DUST fills, and log the fee a send actually pays.
+
+  Paying a fee moves the whole DUST coin out of the ledger's spendable set until
+  the transaction lands, and the change only arrives with the chain event, so the
+  displayed balance fell by the size of the coin rather than the size of the fee:
+  12,959.88 to 9,354.74 and back on a preprod send. With largest-coin-first
+  selection that is the largest drop available. Booked coins now count toward the
+  balance, as booked NIGHT inputs already did.
+
+  The fill-time estimate came from the SDK's `maxCapReachedAt`, which is the
+  coin's creation time plus the whole time-to-cap however full the coin already
+  is. Every spend gives the change coin a fresh creation time, so a wallet at 39%
+  was told "full in about 7 days" after each send. The meter's estimate now comes
+  from the meter: the fraction of the climb still ahead, at the rate the whole
+  registered balance generates. That wallet reads about 4 days. Reading the
+  slowest individual coin instead would not have helped, because every send
+  leaves a fresh change UTXO whose own coin starts low, pinning the estimate near
+  the full climb for any wallet in use.
+
+  The TUI shows a countdown per coin, where the remaining climb over that coin's
+  rate is the right answer, so `DustCoinInfo` now carries the coin's rate and the
+  shared `secondsUntilFull` replaces `maxCapReachedAt` there.
+
+  `startWalletSync` takes an `onDustFeePass` callback carrying each pass of the
+  DUST fee-balancing loop, and the extension logs it alongside the quote the
+  confirm screen shows. The preview and the real spend share the SDK's balancing
+  recipe, so both appear, which is what makes a quote that disagrees with the
+  spend visible without querying the chain.
+- 844ee29: Surface what the network actually said when a submission fails, instead of the
+  wallet SDK's placeholder.
+
+  Every submission failure reached Moth as the constant string `Transaction
+  submission error`. The wallet SDK reports a node's verdict through two nested
+  Effect `Data.TaggedError`s whose own messages are fixed
+  (`wallet-sdk-capabilities/submission` wraps `wallet-sdk-node-client`, which
+  wraps the polkadot RPC error), so the only member of the chain that says
+  anything — the node's `1010: Invalid Transaction: Custom error: 170`, or the
+  relay's `Could not connect within specified time range (5s)` — sat two `cause`
+  levels below the message every surface renders.
+
+  Three consequences, all of them from the same one-line habit of reading
+  `error.message`:
+
+  - A user was told only that submission failed. The extension's failure screen
+    then blamed proving in its footnote, which is the one stage that had
+    demonstrably succeeded.
+  - `isAlreadyImported` never saw a 1013, so a resubmission of bytes the pool
+    already held was reported as a failure rather than as the success it is.
+  - `isTransient` never saw a dropped connection, so a transaction the relay
+    never delivered was treated as the node's final answer and the one retry
+    that would have landed it was skipped. `isTransient` also did not recognise
+    the SDK's own wording for a relay that never came up at all (`Could not
+    connect within specified time range (5s)`), which is now matched.
+  - `isDustSpendProofRejection` never saw a `Custom error: 170`, which made the
+    wedged-dust-ledger detector (`sync/dust-ledger-health.ts`, backing
+    `docs/upstream-issues/dust-ledger-wedge-invalid-dust-spend-proof.md`)
+    unreachable on the path it is wired into — the streak it needs could never
+    advance past zero, however many times a chain wedged.
+
+  `types/errors.ts` gains `errorChainMessages` / `errorChainMessage`, which walk
+  `cause` and Effect's `failure` and return the chain's distinct messages, and
+  `TransactionSubmissionError`, which restates a failed submission with that
+  chain as its message and keeps the original on `cause`. Every classifier on
+  the submission path now matches against the chain, and the tests that cover
+  them reject with the SDK's real nesting rather than a flat `Error` — the shape
+  that let all four cases pass while none of them worked.
+
+  No change to how any transaction is built, signed, proven or submitted.
+
 ## 0.14.1
 
 ### Patch Changes
