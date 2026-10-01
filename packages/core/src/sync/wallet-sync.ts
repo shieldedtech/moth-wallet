@@ -30,7 +30,7 @@ import {dedupingShieldedBuilder, dedupingDustBuilder} from './sdk-dedup.js';
 import {largestDustCoinFirst} from './dust-coin-selection.js';
 import {spendableDust, summarizeDustGeneration, type DustGeneration} from './dust-generation.js';
 import {terminatingDustTransacting, type DustFeePass} from './dust-transacting.js';
-import {overallSyncProgress, type SubWallet} from './progress.js';
+import {overallSyncProgress, ProgressRateTracker, type SubWallet} from './progress.js';
 import {partsToSeed, preSeedPlan, birthdayAdmits, type SeedablePart} from './preseed-parts.js';
 import {dustHistoryBefore} from './dust-history.js';
 import {dustAddressForKey} from '../wallet/address.js';
@@ -679,7 +679,7 @@ export async function startWalletSync(
   const subscribers: Array<(b: WalletBalances) => void> = [];
   const syncStartTime = Date.now();
   let lastProgressPct = 0;
-  const progressBaseline: ProgressBaseline = {value: null};
+  const progressRate = new ProgressRateTracker();
 
   let hasSavedCache = false;
   let lastCacheSaveTime = 0;
@@ -689,7 +689,7 @@ export async function startWalletSync(
     .subscribe({
       next: (s: FacadeState) => {
         emissionCount++;
-        const balances = extractBalancesPartial(s, syncStartTime, lastProgressPct, progressBaseline, latestBalances);
+        const balances = extractBalancesPartial(s, syncStartTime, lastProgressPct, progressRate, latestBalances);
         latestBalances = balances;
         lastProgressPct = balances.syncProgress.percentage;
 
@@ -869,24 +869,12 @@ async function saveCache(
   }
 }
 
-/**
- * Where a sync session started, for the ETA.
- *
- * A resumed sync begins part-way through — dust restores from cache constantly —
- * and an estimate built from cumulative percentage over session elapsed reads
- * that as an impossibly fast rate. Held per session rather than per module: the
- * daemon and TUI sync several wallets in one process, and a shared baseline
- * would give each of them the others' starting point.
- */
-export interface ProgressBaseline {
-  value: {fraction: number; elapsedMs: number} | null;
-}
-
 function extractBalancesPartial(
   state: FacadeState,
   syncStartTime = 0,
   prevPct = 0,
-  baseline?: ProgressBaseline,
+  /** This session's ETA rate samples; see ProgressRateTracker. */
+  rate?: ProgressRateTracker,
   /**
    * The last snapshot, carried forward where this emission says nothing.
    *
@@ -1063,7 +1051,7 @@ function extractBalancesPartial(
     dustSynced,
     synced,
     elapsedMs: syncStartTime > 0 ? Date.now() - syncStartTime : 0,
-    baseline: baseline?.value ?? undefined,
+    rate,
   });
 
   // percentage/etaSeconds already account for `synced` (see overallSyncProgress);
@@ -1125,13 +1113,6 @@ function extractBalancesPartial(
     shieldedSynced = shieldedSynced || previous.syncProgress.shieldedSynced;
     unshieldedSynced = unshieldedSynced || previous.syncProgress.unshieldedSynced;
     dustSynced = dustSynced || previous.syncProgress.dustSynced;
-  }
-
-  // First usable sample is the session's starting point. Captured after the
-  // fraction is known and only once, so the rate below is measured over work
-  // this session actually did.
-  if (baseline && baseline.value === null && !synced && percentage > 0 && percentage < 0.995) {
-    baseline.value = {fraction: percentage, elapsedMs: syncStartTime > 0 ? Date.now() - syncStartTime : 0};
   }
 
   const syncProgress: SyncProgress = {percentage, etaSeconds, slowest, shieldedSynced, unshieldedSynced, dustSynced};
