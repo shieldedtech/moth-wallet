@@ -6,14 +6,14 @@
 
 import {existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync} from 'node:fs';
 import {join, dirname} from 'node:path';
-import {homedir} from 'node:os';
+import {mothHome} from '../storage/home.js';
 import type {SyncStateStore} from './sync-store.js';
 
 export class NodeSyncStateStore implements SyncStateStore {
   private readonly base: string;
 
   constructor(base?: string) {
-    this.base = base ?? join(homedir(), '.moth');
+    this.base = base ?? mothHome();
   }
 
   private fileFor(key: string): string {

@@ -13,8 +13,8 @@
 // later.
 
 import {appendFileSync, existsSync, mkdirSync, renameSync, statSync} from 'node:fs';
-import {homedir} from 'node:os';
 import {dirname, join} from 'node:path';
+import {mothHome} from '../storage/home.js';
 
 export type AuditDecision = 'auto-approve' | 'user-approve' | 'user-denied';
 
@@ -61,7 +61,7 @@ export interface AuditLifecycleEntry {
 export type AuditEntry = AuditRpcEntry | AuditLifecycleEntry;
 
 export interface AuditLogOptions {
-  /** Override the default `~/.moth/` directory. Used by tests. */
+  /** Override the default moth home (MOTH_HOME or `~/.moth/`). Used by tests. */
   readonly dir?: string;
   /** Override the file name. Defaults to `daemon-audit.log`. */
   readonly filename?: string;
@@ -71,7 +71,7 @@ export class AuditLog {
   private readonly path: string;
 
   constructor(opts: AuditLogOptions = {}) {
-    const dir = opts.dir ?? join(homedir(), '.moth');
+    const dir = opts.dir ?? mothHome();
     mkdirSync(dir, {recursive: true, mode: 0o700});
     this.path = join(dir, opts.filename ?? 'daemon-audit.log');
   }

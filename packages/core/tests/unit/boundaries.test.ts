@@ -118,6 +118,19 @@ describe('core platform boundary', () => {
   });
 });
 
+describe('core on-disk root', () => {
+  // MOTH_HOME moved the keystore and the daemon socket but not the sync cache,
+  // API keys, audit log or contract private state, because those modules each
+  // built `homedir()/.moth` themselves. One resolver means one root.
+  it('resolves the home directory only in storage/home.ts', () => {
+    const offenders = tsSources(SRC)
+      .filter(relPath => relPath !== 'storage/home.ts')
+      .filter(relPath => /\bhomedir\s*\(/.test(readFileSync(resolve(SRC, relPath), 'utf-8')))
+      .sort();
+    expect(offenders, 'build on-disk paths from mothHome() so MOTH_HOME applies to them').toEqual([]);
+  });
+});
+
 describe('core WASM-free modules', () => {
   it.each(WASM_FREE_MODULES)('%s has no runtime Midnight import', relPath => {
     const offenders = runtimeSpecifiers(readFileSync(resolve(SRC, relPath), 'utf-8')).filter(
