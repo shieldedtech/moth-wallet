@@ -53,8 +53,8 @@ describe('dustAddressBytes', () => {
     'mn_dust_preprod1wwxhaf472uhxnltad72rmph52gdpef7a7ytq78vneqs2secjdyjzyh4t0ey';
 
   it('serializes to the 33 bytes a registration datum records', () => {
-    // Confirmed against the wallet SDK: DustAddress.serialize() is exactly the
-    // bech32m payload, 33 bytes.
+    // The whole of DustAddress.serialize(): a 0x73 type tag then the payload.
+    // Every live registration at the deployed contract carries this form.
     expect(dustAddressBytes(DUST)).toBe(
       '738d7ea6be572e69fd7d6f943d86f4521a1ca7ddf1160f1d93c820a86712692422',
     );

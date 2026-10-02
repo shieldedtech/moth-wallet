@@ -34,17 +34,36 @@ const STAKE_KEY_HASH = '070c2f801567402df8e4e630ed3819e1c29219d1d918266758e3a063
  * A real serialized DUST address — the bech32m payload of
  * mn_dust_preprod1wwxhaf472uhxnltad72rmph52gdpef7a7ytq78vneqs2secjdyjzyh4t0ey.
  *
- * 33 bytes, NOT the 32-byte shielded coin public key. Both are plausible, both
- * encode cleanly, and the wrong one yields a registration that is valid on
- * Cardano and silently never matched by the bridge.
+ * The 33 bytes serialize() returns: a 0x73 type tag then the payload. Every
+ * live registration at the deployed contract carries this form. NOT the
+ * 32-byte shielded coin public key, which is a different key that encodes just
+ * as cleanly and is silently never matched by the bridge.
  */
 const DUST_ADDRESS_BYTES =
   '738d7ea6be572e69fd7d6f943d86f4521a1ca7ddf1160f1d93c820a86712692422';
 
 describe('compiled validator', () => {
-  it('hashes to the value the blueprint declares', () => {
-    // Catches a truncated or corrupted paste of the 3402-character CBOR far
-    // more cheaply than a rejected transaction does.
+  it('is the contract the Midnight bridge actually reads', () => {
+    // The literal matters. moth once shipped the dApp's
+    // contracts-new-aiken/plutus.json (5027bb76…): it compiled, it hashed
+    // consistently, it built transactions the node accepted — and it is not
+    // the deployment the bridge watches. Registrations confirmed on Cardano
+    // and generated nothing, with no error anywhere to read.
+    //
+    // The test below could not catch that, because it compares the bytes to a
+    // hash generated from the same file. This one compares them to the
+    // contract observed to be live: the Midnight indexer reports
+    // `registered: true` with real generation rates for registrations at this
+    // script address, and reports nothing at all for the other one.
+    expect(validatorToScriptHash(cnightGeneratesDustScript)).toBe(
+      '7e69087d98fac5869eac14e13dfb6f98228c41e638aa2a59d1f85e9c',
+    );
+  });
+
+  it('hashes to the value blueprint-data declares', () => {
+    // Self-consistent by construction, so it proves only that the generated
+    // file is internally coherent — a truncated or corrupted paste of the
+    // 6358-character CBOR. The pin above is what proves it is the right file.
     expect(validatorToScriptHash(cnightGeneratesDustScript)).toBe(CNIGHT_GENERATES_DUST_HASH);
   });
 
@@ -83,9 +102,9 @@ describe('compiled validator', () => {
 });
 
 describe('DustMappingDatum', () => {
-  it('encodes the 33-byte DUST address, not a 32-byte coin public key', () => {
-    // 5821 is a 33-byte bytestring header; 5820 would be 32 and is the bug
-    // this pins against — it produced a registration no bridge ever matched.
+  it('encodes the 33-byte serialized DUST address', () => {
+    // 5821 is a 33-byte bytestring header; 5820 would be 32 and is the shape
+    // the coin-public-key bug produced — a registration no bridge ever matched.
     const cbor = encodeDustMappingDatum(buildDustMappingDatum(STAKE_KEY_HASH, DUST_ADDRESS_BYTES));
     expect(cbor).toBe(
       'd8799fd8799f581c070c2f801567402df8e4e630ed3819e1c29219d1d918266758e3a063'
@@ -112,8 +131,9 @@ describe('DustMappingDatum', () => {
   });
 
   it('rejects a 32-byte receiver at the point moth writes one', () => {
-    // The guard is resolveDustReceiver, not the datum schema. Keeping it out of
-    // the schema is deliberate — see the decode test below.
+    // The coin public key is 32 bytes and encodes fine; the guard is
+    // resolveDustReceiver, not the datum schema — keeping it out of the schema
+    // is deliberate, see below.
     expect(() => resolveDustReceiver('11'.repeat(32))).toThrow();
   });
 
@@ -129,7 +149,7 @@ describe('DustMappingDatum', () => {
         + 'ff5820ae6b465d766ce0a13265ef00859bddd523c9d858523b687903a60bcebd95a7a7ff',
     );
     expect(datumStakeKeyHash(datum)).toBe(STAKE_KEY_HASH);
-    expect(datum.dust_address).toHaveLength(64); // 32 bytes: unusable, but visible
+    expect(datum.dust_address).toHaveLength(64); // right length, wrong key: visible
   });
 
   it('rejects a receiver longer than the validator\'s 33-byte bound', () => {
@@ -170,6 +190,8 @@ describe('resolveDustReceiver', () => {
   });
 
   it('refuses a 32-byte coin public key', () => {
+    // The other plausible receiver, same shape, different key. Accepting it is
+    // what produced a registration that confirmed and generated nothing.
     expect(() => resolveDustReceiver('ab'.repeat(32))).toThrow(/DUST address/);
   });
 

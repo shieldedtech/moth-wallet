@@ -56,7 +56,7 @@ export interface RegistrationRecord {
   readonly legacyDustAddress: boolean;
 }
 
-/** A serialized DUST address is 33 bytes; anything else cannot be matched by the bridge. */
+/** A serialized DUST address is 33 bytes; anything else the bridge cannot match. */
 const DUST_ADDRESS_HEX_LENGTH = 66;
 
 export class NoCnightError extends WalletError {
@@ -137,6 +137,9 @@ export function dustAddressBytes(address: string): string {
   // Decoded against the address's own network: the payload is network-agnostic,
   // but parsing has to agree with the prefix it was written with.
   const decoded = parsed.decode(DustAddress, parsed.network);
+  // The whole 33 bytes serialize() returns — a 0x73 type tag then the payload.
+  // Every live registration at the deployed contract carries the tagged form
+  // (CBOR header 5821, leading 0x73), and its datum bound is `<= 33`.
   return Buffer.from(decoded.serialize()).toString('hex').toLowerCase();
 }
 
@@ -296,6 +299,27 @@ async function signAndSubmit(
 }
 
 /**
+ * Complete a script transaction.
+ *
+ * Evaluation stays local. Asking the provider instead (`localUPLCEval: false`)
+ * would give us the validator's own traces, which the local evaluator throws
+ * away — it reports only "the validator crashed / exited prematurely" — but
+ * lucid's Blockfrost evaluation is broken: ogmios rejects the request with
+ * "failed to decode payload from base64 or base16" before any script runs, so
+ * the transaction cannot be built at all. Local evaluation is opaque; remote
+ * evaluation does not work. Opaque wins.
+ *
+ * The one thing remote evaluation did give us is the full transaction CBOR in
+ * the error message, which is how the datum, mint and signers above were
+ * verified by hand.
+ */
+async function completeWithProviderEval(
+  builder: ReturnType<CardanoSession['lucid']['newTx']>,
+) {
+  return builder.complete();
+}
+
+/**
  * Register this Cardano stake key so its cNIGHT generates DUST to `dustAddress`.
  *
  * Mints the auth NFT and parks it at the mapping validator alongside an inline
@@ -336,7 +360,7 @@ export async function registerForDust(
   );
   await addSigners(builder, session);
 
-  const completed = await builder.complete();
+  const completed = await completeWithProviderEval(builder);
   return signAndSubmit(completed, onStage);
 }
 
@@ -390,7 +414,7 @@ export async function deregisterFromDust(
   builder.attach.SpendingValidator(cnightGeneratesDustScript);
   await addSigners(builder, session);
 
-  const completed = await builder.complete();
+  const completed = await completeWithProviderEval(builder);
   return { txHash: await signAndSubmit(completed, onStage), cleared: registrations.length };
 }
 
@@ -443,6 +467,6 @@ export async function updateDustAddress(
   // empty constructor and abort: "Withdraw[0] the validator crashed".
   await addSigners(builder, session);
 
-  const completed = await builder.complete();
+  const completed = await completeWithProviderEval(builder);
   return signAndSubmit(completed, onStage);
 }

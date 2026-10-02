@@ -18,16 +18,16 @@ const CredentialSchema = Data.Enum([
  * generation follows the stake credential so that moving cNIGHT between a
  * wallet's own payment addresses does not break the mapping.
  *
- * `dust_address` is a serialized Midnight DUST address: 33 bytes, exactly the
- * payload of an `mn_dust_…` bech32m string. NOT the 32-byte shielded coin
+ * `dust_address` is a serialized Midnight DUST address: the 33 bytes
+ * `DustAddress.serialize()` returns, a 0x73 type tag then the payload. NOT the 32-byte shielded coin
  * public key — those are different keys, both plausible, and the wrong one
  * produces a registration that is well-formed on Cardano, correctly signed,
  * and simply never matched by the bridge. There is no error; DUST just never
  * arrives, and you find out twelve hours later.
  *
- * The bound here is the validator's own — `length_of_bytearray(dust_address)
- * <= 33` — and NOT a fixed 33, because this schema also has to *read* what is
- * already on chain. Registrations written against the 32-byte coin public key
+ * The bound is the deployed validator's own: `length_of_bytearray(dust_address)
+ * <= 33`. The range is open below 33 because this schema also has to *read*
+ * what is already on chain. Registrations written against the 32-byte coin public key
  * exist, and a stricter schema does not reject them so much as hide them: the
  * datum stops decoding, `findRegistrations` returns nothing, the UI reports
  * "Not registered", and the next register mints a second auth NFT against a

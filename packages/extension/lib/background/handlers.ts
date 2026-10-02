@@ -245,6 +245,31 @@ export async function saveNetworkConfig(data: {
  * between the clear and the restart. Nothing is spent and nothing on chain
  * changes.
  */
+/**
+ * This wallet's own DUST address in the form a registration datum records it,
+ * or '' when it has none on the current network.
+ *
+ * Resolved through the same path the registration writes, so the two sides of
+ * the ownership comparison cannot drift apart. They did: this used to compare
+ * the datum against `session.shieldedCoinPublicKey`, which the datum has not
+ * held since the receiver became a DUST address. Both are 32 bytes and both
+ * are plausible receivers, so nothing failed — every registration this wallet
+ * made for itself simply read as "registered to another wallet".
+ *
+ * '' on failure rather than a guess: a wallet with no DUST address here cannot
+ * own the registration, and the caller renders the raw bytes instead of
+ * claiming them.
+ */
+export async function ownDustAddressBytes(session: Session): Promise<string> {
+  const bech32 = session.addresses?.dust?.bech32m?.[session.network] ?? '';
+  if (!bech32) return '';
+  try {
+    return (await offscreen.cardanoResolveReceiver({ input: bech32 })).dustAddressBytes;
+  } catch {
+    return '';
+  }
+}
+
 export async function resyncFromScratch(): Promise<void> {
   const session = await getSession();
   if (!session) throw new Error('Wallet is locked');
@@ -757,13 +782,14 @@ export function registerHandlers(): void {
       indexerUrl: network.indexerUrl,
       accountIndex,
     });
+    const ownDustBytes = await ownDustAddressBytes(session);
     return {
       ...status,
-      // Compared here rather than offscreen: the session is what knows which
+      // Resolved here rather than offscreen: the session is what knows which
       // account is unlocked, and a registration pointing at some *other*
       // wallet is still a valid registration — just not one that pays you.
       registeredToThisWallet:
-        status.registeredDustAddress === session.shieldedCoinPublicKey.replace(/^0x/, '').toLowerCase(),
+        ownDustBytes !== '' && status.registeredDustAddress === ownDustBytes,
     };
   });
 

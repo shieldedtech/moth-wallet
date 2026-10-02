@@ -102,18 +102,44 @@ Also fixes `moth dust status`, which passed the wallet's Midnight address to an
 indexer query keyed by Cardano *reward* address and so reported "not registered"
 for every wallet, registered or not.
 
-The registration datum records a 33-byte serialized DUST address. An earlier
-draft wrote the 32-byte shielded coin public key instead: both encode cleanly,
-Cardano accepts either, and the bridge silently matches neither — DUST simply
-never arrives and there is nothing to read anywhere that says why.
+moth registers against the `cnight_generates_dust` deployment the Midnight
+bridge actually reads: script hash 7e69087d…, the contract the node repo ships
+as `mapping_validator.plutus`. It previously used the compilation in the dApp's
+`contracts-new-aiken/plutus.json` (5027bb76…), which is newer, compiles
+cleanly, and is not deployed. Registrations against it confirmed on Cardano and
+generated nothing — the bridge has never acknowledged one, and there is no
+error anywhere to read. 51 registrations live at the deployed address; moth's
+three transactions are the only ones that have ever touched the other.
 
-Registrations written that way still exist on chain, so the datum is read back
-with the validator's own bound (`<= 33`) rather than a fixed 33. Pinning the
-reader to 33 does not reject such a registration, it hides it: the datum stops
+`scripts/sync-cnight-blueprint.mjs` now pins that hash and refuses to emit
+bytes that do not match it, reads either a `.plutus` envelope or an Aiken
+blueprint, and takes `--verify-on-chain` to confirm the derived address holds
+real registrations. The hash is pinned in the tests too, as a literal. The
+check that was there before compared the compiled bytes to a hash generated
+from the same file: self-consistent by construction, and green throughout.
+
+The registration datum records the 33 bytes `DustAddress.serialize()` returns —
+a 0x73 type tag then the payload — matching every live registration and the
+deployed validator's own `length_of_bytearray(dust_address) <= 33`. The other
+plausible receiver, the 32-byte shielded coin public key, encodes just as
+cleanly and is a different key: Cardano accepts it and the bridge matches
+nothing.
+
+Registrations written against the coin public key still exist on chain, so the
+datum is read back with a range rather than a fixed length. Pinning the reader
+would not reject such a registration, it would hide it: the datum stops
 decoding, the wallet reports "not registered", and registering again mints a
 second auth NFT onto a stake key that already has one, which the validator
-rejects. A registration that cannot generate DUST is now labelled as such in all
+rejects. A registration that cannot generate DUST is labelled as such in all
 four surfaces, with `update` offered to repoint it.
+
+The extension also reported a wallet's own registration as belonging to someone
+else. It compared the datum against the session's shielded coin public key,
+which the datum has not held since the receiver became a DUST address — same
+length, different key, so the comparison failed silently rather than loudly.
+It now resolves the wallet's own DUST address through the same path the
+registration writes it. The CLI, TUI and daemon derived this through
+`dustAddressBytes` and were unaffected.
 
 Changing the DUST address no longer adds a zero withdrawal. The validator
 authorises a key-based stake credential by signature; the withdrawal route is
