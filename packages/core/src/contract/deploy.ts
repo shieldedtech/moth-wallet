@@ -14,7 +14,7 @@ import {levelPrivateStateProvider} from '@midnight-ntwrk/midnight-js-level-priva
 import {HDWallet, Roles} from '@midnightntwrk/wallet-sdk/hd';
 import {createKeystore, PublicKey} from '@midnightntwrk/wallet-sdk/unshielded';
 import {MidnightBech32m, UnshieldedAddress} from '@midnightntwrk/wallet-sdk/address-format';
-import {homedir} from 'node:os';
+import {mothHome} from '../storage/home.js';
 
 import type {TransactionResult} from '../types/transaction.js';
 import {resolveProverConfig, type NetworkConfig} from '../types/network.js';
@@ -328,7 +328,7 @@ export async function deployContract(options: DeployOptions): Promise<Transactio
   const indexerHttpUrl = network.indexerUrl;
   const indexerWsUrl = toWsUrl(indexerHttpUrl) + '/ws';
   const zkCfgProvider = new NodeZkConfigProvider(managedDir);
-  const levelDbDir = join(homedir(), '.moth', 'level-db', network.id, encPublicKey.slice(0, 16));
+  const levelDbDir = join(mothHome(), 'level-db', network.id, encPublicKey.slice(0, 16));
 
   const providers: any = {
     privateStateProvider: (levelPrivateStateProvider as any)({

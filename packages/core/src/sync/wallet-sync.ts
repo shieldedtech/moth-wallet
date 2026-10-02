@@ -689,6 +689,9 @@ export async function startWalletSync(
     .subscribe({
       next: (s: FacadeState) => {
         emissionCount++;
+        // Captured before lastProgressPct is overwritten below; comparing against
+        // the updated value made the percent-change branch always false.
+        const prevPct = Math.round(lastProgressPct * 100);
         const balances = extractBalancesPartial(s, syncStartTime, lastProgressPct, progressBaseline, latestBalances);
         latestBalances = balances;
         lastProgressPct = balances.syncProgress.percentage;
@@ -704,7 +707,7 @@ export async function startWalletSync(
           emissionCount % 50 === 0 ||
           emissionCount <= 3 ||
           balances.synced ||
-          pct !== Math.round(lastProgressPct * 100)
+          pct !== prevPct
         ) {
           // DUST is denominated in SPECKS (10^15 per DUST); NIGHT in STARS
           // (10^6). formatNight was being applied to both, so every DUST figure
@@ -1195,8 +1198,11 @@ export async function removeWalletSyncArtifacts(
   try {
     const {rmSync, unlinkSync} = await import(/* @vite-ignore */ 'node:fs');
     const {join} = await import(/* @vite-ignore */ 'node:path');
-    const {homedir} = await import(/* @vite-ignore */ 'node:os');
-    const cacheBase = join(homedir(), '.moth', 'sync');
+    // Same root as the daemon's socket path (daemon/index.ts). Through a variable
+    // for the same reason as node-sync-store below: home.ts imports node:os.
+    const homeSpecifier = '../storage/home.js';
+    const {mothHome} = await import(/* @vite-ignore */ homeSpecifier);
+    const cacheBase = join(mothHome(), 'sync');
     try {
       rmSync(join(cacheBase, networkId, walletName), {recursive: true, force: true});
     } catch {

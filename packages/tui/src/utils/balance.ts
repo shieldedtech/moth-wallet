@@ -88,16 +88,6 @@ export function groupCoinsForDisplay(
 }
 
 /**
- * Parse a user-entered NIGHT amount ("5", "1.25") into raw STAR units
- * (10^6 per NIGHT). Decimals beyond 6 places are truncated.
- */
-export function parseNightAmount(amount: string): bigint {
-  if (!amount.includes('.')) return BigInt(amount) * 1_000_000n;
-  const [int, dec = ''] = amount.split('.');
-  return BigInt(int || '0') * 1_000_000n + BigInt(dec.padEnd(6, '0').slice(0, 6));
-}
-
-/**
  * Itemise a group's individual coins? More than one coin, or a lone coin
  * carrying a flag worth seeing.
  */
