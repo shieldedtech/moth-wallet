@@ -55,6 +55,7 @@ import { serializeBalances } from '../messaging/balances-json';
 import { serializeActivity } from '../messaging/activity-json';
 import { waitForSyncedBalances } from './wait-synced';
 import { dustHealKey } from './dust-heal';
+import { logDustFeeEstimate, logDustFeePass } from './dust-fee-log';
 import { NIGHT_TOKEN_ID } from '@shieldedtech/moth-wallet/types/tokens';
 import type { NightCoinRow } from '../messaging/protocol';
 import {
@@ -347,7 +348,11 @@ export async function syncEnsure(
     walletName,
     false,
     birthday,
-    { syncStore: new IdbSyncStateStore(), ...(ON_MAIN_THREAD ? { batchUpdates: MAIN_THREAD_BATCH } : {}) },
+    {
+      syncStore: new IdbSyncStateStore(),
+      onDustFeePass: logDustFeePass,
+      ...(ON_MAIN_THREAD ? { batchUpdates: MAIN_THREAD_BATCH } : {}),
+    },
   );
   current = { key, synced, walletKeys };
 
@@ -754,6 +759,7 @@ export function estimateTransferFee(
       network.id,
       toRequests(requests),
     );
+    logDustFeeEstimate(fee, requests.length);
     return { fee: fee.toString() };
   }));
 }
@@ -837,6 +843,7 @@ export async function transferBuild(
   walletName: string,
   network: NetworkConfig,
   requests: TransferRequestDTO[],
+  payFees: boolean,
 ): Promise<{ txHex: string }> {
   return trackOp(async () => {
     await ensureProver(network);
@@ -847,6 +854,7 @@ export async function transferBuild(
       network.id,
       toRequests(requests),
       (stage) => emit('os/eventTxStage', stage),
+      { payFees },
     );
     return { txHex: toHex(finalized.serialize()) };
   });
@@ -884,6 +892,7 @@ export async function balanceTransaction(
   network: NetworkConfig,
   txHex: string,
   sealed: boolean,
+  payFees: boolean,
 ): Promise<{ txHex: string }> {
   return trackOp(async () => {
     await ensureProver(network);
@@ -895,13 +904,14 @@ export async function balanceTransaction(
       fromHex(txHex),
       sealed,
       (stage) => emit('os/eventTxStage', stage),
+      { tokenKindsToBalance: payFees ? 'all' : ['shielded', 'unshielded'] },
     );
     return { txHex: toHex(finalized.serialize()) };
   });
 }
 
 // Build a swap intent (connector makeIntent). Needs a synced wallet to source
-// the offered inputs; the result is unproven, so no proof server is required.
+// the offered inputs and the proof server, since the intent is returned sealed.
 export async function makeIntent(
   seedHex: string,
   walletName: string,
@@ -911,6 +921,7 @@ export async function makeIntent(
   payFees: boolean,
 ): Promise<{ txHex: string }> {
   return trackOp(async () => {
+    await ensureProver(network);
     const wallet = await syncEnsure(seedHex, walletName, network);
     const intent = await buildSwapIntent(
       wallet.facade,
@@ -918,8 +929,8 @@ export async function makeIntent(
       network.id,
       toSwapInputs(inputs),
       toRequests(outputs),
-      payFees,
       (stage) => emit('os/eventTxStage', stage),
+      { payFees },
     );
     return { txHex: toHex(intent.serialize()) };
   });

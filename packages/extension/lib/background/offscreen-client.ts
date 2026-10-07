@@ -227,7 +227,7 @@ export const offscreen = {
     await ensureOffscreen();
     return offscreenSend('os/dustRebuild', data);
   },
-  async transferBuild(data: SyncTarget & { requests: TransferRequestDTO[] }) {
+  async transferBuild(data: SyncTarget & { requests: TransferRequestDTO[]; payFees: boolean }) {
     await ensureOffscreen();
     return offscreenSend('os/transferBuild', data);
   },
@@ -284,7 +284,7 @@ export const offscreen = {
     await ensureOffscreen();
     return offscreenSend('os/txSummary', data);
   },
-  async balanceTransaction(data: SyncTarget & { txHex: string; sealed: boolean }) {
+  async balanceTransaction(data: SyncTarget & { txHex: string; sealed: boolean; payFees: boolean }) {
     await ensureOffscreen();
     return offscreenSend('os/balanceTransaction', data);
   },

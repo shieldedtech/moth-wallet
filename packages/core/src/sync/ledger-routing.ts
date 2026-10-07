@@ -127,12 +127,21 @@ export function transactionHashOf(handle: AnyTx): string {
   return unwrapTransaction<{transactionHash(): string}>(handle).transactionHash();
 }
 
-/** The ledger's initial DUST parameters at `version`; the ratio prices DUST capacity in NIGHT. */
-export function initialDustParameters(version: ProtocolVersion.ProtocolVersion): {nightDustRatio: bigint} {
+/** The ledger's initial DUST parameters at `version`: the ratio prices DUST capacity in NIGHT,
+ *  the decay rate and time-to-cap date how a coin fills. */
+export function initialDustParameters(version: ProtocolVersion.ProtocolVersion): {
+  nightDustRatio: bigint;
+  generationDecayRate: bigint;
+  timeToCapSeconds: bigint;
+} {
   const parameters = isLedgerV9(version)
     ? ledgerV9.LedgerParameters.initialParameters().dust
     : ledgerV8.LedgerParameters.initialParameters().dust;
-  return {nightDustRatio: parameters.nightDustRatio as bigint};
+  return {
+    nightDustRatio: parameters.nightDustRatio,
+    generationDecayRate: parameters.generationDecayRate,
+    timeToCapSeconds: parameters.timeToCapSeconds,
+  };
 }
 
 /** Shielded public keys as the ledger at `version` encodes them, as hex. */

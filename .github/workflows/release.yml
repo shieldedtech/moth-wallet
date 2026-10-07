@@ -294,11 +294,13 @@ jobs:
           done
 
       # An unsigned build for testers, kept on the run; the signed GitHub
-      # Release remains Extension CD's job on main.
+      # Release remains Extension CD's job on main. Uploaded as-is: the default
+      # archiving would wrap the ZIP in a second ZIP. The file name is the
+      # artifact's name.
       - name: Upload extension ZIP
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
-          name: moth-extension-${{ steps.snapshot.outputs.version }}-chrome
           path: packages/extension/.output/moth-extension-${{ steps.snapshot.outputs.version }}-chrome.zip
+          archive: false
           if-no-files-found: error
           retention-days: 30

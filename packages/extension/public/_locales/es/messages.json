@@ -317,6 +317,15 @@
   "approval_spendsNothing": {
     "message": "Esta transacción no toma nada de tu billetera aparte de la comisión de red."
   },
+  "approval_balanceSubtitleNoFees": {
+    "message": "$1 built a transaction and needs your wallet to finalize it. Your wallet will not pay the network fee."
+  },
+  "approval_notPaidByWallet": {
+    "message": "Not paid by this wallet"
+  },
+  "approval_spendsNothingNoFees": {
+    "message": "This transaction takes nothing from your wallet."
+  },
   "approval_summaryUnavailable": {
     "message": "Moth no pudo leer qué gasta esta transacción. Apruébala solo si confías en $1 y sabes lo que hace."
   },
@@ -587,6 +596,9 @@
   "dust_paysYourFees": {
     "message": "Paga tus comisiones"
   },
+  "dust_capacityUnknown": {
+    "message": "Capacidad desconocida"
+  },
   "dust_ofMax": {
     "message": "de $1"
   },
@@ -598,6 +610,9 @@
   },
   "dust_etaSyncing": {
     "message": "Sincronizando…"
+  },
+  "dust_etaRecordsMissing": {
+    "message": "Faltan los registros de generación"
   },
   "dust_etaFullyGenerated": {
     "message": "Generación completa"
@@ -618,7 +633,7 @@
     "message": "Reconstruir registros de $1"
   },
   "dust_rebuildNote": {
-    "message": "Parte de tu $1 registrado todavía no genera $2. La reconstrucción vuelve a leer tus registros de la cadena: no gasta nada, pero tarda varios minutos."
+    "message": "Parte del $1 registrado sigue sin generar $2. La reconstrucción vuelve a leer tus registros desde la cadena — no gasta nada, pero puede tardar hasta una hora. Deja la billetera abierta."
   },
   "formatErrors_wholeNumber": {
     "message": "El monto debe ser un número entero"
@@ -1681,5 +1696,20 @@
   },
   "network_protocolHelp": {
     "message": "La wallet lee la versión del protocolo de la cadena mientras sincroniza, y esa versión decide para qué ledger se construyen las transacciones: ledger-v8 antes del fork v9, ledger-v9 desde entonces. En torno a un fork, las tres wallets cruzan una por una; hasta que todas lo hayan hecho, no puede construirse nada que abarque ambos lados."
+  },
+  "syncStatus_etaSeconds": {
+    "message": "quedan aprox. $1 s"
+  },
+  "syncStatus_etaMinutes": {
+    "message": "quedan aprox. $1 min"
+  },
+  "syncStatus_etaHours": {
+    "message": "quedan aprox. $1 h"
+  },
+  "syncStatus_etaHoursMinutes": {
+    "message": "quedan aprox. $1 h $2 min"
+  },
+  "dust_etaRecordsSettling": {
+    "message": "Registros de generación asentándose"
   }
 }

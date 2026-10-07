@@ -349,11 +349,15 @@ export const terminatingDustTransactingV2 =
 /**
  * The SDK's `DustWallet(configuration)` with both variants' fee balancing fixed:
  * the same two builders, per-variant configuration, migration and chain probe,
- * plus largest-first coin selection and the terminating loop on each.
+ * plus largest-first coin selection and the terminating loop on each, which
+ * reports every fee-balancing pass to `options.onPass`.
  * `DustWallet` takes no builder options, so this rebuilds it through the SDK's
  * `CustomForkingDustWallet`.
  */
-export function TerminatingDustWallet(configuration: Parameters<typeof DustWallet>[0]): ReturnType<typeof DustWallet> {
+export function TerminatingDustWallet(
+  configuration: Parameters<typeof DustWallet>[0],
+  options: {onPass?: (pass: DustFeePass) => void} = {},
+): ReturnType<typeof DustWallet> {
   const dustParameters = configuration.dustParameters ?? ledgerV9.LedgerParameters.initialParameters().dust;
   return CustomForkingDustWallet(
     {...configuration, chainVersionProbe: configuration.chainVersionProbe ?? makeIndexerChainVersionProbe(configuration)},
@@ -361,7 +365,7 @@ export function TerminatingDustWallet(configuration: Parameters<typeof DustWalle
       builder: new V1Builder()
         .withDefaults()
         .withCoinSelection(() => largestDustCoinFirst)
-        .withTransacting(terminatingDustTransacting()),
+        .withTransacting(terminatingDustTransacting(options)),
       // The V1 variant needs the ledger-v8 rebuild of the rates, as in the SDK's own DustWallet.
       configuration: {...configuration, dustParameters: asV8DustParameters(dustParameters)},
     },
@@ -370,7 +374,7 @@ export function TerminatingDustWallet(configuration: Parameters<typeof DustWalle
         .withDefaults()
         .withMigration(() => V2.Migration.makeCrossLedgerMigration({dustParameters}))
         .withCoinSelection(() => largestDustCoinFirst)
-        .withTransacting(terminatingDustTransactingV2()),
+        .withTransacting(terminatingDustTransactingV2(options)),
       configuration,
     },
   );

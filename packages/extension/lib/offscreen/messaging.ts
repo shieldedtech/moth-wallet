@@ -243,6 +243,7 @@ export interface OffscreenProtocol {
     walletName: string;
     network: NetworkConfig;
     requests: TransferRequestDTO[];
+    payFees: boolean;
   }): { txHex: string };
 
   /** Deserialize + submit an already-proven transaction (`submitTransaction`). */
@@ -261,6 +262,7 @@ export interface OffscreenProtocol {
     network: NetworkConfig;
     txHex: string;
     sealed: boolean;
+    payFees: boolean;
   }): { txHex: string };
 
   /** Read what a dApp-supplied transaction would take from (and return to) the
@@ -270,7 +272,7 @@ export interface OffscreenProtocol {
   /** The live sync session's protocol status; null when no wallet is synced. */
   'os/protocolStatus'(): ProtocolStatusDTO | null;
 
-  /** Build a swap intent (`makeIntent`); returns the unproven, unbound tx hex. */
+  /** Build, prove and seal a swap intent (`makeIntent`); returns hex. */
   'os/makeIntent'(data: {
     seedHex: string;
     walletName: string;

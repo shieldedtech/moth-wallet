@@ -53,6 +53,7 @@ import {
 } from '../sync/operations.js';
 import {submitWithHealthTracking} from '../sync/dust-ledger-health.js';
 import {ledgerReading} from '../sync/ledger-routing.js';
+import {errorChainMessage, TransactionSubmissionError} from '../types/errors.js';
 import type {WalletKeys} from '../sync/operations.js';
 import {callCircuit} from '../contract/call.js';
 import {deployContract} from '../contract/deploy.js';
@@ -321,7 +322,12 @@ export function buildWalletHandlers(deps: WalletHandlerDeps): Record<string, Rpc
             if (err instanceof ProtocolVersionMismatchError) {
               throw new DaemonProtocolError('PROTOCOL_VERSION_MISMATCH', err.message);
             }
-            throw err;
+            // This escape hatch submits pre-built bytes, so it deliberately
+            // skips the retry/classification of submitFinalizedTransaction —
+            // but a caller still has to be told what the network said, and the
+            // SDK's own message for every failure here is the fixed string
+            // "Transaction submission error".
+            throw new TransactionSubmissionError(errorChainMessage(err), err);
           }
         },
         (r) => ({txHash: r.txId}),
@@ -462,7 +468,7 @@ export function buildWalletHandlers(deps: WalletHandlerDeps): Record<string, Rpc
               to: params.to,
             }],
             (stage) => log('info', `[proveTransaction] ${stage}`),
-            ttl,
+            {ttl},
           );
 
           const bytes = finalized.serialize();
