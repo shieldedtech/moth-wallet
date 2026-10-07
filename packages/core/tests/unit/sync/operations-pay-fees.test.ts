@@ -1,5 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ProtocolVersion } from '@midnightntwrk/wallet-sdk';
+import * as Rx from 'rxjs';
+import { ProtocolVersion, WalletTransaction } from '@midnightntwrk/wallet-sdk';
 import { WalletFacade } from '@midnightntwrk/wallet-sdk/facade';
 import {
   balanceTransaction,
@@ -9,7 +10,9 @@ import {
   type TokenKindsToBalance,
   type WalletKeys,
 } from '../../../src/sync/operations.js';
+import { forks, unshieldedPublicKeyAt } from '../../../src/sync/ledger-routing.js';
 import { NIGHT_TOKEN_ID } from '../../../src/types/tokens.js';
+import { unboundTransaction } from '../../helpers/ledger-transactions.js';
 import { VERIFIED_PREPROD_ADDRESS, testSeedHex } from '../../helpers/seed.js';
 
 let keys: WalletKeys;
@@ -118,40 +121,56 @@ describe('balanceTransaction tokenKindsToBalance', () => {
 });
 
 // Runs the SDK's own balancing with sub-wallets that find nothing to do, so a
-// reworded "nothing to balance" error fails here rather than in production.
+// reworded "nothing to balance" error fails here rather than in production. The
+// facade is really constructed — its balancing calls private members — around a
+// real ledger-v9 transaction, which in-place balancing reads its inputs from.
 describe('balanceTransaction against the real facade', () => {
-  function realFacade() {
-    const facade = Object.create(WalletFacade.prototype) as WalletFacade;
-    const finalizeRecipe = vi.fn().mockResolvedValue(finalized);
-    Object.assign(facade, {
-      shielded: { balanceTransaction: vi.fn().mockResolvedValue(undefined) },
-      unshielded: {
+  async function realFacade(stage: 'Finalized' | 'Unbound') {
+    const unbound = await unboundTransaction('v9');
+    const tx = WalletTransaction.adopt(stage, stage === 'Finalized' ? unbound.bind() : unbound, forks.v9);
+    const { publicKey } = unshieldedPublicKeyAt(forks.v9, keys.unshielded, 'preprod');
+    const unshieldedState = Rx.of({ state: { publicKey: { publicKey }, progress: { isStrictlyComplete: () => false } } });
+    // Private in the typings; WalletFacade.init calls it with these, in this order.
+    const Facade = WalletFacade as unknown as new (...args: unknown[]) => WalletFacade;
+    const facade = new Facade(
+      { state: Rx.NEVER, balanceTransaction: vi.fn().mockResolvedValue(undefined) },
+      {
+        state: unshieldedState,
         balanceFinalizedTransaction: vi.fn().mockResolvedValue(undefined),
         balanceUnboundTransaction: vi.fn().mockResolvedValue(undefined),
       },
-      dust: { balanceTransactions: vi.fn() },
-      adoptTransaction,
+      { state: Rx.NEVER, balanceTransactions: vi.fn() },
+      {}, // submission
+      { state: () => Rx.NEVER }, // pending transactions
+      {}, // proving
+      {}, // validation
+      {}, // transaction history
+      forks.v9,
+    );
+    const finalizeRecipe = vi.fn().mockResolvedValue(finalized);
+    Object.assign(facade, {
+      adoptTransaction: () => tx,
       signRecipe: vi.fn(async (recipe: unknown) => recipe),
       finalizeRecipe,
     });
-    return { facade, finalizeRecipe };
+    return { facade, tx, finalizeRecipe };
   }
   const noFees = { tokenKindsToBalance: ['shielded', 'unshielded'] as TokenKindsToBalance };
 
   it('returns a sealed transaction unchanged', async () => {
-    const { facade } = realFacade();
+    const { facade, tx } = await realFacade('Finalized');
     await expect(balanceTransaction(facade, keys, 'preprod', new Uint8Array(), true, undefined, noFees)).resolves.toBe(
-      dappTx,
+      tx,
     );
   });
 
   it('binds an unsealed transaction without a balancing segment', async () => {
-    const { facade, finalizeRecipe } = realFacade();
+    const { facade, tx, finalizeRecipe } = await realFacade('Unbound');
     await balanceTransaction(facade, keys, 'preprod', new Uint8Array(), false, undefined, noFees);
     expect(finalizeRecipe).toHaveBeenCalledWith({
       type: 'UNBOUND_TRANSACTION',
-      protocolVersion: dappTx.protocolVersion,
-      baseTransaction: dappTx,
+      protocolVersion: tx.protocolVersion,
+      baseTransaction: tx,
     });
   });
 });

@@ -14,13 +14,14 @@
 // deficit from coins not yet chosen, so every pass either converges or adds a
 // coin from a finite pool. Termination is a counting argument, not a timeout.
 //
-// wallet-sdk 2.0 still ships that loop in both dust variants — V1 (ledger-v8,
-// below the fork) and V2 (ledger-v9, from it) — so each gets the replacement,
-// wired through its builder's documented `withTransacting` seam by
-// `TerminatingDustWallet`. The coupling is to each variant's exported
-// implementation class and three of its public methods; dust-transacting.test.ts
-// pins those so a version bump fails loudly rather than silently reverting to
-// the SDK loop.
+// wallet-sdk 2.0.0-rc.1 fixed that loop upstream in both dust variants. The
+// replacement stays because it is where each pass is reported (`onPass`, read
+// by the fee log); each variant — V1 (ledger-v8, below the fork) and V2
+// (ledger-v9, from it) — gets it through its builder's documented
+// `withTransacting` seam in `TerminatingDustWallet`. The coupling is to each
+// variant's exported implementation class and three of its public methods;
+// dust-transacting.test.ts pins those so a version bump fails loudly rather
+// than silently reverting to the SDK loop.
 
 import {Either} from 'effect';
 import type * as ledger from '@midnight-ntwrk/ledger-v8';
