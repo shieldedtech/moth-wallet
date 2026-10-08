@@ -27,7 +27,13 @@ import type { CardanoAccountList } from '@shieldedtech/moth-wallet/cardano/accou
  * Spelled out rather than `unknown`: the protocol map is a mapped type, and one
  * `unknown` member widens the inference for every other method in it.
  */
-export type Cip30Result = number | string | string[] | null | { signature: string; key: string };
+export type Cip30Result =
+  | number
+  | string
+  | string[]
+  | null
+  | { signature: string; key: string }
+  | ReadonlyArray<{ readonly cip: number }>;
 
 export type { RelayState };
 
