@@ -48,6 +48,7 @@ export const cardano = {
   cardano_notYetObservedHint:
     'Cardano has the registration; Midnight has not acted on it yet. This is normal right after registering.',
   cardano_generatingAccruing: 'Accruing since registration',
+  cardano_generationRateValue: '$1 $2/s',
   cardano_meterSubtitle: 'From your cNIGHT',
   cardano_dustAddressRow: 'DUST is paid to',
   cardano_usableRow: 'Usable',

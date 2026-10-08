@@ -992,9 +992,10 @@ export function Cardano({
                   // that waits for finality. A reported rate of exactly "0" is
                   // the indexer saying it has not credited anything yet, not a
                   // real rate, and rendering it as a bare 0 reads as broken.
+                  // The rate is SPECK per second, like the capacities above.
                   value:
                     status.generationRate && status.generationRate !== '0'
-                      ? status.generationRate
+                      ? t('cardano_generationRateValue', [formatDust(status.generationRate), labels.dust])
                       : t('cardano_generatingAccruing'),
                 },
                 {

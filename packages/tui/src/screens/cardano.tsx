@@ -10,6 +10,7 @@ import TextInput from 'ink-text-input';
 import Spinner from 'ink-spinner';
 import { SectionHeader } from '../components/SectionHeader.js';
 import { HelpFooter, type HelpHint } from '../components/HelpFooter.js';
+import { DUST_DENOMINATION } from '../utils/balance.js';
 
 export interface CardanoStatusView {
   readonly cardanoNetwork: string;
@@ -155,6 +156,16 @@ function formatCnight(stars: bigint): string {
   const whole = stars / STARS_PER_CNIGHT;
   const frac = (stars % STARS_PER_CNIGHT).toString().padStart(6, '0').replace(/0+$/, '');
   return frac ? `${whole}.${frac}` : `${whole}`;
+}
+
+/**
+ * SPECK → DUST (10^15 per DUST), the units the indexer reports generation in.
+ * Truncated to six places, never rounded up.
+ */
+function formatDust(speck: bigint): string {
+  const whole = speck / DUST_DENOMINATION;
+  const frac = (speck % DUST_DENOMINATION).toString().padStart(15, '0').replace(/0+$/, '');
+  return frac ? `${whole}.${frac.slice(0, 6)}` : `${whole}`;
 }
 
 /** Coarse above an hour, precise below — mirrors core's describeCountdown. */
@@ -770,7 +781,7 @@ export function Cardano({
                     credited nothing yet, not a real rate — DUST accrues from
                     registration, so a bare 0 reads as broken. */}
                 {s.generationRate && s.generationRate !== '0' ? (
-                  <Text>{s.generationRate}</Text>
+                  <Text>{`${formatDust(BigInt(s.generationRate))} DUST/s`}</Text>
                 ) : (
                   <Text dimColor>accruing since registration</Text>
                 )}

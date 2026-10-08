@@ -1985,6 +1985,9 @@
   "cardano_generatingAccruing": {
     "message": "Läuft seit der Registrierung"
   },
+  "cardano_generationRateValue": {
+    "message": "$1 $2/s"
+  },
   "cardano_usableRow": {
     "message": "Nutzbar"
   },

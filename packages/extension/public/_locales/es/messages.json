@@ -1985,6 +1985,9 @@
   "cardano_generatingAccruing": {
     "message": "Acumulando desde el registro"
   },
+  "cardano_generationRateValue": {
+    "message": "$1 $2/s"
+  },
   "cardano_usableRow": {
     "message": "Utilizable"
   },
