@@ -145,7 +145,7 @@ describe('WalletManager.exportSeedHex', () => {
     // exportSeedHex detour is no longer needed — revisit walletUnlock.
     expect((unlocked as unknown as { seedHex?: string }).seedHex).toBeUndefined();
     expect(unlocked.walletKeys).toBeDefined();
-    expect(unlocked.walletKeys.shieldedSecretKeys).toBeDefined();
+    expect(unlocked.walletKeys.shielded).toBeDefined();
     unlocked.lock();
 
     const seedHex = await manager.exportSeedHex('alice', PASS);

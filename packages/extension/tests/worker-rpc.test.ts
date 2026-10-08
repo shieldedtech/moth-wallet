@@ -77,6 +77,7 @@ describe('HOST_METHODS', () => {
     'os/relayRetry',
     'os/nightCoins',
     'os/requestStats',
+    'os/protocolStatus',
     'os/requestStatsReset',
     'os/deregisterDust',
     'os/dustRebuild',

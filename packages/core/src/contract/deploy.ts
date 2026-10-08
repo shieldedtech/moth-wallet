@@ -6,13 +6,11 @@ import {join, basename, resolve as resolvePath} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {createRequire} from 'node:module';
 import * as Rx from 'rxjs';
-import * as ledger from '@midnight-ntwrk/ledger-v8';
 import {setNetworkId} from '@midnight-ntwrk/midnight-js/network-id';
 import {NodeZkConfigProvider} from '@midnight-ntwrk/midnight-js-node-zk-config-provider';
 import {indexerPublicDataProvider} from '@midnight-ntwrk/midnight-js-indexer-public-data-provider';
 import {levelPrivateStateProvider} from '@midnight-ntwrk/midnight-js-level-private-state-provider';
-import {HDWallet, Roles} from '@midnightntwrk/wallet-sdk/hd';
-import {createKeystore, PublicKey} from '@midnightntwrk/wallet-sdk/unshielded';
+import {createKeystore} from '@midnightntwrk/wallet-sdk/unshielded';
 import {MidnightBech32m, UnshieldedAddress} from '@midnightntwrk/wallet-sdk/address-format';
 import {homedir} from 'node:os';
 
@@ -23,6 +21,7 @@ import type {ContractArtifact} from './artifact-loader.js';
 import {WalletError, TimeoutError} from '../types/errors.js';
 import type {SyncedWallet} from '../sync/wallet-sync.js';
 import type {WalletKeys} from '../sync/operations.js';
+import {makeContractWalletProvider, unshieldedSecretOf} from './wallet-provider.js';
 
 export interface DeployOptions {
   artifact: ContractArtifact;
@@ -223,33 +222,9 @@ export async function deployContract(options: DeployOptions): Promise<Transactio
 
   setNetworkId(network.id);
 
-  // Resolve typed key bundle: prefer pre-derived walletKeys (daemon
-  // path), fall back to deriving from seedHex (existing in-process
-  // CLI path). See docs/spec/wallet-service/05-key-management.md D-KM-3.
-  let shieldedSecretKeys: ledger.ZswapSecretKeys;
-  let dustSecretKey: ledger.DustSecretKey;
-  let nightExternalKey: Uint8Array;
-  if (walletKeys) {
-    shieldedSecretKeys = walletKeys.shieldedSecretKeys;
-    dustSecretKey = walletKeys.dustSecretKey;
-    nightExternalKey = walletKeys.nightExternalKey;
-  } else {
-    if (!seedHex) {
-      throw new WalletError('WALLET_ERROR', 'deployContract requires either walletKeys or seedHex');
-    }
-    const hdWallet = HDWallet.fromSeed(Buffer.from(seedHex, 'hex'));
-    if (hdWallet.type !== 'seedOk') throw new WalletError('WALLET_ERROR', 'Invalid seed');
-    const keyResult = hdWallet.hdWallet
-      .selectAccount(0)
-      .selectRoles([Roles.Zswap, Roles.NightExternal, Roles.Dust] as const)
-      .deriveKeysAt(0);
-    if (keyResult.type !== 'keysDerived') throw new WalletError('WALLET_ERROR', 'Key derivation failed');
-    hdWallet.hdWallet.clear();
-    shieldedSecretKeys = ledger.ZswapSecretKeys.fromSeed(keyResult.keys[Roles.Zswap]);
-    dustSecretKey = ledger.DustSecretKey.fromSeed(keyResult.keys[Roles.Dust]);
-    nightExternalKey = keyResult.keys[Roles.NightExternal];
-  }
-  const keystore = createKeystore(nightExternalKey, network.id);
+  // The unshielded signing secret: the pre-derived walletKeys (daemon path), else
+  // derived from seedHex (in-process CLI path). D-KM-3.
+  const keystore = createKeystore({kind: 'schnorr', secret: unshieldedSecretOf(walletKeys, seedHex, 'deployContract')}, network.id);
 
   // Build wallet provider from facade (same as mn-tui's buildWalletProvider)
   if (!syncedWallet?.facade) {
@@ -300,27 +275,13 @@ export async function deployContract(options: DeployOptions): Promise<Transactio
   const encPublicKey = (state as any).shielded.encryptionPublicKey.toHexString() as string;
   const unshieldedAddr = (keystore.getBech32Address() as any).toString() as string;
 
-  const walletProvider: any = {
-    getCoinPublicKey: () => coinPublicKey,
-    getEncryptionPublicKey: () => encPublicKey,
-    async balanceTx(tx: any, ttl?: Date) {
-      const recipe = await (facade as any).balanceUnboundTransaction(
-        tx,
-        {shieldedSecretKeys, dustSecretKey},
-        {ttl: ttl ?? new Date(Date.now() + 30 * 60_000)}
-      );
-      // Sign unshielded transaction intents
-      const signFn = (payload: Uint8Array) => keystore.signData(payload);
-      // `Transaction.intents` is a WASM getter returning a fresh Map per read, so
-      // signing in place loses the signature and the node rejects with error 192.
-      // `signRecipe` returns a new recipe, as moth's transfer path already relies on.
-      const signed = await (facade as any).signRecipe(recipe, signFn);
-      return (facade as any).finalizeRecipe(signed);
-    },
-    submitTx: async (tx: any) => {
-      return (facade as any).submitTransaction(tx);
-    },
-  };
+  const walletProvider = makeContractWalletProvider({
+    facade,
+    keystore,
+    protocolVersion: state.activeProtocolVersion,
+    coinPublicKey,
+    encryptionPublicKey: encPublicKey,
+  });
 
   // Build contract providers (same as mn-tui's buildContractProviders)
   const managedDir = artifact.path;

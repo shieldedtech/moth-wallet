@@ -5,13 +5,24 @@ import {
   provingProvider as wasmProvingProvider,
   type KeyMaterialProvider as WasmKeyMaterialProvider,
 } from '@midnight-ntwrk/zkir-v2';
+import {ProtocolVersion} from '@midnightntwrk/wallet-sdk';
 import {
-  makeServerProvingService,
-  makeWasmProvingService,
+  fromV8ProvingProvider,
+  fromV9ProvingProvider,
+  makeDefaultVersionedProvingService,
+  makeVersionedProvingServiceEffect,
+  wrapVersionedEffectService,
+  type AnyVersionUnboundTransaction,
+  type AnyVersionUnprovenTransaction,
+  type ProvingServiceEffect,
+  type VersionedProvingService,
 } from '@midnightntwrk/wallet-sdk/capabilities/proving';
 import {WasmProver} from '@midnightntwrk/wallet-sdk/prover-client/effect';
 import {ProofClient} from './client.js';
 import type {ProverConfig} from '../types/network.js';
+
+/** The facade's proving service: routes each transaction to the backend for the ledger version that authored it. */
+export type WalletProvingService = VersionedProvingService<AnyVersionUnboundTransaction, AnyVersionUnprovenTransaction>;
 
 /** Adapter from the connector/Midnight.js key interface to ZKConfigProvider. */
 class KeyMaterialZkConfigProvider extends ZKConfigProvider<string> {
@@ -90,27 +101,52 @@ export function createProofProvider(
   };
 }
 
-/** Build the wallet facade service. WASM follows the SDK's documented setup. */
-export function createWalletProvingService(config: ProverConfig) {
+type EitherLike<R> = {readonly _tag: 'Left'; readonly left: unknown} | {readonly _tag: 'Right'; readonly right: R};
+
+/** The SDK reports a configuration it cannot honour as an Either; here that is a thrown error. */
+function orThrow<R>(either: EitherLike<R>): R {
+  if (either._tag === 'Left') {
+    throw either.left instanceof Error ? either.left : new Error(String((either.left as {message?: string})?.message ?? either.left));
+  }
+  return either.right;
+}
+
+/**
+ * Build the wallet facade's proving service, with a backend per ledger version.
+ * A transaction is proved by the backend for the ledger version that authored
+ * its bytes, and the boundary between the two is the chain's fork schedule.
+ */
+export function createWalletProvingService(config: ProverConfig, forks: ProtocolVersion.ForkSchedule): WalletProvingService {
   if (config.type === 'server') {
-    return makeServerProvingService({provingServerUrl: new URL(config.url)});
+    // One proof server under every key: the SDK drives it with each ledger
+    // version on its own side of the fork.
+    return orThrow(makeDefaultVersionedProvingService({provingServerUrl: new URL(config.url)}, forks));
   }
 
-  // This is the SDK-documented path and works in Node, where the package's
-  // proof-worker.js is addressable from node_modules.
+  // The SDK's in-process prover works on bytes and serves both ledger versions
+  // with the same published circuits. It spawns the package's proof-worker.js,
+  // which Node resolves from node_modules.
   if (typeof process !== 'undefined' && process.versions?.node) {
-    return makeWasmProvingService();
+    return orThrow(makeDefaultVersionedProvingService({provers: {v8: {kind: 'wasm'}, v9: {kind: 'wasm'}}}, forks));
   }
 
   // Browser bundles do not emit the SDK's dependency-internal proof-worker.js.
-  // Moth already runs the wallet host in its own dedicated Worker, so execute
-  // the same ZKIR WASM provider there directly instead of nesting a missing
-  // worker asset.
-  const provider = wasmProvingProvider(defaultWasmKeyMaterialProvider());
-  return {
-    prove: (transaction: ledger.UnprovenTransaction) =>
-      transaction.prove(provider, ledger.CostModel.initialCostModel()),
-  };
+  // Moth already runs the wallet host in its own dedicated Worker, so the same
+  // ZKIR WASM provider executes there directly, framed by each ledger version
+  // on its own side of the fork.
+  const keyMaterial = defaultWasmKeyMaterialProvider();
+  const provider = wasmProvingProvider(keyMaterial);
+  type AnyVersionProvingService = ProvingServiceEffect<AnyVersionUnboundTransaction, AnyVersionUnprovenTransaction>;
+  const services = orThrow(
+    ProtocolVersion.makeRegistryFromActivations<AnyVersionProvingService>([
+      {sinceVersion: ProtocolVersion.MinSupportedVersion, value: fromV8ProvingProvider(provider)},
+      {
+        sinceVersion: forks.v9,
+        value: fromV9ProvingProvider({...provider, lookupKey: (keyLocation) => keyMaterial.lookupKey(keyLocation)}),
+      },
+    ]),
+  );
+  return wrapVersionedEffectService(makeVersionedProvingServiceEffect(services));
 }
 
 /** Proof servers need a preflight; local WASM proving has no remote health check. */

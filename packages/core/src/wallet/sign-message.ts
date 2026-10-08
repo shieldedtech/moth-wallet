@@ -17,10 +17,11 @@ export type SignEncoding = 'hex' | 'base64' | 'text';
 export interface SignedMessage {
   /** The original data string, echoed back so the caller can correlate. */
   data: string;
-  /** Signature in the keystore's native hex encoding. connector-api 4.0.1
-   *  leaves the wire format unspecified, so we return the ledger encoding. */
+  /** Schnorr signature as the ledger's hex encoding. connector-api 4.0.1 leaves
+   *  the wire format unspecified; ledger-v9 tags its signatures with the scheme,
+   *  and only the hex value travels here because the scheme is always schnorr. */
   signature: string;
-  /** Verifying (public) key in the keystore's native hex encoding. */
+  /** Schnorr verifying (public) key in the ledger's hex encoding. */
   verifyingKey: string;
 }
 
@@ -68,10 +69,10 @@ export function signMessage(
 ): SignedMessage {
   const payload = signedMessageBytes(decodeData(data, encoding));
   const keys = deriveRawKeys(seedHex);
-  const keystore = createKeystore(keys[Roles.NightExternal], networkId);
+  const keystore = createKeystore({ kind: 'schnorr', secret: keys[Roles.NightExternal] }, networkId);
   return {
     data,
-    signature: String(keystore.signData(payload)),
-    verifyingKey: String(keystore.getPublicKey()),
+    signature: keystore.signData(payload).value,
+    verifyingKey: keystore.getPublicKey().value,
   };
 }

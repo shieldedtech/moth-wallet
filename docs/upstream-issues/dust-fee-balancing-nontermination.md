@@ -1,8 +1,14 @@
 ---
-status: draft — ready to file
+status: fixed upstream in wallet-sdk 2.0.0-rc.1 (wallet-sdk-dust-wallet 5.0.0-rc.1)
 target-repos: midnightntwrk/midnight-wallet
-last-updated: 2026-09-08
+last-updated: 2026-10-07
 ---
+
+> **Resolved upstream.** `@midnightntwrk/wallet-sdk` `2.0.0-rc.1` ships a
+> terminating `computeBalancingRecipe` in both dust variants: each pass is
+> seeded with the outstanding deficit, a pass that consumes no coin fails, and
+> an exhausted pool is retried once largest-first. Kept as the record of the
+> defect for moth's 1.x-era mitigation.
 
 # Draft upstream issue: DUST fee balancing cannot terminate, and only its first iteration can ever converge
 
@@ -25,6 +31,10 @@ one; it does not and cannot fix the loop itself.
 | `@midnightntwrk/wallet-sdk-dust-wallet` | `4.2.0` |
 | `@midnightntwrk/wallet-sdk-capabilities` | `3.3.1` |
 | `@midnight-ntwrk/ledger-v8` | `8.1.0` |
+
+`@midnightntwrk/wallet-sdk` `2.0.0-rc.0` (`wallet-sdk-dust-wallet` `5.0.0-rc.0`) still
+ships the same `computeBalancingRecipe` loop, unchanged, in both its V1 (ledger-v8)
+and V2 (ledger-v9) variants' `Transacting.js`; `2.0.0-rc.1` fixes it.
 
 ## Summary
 
@@ -174,7 +184,8 @@ reaching the defect, which is all a client can do from outside.
 ## What Moth changed on the client side in the meantime
 
 `shieldedtech/moth-wallet` replaces the loop through the documented
-`V1Builder.withTransacting` seam
+`withTransacting` seam of both variants' builders, composed with
+`CustomForkingDustWallet` because `DustWallet` takes no builder options
 (`packages/core/src/sync/dust-transacting.ts`). It keeps `dryRunFee` and
 `calculateFee` and changes only the control flow — each pass covers the
 outstanding deficit from coins not yet selected, then re-prices with everything
