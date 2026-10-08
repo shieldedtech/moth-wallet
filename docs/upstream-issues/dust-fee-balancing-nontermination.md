@@ -1,8 +1,14 @@
 ---
-status: draft — ready to file
+status: fixed upstream in wallet-sdk 2.0.0-rc.1 (wallet-sdk-dust-wallet 5.0.0-rc.1)
 target-repos: midnightntwrk/midnight-wallet
-last-updated: 2026-09-08
+last-updated: 2026-10-07
 ---
+
+> **Resolved upstream.** `@midnightntwrk/wallet-sdk` `2.0.0-rc.1` ships a
+> terminating `computeBalancingRecipe` in both dust variants: each pass is
+> seeded with the outstanding deficit, a pass that consumes no coin fails, and
+> an exhausted pool is retried once largest-first. Kept as the record of the
+> defect for moth's 1.x-era mitigation.
 
 # Draft upstream issue: DUST fee balancing cannot terminate, and only its first iteration can ever converge
 
@@ -28,7 +34,7 @@ one; it does not and cannot fix the loop itself.
 
 `@midnightntwrk/wallet-sdk` `2.0.0-rc.0` (`wallet-sdk-dust-wallet` `5.0.0-rc.0`) still
 ships the same `computeBalancingRecipe` loop, unchanged, in both its V1 (ledger-v8)
-and V2 (ledger-v9) variants' `Transacting.js`.
+and V2 (ledger-v9) variants' `Transacting.js`; `2.0.0-rc.1` fixes it.
 
 ## Summary
 

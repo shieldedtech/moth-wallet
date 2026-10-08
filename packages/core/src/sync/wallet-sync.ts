@@ -594,9 +594,9 @@ export async function startWalletSync(
 
   // --- Dust wallet: try restore from cache ---
   onProgress?.('Starting dust wallet...');
-  // The SDK's dust wallet, but with fee balancing that terminates and pays from
-  // the largest coin first (sync/dust-transacting.ts, sync/dust-coin-selection.ts):
-  // wallet-sdk 2.0 still ships the unbounded loop in both of its variants.
+  // The SDK's dust wallet, but with moth's fee-balancing loop, which pays from the
+  // largest coin first and reports each pass to the fee log
+  // (sync/dust-transacting.ts, sync/dust-coin-selection.ts).
   const Dust = TerminatingDustWallet(walletCfg, {onPass: options?.onDustFeePass});
   let dustWallet: DustWallet | undefined;
   const savedDust = await loadCachedState(store, name, network.id, 'dust');
