@@ -5,6 +5,7 @@
 // are shown as approvals like the standard connector's, and answered. Its events reach the tab
 // that watches the session.
 
+import { browser, type Browser } from 'wxt/browser';
 import type { ConnectRequest, DescribeRequest, ReadLocalStateRequest, TransactionBlueprint } from '@shieldedtech/capsule-blueprint';
 import { CAPSULE_METHODS, type CapsuleCall, type CapsuleErrorDTO, type CapsuleMethod } from '../capsule/protocol';
 import { offscreenOn } from '../offscreen/messaging';
@@ -31,11 +32,32 @@ export function isCapsuleMethod(method: string): method is CapsuleMethod {
 }
 
 // The runtime's consents arrive from the worker, not from a tab, so the tab a dApp last spoke
-// from is remembered per origin to open the panel beside it; its events find the tab that
-// watches the session.
+// from is remembered per origin to open the panel beside it. A consent comes during the request
+// that caused it, which holds the keepalive, so memory suffices for those.
 const originTabs = new Map<string, number>();
 const originPanels = new Map<string, Promise<boolean>>();
-const sessionTabs = new Map<string, number>();
+
+// An event comes whenever the chain answers, long after the request, by which time Chrome may
+// have ended this service worker and started another; the tab that watches each session is kept
+// in session storage, which outlives the worker, and refreshed by every request that names it.
+const SESSION_TABS_KEY = 'capsule.sessionTabs';
+
+function sessionStore(): Browser.storage.StorageArea {
+  return browser.storage.session as Browser.storage.StorageArea;
+}
+
+async function loadSessionTabs(): Promise<Record<string, number>> {
+  const stored = await sessionStore().get(SESSION_TABS_KEY);
+  return (stored[SESSION_TABS_KEY] as Record<string, number> | undefined) ?? {};
+}
+
+async function rememberSessionTab(session: string, tabId: number | undefined): Promise<void> {
+  if (tabId === undefined) return;
+  const tabs = await loadSessionTabs();
+  if (tabs[session] === tabId) return;
+  tabs[session] = tabId;
+  await sessionStore().set({ [SESSION_TABS_KEY]: tabs });
+}
 
 async function requireSession(): Promise<Session> {
   const session = await getSession();
@@ -90,12 +112,13 @@ export async function capsuleDispatch(
         // One consent: the runtime's screen also stood for the wallet's own per-origin grant,
         // which the standard connector methods check, so the dApp needs no second connect.
         if (!(await isAllowed(origin))) await grant(origin, network.id);
-        if (senderTabId !== undefined) sessionTabs.set(result.session, senderTabId);
+        await rememberSessionTab(result.session, senderTabId);
         return result;
       }
       case 'capsuleDescribe': {
         const sessionId = requireString(params[0], 'The session');
         const request = requireObject(params[1], 'The describe request') as DescribeRequest;
+        await rememberSessionTab(sessionId, senderTabId);
         return await offscreen.capsuleDescribe({ ...call, session: sessionId, request });
       }
       case 'capsuleSubmitBlueprint':
@@ -103,6 +126,7 @@ export async function capsuleDispatch(
       case 'capsuleEstimate': {
         const sessionId = requireString(params[0], 'The session');
         const document = requireObject(params[1], 'The document') as TransactionBlueprint;
+        await rememberSessionTab(sessionId, senderTabId);
         if (method === 'capsuleSubmitBlueprint') return await offscreen.capsuleSubmitBlueprint({ ...call, session: sessionId, document });
         if (method === 'capsuleMakeTransaction') return await offscreen.capsuleMakeTransaction({ ...call, session: sessionId, document });
         return await offscreen.capsuleEstimate({ ...call, session: sessionId, document });
@@ -110,12 +134,13 @@ export async function capsuleDispatch(
       case 'capsuleReadLocalState': {
         const sessionId = requireString(params[0], 'The session');
         const request = requireObject(params[1], 'The read request') as ReadLocalStateRequest;
+        await rememberSessionTab(sessionId, senderTabId);
         return await offscreen.capsuleReadLocalState({ ...call, session: sessionId, request });
       }
       case 'capsuleWatch': {
         const sessionId = requireString(params[0], 'The session');
         const watch = params[1] === true;
-        if (senderTabId !== undefined) sessionTabs.set(sessionId, senderTabId);
+        await rememberSessionTab(sessionId, senderTabId);
         await offscreen.capsuleWatch({ ...call, session: sessionId, watch });
         return null;
       }
@@ -134,10 +159,10 @@ export function registerCapsuleHandlers(): void {
     const payload = data.kind === 'capsuleConnect' ? { ...data, firstTime: !(await isAllowed(data.origin)) } : data;
     return requestApproval(data.kind, data.origin, payload, tabId, prepared);
   });
-  offscreenOn('os/eventCapsule', ({ data }) => {
-    const tabId = sessionTabs.get(data.session);
+  offscreenOn('os/eventCapsule', async ({ data }) => {
+    const tabId = (await loadSessionTabs())[data.session];
     if (tabId === undefined) return;
-    void sendMessage('capsuleEvent', data, tabId).catch(() => {});
+    await sendMessage('capsuleEvent', data, tabId).catch(() => {});
   });
   onMessage('capsuleList', async () => {
     const session = await requireSession();
