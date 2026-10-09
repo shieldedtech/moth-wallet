@@ -3,12 +3,15 @@
 // doesn't cross the page boundary).
 
 import type { APIError, ErrorCode } from '@midnight-ntwrk/dapp-connector-api';
+import type { CapsuleErrorDTO } from '../capsule/protocol';
 
 export type { APIError, ErrorCode };
 
 export interface SerializedConnectorError {
   code: ErrorCode;
   reason: string;
+  /** Set on a capsule request the runtime refused: the blueprint's own error, which the page rethrows as such. */
+  capsule?: CapsuleErrorDTO;
 }
 
 export function connectorError(code: ErrorCode, reason: string): APIError {

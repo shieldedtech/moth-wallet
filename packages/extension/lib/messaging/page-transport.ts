@@ -31,6 +31,20 @@ export interface PageResponseEnvelope {
   error?: SerializedConnectorError;
 }
 
+/** Pushed to the page without a request: a capsule event for a session the page watches. */
+export interface PageEventEnvelope {
+  __moth: true;
+  dir: 'cs->page';
+  event: 'capsule';
+  /** bigint-JSON encoded CapsuleEventDTO */
+  dataJson: string;
+}
+
+export function isPageEvent(data: unknown): data is PageEventEnvelope {
+  const d = data as PageEventEnvelope | null;
+  return !!d && typeof d === 'object' && d.__moth === true && d.dir === 'cs->page' && d.event === 'capsule' && typeof d.dataJson === 'string';
+}
+
 export function isPageRequest(data: unknown): data is PageRequestEnvelope {
   const d = data as PageRequestEnvelope | null;
   return (
@@ -58,9 +72,19 @@ export function isPageResponse(data: unknown): data is PageResponseEnvelope {
 
 export interface PageClient {
   request(method: string, paramsJson: string, timeoutMs?: number): Promise<string>;
+  /** Hears every event pushed to the page; returns the unsubscribe. */
+  onEvent(listener: (dataJson: string) => void): () => void;
 }
 
 export const DEFAULT_TIMEOUT_MS = 10 * 60_000; // approvals + proving are slow
+
+// `crypto.randomUUID` exists only in secure contexts, and a dApp on a LAN address over plain http
+// is not one; `getRandomValues` is available everywhere, so the id comes from it there.
+export function randomRequestId(): string {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
 
 /**
  * Page-side requester: correlates responses by id, times out, and surfaces
@@ -70,11 +94,16 @@ export function createPageClient(
   target: Pick<Window, 'dispatchEvent'>,
   listen: (handler: (event: MessageEvent) => void) => void,
   onError: (error: SerializedConnectorError) => Error,
-  randomId: () => string = () => crypto.randomUUID(),
+  randomId: () => string = randomRequestId,
 ): PageClient {
   const pending = new Map<string, { resolve: (resultJson: string) => void; reject: (err: Error) => void }>();
+  const eventListeners = new Set<(dataJson: string) => void>();
 
   listen((event) => {
+    if (isPageEvent(event.data)) {
+      for (const listener of eventListeners) listener(event.data.dataJson);
+      return;
+    }
     if (!isPageResponse(event.data)) return;
     const entry = pending.get(event.data.id);
     if (!entry) return;
@@ -87,6 +116,10 @@ export function createPageClient(
   });
 
   return {
+    onEvent(listener) {
+      eventListeners.add(listener);
+      return () => eventListeners.delete(listener);
+    },
     request(method, paramsJson, timeoutMs = DEFAULT_TIMEOUT_MS) {
       const id = randomId();
       return new Promise<string>((resolve, reject) => {

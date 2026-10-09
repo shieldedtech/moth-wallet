@@ -17,6 +17,24 @@ import type { WalletInfo, TxStage, NetworkConfig, SignEncoding, SignedMessage } 
 import type { HistoryEntry } from '@midnight-ntwrk/dapp-connector-api';
 import type { RelayState } from './relay-socket';
 import type { DustNotYet } from '../messaging/protocol';
+import type {
+  CapsuleAccount,
+  CapsuleCall,
+  CapsuleConsentDTO,
+  CapsuleEventDTO,
+  CapsuleInspectorDTO,
+} from '../capsule/protocol';
+import type {
+  ConnectRequest,
+  ConnectResult,
+  DescribeRequest,
+  ExecutableDescription,
+  Json,
+  ReadLocalStateRequest,
+  ReadLocalStateResult,
+  SubmitResult,
+  TransactionBlueprint,
+} from '@shieldedtech/capsule-blueprint';
 
 export type { RelayState };
 
@@ -330,12 +348,31 @@ export interface OffscreenProtocol {
    *  ("Retry now"). Returns the state as of that reset. */
   'os/relayRetry'(): RelayState;
 
+  // --- The capsule runtime (lib/offscreen/capsule-host.ts, in the worker) ---
+  // Each call carries the account and the dApp's origin; the runtime for the
+  // account is opened on first use over the synced wallet's facade. The
+  // documents, descriptions and results are the blueprint's own JSON.
+  'os/capsuleConnect'(data: CapsuleCall & { request: ConnectRequest }): ConnectResult;
+  'os/capsuleDescribe'(data: CapsuleCall & { session: string; request: DescribeRequest }): ExecutableDescription;
+  'os/capsuleSubmitBlueprint'(data: CapsuleCall & { session: string; document: TransactionBlueprint }): SubmitResult;
+  'os/capsuleMakeTransaction'(data: CapsuleCall & { session: string; document: TransactionBlueprint }): Json;
+  'os/capsuleEstimate'(data: CapsuleCall & { session: string; document: TransactionBlueprint }): Json;
+  'os/capsuleReadLocalState'(data: CapsuleCall & { session: string; request: ReadLocalStateRequest }): ReadLocalStateResult;
+  /** Start or stop relaying a session's capsule events as `os/eventCapsule`. */
+  'os/capsuleWatch'(data: CapsuleCall & { session: string; watch: boolean }): void;
+  /** The account's capsules and pending transactions, for the inspector. */
+  'os/capsuleList'(data: CapsuleAccount): CapsuleInspectorDTO;
+
   // --- offscreen → SW (handled in the service worker) ---
   'os/eventBalances'(data: string): void;
   'os/eventSyncMessage'(message: string): void;
   'os/eventTxStage'(stage: TxStage): void;
   /** Node relay reachability, pushed whenever it changes. */
   'os/eventRelayState'(state: RelayState): void;
+  /** A capsule event for a session a dApp is watching. */
+  'os/eventCapsule'(data: CapsuleEventDTO): void;
+  /** The capsule runtime asks the user; the background shows the approval and answers. */
+  'os/capsuleConsent'(data: CapsuleConsentDTO): boolean;
 }
 
 export const { sendMessage: offscreenSend, onMessage: offscreenOn } =

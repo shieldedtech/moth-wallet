@@ -1,3 +1,5 @@
+import type { CapsuleMethod } from '../capsule/protocol';
+
 export const WALLET_ID = 'moth';
 export const WALLET_RDNS = 'io.shielded.moth';
 export const WALLET_NAME = 'Moth Wallet';
@@ -59,4 +61,5 @@ export type ConnectorMethod =
   | (typeof IMPLEMENTED_METHODS)[number]
   | (typeof NOT_IMPLEMENTED_METHODS)[number]
   | (typeof EXTENSION_METHODS)[number]
-  | (typeof PROVING_PROVIDER_METHODS)[number];
+  | (typeof PROVING_PROVIDER_METHODS)[number]
+  | CapsuleMethod;

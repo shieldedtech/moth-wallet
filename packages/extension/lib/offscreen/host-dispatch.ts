@@ -22,6 +22,12 @@ type Dispatch = {
   [M in HostMethod]: (host: Host, data: MethodData<M>) => Promise<MethodResult<M>> | MethodResult<M>;
 };
 
+// The capsule runtime carries the ledger and the onchain runtime, so it is imported on the first
+// capsule request, as wallet-host itself is on the first request of any kind.
+type Capsule = typeof import('./capsule-host');
+let capsulePromise: Promise<Capsule> | null = null;
+const capsule = (): Promise<Capsule> => (capsulePromise ??= import('./capsule-host'));
+
 export const hostDispatch: Dispatch = {
   // walletList wraps an already-async wallets.list() — flatten the extra Promise.
   'os/walletList': async (host, d) => host.walletList(d.network),
@@ -87,6 +93,17 @@ export const hostDispatch: Dispatch = {
   'os/makeIntent': (host, d) =>
     host.makeIntent(d.seedHex, d.walletName, d.network, d.inputs, d.outputs, d.payFees),
   'os/txSummary': (host, d) => host.txSummary(d.network, d.txHex, d.sealed),
+  'os/capsuleConnect': async (host, d) => (await capsule()).connect(host, d),
+  'os/capsuleDescribe': async (host, d) => (await capsule()).describe(host, d),
+  'os/capsuleSubmitBlueprint': async (host, d) => (await capsule()).submitBlueprint(host, d),
+  'os/capsuleMakeTransaction': async (host, d) => (await capsule()).makeTransaction(host, d),
+  'os/capsuleEstimate': async (host, d) => (await capsule()).estimate(host, d),
+  'os/capsuleReadLocalState': async (host, d) => (await capsule()).readLocalState(host, d),
+  'os/capsuleWatch': async (host, d) => (await capsule()).watch(host, d),
+  'os/capsuleList': async (host, d) => (await capsule()).list(host, d),
 };
+
+/** The capsule runtime's own entry points, for the worker entry and the dev inline host to wire the executor and the consents. */
+export const capsuleHost = capsule;
 
 export const HOST_METHODS = Object.keys(hostDispatch) as HostMethod[];

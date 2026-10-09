@@ -4,10 +4,12 @@
 // world: 'MAIN') so it works on Firefox < 128 too.
 
 import { defineContentScript, injectScript } from '#imports';
-import { sendMessage } from '../lib/messaging/protocol';
+import { onMessage, sendMessage } from '../lib/messaging/protocol';
+import { encodeBigintJson } from '../lib/messaging/bigint-json';
 import {
   PAGE_REQUEST_EVENT,
   isPageRequest,
+  type PageEventEnvelope,
   type PageRequestEnvelope,
   type PageResponseEnvelope,
 } from '../lib/messaging/page-transport';
@@ -41,6 +43,12 @@ export default defineContentScript({
       } catch {
         /* malformed page input */
       }
+    });
+
+    // The one thing the extension pushes to a page unasked: a capsule event for a session it watches.
+    onMessage('capsuleEvent', ({ data }) => {
+      const envelope: PageEventEnvelope = { __moth: true, dir: 'cs->page', event: 'capsule', dataJson: encodeBigintJson(data) };
+      window.postMessage(envelope, '*');
     });
 
     await injectScript('/injected.js');

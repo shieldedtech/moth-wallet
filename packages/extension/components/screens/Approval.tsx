@@ -11,6 +11,7 @@ import { nativeAssetLabelsForNetwork } from '../../lib/ui/token-labels';
 import { txSummaryRows } from '../../lib/ui/tx-summary-view';
 import type { PendingApproval } from '../../lib/background/approvals';
 import type { BalanceApprovalPayload, TransferApprovalPayload } from '../../lib/background/connector-handlers';
+import type { CapsuleConsentDTO, CapsuleRenderedArgument } from '../../lib/capsule/protocol';
 import { Button } from '../ui/button';
 import { Badge, Card, Separator } from '../ui/card';
 import { Input } from '../ui/input';
@@ -88,11 +89,11 @@ export function Approval({
               {approval.kind === 'connect' ? t('common_cancel') : t('approval_reject')}
             </Button>
             <Button size="lg" onClick={() => void decide(true)}>
-              {approval.kind === 'connect'
+              {approval.kind === 'connect' || approval.kind === 'capsuleConnect'
                 ? t('approval_connect')
                 : approval.kind === 'signData'
                   ? t('approval_sign')
-                  : approval.kind === 'deriveAppSecret'
+                  : approval.kind === 'deriveAppSecret' || approval.kind === 'capsuleRead'
                     ? t('approval_allow')
                     : t('approval_approve')}
             </Button>
@@ -207,7 +208,7 @@ export function Approval({
             {t('approval_balanceNote')}
           </NoteCard>
         </>
-      ) : (
+      ) : approval.kind === 'transfer' ? (
         <>
           <SiteChip origin={approval.origin} />
           <div className="text-center">
@@ -244,10 +245,129 @@ export function Approval({
             {t('approval_transferNote')}
           </NoteCard>
         </>
+      ) : (
+        <CapsuleConsent consent={approval.payload as CapsuleConsentPayload} host={host} />
       )}
 
       {locked && <ApprovalUnlock walletName={walletName} onUnlocked={onUnlocked} />}
     </PanelScreen>
+  );
+}
+
+/** The runtime's consent as the background stored it; `firstTime` marks a connect that also grants the site itself. */
+type CapsuleConsentPayload = CapsuleConsentDTO & { firstTime?: boolean };
+
+const shortHex = (hex: string) => (hex.length > 18 ? `${hex.slice(0, 10)}…${hex.slice(-6)}` : hex);
+
+/**
+ * What the capsule runtime asks: a contract to use under an account (the runtime resolved the
+ * code itself and checked it against the chain), a private field to read, or a transaction it
+ * built — each call and deploy with its arguments by their declared types beside the bytes the
+ * proof will commit to. Nothing here came from the site as text.
+ */
+function CapsuleConsent({ consent, host }: { consent: CapsuleConsentPayload; host: string }) {
+  if (consent.kind === 'capsuleConnect') {
+    const deploying = consent.contract === undefined;
+    return (
+      <>
+        <SitePair origin={consent.origin} />
+        <div className="text-center">
+          <h1 className="m-0 font-display text-[26px] font-extrabold leading-tight">{t('capsule_connectTitle')}</h1>
+          <p className="m-0 pt-1.5 text-[13.5px] text-muted-foreground">
+            {deploying ? t('capsule_connectDeploySubtitle', [host, consent.account]) : t('capsule_connectSubtitle', [host, consent.account])}
+          </p>
+          {consent.firstTime && (
+            <div className="pt-2.5">
+              <Badge>{t('capsule_alsoConnectsSite')}</Badge>
+            </div>
+          )}
+        </div>
+        {!deploying && (
+          <DetailCard
+            rows={[
+              { label: t('capsule_contractLabel'), value: shortHex(consent.contract ?? ''), mono: true },
+              { label: t('capsule_bundleLabel'), value: consent.bundle ?? '' },
+              { label: t('capsule_buildLabel'), value: shortHex(consent.fingerprint ?? ''), mono: true },
+            ]}
+          />
+        )}
+        <NoteCard icon={Moon}>{t('capsule_connectNote')}</NoteCard>
+      </>
+    );
+  }
+  if (consent.kind === 'capsuleRead') {
+    return (
+      <>
+        <SiteChip origin={consent.origin} />
+        <div className="text-center">
+          <h1 className="m-0 font-display text-[26px] font-extrabold leading-tight">{t('capsule_readTitle')}</h1>
+          <p className="m-0 pt-1.5 text-[13.5px] text-muted-foreground">
+            {t('capsule_readSubtitle', [host, consent.name, shortHex(consent.contract)])}
+          </p>
+        </div>
+        <DetailCard
+          rows={[
+            { label: t('capsule_bundleLabel'), value: consent.bundle },
+            { label: t('capsule_accountLabel'), value: consent.account },
+          ]}
+        />
+        <NoteCard icon={Moon}>{t('capsule_readNote')}</NoteCard>
+      </>
+    );
+  }
+  return (
+    <>
+      <SiteChip origin={consent.origin} />
+      <div className="text-center">
+        <h1 className="m-0 font-display text-[26px] font-extrabold leading-tight">{t('capsule_transactionTitle')}</h1>
+        <p className="m-0 pt-1.5 text-[13.5px] text-muted-foreground">{t('capsule_transactionSubtitle', [host])}</p>
+      </div>
+      <Card className="p-0">
+        {consent.calls.map((call, index) => (
+          <div key={`call-${index}`}>
+            {index > 0 && <Separator />}
+            <div className="px-4 py-[13px]">
+              <span className="block text-sm font-semibold">{t('capsule_callLine', [call.entrypoint, call.bundle])}</span>
+              <span className="block font-mono text-xs text-muted-foreground">{t('capsule_atAddress', [shortHex(call.contract)])}</span>
+              <Arguments args={call.arguments} />
+            </div>
+          </div>
+        ))}
+        {consent.deploys.map((deploy, index) => (
+          <div key={`deploy-${index}`}>
+            {(index > 0 || consent.calls.length > 0) && <Separator />}
+            <div className="px-4 py-[13px]">
+              <span className="block text-sm font-semibold">{t('capsule_deployLine', [deploy.bundle, shortHex(deploy.fingerprint)])}</span>
+              <span className="block font-mono text-xs text-muted-foreground">{t('capsule_atAddress', [shortHex(deploy.address)])}</span>
+              <Arguments args={deploy.arguments} />
+            </div>
+          </div>
+        ))}
+      </Card>
+      <DetailCard
+        rows={[
+          { label: t('capsule_accountLabel'), value: consent.account },
+          { label: t('capsule_validUntil'), value: new Date(consent.ttl).toLocaleTimeString() },
+        ]}
+      />
+    </>
+  );
+}
+
+/** Each argument's value by its declared type, and the bytes the proof commits to. */
+function Arguments({ args }: { args: CapsuleRenderedArgument[] }) {
+  if (args.length === 0) {
+    return <span className="block font-mono text-xs text-muted-foreground">{t('capsule_noArguments')}</span>;
+  }
+  return (
+    <span className="block pt-1">
+      {args.map((arg, index) => (
+        <span key={index} className="block break-all font-mono text-xs">
+          {index}: {JSON.stringify(arg.rendered)}{' '}
+          <span className="text-muted-foreground">{arg.bytes.value.join(' ') || '(empty)'}</span>
+        </span>
+      ))}
+    </span>
   );
 }
 

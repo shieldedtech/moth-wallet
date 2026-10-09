@@ -1711,5 +1711,98 @@
   },
   "dust_etaRecordsSettling": {
     "message": "Registros de generación asentándose"
+  },
+  "capsule_connectTitle": {
+    "message": "¿Usar un contrato?"
+  },
+  "capsule_connectSubtitle": {
+    "message": "$1 pide usar la cuenta $2 con un contrato."
+  },
+  "capsule_connectDeploySubtitle": {
+    "message": "$1 pide desplegar contratos desde la cuenta $2."
+  },
+  "capsule_alsoConnectsSite": {
+    "message": "Esto también conecta el sitio a tu billetera."
+  },
+  "capsule_contractLabel": {
+    "message": "Contrato"
+  },
+  "capsule_bundleLabel": {
+    "message": "Código"
+  },
+  "capsule_buildLabel": {
+    "message": "Build"
+  },
+  "capsule_accountLabel": {
+    "message": "Cuenta"
+  },
+  "capsule_connectNote": {
+    "message": "La billetera resolvió el código de este contrato por sí misma y lo comprobó contra la cadena. El sitio puede llamar al contrato con esta cuenta; cada llamada se te muestra antes de probarse."
+  },
+  "capsule_readTitle": {
+    "message": "¿Leer el estado privado?"
+  },
+  "capsule_readSubtitle": {
+    "message": "$1 pide leer $2 del contrato en $3."
+  },
+  "capsule_readNote": {
+    "message": "El estado privado se queda en esta billetera; el sitio recibe solo la respuesta de este campo o función."
+  },
+  "capsule_transactionTitle": {
+    "message": "¿Aprobar esta transacción de contrato?"
+  },
+  "capsule_transactionSubtitle": {
+    "message": "$1 construyó lo siguiente, que esta billetera probará y enviará."
+  },
+  "capsule_callLine": {
+    "message": "Llamar a $1 en $2"
+  },
+  "capsule_deployLine": {
+    "message": "Desplegar $1 (build $2)"
+  },
+  "capsule_atAddress": {
+    "message": "en $1"
+  },
+  "capsule_noArguments": {
+    "message": "sin argumentos"
+  },
+  "capsule_validUntil": {
+    "message": "Válida hasta"
+  },
+  "capsule_approve": {
+    "message": "Aprobar"
+  },
+  "capsule_allow": {
+    "message": "Permitir"
+  },
+  "capsule_inspectorTitle": {
+    "message": "Cápsulas de contratos"
+  },
+  "capsule_inspectorEmptyTitle": {
+    "message": "Aún no hay cápsulas"
+  },
+  "capsule_inspectorEmptyBody": {
+    "message": "Esta cuenta no ha completado ninguna llamada a un contrato."
+  },
+  "capsule_foldedCount": {
+    "message": "$1 transacción(es) incorporada(s)"
+  },
+  "capsule_inFlightTitle": {
+    "message": "En curso"
+  },
+  "capsule_inFlightLine": {
+    "message": "$1 · enviada $2 · válida hasta $3"
+  },
+  "capsule_inspectorRefresh": {
+    "message": "Actualizar"
+  },
+  "capsule_inspectorLocked": {
+    "message": "Desbloquea la billetera para ver sus cápsulas."
+  },
+  "capsule_inspectorError": {
+    "message": "No se pudieron leer las cápsulas: $1"
+  },
+  "settings_capsules": {
+    "message": "Cápsulas de contratos"
   }
 }

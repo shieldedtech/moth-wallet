@@ -6,6 +6,7 @@ import { defineExtensionMessaging } from '@webext-core/messaging';
 import type { WalletInfo, TxStage, ProverConfig } from '@shieldedtech/moth-browser';
 import type { SerializedConnectorError } from '../connector/errors';
 import type { PendingApproval } from '../background/approvals';
+import type { CapsuleEventDTO, CapsuleInspectorDTO } from '../capsule/protocol';
 import type { OriginGrant } from '../background/permissions';
 import type { AddressBookEntry } from '../background/address-book';
 import type { AddressKind } from '../ui/address';
@@ -389,6 +390,11 @@ interface ProtocolMap {
 
   permissionsList(): Record<string, OriginGrant>;
   permissionsRevoke(data: { origin: string }): void;
+
+  /** A capsule event for a session, pushed by the background to the tab that watches it. */
+  capsuleEvent(data: CapsuleEventDTO): void;
+  /** The unlocked account's capsules and pending capsule transactions, for the inspector screen. */
+  capsuleList(): CapsuleInspectorDTO;
 }
 
 export const { sendMessage, onMessage } = defineExtensionMessaging<ProtocolMap>();

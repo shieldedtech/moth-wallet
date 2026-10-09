@@ -12,6 +12,7 @@ import type {
 import { encodeBigintJson, decodeBigintJson } from '../lib/messaging/bigint-json';
 import { createPageClient, type PageClient } from '../lib/messaging/page-transport';
 import { connectorError } from '../lib/connector/errors';
+import { buildCapsuleApi, type CapsuleCarryingError } from '../lib/capsule/page-api';
 import {
   WALLET_ID,
   WALLET_RDNS,
@@ -84,10 +85,16 @@ export default defineUnlistedScript(() => {
   const client = createPageClient(
     window,
     (handler) => window.addEventListener('message', handler),
-    ({ code, reason }) => connectorError(code, reason),
+    ({ code, reason, capsule }) => {
+      const error = connectorError(code, reason) as CapsuleCarryingError;
+      if (capsule !== undefined) error.capsule = capsule;
+      return error;
+    },
   );
 
-  const initialApi: InitialAPI = Object.freeze({
+  // Beside the standard API, the capsule runtime's: a CapsuleConnector a capsule-aware dApp
+  // picks up where it would otherwise embed a wallet page. Not in the connector-api type.
+  const initialApi = Object.freeze({
     rdns: WALLET_RDNS,
     name: WALLET_NAME,
     icon: WALLET_ICON,
@@ -96,7 +103,8 @@ export default defineUnlistedScript(() => {
       await client.request('connect', encodeBigintJson([networkId]));
       return buildConnectedApi(client);
     },
-  });
+    capsule: buildCapsuleApi(client),
+  }) satisfies InitialAPI;
 
   window.midnight = window.midnight ?? {};
   Object.defineProperty(window.midnight, WALLET_ID, {

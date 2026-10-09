@@ -20,6 +20,7 @@ import { DustDetail } from '../../components/screens/DustDetail';
 import { Accounts } from '../../components/screens/Accounts';
 import { Settings } from '../../components/screens/Settings';
 import { ConnectedSites } from '../../components/screens/ConnectedSites';
+import { Capsules } from '../../components/screens/Capsules';
 import { NetworkConfig } from '../../components/screens/NetworkConfig';
 import { AddressBook } from '../../components/screens/AddressBook';
 import { Approval } from '../../components/screens/Approval';
@@ -28,7 +29,7 @@ import { Approval } from '../../components/screens/Approval';
 // Settings button. None of them reads wallet state, and one of them is the way
 // out of a restore the user did not want: on preprod that restore holds the
 // wallet worker for minutes, and the network is changed from here.
-const LOADING_SCREENS: ReadonlySet<Screen> = new Set(['settings', 'connected-sites', 'address-book', 'network-config']);
+const LOADING_SCREENS: ReadonlySet<Screen> = new Set(['settings', 'connected-sites', 'capsules', 'address-book', 'network-config']);
 
 export function App() {
   const session = useSession();
@@ -227,6 +228,7 @@ export function App() {
       )}
       {screen === 'settings' && <Settings onBack={shared.back} navigate={setScreen} />}
       {screen === 'connected-sites' && <ConnectedSites onBack={() => setScreen('settings')} />}
+      {screen === 'capsules' && <Capsules onBack={() => setScreen('settings')} />}
       {screen === 'address-book' && <AddressBook onBack={() => setScreen('settings')} />}
       {screen === 'network-config' && (
         <NetworkConfig

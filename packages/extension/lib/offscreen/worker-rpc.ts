@@ -7,23 +7,30 @@
 // don't exist. Everything here is either a type-only import (erased) or pure JS.
 
 import type { TxStage } from '@shieldedtech/moth-browser';
+import type { CapsuleConsentDTO, CapsuleEventDTO } from '../capsule/protocol';
 import type { OffscreenProtocol } from './messaging';
 import type { RelayState } from './relay-socket';
 
 // The offscreen → SW events the host emits. Their payloads mirror the
 // `os/event*` entries of OffscreenProtocol exactly.
-export type HostEvent = 'os/eventBalances' | 'os/eventSyncMessage' | 'os/eventTxStage' | 'os/eventRelayState';
+export type HostEvent =
+  | 'os/eventBalances'
+  | 'os/eventSyncMessage'
+  | 'os/eventTxStage'
+  | 'os/eventRelayState'
+  | 'os/eventCapsule';
 export interface HostEventData {
   'os/eventBalances': string;
   'os/eventSyncMessage': string;
   'os/eventTxStage': TxStage;
   'os/eventRelayState': RelayState;
+  'os/eventCapsule': CapsuleEventDTO;
 }
 
 // Every request method the worker answers: the full os/* surface minus the
-// synchronous ping (answered on the offscreen thread) and the events (which
-// flow the other way).
-export type HostMethod = Exclude<keyof OffscreenProtocol, 'os/ping' | HostEvent>;
+// synchronous ping (answered on the offscreen thread), the events (which flow
+// the other way) and the consent question (which the worker asks, not answers).
+export type HostMethod = Exclude<keyof OffscreenProtocol, 'os/ping' | 'os/capsuleConsent' | HostEvent>;
 export type MethodData<M extends HostMethod> = Parameters<OffscreenProtocol[M]>[0];
 export type MethodResult<M extends HostMethod> = ReturnType<OffscreenProtocol[M]>;
 
@@ -33,13 +40,29 @@ export interface WorkerRequest {
   method: HostMethod;
   data: unknown;
 }
+/** The capsule executor's port, transferred with the message (`event.ports[0]`); a new one replaces the old. */
+export interface WorkerExecutorPort {
+  kind: 'capsuleExecutorPort';
+}
+/** The user's answer to a consent the worker asked (WorkerConsentAsk). */
+export interface WorkerConsentAnswer {
+  kind: 'capsuleConsentAnswer';
+  ask: number;
+  approved: boolean;
+}
+export type PageToWorker = WorkerRequest | WorkerExecutorPort | WorkerConsentAnswer;
 
-// worker → page: either a correlated response or a fire-and-forget event.
+// worker → page: a correlated response, a fire-and-forget event, or a consent
+// to put to the user, answered by a WorkerConsentAnswer with the same `ask`.
 export type WorkerResponse =
   | { id: number; ok: true; result: unknown }
   | { id: number; ok: false; error: unknown };
 export type WorkerEventMessage = { [E in HostEvent]: { event: E; data: HostEventData[E] } }[HostEvent];
-export type WorkerToPage = WorkerResponse | WorkerEventMessage;
+export interface WorkerConsentAsk {
+  ask: number;
+  consent: CapsuleConsentDTO;
+}
+export type WorkerToPage = WorkerResponse | WorkerEventMessage | WorkerConsentAsk;
 
 // ---------------------------------------------------------------------------
 // Error codec

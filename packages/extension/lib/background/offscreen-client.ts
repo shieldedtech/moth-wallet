@@ -12,7 +12,9 @@ import {
   type ProvingProviderProvePayload,
 } from '../offscreen/messaging';
 import type { NetworkConfig, SignEncoding } from '@shieldedtech/moth-browser';
+import type { ConnectRequest, DescribeRequest, ReadLocalStateRequest, TransactionBlueprint } from '@shieldedtech/capsule-blueprint';
 import { decodeBigintJson, encodeBigintJson } from '../messaging/bigint-json';
+import type { CapsuleAccount, CapsuleCall } from '../capsule/protocol';
 
 const OFFSCREEN_URL = 'offscreen.html';
 
@@ -291,5 +293,39 @@ export const offscreen = {
   async makeIntent(data: SyncTarget & { inputs: SwapInputDTO[]; outputs: TransferRequestDTO[]; payFees: boolean }) {
     await ensureOffscreen();
     return offscreenSend('os/makeIntent', data);
+  },
+
+  // The capsule runtime, in the worker. Every call names the account and the dApp's origin.
+  async capsuleConnect(data: CapsuleCall & { request: ConnectRequest }) {
+    await ensureOffscreen();
+    return offscreenSend('os/capsuleConnect', data);
+  },
+  async capsuleDescribe(data: CapsuleCall & { session: string; request: DescribeRequest }) {
+    await ensureOffscreen();
+    return offscreenSend('os/capsuleDescribe', data);
+  },
+  async capsuleSubmitBlueprint(data: CapsuleCall & { session: string; document: TransactionBlueprint }) {
+    await ensureOffscreen();
+    return offscreenSend('os/capsuleSubmitBlueprint', data);
+  },
+  async capsuleMakeTransaction(data: CapsuleCall & { session: string; document: TransactionBlueprint }) {
+    await ensureOffscreen();
+    return offscreenSend('os/capsuleMakeTransaction', data);
+  },
+  async capsuleEstimate(data: CapsuleCall & { session: string; document: TransactionBlueprint }) {
+    await ensureOffscreen();
+    return offscreenSend('os/capsuleEstimate', data);
+  },
+  async capsuleReadLocalState(data: CapsuleCall & { session: string; request: ReadLocalStateRequest }) {
+    await ensureOffscreen();
+    return offscreenSend('os/capsuleReadLocalState', data);
+  },
+  async capsuleWatch(data: CapsuleCall & { session: string; watch: boolean }) {
+    await ensureOffscreen();
+    return offscreenSend('os/capsuleWatch', data);
+  },
+  async capsuleList(data: CapsuleAccount) {
+    await ensureOffscreen();
+    return offscreenSend('os/capsuleList', data);
   },
 };

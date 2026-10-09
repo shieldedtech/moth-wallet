@@ -1711,5 +1711,98 @@
   },
   "dust_etaRecordsSettling": {
     "message": "Enregistrements de génération en cours"
+  },
+  "capsule_connectTitle": {
+    "message": "Utiliser un contrat ?"
+  },
+  "capsule_connectSubtitle": {
+    "message": "$1 demande à utiliser le compte $2 avec un contrat."
+  },
+  "capsule_connectDeploySubtitle": {
+    "message": "$1 demande à déployer des contrats depuis le compte $2."
+  },
+  "capsule_alsoConnectsSite": {
+    "message": "Cela connecte aussi le site à votre portefeuille."
+  },
+  "capsule_contractLabel": {
+    "message": "Contrat"
+  },
+  "capsule_bundleLabel": {
+    "message": "Code"
+  },
+  "capsule_buildLabel": {
+    "message": "Build"
+  },
+  "capsule_accountLabel": {
+    "message": "Compte"
+  },
+  "capsule_connectNote": {
+    "message": "Le portefeuille a résolu le code de ce contrat lui-même et l’a vérifié contre la chaîne. Le site peut appeler le contrat sous ce compte ; chaque appel vous est montré avant d’être prouvé."
+  },
+  "capsule_readTitle": {
+    "message": "Lire l’état privé ?"
+  },
+  "capsule_readSubtitle": {
+    "message": "$1 demande à lire $2 du contrat à $3."
+  },
+  "capsule_readNote": {
+    "message": "L’état privé reste dans ce portefeuille ; le site ne reçoit que la réponse de ce champ ou de cette fonction."
+  },
+  "capsule_transactionTitle": {
+    "message": "Approuver cette transaction de contrat ?"
+  },
+  "capsule_transactionSubtitle": {
+    "message": "$1 a construit ce qui suit, que ce portefeuille va prouver et soumettre."
+  },
+  "capsule_callLine": {
+    "message": "Appeler $1 sur $2"
+  },
+  "capsule_deployLine": {
+    "message": "Déployer $1 (build $2)"
+  },
+  "capsule_atAddress": {
+    "message": "à $1"
+  },
+  "capsule_noArguments": {
+    "message": "aucun argument"
+  },
+  "capsule_validUntil": {
+    "message": "Valide jusqu’à"
+  },
+  "capsule_approve": {
+    "message": "Approuver"
+  },
+  "capsule_allow": {
+    "message": "Autoriser"
+  },
+  "capsule_inspectorTitle": {
+    "message": "Capsules de contrats"
+  },
+  "capsule_inspectorEmptyTitle": {
+    "message": "Pas encore de capsules"
+  },
+  "capsule_inspectorEmptyBody": {
+    "message": "Ce compte n’a encore abouti aucun appel de contrat."
+  },
+  "capsule_foldedCount": {
+    "message": "$1 transaction(s) intégrée(s)"
+  },
+  "capsule_inFlightTitle": {
+    "message": "En cours"
+  },
+  "capsule_inFlightLine": {
+    "message": "$1 · soumise $2 · valide jusqu’à $3"
+  },
+  "capsule_inspectorRefresh": {
+    "message": "Actualiser"
+  },
+  "capsule_inspectorLocked": {
+    "message": "Déverrouillez le portefeuille pour voir ses capsules."
+  },
+  "capsule_inspectorError": {
+    "message": "Impossible de lire les capsules : $1"
+  },
+  "settings_capsules": {
+    "message": "Capsules de contrats"
   }
 }

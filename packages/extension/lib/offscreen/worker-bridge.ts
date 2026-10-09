@@ -3,8 +3,12 @@
 // offscreen → SW channel, and falls back to running the host inline under
 // `wxt dev` (where a real cross-origin Worker can't load).
 
+import { browser } from 'wxt/browser';
+import { openExecutorFrame } from '@shieldedtech/capsule-host-browser';
 import { offscreenSend } from './messaging';
-import { hostDispatch } from './host-dispatch';
+import { capsuleHost, hostDispatch } from './host-dispatch';
+import { CAPSULE_EXECUTOR_PAGE } from '../capsule/sandbox-csp';
+import type { CapsuleConsentDTO } from '../capsule/protocol';
 import {
   deserializeHostError,
   type HostEvent,
@@ -12,7 +16,7 @@ import {
   type HostMethod,
   type MethodData,
   type MethodResult,
-  type WorkerRequest,
+  type PageToWorker,
   type WorkerToPage,
 } from './worker-rpc';
 // Vite's `?worker` import (NOT `new Worker(new URL('./x', import.meta.url))`):
@@ -49,7 +53,42 @@ function failAll(error: Error): void {
   worker?.terminate();
   worker = null;
   booted = false;
+  dropExecutorFrame();
 }
+
+// --- The capsule executor --------------------------------------------------
+// The sandbox page runs contract code; this document owns its frame (a worker
+// cannot) and transfers the one port into it to the worker, which serves the
+// runtime on it. One frame per worker instance: a respawned worker gets a
+// fresh frame, since the old port went down with the old worker.
+let executorFrame: Promise<HTMLIFrameElement> | null = null;
+
+function dropExecutorFrame(): void {
+  void executorFrame?.then((frame) => frame.remove()).catch(() => {});
+  executorFrame = null;
+}
+
+/** The runtime's consent, put to the user by the background; a hop that fails is a refusal. */
+function askUser(consent: CapsuleConsentDTO): Promise<boolean> {
+  return offscreenSend('os/capsuleConsent', consent).catch(() => false);
+}
+
+/** Opens the executor page once and hands its port to whoever runs the runtime: the worker, or the inline host under dev. */
+function ensureCapsuleExecutor(w: Worker | null): Promise<void> {
+  executorFrame ??= openExecutorFrame(browser.runtime.getURL(`/${CAPSULE_EXECUTOR_PAGE}`)).then(async ({ frame, port }) => {
+    if (w !== null) {
+      w.postMessage({ kind: 'capsuleExecutorPort' } satisfies PageToWorker, [port]);
+    } else {
+      const mod = await capsuleHost();
+      mod.setCapsuleChannel({ ask: askUser, emit: (data) => relayEvent('os/eventCapsule', data) });
+      mod.attachExecutor(port);
+    }
+    return frame;
+  });
+  return executorFrame.then(() => undefined);
+}
+
+const isCapsuleMethod = (method: HostMethod): boolean => method.startsWith('os/capsule');
 
 function spawn(): Worker {
   booted = false;
@@ -59,6 +98,12 @@ function spawn(): Worker {
     const message = event.data;
     if ('event' in message) {
       relayEvent(message.event, message.data);
+      return;
+    }
+    if ('ask' in message) {
+      void askUser(message.consent).then((approved) =>
+        w.postMessage({ kind: 'capsuleConsentAnswer', ask: message.ask, approved } satisfies PageToWorker),
+      );
       return;
     }
     const entry = pending.get(message.id);
@@ -85,17 +130,21 @@ function spawn(): Worker {
   return w;
 }
 
-export function hostRequest<M extends HostMethod>(method: M, data: MethodData<M>): Promise<MethodResult<M>> {
+export async function hostRequest<M extends HostMethod>(method: M, data: MethodData<M>): Promise<MethodResult<M>> {
   // Dev: no real worker (cross-origin dev server) — run the host inline. This
   // whole branch is dead-code-eliminated from production builds.
-  if (import.meta.env.DEV) return inlineRequest(method, data);
+  if (import.meta.env.DEV) {
+    if (isCapsuleMethod(method)) await ensureCapsuleExecutor(null);
+    return inlineRequest(method, data);
+  }
 
   const w = (worker ??= spawn());
+  if (isCapsuleMethod(method)) await ensureCapsuleExecutor(w);
   const id = nextId++;
   return new Promise<MethodResult<M>>((resolve, reject) => {
     pending.set(id, { resolve: resolve as (value: unknown) => void, reject });
     try {
-      w.postMessage({ id, method, data } satisfies WorkerRequest);
+      w.postMessage({ id, method, data } satisfies PageToWorker);
     } catch (err) {
       // postMessage can throw synchronously (e.g. a non-cloneable payload).
       pending.delete(id);

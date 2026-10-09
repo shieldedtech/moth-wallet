@@ -1711,5 +1711,98 @@
   },
   "dust_etaRecordsSettling": {
     "message": "Erzeugungsdatensätze werden erstellt"
+  },
+  "capsule_connectTitle": {
+    "message": "Einen Vertrag verwenden?"
+  },
+  "capsule_connectSubtitle": {
+    "message": "$1 möchte das Konto $2 mit einem Vertrag verwenden."
+  },
+  "capsule_connectDeploySubtitle": {
+    "message": "$1 möchte Verträge vom Konto $2 aus bereitstellen."
+  },
+  "capsule_alsoConnectsSite": {
+    "message": "Dies verbindet die Website auch mit Ihrer Wallet."
+  },
+  "capsule_contractLabel": {
+    "message": "Vertrag"
+  },
+  "capsule_bundleLabel": {
+    "message": "Code"
+  },
+  "capsule_buildLabel": {
+    "message": "Build"
+  },
+  "capsule_accountLabel": {
+    "message": "Konto"
+  },
+  "capsule_connectNote": {
+    "message": "Die Wallet hat den Code dieses Vertrags selbst aufgelöst und gegen die Chain geprüft. Die Website kann den Vertrag unter diesem Konto aufrufen; jeder Aufruf wird Ihnen gezeigt, bevor er bewiesen wird."
+  },
+  "capsule_readTitle": {
+    "message": "Privaten Zustand lesen?"
+  },
+  "capsule_readSubtitle": {
+    "message": "$1 möchte $2 des Vertrags unter $3 lesen."
+  },
+  "capsule_readNote": {
+    "message": "Der private Zustand bleibt in dieser Wallet; die Website erhält nur die Antwort dieses einen Felds oder dieser Funktion."
+  },
+  "capsule_transactionTitle": {
+    "message": "Diese Vertragstransaktion genehmigen?"
+  },
+  "capsule_transactionSubtitle": {
+    "message": "$1 hat Folgendes gebaut, das diese Wallet beweisen und einreichen wird."
+  },
+  "capsule_callLine": {
+    "message": "$1 auf $2 aufrufen"
+  },
+  "capsule_deployLine": {
+    "message": "$1 bereitstellen (Build $2)"
+  },
+  "capsule_atAddress": {
+    "message": "unter $1"
+  },
+  "capsule_noArguments": {
+    "message": "keine Argumente"
+  },
+  "capsule_validUntil": {
+    "message": "Gültig bis"
+  },
+  "capsule_approve": {
+    "message": "Genehmigen"
+  },
+  "capsule_allow": {
+    "message": "Erlauben"
+  },
+  "capsule_inspectorTitle": {
+    "message": "Vertragskapseln"
+  },
+  "capsule_inspectorEmptyTitle": {
+    "message": "Noch keine Kapseln"
+  },
+  "capsule_inspectorEmptyBody": {
+    "message": "Dieses Konto hat noch keinen Aufruf eines Vertrags auf der Chain."
+  },
+  "capsule_foldedCount": {
+    "message": "$1 Transaktion(en) eingefaltet"
+  },
+  "capsule_inFlightTitle": {
+    "message": "Unterwegs"
+  },
+  "capsule_inFlightLine": {
+    "message": "$1 · eingereicht $2 · gültig bis $3"
+  },
+  "capsule_inspectorRefresh": {
+    "message": "Aktualisieren"
+  },
+  "capsule_inspectorLocked": {
+    "message": "Entsperren Sie die Wallet, um ihre Kapseln zu sehen."
+  },
+  "capsule_inspectorError": {
+    "message": "Die Kapseln konnten nicht gelesen werden: $1"
+  },
+  "settings_capsules": {
+    "message": "Vertragskapseln"
   }
 }

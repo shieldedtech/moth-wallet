@@ -53,7 +53,7 @@ describe('host error codec', () => {
 
 describe('HOST_METHODS', () => {
   // Every os/* request method — the OffscreenProtocol surface minus the
-  // synchronous ping and the three offscreen → SW events.
+  // synchronous ping, the offscreen → SW events and the consent question.
   const EXPECTED = [
     'os/walletList',
     'os/walletCreate',
@@ -92,6 +92,14 @@ describe('HOST_METHODS', () => {
     'os/provingProviderProve',
     'os/balanceTransaction',
     'os/makeIntent',
+    'os/capsuleConnect',
+    'os/capsuleDescribe',
+    'os/capsuleSubmitBlueprint',
+    'os/capsuleMakeTransaction',
+    'os/capsuleEstimate',
+    'os/capsuleReadLocalState',
+    'os/capsuleWatch',
+    'os/capsuleList',
   ];
 
   it('covers every request method exactly once', () => {

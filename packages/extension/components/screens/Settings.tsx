@@ -206,6 +206,15 @@ export function Settings({ onBack, navigate }: { onBack: () => void; navigate: (
             <ChevronRight size={15} className="transition-transform duration-150 group-hover:translate-x-0.5" />
           </span>
         </button>
+        <button
+          onClick={() => navigate('capsules')}
+          className="group flex w-full cursor-pointer items-center justify-between rounded-[18px] border-0 bg-transparent px-4 py-[15px] text-left text-sm font-medium transition duration-150 hover:bg-muted"
+        >
+          {t('settings_capsules')}
+          <span className="flex items-center gap-1 text-muted-foreground">
+            <ChevronRight size={15} className="transition-transform duration-150 group-hover:translate-x-0.5" />
+          </span>
+        </button>
 
       </Section>
 

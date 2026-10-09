@@ -7,10 +7,11 @@
 // once it exists — no ready handshake needed. The heavy host (WASM) is
 // lazy-imported on the first request, keeping worker startup instant.
 
-import { hostDispatch } from './host-dispatch';
+import type { CapsuleConsentDTO, CapsuleEventDTO } from '../capsule/protocol';
+import { capsuleHost, hostDispatch } from './host-dispatch';
 import { installRelayBackoff, onRelayState } from './relay-socket';
 import { requestMeter, installRequestMeter } from './request-meter';
-import { serializeHostError, type WorkerRequest, type WorkerToPage } from './worker-rpc';
+import { serializeHostError, type PageToWorker, type WorkerToPage } from './worker-rpc';
 
 // Before ANY SDK code can capture globalThis.WebSocket. The host (and with it
 // the wallet SDK, and with it @polkadot/rpc-provider) is lazy-imported below, so
@@ -27,7 +28,7 @@ installRequestMeter(requestMeter);
 // The project TS lib types `self` as a Window; narrow to just the worker-global
 // surface we use so postMessage/onmessage type against the worker signatures.
 interface WorkerScope {
-  onmessage: ((event: MessageEvent<WorkerRequest>) => void) | null;
+  onmessage: ((event: MessageEvent<PageToWorker>) => void) | null;
   postMessage(message: WorkerToPage): void;
 }
 const workerScope = self as unknown as WorkerScope;
@@ -47,8 +48,37 @@ const host = (): Promise<Host> =>
     return mod;
   }));
 
-workerScope.onmessage = (event: MessageEvent<WorkerRequest>) => {
-  const { id, method, data } = event.data;
+// The capsule runtime's questions to the user go out as asks and come back as answers, correlated
+// by id; the runtime itself is imported only once there is an executor to attach or a request.
+const consentAnswers = new Map<number, (approved: boolean) => void>();
+let nextAsk = 1;
+const capsuleChannel = {
+  ask: (consent: CapsuleConsentDTO) =>
+    new Promise<boolean>((resolve) => {
+      const ask = nextAsk++;
+      consentAnswers.set(ask, resolve);
+      workerScope.postMessage({ ask, consent });
+    }),
+  emit: (data: CapsuleEventDTO) => workerScope.postMessage({ event: 'os/eventCapsule', data }),
+};
+
+workerScope.onmessage = (event: MessageEvent<PageToWorker>) => {
+  const message = event.data;
+  if ('kind' in message) {
+    if (message.kind === 'capsuleExecutorPort') {
+      const port = event.ports[0];
+      if (port === undefined) return;
+      void capsuleHost().then((mod) => {
+        mod.setCapsuleChannel(capsuleChannel);
+        mod.attachExecutor(port);
+      });
+    } else {
+      consentAnswers.get(message.ask)?.(message.approved);
+      consentAnswers.delete(message.ask);
+    }
+    return;
+  }
+  const { id, method, data } = message;
   void (async () => {
     try {
       const result = await hostDispatch[method](await host(), data as never);

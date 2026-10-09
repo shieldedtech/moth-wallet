@@ -27,6 +27,7 @@ import {
 import { beginOp, endOp } from './sync-service';
 import { recordActivity } from './auto-lock';
 import { offscreen } from './offscreen-client';
+import { CapsuleRefusal, capsuleDispatch, isCapsuleMethod } from './capsule-handlers';
 
 // These methods can display an approval. Their panel-open attempt starts at
 // dispatch entry, before any permission/session/storage await consumes the
@@ -40,6 +41,11 @@ const APPROVAL_METHODS = new Set<ConnectorMethod>([
   'balanceUnsealedTransaction',
   'makeIntent',
   'makeTransfer',
+  // The capsule runtime asks for a grant on connect and on the first read, and consent on every transaction.
+  'capsuleConnect',
+  'capsuleReadLocalState',
+  'capsuleSubmitBlueprint',
+  'capsuleMakeTransaction',
 ]);
 
 // A dapp commonly requests all three balance views together. They are slices
@@ -250,6 +256,9 @@ async function dispatchMethod(
 ): Promise<unknown> {
   if ((NOT_IMPLEMENTED_METHODS as readonly string[]).includes(method)) {
     throw connectorError('InternalError', `${method} is not implemented by Moth (reference wallet MVP)`);
+  }
+  if (isCapsuleMethod(method)) {
+    return capsuleDispatch(origin, method, params, senderTabId, preparedPanel);
   }
 
   switch (method) {
@@ -586,6 +595,10 @@ export function registerConnectorHandlers(): void {
       const result = await dispatch(origin, data.method as ConnectorMethod, params, sender?.tab?.id);
       return { ok: true as const, resultJson: encodeBigintJson(result ?? null) };
     } catch (err) {
+      // The runtime's refusals cross as their own code, reason and path, which the page rebuilds.
+      if (err instanceof CapsuleRefusal) {
+        return { ok: false as const, error: { ...serializeError('InternalError', err.message), capsule: err.capsule } };
+      }
       const code: ErrorCode = (err as { code?: ErrorCode }).code ?? 'InternalError';
       const base = (err as { reason?: string; message?: string }).reason ?? (err as Error).message ?? String(err);
       // Fold the error's structured fields into the reason. Without this a DApp

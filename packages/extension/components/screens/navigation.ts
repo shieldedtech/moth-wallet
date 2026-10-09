@@ -7,6 +7,7 @@ export type Screen =
   | 'accounts'
   | 'settings'
   | 'connected-sites'
+  | 'capsules'
   | 'network-config'
   | 'address-book'
   | 'approval';

@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'wxt';
 import { nodePolyfills, type PolyfillOptions } from 'vite-plugin-node-polyfills';
 import wasm from 'vite-plugin-wasm';
@@ -13,6 +14,16 @@ import { CAPSULE_SANDBOX_CSP } from './lib/capsule/sandbox-csp';
 const NODE_POLYFILLS: PolyfillOptions = {
   include: ['buffer', 'process', 'stream', 'util', 'events'],
   globals: { Buffer: true, process: true, global: true },
+};
+
+// The polyfill plugin writes imports of its shims into every module it touches, the capsule
+// runtime's built packages included, from whose directory the specifier does not resolve; these
+// aliases resolve it here. The same treatment as the runtime's own web host gives them.
+const shim = (name: string) => fileURLToPath(import.meta.resolve(`vite-plugin-node-polyfills/shims/${name}`));
+const POLYFILL_SHIMS = {
+  'vite-plugin-node-polyfills/shims/buffer': shim('buffer'),
+  'vite-plugin-node-polyfills/shims/global': shim('global'),
+  'vite-plugin-node-polyfills/shims/process': shim('process'),
 };
 
 // The capsule runtime's packages are portals into a sibling checkout, where pnpm keeps their
@@ -121,7 +132,7 @@ export default defineConfig({
       tailwindcss() as never,
       nodePolyfills(NODE_POLYFILLS) as never,
     ],
-    resolve: { dedupe: SHARED_WITH_CAPSULE_RUNTIME },
+    resolve: { dedupe: SHARED_WITH_CAPSULE_RUNTIME, alias: POLYFILL_SHIMS },
     build: {
       target: 'esnext',
       // No <link rel="modulepreload"> in the generated HTML. Vite emits one per

@@ -4,6 +4,7 @@ import { BALANCES_PORT, SETUP_PORT } from '../lib/messaging/protocol';
 import { registerHandlers, enforceAutoLock } from '../lib/background/handlers';
 import { applyNodeAuthHeader } from '../lib/background/node-auth-header';
 import { registerConnectorHandlers } from '../lib/background/connector-handlers';
+import { registerCapsuleHandlers } from '../lib/background/capsule-handlers';
 import { watchApprovalWindows } from '../lib/background/approvals';
 import { getSession } from '../lib/background/session';
 import { addPort, addSetupPort, startSync, registerSyncEvents, reconcileStartup } from '../lib/background/sync-service';
@@ -28,6 +29,7 @@ export default defineBackground({
       .then((config) => applyNodeAuthHeader(config.nodeUrl, config.nodeAuthHeader))
       .catch(() => {});
     registerConnectorHandlers();
+    registerCapsuleHandlers();
     registerSyncEvents();
     watchApprovalWindows();
     reconcileStartup();
