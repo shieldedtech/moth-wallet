@@ -3,6 +3,7 @@ import { nodePolyfills, type PolyfillOptions } from 'vite-plugin-node-polyfills'
 import wasm from 'vite-plugin-wasm';
 import tailwindcss from '@tailwindcss/vite';
 import { MESSAGES } from './lib/i18n/messages';
+import { CAPSULE_SANDBOX_CSP } from './lib/capsule/sandbox-csp';
 
 // Core keeps Buffer/process usage (address, proof, contract paths) and the
 // wallet-sdk pulls in stream/util/events transitively. The dedicated wallet
@@ -13,6 +14,38 @@ const NODE_POLYFILLS: PolyfillOptions = {
   include: ['buffer', 'process', 'stream', 'util', 'events'],
   globals: { Buffer: true, process: true, global: true },
 };
+
+// The capsule runtime's packages are portals into a sibling checkout, where pnpm keeps their
+// dependencies beside them; Vite would bundle those copies as well as ours, and a ledger or an
+// SDK instantiated twice cannot pass its objects between the two. One copy of each, this one.
+const SHARED_WITH_CAPSULE_RUNTIME = [
+  '@midnightntwrk/ledger-v9',
+  '@midnightntwrk/onchain-runtime-v4',
+  '@midnightntwrk/wallet-sdk',
+  '@midnightntwrk/wallet-sdk-abstractions',
+  '@midnightntwrk/wallet-sdk-address-format',
+  '@midnightntwrk/wallet-sdk-capabilities',
+  '@midnightntwrk/wallet-sdk-dust-wallet',
+  '@midnightntwrk/wallet-sdk-facade',
+  '@midnightntwrk/wallet-sdk-hd',
+  '@midnightntwrk/wallet-sdk-indexer-client',
+  '@midnightntwrk/wallet-sdk-node-client',
+  '@midnightntwrk/wallet-sdk-prover-client',
+  '@midnightntwrk/wallet-sdk-runtime',
+  '@midnightntwrk/wallet-sdk-shielded',
+  '@midnightntwrk/wallet-sdk-unshielded-wallet',
+  '@midnightntwrk/wallet-sdk-utilities',
+  'effect',
+  'rxjs',
+];
+
+// The stack a demo runs against is on one machine of a LAN, so a demo build names that host
+// here (MOTH_DEMO_HOSTS=192.168.1.10,mac.tailnet.ts.net); the shipped manifest is unchanged.
+const demoHostPermissions = (process.env.MOTH_DEMO_HOSTS ?? '')
+  .split(',')
+  .map((host) => host.trim())
+  .filter((host) => host !== '')
+  .map((host) => `http://${host}/*`);
 
 export default defineConfig({
   modules: ['@wxt-dev/module-react'],
@@ -66,12 +99,14 @@ export default defineConfig({
       'https://*.midnight.network/*',
       'https://midnight-s3-fileshare-dev-eu-west-1.s3.eu-west-1.amazonaws.com/*',
       'http://localhost/*',
+      ...demoHostPermissions,
     ],
     web_accessible_resources: [{ resources: ['injected.js'], matches: ['<all_urls>'] }],
     content_security_policy: {
       // wasm-unsafe-eval: the ledger packages load their WASM in the offscreen
       // document's dedicated worker (an extension page context, so extension_pages applies).
       extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'",
+      sandbox: CAPSULE_SANDBOX_CSP,
     },
   }),
   vite: () => ({
@@ -86,6 +121,7 @@ export default defineConfig({
       tailwindcss() as never,
       nodePolyfills(NODE_POLYFILLS) as never,
     ],
+    resolve: { dedupe: SHARED_WITH_CAPSULE_RUNTIME },
     build: {
       target: 'esnext',
       // No <link rel="modulepreload"> in the generated HTML. Vite emits one per

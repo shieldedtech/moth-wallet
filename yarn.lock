@@ -987,6 +987,19 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@midnight-ntwrk/compact-runtime@file:../capsule-runtime/vendor/compact-runtime-0.20.102.tgz::locator=moth-wallet%40workspace%3A.":
+  version: 0.20.102
+  resolution: "@midnight-ntwrk/compact-runtime@file:../capsule-runtime/vendor/compact-runtime-0.20.102.tgz#../capsule-runtime/vendor/compact-runtime-0.20.102.tgz::hash=02e18c&locator=moth-wallet%40workspace%3A."
+  dependencies:
+    "@midnightntwrk/onchain-runtime-v4": "npm:^4.0.0-rc.3"
+    "@noble/curves": "npm:^2.2.0"
+    "@noble/hashes": "npm:^2.0.1"
+    "@types/object-inspect": "npm:^1.8.1"
+    object-inspect: "npm:^1.12.3"
+  checksum: 10c0/0544dec65efebdba681aa0d5ee6f8cbe7169d575dc25ffb1054fe8417086c1bfe133f16fed13bc3e5bcf233161a6b20723cec4a3a4f21b1758f86d69b1bf7b5e
+  languageName: node
+  linkType: hard
+
 "@midnight-ntwrk/compact-runtime@npm:0.16.0":
   version: 0.16.0
   resolution: "@midnight-ntwrk/compact-runtime@npm:0.16.0"
@@ -1183,6 +1196,20 @@ __metadata:
   version: 1.0.0-rc.5
   resolution: "@midnightntwrk/ledger-v9@npm:1.0.0-rc.5"
   checksum: 10c0/891d8ab048261ef7534fb1566dd19d88012ddaa401c7b441e0653a537b24fbb33e29ef5794b90684f264fbcb422825df583c356cd8170cd463a5b52a5e77bb80
+  languageName: node
+  linkType: hard
+
+"@midnightntwrk/onchain-runtime-v4@npm:4.0.0-rc.4":
+  version: 4.0.0-rc.4
+  resolution: "@midnightntwrk/onchain-runtime-v4@npm:4.0.0-rc.4"
+  checksum: 10c0/de8478eaebe44c9e0be55f0a1eeae9454dadf82e54b18ade0e8a603ede5294047341f289cb618533712578d4e1730cf2197a802ac143df8c53847dc6b5cc9689
+  languageName: node
+  linkType: hard
+
+"@midnightntwrk/onchain-runtime-v4@npm:^4.0.0-rc.3":
+  version: 4.0.0-rc.5
+  resolution: "@midnightntwrk/onchain-runtime-v4@npm:4.0.0-rc.5"
+  checksum: 10c0/f70bd8445e64700b28f4c302f1d0d25a763882ade618ffcc188e5cd0966f5e3fe62bd5bb4d4b637388ac4439e640eba79c883494aea90b3796f5a18ccd66317b
   languageName: node
   linkType: hard
 
@@ -1484,6 +1511,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@noble/curves@npm:^2.2.0":
+  version: 2.4.0
+  resolution: "@noble/curves@npm:2.4.0"
+  dependencies:
+    "@noble/hashes": "npm:2.4.0"
+  checksum: 10c0/b60b737f65cc4e128dd94fea467df1ed73c5c0c089ef1bdb61614a0897db1fa7151d7f95bb7205854a9030d3f80a879e00f3bb74990befde061184ae43dfaec6
+  languageName: node
+  linkType: hard
+
 "@noble/hashes@npm:1.8.0, @noble/hashes@npm:^1.3.1, @noble/hashes@npm:^1.3.3, @noble/hashes@npm:~1.8.0":
   version: 1.8.0
   resolution: "@noble/hashes@npm:1.8.0"
@@ -1495,6 +1531,13 @@ __metadata:
   version: 2.2.0
   resolution: "@noble/hashes@npm:2.2.0"
   checksum: 10c0/cad8630c504d6b9271984f685cd0af9101b40988fc2dfbe17ccdf068a9941f95cc5c9957d89e9ca4b7ca94c15cb35f93510c5d53a09fbcc83ee503b93d0a1034
+  languageName: node
+  linkType: hard
+
+"@noble/hashes@npm:2.4.0, @noble/hashes@npm:^2.0.1":
+  version: 2.4.0
+  resolution: "@noble/hashes@npm:2.4.0"
+  checksum: 10c0/f5820a38c52886073a69722a030688ad188bbacb822d01554545371259961c2b916266c57c013c2ce5a0d78aec977142fc68fd2a79be4c97b0644fcee9bb35f6
   languageName: node
   linkType: hard
 
@@ -2835,6 +2878,69 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@shieldedtech/capsule-blueprint@portal:../capsule-runtime/packages/blueprint::locator=moth-wallet%40workspace%3A.":
+  version: 0.0.0-use.local
+  resolution: "@shieldedtech/capsule-blueprint@portal:../capsule-runtime/packages/blueprint::locator=moth-wallet%40workspace%3A."
+  dependencies:
+    "@midnight-ntwrk/compact-runtime": "npm:0.20.102"
+    "@midnightntwrk/onchain-runtime-v4": "npm:4.0.0-rc.4"
+  languageName: node
+  linkType: soft
+
+"@shieldedtech/capsule-core@portal:../capsule-runtime/packages/core::locator=moth-wallet%40workspace%3A.":
+  version: 0.0.0-use.local
+  resolution: "@shieldedtech/capsule-core@portal:../capsule-runtime/packages/core::locator=moth-wallet%40workspace%3A."
+  dependencies:
+    "@midnight-ntwrk/compact-runtime": "npm:0.20.102"
+    "@midnightntwrk/ledger-v9": "npm:1.0.0-rc.5"
+    "@midnightntwrk/onchain-runtime-v4": "npm:4.0.0-rc.4"
+    "@noble/hashes": "npm:^2.0.1"
+    "@shieldedtech/capsule-blueprint": "workspace:*"
+    "@shieldedtech/capsule-executable": "workspace:*"
+    "@shieldedtech/capsule-executor": "workspace:*"
+  languageName: node
+  linkType: soft
+
+"@shieldedtech/capsule-executable@portal:../capsule-runtime/packages/executable::locator=moth-wallet%40workspace%3A.":
+  version: 0.0.0-use.local
+  resolution: "@shieldedtech/capsule-executable@portal:../capsule-runtime/packages/executable::locator=moth-wallet%40workspace%3A."
+  dependencies:
+    "@midnight-ntwrk/compact-runtime": "npm:0.20.102"
+  languageName: node
+  linkType: soft
+
+"@shieldedtech/capsule-executor@portal:../capsule-runtime/packages/executor::locator=moth-wallet%40workspace%3A.":
+  version: 0.0.0-use.local
+  resolution: "@shieldedtech/capsule-executor@portal:../capsule-runtime/packages/executor::locator=moth-wallet%40workspace%3A."
+  dependencies:
+    "@midnight-ntwrk/compact-runtime": "npm:0.20.102"
+    "@midnightntwrk/onchain-runtime-v4": "npm:4.0.0-rc.4"
+    "@shieldedtech/capsule-blueprint": "workspace:*"
+  languageName: node
+  linkType: soft
+
+"@shieldedtech/capsule-host-browser@portal:../capsule-runtime/packages/host-browser::locator=moth-wallet%40workspace%3A.":
+  version: 0.0.0-use.local
+  resolution: "@shieldedtech/capsule-host-browser@portal:../capsule-runtime/packages/host-browser::locator=moth-wallet%40workspace%3A."
+  dependencies:
+    "@shieldedtech/capsule-blueprint": "workspace:*"
+    "@shieldedtech/capsule-core": "workspace:*"
+    "@shieldedtech/capsule-executor": "workspace:*"
+  languageName: node
+  linkType: soft
+
+"@shieldedtech/capsule-wallet-sdk-port@portal:../capsule-runtime/packages/wallet-sdk-port::locator=moth-wallet%40workspace%3A.":
+  version: 0.0.0-use.local
+  resolution: "@shieldedtech/capsule-wallet-sdk-port@portal:../capsule-runtime/packages/wallet-sdk-port::locator=moth-wallet%40workspace%3A."
+  dependencies:
+    "@midnightntwrk/ledger-v9": "npm:1.0.0-rc.5"
+    "@midnightntwrk/wallet-sdk": "npm:2.0.0-rc.1"
+    "@shieldedtech/capsule-core": "workspace:*"
+    effect: "npm:^3.19.19"
+    rxjs: "npm:^7.8.2"
+  languageName: node
+  linkType: soft
+
 "@shieldedtech/moth-browser@workspace:*, @shieldedtech/moth-browser@workspace:packages/browser":
   version: 0.0.0-use.local
   resolution: "@shieldedtech/moth-browser@workspace:packages/browser"
@@ -2873,6 +2979,11 @@ __metadata:
     "@radix-ui/react-dialog": "npm:^1.1.18"
     "@radix-ui/react-dropdown-menu": "npm:^2.1.19"
     "@radix-ui/react-tabs": "npm:^1.1.16"
+    "@shieldedtech/capsule-blueprint": "workspace:*"
+    "@shieldedtech/capsule-core": "workspace:*"
+    "@shieldedtech/capsule-executor": "workspace:*"
+    "@shieldedtech/capsule-host-browser": "workspace:*"
+    "@shieldedtech/capsule-wallet-sdk-port": "workspace:*"
     "@shieldedtech/moth-browser": "workspace:*"
     "@shieldedtech/moth-wallet": "workspace:*"
     "@tailwindcss/vite": "npm:^4.3.2"
