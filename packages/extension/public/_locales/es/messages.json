@@ -1868,6 +1868,12 @@
   "capsule_detailNoCalls": {
     "message": "Ninguna llamada a este contrato se ha liquidado desde que existe la cápsula."
   },
+  "capsule_detailNoCallsSince": {
+    "message": "Ninguna llamada se ha liquidado desde entonces."
+  },
+  "capsule_detailUnrecorded": {
+    "message": "$1 transacción(es) se plegaron antes de que esta billetera guardara un historial; no tienen entrada aquí."
+  },
   "capsule_detailWithin": {
     "message": "dentro de $1 en $2"
   },

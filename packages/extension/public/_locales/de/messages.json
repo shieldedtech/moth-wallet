@@ -1868,6 +1868,12 @@
   "capsule_detailNoCalls": {
     "message": "Seit es diese Kapsel gibt, wurde kein Aufruf dieses Vertrags abgeschlossen."
   },
+  "capsule_detailNoCallsSince": {
+    "message": "Seitdem wurde kein Aufruf abgeschlossen."
+  },
+  "capsule_detailUnrecorded": {
+    "message": "$1 Transaktion(en) wurden eingefaltet, bevor diese Wallet einen Verlauf führte; sie haben hier keinen Eintrag."
+  },
   "capsule_detailWithin": {
     "message": "innerhalb von $1 auf $2"
   },

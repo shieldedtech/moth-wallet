@@ -106,8 +106,18 @@ describe('CapsuleDetail', () => {
   });
 
   it('says so when no call has settled yet', () => {
-    const html = renderToStaticMarkup(<CapsuleDetail capsule={{ ...view, history: [], inFlight: [] }} onBack={() => {}} />);
+    const html = renderToStaticMarkup(<CapsuleDetail capsule={{ ...view, folded: 0, history: [], inFlight: [] }} onBack={() => {}} />);
     expect(html).toContain('No call on this contract has settled since the capsule came to be.');
+    expect(html).not.toContain('before this wallet kept a history');
+  });
+
+  it('counts the records folded before the wallet kept a history', () => {
+    // Two folded in, one of them in the history: the other predates it.
+    const html = renderToStaticMarkup(<CapsuleDetail capsule={{ ...view, inFlight: [] }} onBack={() => {}} />);
+    expect(html).toContain('1 transaction(s) folded in before this wallet kept a history');
+    const older = renderToStaticMarkup(<CapsuleDetail capsule={{ ...view, history: [], inFlight: [] }} onBack={() => {}} />);
+    expect(older).toContain('2 transaction(s) folded in before this wallet kept a history');
+    expect(older).toContain('No call has settled since.');
   });
 
   it('tells a capsule with no private state from one not yet read', () => {

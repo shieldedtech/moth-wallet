@@ -52,6 +52,8 @@ export const capsule = {
   capsule_detailHost: 'host $1',
   capsule_detailConstructor: 'constructor',
   capsule_detailNoCalls: 'No call on this contract has settled since the capsule came to be.',
+  capsule_detailNoCallsSince: 'No call has settled since.',
+  capsule_detailUnrecorded: '$1 transaction(s) folded in before this wallet kept a history; they have no entry here.',
   capsule_detailWithin: 'inside $1 on $2',
   capsule_detailInFlightLine: 'in flight · valid until $1',
   capsule_detailOutcomeLine: '$1 in block $2 · $3',

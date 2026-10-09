@@ -1868,6 +1868,12 @@
   "capsule_detailNoCalls": {
     "message": "Aucun appel de ce contrat n’a été réglé depuis que la capsule existe."
   },
+  "capsule_detailNoCallsSince": {
+    "message": "Aucun appel n’a été réglé depuis."
+  },
+  "capsule_detailUnrecorded": {
+    "message": "$1 transaction(s) repliée(s) avant que ce portefeuille ne tienne un historique ; elles n’ont pas d’entrée ici."
+  },
   "capsule_detailWithin": {
     "message": "dans $1 sur $2"
   },

@@ -110,6 +110,8 @@ export function CapsuleDetail({ capsule, onBack }: { capsule: CapsuleView; onBac
       : []),
   ];
   const history = [...capsule.history].reverse();
+  // A record folded before the wallet kept a history is counted but not listed; the count says so.
+  const unrecorded = capsule.folded - capsule.history.filter((entry) => entry.result === 'folded').length;
   return (
     <PanelScreen>
       <PanelHeader title={t('capsule_detailTitle', [capsule.bundle])} onBack={onBack} />
@@ -156,8 +158,13 @@ export function CapsuleDetail({ capsule, onBack }: { capsule: CapsuleView; onBac
           </Card>
         </TabsContent>
         <TabsContent value="calls" forceMount className="flex flex-col gap-3 data-[state=inactive]:hidden">
+          {unrecorded > 0 && (
+            <p className="m-0 text-[13px] text-muted-foreground">{t('capsule_detailUnrecorded', [unrecorded])}</p>
+          )}
           {capsule.inFlight.length === 0 && history.length === 0 ? (
-            <p className="m-0 text-[13px] text-muted-foreground">{t('capsule_detailNoCalls')}</p>
+            <p className="m-0 text-[13px] text-muted-foreground">
+              {t(unrecorded > 0 ? 'capsule_detailNoCallsSince' : 'capsule_detailNoCalls')}
+            </p>
           ) : (
             <Card className="p-0">
               {capsule.inFlight.map((call, index) => (
