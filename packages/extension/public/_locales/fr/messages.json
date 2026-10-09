@@ -1841,9 +1841,6 @@
   "capsule_detailNotRead": {
     "message": "non lu"
   },
-  "capsule_detailEmpty": {
-    "message": "vide"
-  },
   "capsule_detailCircuit": {
     "message": "circuit"
   },
@@ -1882,6 +1879,36 @@
   },
   "capsule_detailOutcomeLine": {
     "message": "$1 dans le bloc $2 · $3"
+  },
+  "capsule_valueYes": {
+    "message": "Oui"
+  },
+  "capsule_valueNo": {
+    "message": "Non"
+  },
+  "capsule_valueNone": {
+    "message": "rien"
+  },
+  "capsule_valueEmpty": {
+    "message": "vide"
+  },
+  "capsule_valueEmptyBytes": {
+    "message": "aucun octet"
+  },
+  "capsule_valueItems": {
+    "message": "$1 élément(s)"
+  },
+  "capsule_valueEntries": {
+    "message": "$1 entrée(s)"
+  },
+  "capsule_valueFields": {
+    "message": "$1 champ(s)"
+  },
+  "capsule_valueCopy": {
+    "message": "Copier"
+  },
+  "capsule_valueCopied": {
+    "message": "Copié"
   },
   "settings_capsules": {
     "message": "Capsules de contrats"

@@ -1841,9 +1841,6 @@
   "capsule_detailNotRead": {
     "message": "sin leer"
   },
-  "capsule_detailEmpty": {
-    "message": "vacío"
-  },
   "capsule_detailCircuit": {
     "message": "circuito"
   },
@@ -1882,6 +1879,36 @@
   },
   "capsule_detailOutcomeLine": {
     "message": "$1 en el bloque $2 · $3"
+  },
+  "capsule_valueYes": {
+    "message": "Sí"
+  },
+  "capsule_valueNo": {
+    "message": "No"
+  },
+  "capsule_valueNone": {
+    "message": "nada"
+  },
+  "capsule_valueEmpty": {
+    "message": "vacío"
+  },
+  "capsule_valueEmptyBytes": {
+    "message": "sin bytes"
+  },
+  "capsule_valueItems": {
+    "message": "$1 elemento(s)"
+  },
+  "capsule_valueEntries": {
+    "message": "$1 entrada(s)"
+  },
+  "capsule_valueFields": {
+    "message": "$1 campo(s)"
+  },
+  "capsule_valueCopy": {
+    "message": "Copiar"
+  },
+  "capsule_valueCopied": {
+    "message": "Copiado"
   },
   "settings_capsules": {
     "message": "Cápsulas de contratos"

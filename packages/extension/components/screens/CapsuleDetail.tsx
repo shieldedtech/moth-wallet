@@ -4,25 +4,15 @@
 // or is still in flight, newest first, with the arguments the user consented to. Read once from
 // the inspector's view; the parent refreshes it when the chain answers.
 
-import { showFieldSignature, showSignature, type Json } from '@shieldedtech/capsule-blueprint';
+import { presentField, showFieldSignature, showSignature, type Json } from '@shieldedtech/capsule-blueprint';
 import type { CapsuleView } from '@shieldedtech/capsule-core';
 import { t } from '../../lib/i18n';
 import { Card, Separator } from '../ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
+import { CapsuleValue, countOf, isInline } from '../moth/capsule-value';
 import { PanelScreen, PanelHeader } from '../moth/panel';
 
 const short = (hex: string) => (hex.length > 18 ? `${hex.slice(0, 10)}…${hex.slice(-6)}` : hex);
-
-/** A value as the screen shows it: a scalar inline, a collection or struct laid out. */
-function Shown({ value }: { value: Json }) {
-  if (typeof value !== 'object' || value === null) {
-    return <span className="break-all font-mono text-xs">{JSON.stringify(value)}</span>;
-  }
-  if (Array.isArray(value) && value.length === 0) {
-    return <span className="font-mono text-xs text-muted-foreground">{t('capsule_detailEmpty')}</span>;
-  }
-  return <pre className="m-0 max-h-48 overflow-auto whitespace-pre-wrap break-all font-mono text-xs">{JSON.stringify(value, null, 2)}</pre>;
-}
 
 /** A call as one line: the circuit with the arguments it was asked with, or the asked call it ran inside. */
 function callLine(call: { circuit: string; arguments?: readonly Json[]; within?: { address: string; circuit: string } }): string {
@@ -51,15 +41,30 @@ function Fields({
   return (
     <>
       {names.map((name, index) => {
+        const signature = fields[name]!;
         const value = values[name];
+        const presented = value === undefined ? undefined : presentField(signature, value);
+        const inline = presented === undefined || isInline(presented);
         return (
           <div key={name}>
             {index > 0 && <Separator />}
-            <div className="flex flex-col gap-1 px-4 py-[13px]">
-              <span className="text-sm font-semibold">
-                {name} <span className="font-mono text-xs font-normal text-muted-foreground">{showFieldSignature(fields[name]!)}</span>
-              </span>
-              {value === undefined ? <span className="text-xs text-muted-foreground">{t('capsule_detailNotRead')}</span> : <Shown value={value} />}
+            <div className="flex flex-col gap-2 px-4 py-[13px]">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="min-w-0">
+                  <span className="block text-sm font-semibold">{name}</span>
+                  <span className="block font-mono text-[11px] text-muted-foreground">{showFieldSignature(signature)}</span>
+                </span>
+                <span className="shrink-0 text-right">
+                  {presented === undefined ? (
+                    <span className="text-[13px] italic text-muted-foreground">{t('capsule_detailNotRead')}</span>
+                  ) : inline ? (
+                    <CapsuleValue value={presented} />
+                  ) : (
+                    <span className="text-[12px] text-muted-foreground">{countOf(presented)}</span>
+                  )}
+                </span>
+              </div>
+              {presented !== undefined && !inline ? <CapsuleValue value={presented} /> : null}
             </div>
           </div>
         );

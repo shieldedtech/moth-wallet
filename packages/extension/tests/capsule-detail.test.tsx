@@ -12,7 +12,7 @@ const view: CapsuleView = {
   bundle: 'Ballot',
   fingerprint: '9a7bd2c1e1f0a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5',
   folded: 2,
-  fields: { credits: '0', myCommitment: { is_some: true, value: '1234' } },
+  fields: { credits: '0', myCommitment: { is_some: true, value: '1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd' } },
   ledger: { nullifiers: ['aa11', 'bb22'], votesFor: '2', votesAgainst: '0' },
   block,
   abi: {
@@ -31,7 +31,17 @@ const view: CapsuleView = {
     localStateSignatures: {
       fields: {
         credits: { storage: 'Cell', type: { tag: 'Uint', maxval: '15' } },
-        myCommitment: { storage: 'Cell', type: { tag: 'Struct', name: 'Maybe', elements: [] } },
+        myCommitment: {
+          storage: 'Cell',
+          type: {
+            tag: 'Struct',
+            name: 'Maybe',
+            elements: [
+              { name: 'is_some', type: { tag: 'Boolean' } },
+              { name: 'value', type: { tag: 'Bytes', length: 32 } },
+            ],
+          },
+        },
       },
       functions: {},
     },
@@ -79,8 +89,12 @@ describe('CapsuleDetail', () => {
     expect(html).toContain('as of block 12320');
     expect(html).toContain('Cell&lt;Uint&lt;4&gt;&gt;');
     expect(html).toContain('Cell&lt;Maybe&gt;');
-    expect(html).toContain('&quot;is_some&quot;: true');
+    // Each value in the panel's idiom: a Maybe as the value it holds, bytes truncated with a copy button, a set counted.
+    expect(html).toContain('1234abcd12…34abcd');
+    expect(html).toContain('aria-label="Copy"');
+    expect(html).not.toContain('is_some');
     expect(html).toContain('Set&lt;Bytes&lt;32&gt;&gt;');
+    expect(html).toContain('2 item(s)');
     expect(html).toContain('Counter');
     expect(html).toContain('Held only by this wallet.');
   });
@@ -118,6 +132,35 @@ describe('CapsuleDetail', () => {
     const older = renderToStaticMarkup(<CapsuleDetail capsule={{ ...view, history: [], inFlight: [] }} onBack={() => {}} />);
     expect(older).toContain('2 transaction(s) folded in before this wallet kept a history');
     expect(older).toContain('No call has settled since.');
+  });
+
+  it('shows a Maybe holding nothing as none, a flag as a pill, and a map as its entries', () => {
+    const html = renderToStaticMarkup(
+      <CapsuleDetail
+        capsule={{
+          ...view,
+          fields: { credits: '0', myCommitment: { is_some: false, value: '00' } },
+          ledger: { nullifiers: [], votesFor: '1234567', votesAgainst: '0', open: true, tally: [['For', '3']] },
+          abi: {
+            ...view.abi,
+            ledgerSignatures: {
+              fields: {
+                ...view.abi.ledgerSignatures.fields,
+                open: { storage: 'Cell', type: { tag: 'Boolean' } },
+                tally: { storage: 'Map', key: { tag: 'Enum', name: 'Choice', elements: ['For', 'Against'] }, value: { tag: 'Uint', maxval: '255' } },
+              },
+            },
+          },
+        }}
+        onBack={() => {}}
+      />,
+    );
+    expect(html).toContain('>none<');
+    expect(html).toContain('>Yes<');
+    expect(html).toContain('1,234,567');
+    expect(html).toContain('1 entry(ies)');
+    expect(html).toContain('>For<');
+    expect(html).toContain('0 item(s)');
   });
 
   it('tells a capsule with no private state from one not yet read', () => {

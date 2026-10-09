@@ -1841,9 +1841,6 @@
   "capsule_detailNotRead": {
     "message": "nicht gelesen"
   },
-  "capsule_detailEmpty": {
-    "message": "leer"
-  },
   "capsule_detailCircuit": {
     "message": "Circuit"
   },
@@ -1882,6 +1879,36 @@
   },
   "capsule_detailOutcomeLine": {
     "message": "$1 in Block $2 · $3"
+  },
+  "capsule_valueYes": {
+    "message": "Ja"
+  },
+  "capsule_valueNo": {
+    "message": "Nein"
+  },
+  "capsule_valueNone": {
+    "message": "nichts"
+  },
+  "capsule_valueEmpty": {
+    "message": "leer"
+  },
+  "capsule_valueEmptyBytes": {
+    "message": "keine Bytes"
+  },
+  "capsule_valueItems": {
+    "message": "$1 Element(e)"
+  },
+  "capsule_valueEntries": {
+    "message": "$1 Eintrag/Einträge"
+  },
+  "capsule_valueFields": {
+    "message": "$1 Feld(er)"
+  },
+  "capsule_valueCopy": {
+    "message": "Kopieren"
+  },
+  "capsule_valueCopied": {
+    "message": "Kopiert"
   },
   "settings_capsules": {
     "message": "Vertragskapseln"
