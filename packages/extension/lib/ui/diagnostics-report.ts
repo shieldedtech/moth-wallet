@@ -38,6 +38,8 @@ export interface DiagnosticsInput {
   proverUrl?: string;
   /** Whether a node auth header is configured. The value is never reported. */
   hasNodeAuthHeader: boolean;
+  /** Same for the indexer header. */
+  hasIndexerAuthHeader?: boolean;
   /** Whether a name resolver is configured. The URL is reported; it is a
    *  service endpoint, not a personal identifier. */
   nameResolverUrl: string | null;
@@ -112,6 +114,7 @@ export function buildDiagnosticsReport(input: DiagnosticsInput): string {
     `- Indexer: ${redactUrl(input.indexerUrl)}`,
     `- Prover: ${input.proverType}${input.proverUrl ? ` — ${redactUrl(input.proverUrl)}` : ''}`,
     `- Node auth header: ${input.hasNodeAuthHeader ? 'set (value not reported)' : 'not set'}`,
+    `- Indexer auth header: ${input.hasIndexerAuthHeader ? 'set (value not reported)' : 'not set'}`,
     `- Name resolver: ${input.nameResolverUrl ? redactUrl(input.nameResolverUrl) : 'not set'}`,
     `- Auto-lock: ${input.autoLockMinutes === null ? 'never (demo mode)' : `${input.autoLockMinutes} min`}`,
     `- Developer mode: ${input.developerMode ? 'on' : 'off'}`,

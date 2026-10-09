@@ -10,6 +10,7 @@ import * as ledger from '@midnight-ntwrk/ledger-v8';
 import {setNetworkId} from '@midnight-ntwrk/midnight-js/network-id';
 import {NodeZkConfigProvider} from '@midnight-ntwrk/midnight-js-node-zk-config-provider';
 import {indexerPublicDataProvider} from '@midnight-ntwrk/midnight-js-indexer-public-data-provider';
+import {indexerWebSocketImpl} from '../network/indexer-auth.js';
 import {levelPrivateStateProvider} from '@midnight-ntwrk/midnight-js-level-private-state-provider';
 import {HDWallet, Roles} from '@midnightntwrk/wallet-sdk/hd';
 import {createKeystore, PublicKey} from '@midnightntwrk/wallet-sdk/unshielded';
@@ -337,7 +338,7 @@ export async function deployContract(options: DeployOptions): Promise<Transactio
       privateStoragePasswordProvider: () => unshieldedAddr,
       accountId: unshieldedAddr,
     }),
-    publicDataProvider: indexerPublicDataProvider(indexerHttpUrl, indexerWsUrl),
+    publicDataProvider: indexerPublicDataProvider(indexerHttpUrl, indexerWsUrl, indexerWebSocketImpl() as never),
     zkConfigProvider: zkCfgProvider,
     proofProvider: createProofProvider(prover, zkCfgProvider.asKeyMaterialProvider()),
     walletProvider,

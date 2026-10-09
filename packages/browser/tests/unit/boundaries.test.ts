@@ -80,6 +80,11 @@ const ALLOWED_DYNAMIC_PLATFORM_IMPORTS = new Set([
 const ALLOWED_OPAQUE_DYNAMIC_IMPORTS = [
   'core/dist/sync/wallet-sync.js: specifier',
   'core/dist/sync/wallet-sync.js: specifier',
+  // The `ws` package, loaded only in Node and only once an indexer auth header
+  // is configured, to carry that header on the subscription handshake. The
+  // browser never reaches it: the extension sets the header with a
+  // declarativeNetRequest rule instead (see core/network/indexer-auth.ts).
+  'core/dist/network/indexer-auth.js: specifier',
 ];
 
 function tsSources(dir: string): string[] {

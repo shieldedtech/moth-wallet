@@ -64,12 +64,14 @@ function parseEndpoints(value: unknown): NetworkEndpoints | null {
   const candidate = value as Partial<NetworkEndpoints> & { proofServerUrl?: unknown };
   if (typeof candidate.nodeUrl !== 'string' || typeof candidate.indexerUrl !== 'string') return null;
   const nodeAuthHeader = parseNodeAuthHeader(candidate.nodeAuthHeader);
+  const indexerAuthHeader = parseNodeAuthHeader(candidate.indexerAuthHeader);
   if (isProverConfig(candidate.prover)) {
     return {
       nodeUrl: candidate.nodeUrl,
       indexerUrl: candidate.indexerUrl,
       prover: candidate.prover,
       ...(nodeAuthHeader ? { nodeAuthHeader } : {}),
+      ...(indexerAuthHeader ? { indexerAuthHeader } : {}),
     };
   }
   // Migrate settings written before prover modalities were introduced.
@@ -79,6 +81,7 @@ function parseEndpoints(value: unknown): NetworkEndpoints | null {
       indexerUrl: candidate.indexerUrl,
       prover: serverProver(candidate.proofServerUrl),
       ...(nodeAuthHeader ? { nodeAuthHeader } : {}),
+      ...(indexerAuthHeader ? { indexerAuthHeader } : {}),
     };
   }
   return null;
@@ -142,6 +145,7 @@ export async function getNetworkConfig(networkId?: string): Promise<NetworkConfi
   return {
     id: base.id,
     ...(customEndpoints.nodeAuthHeader ? { nodeAuthHeader: customEndpoints.nodeAuthHeader } : {}),
+    ...(customEndpoints.indexerAuthHeader ? { indexerAuthHeader: customEndpoints.indexerAuthHeader } : {}),
     nodeUrl: customEndpoints.nodeUrl,
     indexerUrl: customEndpoints.indexerUrl,
     prover: customEndpoints.prover,
@@ -152,6 +156,7 @@ export async function getNetworkConfig(networkId?: string): Promise<NetworkConfi
 export function endpointOverridesFor(network: string, endpoints: NetworkEndpoints): NetworkEndpoints | null {
   const preset = DEFAULT_NETWORKS[network];
   const nodeAuthHeader = parseNodeAuthHeader(endpoints.nodeAuthHeader);
+  const indexerAuthHeader = parseNodeAuthHeader(endpoints.indexerAuthHeader);
   const normalized = {
     nodeUrl: endpoints.nodeUrl.trim(),
     indexerUrl: endpoints.indexerUrl.trim(),
@@ -159,6 +164,7 @@ export function endpointOverridesFor(network: string, endpoints: NetworkEndpoint
       ? serverProver(endpoints.prover.url.trim())
       : endpoints.prover,
     ...(nodeAuthHeader ? { nodeAuthHeader } : {}),
+    ...(indexerAuthHeader ? { indexerAuthHeader } : {}),
   };
   // An auth header is itself an override. Without this clause a header set
   // against otherwise-default URLs collapses to null and is silently discarded
@@ -167,6 +173,7 @@ export function endpointOverridesFor(network: string, endpoints: NetworkEndpoint
   if (
     preset &&
     !nodeAuthHeader &&
+    !indexerAuthHeader &&
     normalized.nodeUrl === preset.nodeUrl &&
     normalized.indexerUrl === preset.indexerUrl &&
     proverConfigsEqual(normalized.prover, resolveProverConfig(preset))
