@@ -21,6 +21,10 @@ rc.1 fixes both.
 - CLI commands resolve the network before unlocking, so wallet keys are built
   for the ledger the network runs; sync refuses keys from another ledger with a
   clear error.
+- The extension chooses the ledger only from a network's effective endpoints.
+  Keystore calls that know just the network name no longer reload the preset's
+  ledger over the one sync loaded, which surfaced as "this wallet is using
+  ledger v8" on a v9 network with overridden endpoints.
 - On the v9 SDK, sync uses the ledger-v9 (V2) wallet variants, single-variant,
   over one v9 epoch. Facade calls that changed shape (keys no longer passed per
   call, transactions carried as `WalletTransaction` handles, per-ledger proving
