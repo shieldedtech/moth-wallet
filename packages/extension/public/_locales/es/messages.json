@@ -1802,6 +1802,81 @@
   "capsule_inspectorError": {
     "message": "No se pudieron leer las cápsulas: $1"
   },
+  "capsule_inFlightCount": {
+    "message": "$1 en curso"
+  },
+  "capsule_detailTitle": {
+    "message": "Cápsula $1"
+  },
+  "capsule_detailBlockLine": {
+    "message": "Estado público al bloque $1 ($2)"
+  },
+  "capsule_detailTabState": {
+    "message": "Estado"
+  },
+  "capsule_detailTabInterface": {
+    "message": "Interfaz"
+  },
+  "capsule_detailTabCalls": {
+    "message": "Llamadas"
+  },
+  "capsule_detailPrivateTitle": {
+    "message": "Estado privado"
+  },
+  "capsule_detailPrivateNote": {
+    "message": "Solo lo guarda esta billetera."
+  },
+  "capsule_detailPublicTitle": {
+    "message": "Estado público"
+  },
+  "capsule_detailPublicNote": {
+    "message": "En la cadena, para todos."
+  },
+  "capsule_detailNoPrivate": {
+    "message": "Este contrato no guarda estado privado."
+  },
+  "capsule_detailNoPublic": {
+    "message": "Este contrato no exporta campos públicos."
+  },
+  "capsule_detailNotRead": {
+    "message": "sin leer"
+  },
+  "capsule_detailEmpty": {
+    "message": "vacío"
+  },
+  "capsule_detailCircuit": {
+    "message": "circuito"
+  },
+  "capsule_detailProved": {
+    "message": "con prueba"
+  },
+  "capsule_detailNotProved": {
+    "message": "sin prueba"
+  },
+  "capsule_detailLocalFunction": {
+    "message": "función local"
+  },
+  "capsule_detailReadsLedger": {
+    "message": "lee el ledger"
+  },
+  "capsule_detailHost": {
+    "message": "host $1"
+  },
+  "capsule_detailConstructor": {
+    "message": "constructor"
+  },
+  "capsule_detailNoCalls": {
+    "message": "Ninguna llamada a este contrato se ha liquidado desde que existe la cápsula."
+  },
+  "capsule_detailWithin": {
+    "message": "dentro de $1 en $2"
+  },
+  "capsule_detailInFlightLine": {
+    "message": "en curso · válida hasta $1"
+  },
+  "capsule_detailOutcomeLine": {
+    "message": "$1 en el bloque $2 · $3"
+  },
   "settings_capsules": {
     "message": "Cápsulas de contratos"
   }

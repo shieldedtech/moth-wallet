@@ -6,6 +6,7 @@
 // IMPORTANT: no runtime imports. This module is read by the service worker, the offscreen page,
 // the wallet worker and the injected page script alike.
 
+import type { CapsuleView } from '@shieldedtech/capsule-core';
 import type {
   CapsuleEvent,
   ConnectRequest,
@@ -90,15 +91,13 @@ export interface CapsuleEventDTO {
   event: CapsuleEvent;
 }
 
-/** The inspector's reading of an account's capsules and what is in flight. */
+/**
+ * The inspector's reading of an account's capsules and what is in flight. A capsule's view is the
+ * runtime's own, JSON throughout: both states rendered, the interface, its history and its calls
+ * in flight.
+ */
 export interface CapsuleInspectorDTO {
-  capsules: Array<{
-    address: string;
-    bundle: string;
-    fingerprint: string;
-    folded: number;
-    fields: Record<string, Json>;
-  }>;
+  capsules: CapsuleView[];
   pending: Array<{ identifier: string; calls: Array<{ address: string; circuit: string }>; submittedAt: string; ttl: string }>;
 }
 

@@ -1802,6 +1802,81 @@
   "capsule_inspectorError": {
     "message": "Die Kapseln konnten nicht gelesen werden: $1"
   },
+  "capsule_inFlightCount": {
+    "message": "$1 unterwegs"
+  },
+  "capsule_detailTitle": {
+    "message": "Kapsel $1"
+  },
+  "capsule_detailBlockLine": {
+    "message": "Öffentlicher Zustand mit Stand Block $1 ($2)"
+  },
+  "capsule_detailTabState": {
+    "message": "Zustand"
+  },
+  "capsule_detailTabInterface": {
+    "message": "Schnittstelle"
+  },
+  "capsule_detailTabCalls": {
+    "message": "Aufrufe"
+  },
+  "capsule_detailPrivateTitle": {
+    "message": "Privater Zustand"
+  },
+  "capsule_detailPrivateNote": {
+    "message": "Nur in dieser Wallet gehalten."
+  },
+  "capsule_detailPublicTitle": {
+    "message": "Öffentlicher Zustand"
+  },
+  "capsule_detailPublicNote": {
+    "message": "Auf der Chain, für alle."
+  },
+  "capsule_detailNoPrivate": {
+    "message": "Dieser Vertrag hält keinen privaten Zustand."
+  },
+  "capsule_detailNoPublic": {
+    "message": "Dieser Vertrag exportiert keine öffentlichen Felder."
+  },
+  "capsule_detailNotRead": {
+    "message": "nicht gelesen"
+  },
+  "capsule_detailEmpty": {
+    "message": "leer"
+  },
+  "capsule_detailCircuit": {
+    "message": "Circuit"
+  },
+  "capsule_detailProved": {
+    "message": "bewiesen"
+  },
+  "capsule_detailNotProved": {
+    "message": "nicht bewiesen"
+  },
+  "capsule_detailLocalFunction": {
+    "message": "lokale Funktion"
+  },
+  "capsule_detailReadsLedger": {
+    "message": "liest das Ledger"
+  },
+  "capsule_detailHost": {
+    "message": "Host $1"
+  },
+  "capsule_detailConstructor": {
+    "message": "Konstruktor"
+  },
+  "capsule_detailNoCalls": {
+    "message": "Seit es diese Kapsel gibt, wurde kein Aufruf dieses Vertrags abgeschlossen."
+  },
+  "capsule_detailWithin": {
+    "message": "innerhalb von $1 auf $2"
+  },
+  "capsule_detailInFlightLine": {
+    "message": "unterwegs · gültig bis $1"
+  },
+  "capsule_detailOutcomeLine": {
+    "message": "$1 in Block $2 · $3"
+  },
   "settings_capsules": {
     "message": "Vertragskapseln"
   }

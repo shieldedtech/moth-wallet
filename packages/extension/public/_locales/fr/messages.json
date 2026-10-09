@@ -1802,6 +1802,81 @@
   "capsule_inspectorError": {
     "message": "Impossible de lire les capsules : $1"
   },
+  "capsule_inFlightCount": {
+    "message": "$1 en cours"
+  },
+  "capsule_detailTitle": {
+    "message": "Capsule $1"
+  },
+  "capsule_detailBlockLine": {
+    "message": "État public au bloc $1 ($2)"
+  },
+  "capsule_detailTabState": {
+    "message": "État"
+  },
+  "capsule_detailTabInterface": {
+    "message": "Interface"
+  },
+  "capsule_detailTabCalls": {
+    "message": "Appels"
+  },
+  "capsule_detailPrivateTitle": {
+    "message": "État privé"
+  },
+  "capsule_detailPrivateNote": {
+    "message": "Détenu uniquement par ce portefeuille."
+  },
+  "capsule_detailPublicTitle": {
+    "message": "État public"
+  },
+  "capsule_detailPublicNote": {
+    "message": "Sur la chaîne, pour tous."
+  },
+  "capsule_detailNoPrivate": {
+    "message": "Ce contrat ne conserve aucun état privé."
+  },
+  "capsule_detailNoPublic": {
+    "message": "Ce contrat n’exporte aucun champ public."
+  },
+  "capsule_detailNotRead": {
+    "message": "non lu"
+  },
+  "capsule_detailEmpty": {
+    "message": "vide"
+  },
+  "capsule_detailCircuit": {
+    "message": "circuit"
+  },
+  "capsule_detailProved": {
+    "message": "prouvé"
+  },
+  "capsule_detailNotProved": {
+    "message": "non prouvé"
+  },
+  "capsule_detailLocalFunction": {
+    "message": "fonction locale"
+  },
+  "capsule_detailReadsLedger": {
+    "message": "lit le registre"
+  },
+  "capsule_detailHost": {
+    "message": "hôte $1"
+  },
+  "capsule_detailConstructor": {
+    "message": "constructeur"
+  },
+  "capsule_detailNoCalls": {
+    "message": "Aucun appel de ce contrat n’a été réglé depuis que la capsule existe."
+  },
+  "capsule_detailWithin": {
+    "message": "dans $1 sur $2"
+  },
+  "capsule_detailInFlightLine": {
+    "message": "en cours · valable jusqu’à $1"
+  },
+  "capsule_detailOutcomeLine": {
+    "message": "$1 dans le bloc $2 · $3"
+  },
   "settings_capsules": {
     "message": "Capsules de contrats"
   }

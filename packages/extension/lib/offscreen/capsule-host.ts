@@ -245,9 +245,8 @@ export async function watch(host: Host, data: CapsuleCall & { session: string; w
 
 export async function list(host: Host, data: CapsuleAccount): Promise<CapsuleInspectorDTO> {
   const account = await open(host, data);
-  const capsules = await capsuleViews(account.runtime, account.resolver);
   return {
-    capsules: capsules.map((view) => ({ ...view, fields: { ...view.fields } })),
+    capsules: await capsuleViews(account.runtime),
     pending: account.runtime.account.pendingTransactions().map((tx) => ({
       identifier: tx.identifier,
       calls: tx.calls.map((call) => ({ address: call.address, circuit: call.circuit })),

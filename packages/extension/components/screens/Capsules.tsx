@@ -1,30 +1,24 @@
 // The capsule inspector: the unlocked account's capsules, each with the contract it holds private
-// state for, the code that address resolved to, how many transactions have folded in, and its
-// fields rendered as a dApp reads them; then what is still in flight. Read from the runtime in the
-// wallet worker; it changes when the chain answers, not before.
+// state for, the code that address resolved to and how many transactions have folded in, each
+// opening in full; then what is still in flight. Read from the runtime in the wallet worker; it
+// changes when the chain answers, not before.
 
 import { useCallback, useEffect, useState } from 'react';
-import { Box } from 'lucide-react';
+import { Box, ChevronRight } from 'lucide-react';
 import { t } from '../../lib/i18n';
 import { sendMessage } from '../../lib/messaging/protocol';
 import type { CapsuleInspectorDTO } from '../../lib/capsule/protocol';
 import { Button } from '../ui/button';
 import { Card, Separator } from '../ui/card';
 import { PanelScreen, PanelHeader } from '../moth/panel';
+import { CapsuleDetail } from './CapsuleDetail';
 
 const short = (hex: string) => (hex.length > 18 ? `${hex.slice(0, 10)}…${hex.slice(-6)}` : hex);
-
-/** A field as the screen shows it: the JSON a dApp reads, a collection counted first. */
-function shown(value: unknown): string {
-  if (Array.isArray(value)) {
-    return value.length === 0 ? 'empty' : `${value.length}: ${value.map((item) => JSON.stringify(item)).join(', ')}`;
-  }
-  return JSON.stringify(value);
-}
 
 export function Capsules({ onBack }: { onBack: () => void }) {
   const [view, setView] = useState<CapsuleInspectorDTO | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [opened, setOpened] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -38,6 +32,12 @@ export function Capsules({ onBack }: { onBack: () => void }) {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // The opened capsule is read from the latest view, so a refresh behind it shows through.
+  const detail = opened === null ? undefined : view?.capsules.find((capsule) => capsule.address === opened);
+  if (detail !== undefined) {
+    return <CapsuleDetail capsule={detail} onBack={() => setOpened(null)} />;
+  }
 
   return (
     <PanelScreen
@@ -63,18 +63,21 @@ export function Capsules({ onBack }: { onBack: () => void }) {
           {view.capsules.map((capsule, index) => (
             <div key={capsule.address}>
               {index > 0 && <Separator />}
-              <div className="px-4 py-[13px]">
-                <span className="block text-sm font-semibold">{capsule.bundle}</span>
-                <span className="block font-mono text-xs text-muted-foreground">{short(capsule.address)}</span>
-                <span className="block text-xs text-muted-foreground">
-                  {t('capsule_buildLabel')} {short(capsule.fingerprint)} · {t('capsule_foldedCount', [capsule.folded])}
-                </span>
-                {Object.entries(capsule.fields).map(([name, value]) => (
-                  <span key={name} className="block break-all font-mono text-xs">
-                    {name}: {shown(value)}
+              <button
+                type="button"
+                onClick={() => setOpened(capsule.address)}
+                className="flex w-full cursor-pointer items-center gap-3 px-4 py-[13px] text-left hover:bg-muted/50"
+              >
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="block text-sm font-semibold">{capsule.bundle}</span>
+                  <span className="block font-mono text-xs text-muted-foreground">{short(capsule.address)}</span>
+                  <span className="block text-xs text-muted-foreground">
+                    {t('capsule_buildLabel')} {short(capsule.fingerprint)} · {t('capsule_foldedCount', [capsule.folded])}
+                    {capsule.inFlight.length > 0 && ` · ${t('capsule_inFlightCount', [capsule.inFlight.length])}`}
                   </span>
-                ))}
-              </div>
+                </span>
+                <ChevronRight size={16} className="shrink-0 text-muted-foreground" />
+              </button>
             </div>
           ))}
         </Card>
