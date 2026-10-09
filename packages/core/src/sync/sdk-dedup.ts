@@ -23,7 +23,7 @@ import {sdk} from '../sdk/index.js';
 // hand them to the original applyUpdate which advances appliedIndex
 // against the new tail.
 //
-// We wrap rather than fork — V1Builder.withSync is the documented
+// We wrap rather than fork — the variant builder's withSync is the documented
 // extension point.
 
 
@@ -39,7 +39,12 @@ type WrappedUpdate<U> = {
   readonly [key: string]: unknown;
 };
 
-type ApplyUpdateFn<S, U> = (state: S, wrappedUpdate: WrappedUpdate<U>) => readonly [S, {changes: unknown[]; protocolVersion: number}];
+// `rest` carries what newer SDKs pass after the update (ledger-v9 variants: the active protocol range).
+type ApplyUpdateFn<S, U> = (
+  state: S,
+  wrappedUpdate: WrappedUpdate<U>,
+  ...rest: unknown[]
+) => readonly [S, {changes: unknown[]; protocolVersion: number}];
 
 interface Capability<S, U> {
   applyUpdate: ApplyUpdateFn<S, U>;
@@ -65,16 +70,17 @@ function makeDedupingApplyUpdate<S extends {progress: {appliedIndex: bigint; [k:
   base: Capability<S, U>,
   updateProgress: (state: S, patch: {highestRelevantWalletIndex: bigint; isConnected: boolean}) => S,
 ): ApplyUpdateFn<S, U> {
-  return (state, wrapped) => {
-    if (wrapped.updates.length === 0) {
-      return base.applyUpdate(state, wrapped);
+  return (state, wrapped, ...rest) => {
+    // Version signals carry no event batch; only batches can hold a re-sent boundary event.
+    if (!Array.isArray(wrapped.updates) || wrapped.updates.length === 0) {
+      return base.applyUpdate(state, wrapped, ...rest);
     }
 
     const {fresh, droppedCount} = partitionByAppliedIndex(wrapped.updates, state.progress.appliedIndex);
 
     if (droppedCount === 0) {
       // No duplicates — fast path, defer entirely to the SDK.
-      return base.applyUpdate(state, wrapped);
+      return base.applyUpdate(state, wrapped, ...rest);
     }
 
     if (fresh.length === 0) {
@@ -91,22 +97,22 @@ function makeDedupingApplyUpdate<S extends {progress: {appliedIndex: bigint; [k:
 
     // Partial overlap — hand only the fresh suffix to the SDK so its
     // own appliedIndex advancement still reflects the batch tail.
-    return base.applyUpdate(state, {...wrapped, updates: fresh});
+    return base.applyUpdate(state, {...wrapped, updates: fresh}, ...rest);
   };
 }
 
-// The V1Builder generics evolve through each builder method (withSync
+// The variant builder generics evolve through each builder method (withSync
 // narrows the configuration intersection, withTransacting adds more, etc).
 // Annotating an exact return type is brittle and adds no value — callers
 // pass the result directly to CustomShieldedWallet / CustomDustWallet,
-// which already accept their own narrowed V1Builder type. Let TS infer.
+// which already accept their own narrowed builder type. Let TS infer.
 
 /**
- * Build a V1Builder for the shielded wallet whose syncCapability filters
+ * Build a variant builder for the shielded wallet whose syncCapability filters
  * already-applied events before handing them to the SDK's
  * makeEventsSyncCapability. Pass to CustomShieldedWallet(cfg, builder).
  */
-// The inferred narrow V1Builder type references internal SDK paths that
+// The inferred narrow builder type references internal SDK paths that
 // aren't part of the SDK's public type surface, which makes the `.d.ts`
 // non-portable. Callers always feed the result straight into
 // CustomShieldedWallet(cfg, builder) / CustomDustWallet(cfg, builder),
@@ -114,53 +120,66 @@ function makeDedupingApplyUpdate<S extends {progress: {appliedIndex: bigint; [k:
 // at the call site is recovered. We return `unknown` here as a
 // deliberate escape hatch, and the callers cast.
 
+// The v8 SDK's variants build with V1Builder, the v9 SDK's ledger-v9 variants with V2Builder.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function variantBuilder(variant: any): new () => any {
+  return 'V2Builder' in variant ? variant.V2Builder : variant.V1Builder;
+}
+
+// Replacing sync clears the key derivation on v9 builders; the dedup wraps the default sync, so the default holds.
+// The v8 SDK's builders have no such step.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function withDefaultStartAux(builder: any): unknown {
+  return typeof builder.withStartAuxDefaults === 'function' ? builder.withStartAuxDefaults() : builder;
+}
+
 // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
 export function dedupingShieldedBuilder(): unknown {
-  return new (sdk().shieldedV1.V1Builder)().withDefaults().withSync(
+  return withDefaultStartAux(new (variantBuilder(sdk().shieldedVariant))().withDefaults().withSync(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    sdk().shieldedV1.Sync.makeEventsSyncService as any,
+    sdk().shieldedVariant.Sync.makeEventsSyncService as any,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ((_config: unknown, _getContext: unknown) => {
-      const base = sdk().shieldedV1.Sync.makeEventsSyncCapability();
+      const base = sdk().shieldedVariant.Sync.makeEventsSyncCapability();
       return {
         applyUpdate: makeDedupingApplyUpdate(
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           base as any,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (state: any, patch: any) => sdk().shieldedV1.CoreWallet.updateProgress(state, patch),
+          (state: any, patch: any) => sdk().shieldedVariant.CoreWallet.updateProgress(state, patch),
         ),
       };
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     }) as any,
-  );
+  ));
 }
 
 /**
- * Build a V1Builder for the dust wallet whose syncCapability filters
+ * Build a variant builder for the dust wallet whose syncCapability filters
  * already-applied events before handing them to the SDK's
  * makeDefaultSyncCapability. Pass to CustomDustWallet(cfg, builder).
  */
 // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
 export function dedupingDustBuilder(): unknown {
-  return new (sdk().dustV1.V1Builder)().withDefaults().withSync(
+  return withDefaultStartAux(new (variantBuilder(sdk().dustVariant))().withDefaults().withSync(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    sdk().dustV1.SyncService.makeDefaultSyncService as any,
+    sdk().dustVariant.SyncService.makeDefaultSyncService as any,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ((_config: unknown, _getContext: unknown) => {
       // makeDefaultSyncCapability ignores its args at runtime even though
-      // V1Builder invokes the factory with (config, getContext).
-      const base = (sdk().dustV1.SyncService.makeDefaultSyncCapability as () => unknown)();
+      // The builder invokes the factory with (config, getContext).
+      const base = (sdk().dustVariant.SyncService.makeDefaultSyncCapability as () => unknown)();
       return {
         applyUpdate: makeDedupingApplyUpdate(
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           base as any,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (state: any, patch: any) => sdk().dustV1.CoreWallet.updateProgress(state, patch),
+          (state: any, patch: any) => sdk().dustVariant.CoreWallet.updateProgress(state, patch),
         ),
       };
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     }) as any,
-  );
+  ));
 }
 
 // Exported for unit-testing the boundary-filter logic in isolation,

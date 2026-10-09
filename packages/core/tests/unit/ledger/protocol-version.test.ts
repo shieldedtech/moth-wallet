@@ -23,6 +23,13 @@ describe('ledgerVersionForProtocol', () => {
     expect(ledgerVersionForProtocol(PROTOCOL_VERSION_V9)).toBe('v9');
   });
 
+  it('keeps minor releases on their ledger', () => {
+    // Ledger 9.1 devnets (node 2.1.0) report 2001000.
+    expect(ledgerVersionForProtocol(2_001_000)).toBe('v9');
+    expect(ledgerVersionForProtocol(2_999_999)).toBe('v9');
+    expect(ledgerVersionForProtocol(1_001_000)).toBe('v8');
+  });
+
   it('returns undefined for a version it does not know, rather than guessing', () => {
     expect(ledgerVersionForProtocol(3_000_000)).toBeUndefined();
     expect(ledgerVersionForProtocol(0)).toBeUndefined();

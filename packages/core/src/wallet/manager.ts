@@ -5,7 +5,7 @@ import { generateMnemonic24, validateMnemonic, mnemonicToSeed, hexSeedToUint8Arr
 import { encryptKeystore, decryptKeystore, keystoreNeedsUpgrade, type EncryptedKeystore } from './keystore.js';
 import { deriveAllAddressesFromSeed, deriveRawKeys, Roles } from './address.js';
 import type { SignatureKind } from './signature-encoding.js';
-import { initSdk } from '../sdk/index.js';
+import { activeSdkVersion, initSdk } from '../sdk/index.js';
 import { detectLedgerVersion } from '../ledger/protocol-version.js';
 import { canonicalNetworkId, DEFAULT_NETWORKS } from '../types/network.js';
 import { deriveWalletKeys, type WalletKeys } from '../sync/operations.js';
@@ -260,7 +260,9 @@ export class WalletManager {
     );
   }
 
+  // Front ends load the SDK from the effective endpoints first; the preset is only a fallback.
   private async ensureRuntimeFor(networkId: string): Promise<void> {
+    if (activeSdkVersion() !== undefined) return;
     const preset = DEFAULT_NETWORKS[networkId];
     const version = preset ? (await detectLedgerVersion(preset)).version : 'v8';
     await initSdk(version);
