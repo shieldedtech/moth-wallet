@@ -28,10 +28,14 @@ export interface SdkModule {
   readonly proving: typeof import('@midnightntwrk/wallet-sdk/capabilities/proving');
   readonly proverClient: typeof import('@midnightntwrk/wallet-sdk/prover-client/effect');
   readonly dust: typeof import('@midnightntwrk/wallet-sdk/dust');
-  readonly dustV1: typeof import('@midnightntwrk/wallet-sdk/dust/v1');
+  /** The dust variant for this ledger: v1 on the v8 SDK, v2 (the ledger-v9 variant) on the v9 SDK. */
+  readonly dustVariant: typeof import('@midnightntwrk/wallet-sdk/dust/v1');
   readonly shielded: typeof import('@midnightntwrk/wallet-sdk/shielded');
-  readonly shieldedV1: typeof import('@midnightntwrk/wallet-sdk/shielded/v1');
+  /** The shielded variant for this ledger, chosen as for {@link SdkModule.dustVariant}. */
+  readonly shieldedVariant: typeof import('@midnightntwrk/wallet-sdk/shielded/v1');
   readonly unshielded: typeof import('@midnightntwrk/wallet-sdk/unshielded');
+  /** The unshielded variant for this ledger, chosen as for {@link SdkModule.dustVariant}. */
+  readonly unshieldedVariant: typeof import('@midnightntwrk/wallet-sdk/unshielded/v1');
   readonly nodeClient: typeof import('@midnightntwrk/wallet-sdk/node-client');
 }
 
@@ -51,10 +55,11 @@ async function importSdk(version: LedgerVersion): Promise<SdkModule> {
           import('wallet-sdk-v9/capabilities/proving'),
           import('wallet-sdk-v9/prover-client/effect'),
           import('wallet-sdk-v9/dust'),
-          import('wallet-sdk-v9/dust/v1'),
+          import('wallet-sdk-v9/dust/v2'),
           import('wallet-sdk-v9/shielded'),
-          import('wallet-sdk-v9/shielded/v1'),
+          import('wallet-sdk-v9/shielded/v2'),
           import('wallet-sdk-v9/unshielded'),
+          import('wallet-sdk-v9/unshielded/v2'),
           import('wallet-sdk-v9/node-client'),
         ])
       : await Promise.all([
@@ -68,15 +73,16 @@ async function importSdk(version: LedgerVersion): Promise<SdkModule> {
           import('@midnightntwrk/wallet-sdk/shielded'),
           import('@midnightntwrk/wallet-sdk/shielded/v1'),
           import('@midnightntwrk/wallet-sdk/unshielded'),
+          import('@midnightntwrk/wallet-sdk/unshielded/v1'),
           import('@midnightntwrk/wallet-sdk/node-client'),
         ]);
 
-  const [root, facade, submission, proving, proverClient, dust, dustV1, shielded, shieldedV1, unshielded, nodeClient] =
+  const [root, facade, submission, proving, proverClient, dust, dustVariant, shielded, shieldedVariant, unshielded, unshieldedVariant, nodeClient] =
     mods as unknown as SdkModule[keyof SdkModule][];
 
   return {
     root, facade, submission, proving, proverClient,
-    dust, dustV1, shielded, shieldedV1, unshielded, nodeClient,
+    dust, dustVariant, shielded, shieldedVariant, unshielded, unshieldedVariant, nodeClient,
   } as SdkModule;
 }
 

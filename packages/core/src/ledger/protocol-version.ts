@@ -19,15 +19,20 @@ import type {LedgerVersion} from '../types/network.js';
 export const PROTOCOL_VERSION_V8 = 1_000_000;
 /** Post-fork: devnet, stagenet. */
 export const PROTOCOL_VERSION_V9 = 2_000_000;
+/** First version past ledger v9; nothing at or above it is recognised. */
+const PROTOCOL_VERSION_NEXT = 3_000_000;
 
 /**
  * The ledger a protocol version implies, or undefined if we have never seen it.
  * Unknown is deliberately not an error here — the caller decides whether an
  * unrecognised network is fatal.
+ *
+ * Minor releases stay on their ledger (ledger 9.1 networks report 2001000), so
+ * each ledger owns a range, as in the wallet SDK's V9NativeForkSchedule.
  */
 export function ledgerVersionForProtocol(protocolVersion: number): LedgerVersion | undefined {
-  if (protocolVersion === PROTOCOL_VERSION_V8) return 'v8';
-  if (protocolVersion === PROTOCOL_VERSION_V9) return 'v9';
+  if (protocolVersion >= PROTOCOL_VERSION_V8 && protocolVersion < PROTOCOL_VERSION_V9) return 'v8';
+  if (protocolVersion >= PROTOCOL_VERSION_V9 && protocolVersion < PROTOCOL_VERSION_NEXT) return 'v9';
   return undefined;
 }
 
@@ -126,7 +131,10 @@ export interface DetectedLedger {
   readonly observedProtocolVersion?: number;
 }
 
+// Keyed by endpoint as well as id: an overridden network must not inherit what its preset reported.
 const detected = new Map<string, DetectedLedger>();
+const cacheKey = (network: {readonly id: string; readonly indexerUrl: string}) =>
+  `${network.id}\n${network.indexerUrl}`;
 
 /**
  * Which ledger a network is actually running, preferring what it reports over
@@ -149,7 +157,7 @@ export async function detectLedgerVersion(
   network: {readonly id: string; readonly indexerUrl: string; readonly ledgerVersion?: LedgerVersion},
   options: {readonly probe?: (indexerUrl: string) => Promise<number | undefined>} = {},
 ): Promise<DetectedLedger> {
-  const cached = detected.get(network.id);
+  const cached = detected.get(cacheKey(network));
   if (cached) return cached;
 
   const configured: LedgerVersion = network.ledgerVersion ?? 'v8';
@@ -169,12 +177,12 @@ export async function detectLedgerVersion(
       ? {version: fromNetwork, source: 'network', observedProtocolVersion: observed}
       : {version: configured, source: 'config', ...(observed !== undefined ? {observedProtocolVersion: observed} : {})};
 
-  detected.set(network.id, result);
+  detected.set(cacheKey(network), result);
   return result;
 }
 
 /** Forget what every network reported. For tests, and after a network edit. */
 export function resetLedgerDetectionCache(networkId?: string): void {
   if (networkId === undefined) detected.clear();
-  else detected.delete(networkId);
+  else for (const key of [...detected.keys()]) if (key.startsWith(`${networkId}\n`)) detected.delete(key);
 }
