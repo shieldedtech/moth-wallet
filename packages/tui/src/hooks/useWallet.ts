@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { WalletManager, type WalletInfo, type UnlockedWallet, type StorageAdapter, type WalletAddresses, type WalletKeys , chainTip, DEFAULT_NETWORKS, deriveAllAddressesFromSeed, mnemonicToSeed} from '@shieldedtech/moth-wallet';
-import { dustAddressBytes } from '@shieldedtech/moth-wallet/cardano/registration';
+import { dustAddressBytes } from '@shieldedtech/moth-wallet/cardano/receiver';
+import { unlockImportedCardanoPhrases } from '@shieldedtech/moth-wallet/cardano/accounts';
 import type { WalletState } from '../types.js';
 
 /**
@@ -16,8 +17,11 @@ import type { WalletState } from '../types.js';
  */
 export interface CardanoSecret {
   readonly mnemonic: string | null;
-  /** The wallet's own Midnight coin public key: the default DUST receiver. */
+  /** The wallet's own serialized DUST address: the default DUST receiver. */
   readonly dustAddress: string;
+  /** Imported Cardano accounts' phrases by account id, decrypted at unlock so no
+   *  passphrase is kept. An account imported this session is added on import. */
+  readonly importedPhrases: Map<string, string>;
 }
 
 interface UnlockedEntry {
@@ -28,12 +32,14 @@ interface UnlockedEntry {
 
 async function loadCardanoSecret(
   manager: WalletManager,
+  storage: StorageAdapter,
   name: string,
   passphrase: string,
   network: string,
 ): Promise<CardanoSecret> {
+  const importedPhrases = await unlockImportedCardanoPhrases(storage, name, passphrase);
   const phrase = await manager.exportPhrase(name, passphrase);
-  if (phrase.kind !== 'mnemonic') return { mnemonic: null, dustAddress: '' };
+  if (phrase.kind !== 'mnemonic') return { mnemonic: null, dustAddress: '', importedPhrases };
   const seed = await mnemonicToSeed(phrase.value);
   const seedHex = Array.from(seed).map(b => b.toString(16).padStart(2, '0')).join('');
   seed.fill(0);
@@ -43,6 +49,7 @@ async function loadCardanoSecret(
   return {
     mnemonic: phrase.value,
     dustAddress: bech32 ? dustAddressBytes(bech32) : '',
+    importedPhrases,
   };
 }
 
@@ -93,7 +100,7 @@ export function useWallet(storage: StorageAdapter) {
     if (cached) return cached.wallet;
 
     const wallet = await manager.unlock(name, passphrase);
-    const cardano = await loadCardanoSecret(manager, name, passphrase, wallet.network);
+    const cardano = await loadCardanoSecret(manager, storage, name, passphrase, wallet.network);
     sessionCache.current.set(name, { wallet, addresses: wallet.addresses, cardano });
 
     setActiveWallet(prev => {
@@ -102,7 +109,7 @@ export function useWallet(storage: StorageAdapter) {
     });
 
     return wallet;
-  }, [manager]);
+  }, [manager, storage]);
 
   const lockAll = useCallback(() => {
     for (const [, entry] of sessionCache.current) {
@@ -140,12 +147,12 @@ export function useWallet(storage: StorageAdapter) {
     sessionCache.current.set(name, {
       wallet,
       addresses: wallet.addresses,
-      cardano: await loadCardanoSecret(manager, name, passphrase, wallet.network),
+      cardano: await loadCardanoSecret(manager, storage, name, passphrase, wallet.network),
     });
     newWallets.current.add(name);
     await refresh();
     return info;
-  }, [manager, refresh]);
+  }, [manager, storage, refresh]);
 
   const importWallet = useCallback(async (name: string, mnemonic: string, passphrase: string, network: string) => {
     await manager.import(name, mnemonic, passphrase, network);
@@ -153,10 +160,10 @@ export function useWallet(storage: StorageAdapter) {
     sessionCache.current.set(name, {
       wallet,
       addresses: wallet.addresses,
-      cardano: await loadCardanoSecret(manager, name, passphrase, wallet.network),
+      cardano: await loadCardanoSecret(manager, storage, name, passphrase, wallet.network),
     });
     await refresh();
-  }, [manager, refresh]);
+  }, [manager, storage, refresh]);
 
   const importFromSeed = useCallback(async (name: string, hexSeed: string, passphrase: string, network: string) => {
     await manager.importFromSeed(name, hexSeed, passphrase, network);
@@ -164,10 +171,10 @@ export function useWallet(storage: StorageAdapter) {
     sessionCache.current.set(name, {
       wallet,
       addresses: wallet.addresses,
-      cardano: await loadCardanoSecret(manager, name, passphrase, wallet.network),
+      cardano: await loadCardanoSecret(manager, storage, name, passphrase, wallet.network),
     });
     await refresh();
-  }, [manager, refresh]);
+  }, [manager, storage, refresh]);
 
   const switchWallet = useCallback(async (name: string) => {
     await manager.setActive(name);

@@ -18,12 +18,38 @@ export const LOVELACE_PER_ADA = 1_000_000n;
 export const STARS_PER_CNIGHT = 1_000_000n;
 
 /**
- * Floor on any output: the protocol rejects an output holding less, and a
- * "send 0.1 ADA" that fails deep in the node is worse than one refused here.
- * The true minimum depends on the output's size, so this is the plain-ADA case
- * and Lucid still has the final say for outputs carrying tokens.
+ * A floor below which no output can ever be valid. The real minimum for a given
+ * output comes from `minLovelaceForOutput`, which is what sends are checked against.
  */
 export const MIN_ADA_OUTPUT = 1_000_000n;
+
+/**
+ * The least lovelace the ledger accepts for an output carrying `tokens`, computed
+ * as Lucid's `pay.ToAddress` does. Lucid silently raises a smaller amount to this,
+ * so a send must be checked against it to move only what the user approved.
+ */
+export async function minLovelaceForOutput(
+  session: CardanoSession,
+  to: string,
+  tokens: Readonly<Record<string, bigint>>,
+): Promise<bigint> {
+  const { CML } = await import('@lucid-evolution/lucid');
+  const coinsPerUtxoByte = session.lucid.config().protocolParameters?.coinsPerUtxoByte;
+  if (coinsPerUtxoByte === undefined) {
+    throw new CardanoSendError('Cardano protocol parameters are not loaded, so the minimum output cannot be checked.');
+  }
+  const multiAsset = CML.MultiAsset.new();
+  for (const [unit, quantity] of Object.entries(tokens)) {
+    multiAsset.set(CML.ScriptHash.from_hex(unit.slice(0, 56)), CML.AssetName.from_hex(unit.slice(56)), quantity);
+  }
+  const output = CML.TransactionOutputBuilder.new()
+    .with_address(CML.Address.from_bech32(to))
+    .next()
+    .with_asset_and_min_required_coin(multiAsset, coinsPerUtxoByte)
+    .build();
+  const required = output.output().amount().coin();
+  return required > MIN_ADA_OUTPUT ? required : MIN_ADA_OUTPUT;
+}
 
 export interface CardanoSendRequest {
   readonly to: string;
@@ -152,12 +178,19 @@ export async function sendCardanoAssets(
     );
   }
 
-  const assets: Record<string, bigint> = {};
+  const tokens: Record<string, bigint> = cnight > 0n ? { [cnightUnit(session.config)]: cnight } : {};
+  const minimum = await minLovelaceForOutput(session, to, tokens);
+  // Refused rather than raised: Lucid would quietly send the minimum instead,
+  // which is more than the user approved.
+  if (lovelace > 0n && lovelace < minimum) {
+    throw new InvalidInputError(
+      `This output needs at least ${formatAda(minimum)} ADA; ${formatAda(lovelace)} was requested.`,
+    );
+  }
   // An output carrying a token still needs ADA alongside it. When the caller
   // asked only for cNIGHT, the minimum is added rather than refusing — the
   // alternative is a confusing error about an amount the user never mentioned.
-  assets.lovelace = lovelace > 0n ? lovelace : MIN_ADA_OUTPUT;
-  if (cnight > 0n) assets[cnightUnit(session.config)] = cnight;
+  const assets: Record<string, bigint> = { lovelace: lovelace > 0n ? lovelace : minimum, ...tokens };
 
   onStage?.('building');
   const builder = session.lucid.newTx();

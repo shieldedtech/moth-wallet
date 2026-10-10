@@ -283,7 +283,7 @@ export type DaemonCardanoStatusResult = {
 };
 
 export type DaemonCardanoRegisterParams = {
-  /** Midnight coin public key, 64 hex chars. Defaults to this wallet's own. */
+  /** DUST receiver: an `mn_dust_…` address or its 66-hex serialization. Defaults to this wallet's own. */
   readonly receiver?: string;
   readonly summary?: string;
   readonly details?: readonly string[];
@@ -307,7 +307,7 @@ export type DaemonCardanoDeregisterResult = {
 };
 
 export type DaemonCardanoUpdateParams = {
-  /** Midnight coin public key, 64 hex chars. Required — this verb exists to change it. */
+  /** DUST receiver: an `mn_dust_…` address or its 66-hex serialization. Required — this verb exists to change it. */
   readonly receiver: string;
   readonly summary?: string;
   readonly details?: readonly string[];

@@ -165,7 +165,12 @@ export function App({ networkId: networkIdProp }: AppProps) {
       ? {
           cardano: {
             config: cardanoConfig,
-            getMnemonic: () => wallet.getActiveCardano()?.mnemonic ?? null,
+            resolveAccountKey: async () => {
+              const secret = wallet.getActiveCardano();
+              if (!secret) throw new Error('Unlock a wallet first.');
+              const { resolveActiveCardanoKey } = await import('@shieldedtech/moth-wallet/cardano/accounts');
+              return resolveActiveCardanoKey(storage, wallet.activeWallet?.name ?? '', secret.mnemonic, secret.importedPhrases);
+            },
             getDustAddress: () => wallet.getActiveCardano()?.dustAddress ?? '',
           },
         }
@@ -639,9 +644,15 @@ export function App({ networkId: networkIdProp }: AppProps) {
             ? 'Cardano configuration could not be loaded — see the logs screen.'
             : !secret
               ? 'Unlock a wallet first.'
-              : !secret.mnemonic
+              : !secret.mnemonic && secret.importedPhrases.size === 0
                 ? 'This wallet was imported from a raw hex seed, so it has no Cardano address.'
                 : undefined;
+          // The active account is read at the moment of use, so a switch on this
+          // screen, or from the CLI, applies to the next action.
+          const activeKey = async () => {
+            const { resolveActiveCardanoKey } = await import('@shieldedtech/moth-wallet/cardano/accounts');
+            return resolveActiveCardanoKey(storage, activeWalletName, secret!.mnemonic, secret!.importedPhrases);
+          };
           const chainReason = !reason && cardanoConfig && !cardanoConfig.blockfrostProjectId
             ? 'No Blockfrost project ID configured. Add one on the Network screen (press n) under Cardano, or set MOTH_BLOCKFROST_PROJECT_ID.'
             : undefined;
@@ -654,13 +665,14 @@ export function App({ networkId: networkIdProp }: AppProps) {
             label: string,
             fn: (session: import('@shieldedtech/moth-wallet/cardano').CardanoSession) => Promise<string>,
           ): Promise<CardanoActionResult> => {
-            if (!cardanoConfig || !secret?.mnemonic) {
+            if (!cardanoConfig || !secret || reason) {
               return { success: false, error: reason ?? 'Cardano unavailable' };
             }
             try {
               const { withCardanoSession } = await import('@shieldedtech/moth-wallet/cardano');
-              logs.info(`Cardano ${label}: building transaction`);
-              const txHash = await withCardanoSession(secret.mnemonic, cardanoConfig, fn);
+              const { account, mnemonic, accountIndex } = await activeKey();
+              logs.info(`Cardano ${label} (${account.label}): building transaction`);
+              const txHash = await withCardanoSession(mnemonic, cardanoConfig, fn, accountIndex);
               logs.info(`Cardano ${label} submitted: ${txHash}`);
               return { success: true, txHash };
             } catch (err) {
@@ -675,11 +687,12 @@ export function App({ networkId: networkIdProp }: AppProps) {
               {...(reason ? { unavailableReason: reason } : {})}
               {...(chainReason ? { chainUnavailableReason: chainReason } : {})}
               loadAccount={async () => {
-                if (!cardanoConfig || !secret?.mnemonic) throw new Error(reason ?? 'Cardano unavailable');
+                if (!cardanoConfig || !secret || reason) throw new Error(reason ?? 'Cardano unavailable');
                 // Pure derivation — deliberately not routed through
                 // withCardanoSession, which would demand a Blockfrost key.
                 const { deriveCardanoAddresses } = await import('@shieldedtech/moth-wallet/cardano');
-                const addresses = await deriveCardanoAddresses(secret.mnemonic, cardanoConfig);
+                const { mnemonic, accountIndex } = await activeKey();
+                const addresses = await deriveCardanoAddresses(mnemonic, cardanoConfig, accountIndex);
                 return {
                   cardanoNetwork: cardanoConfig.network,
                   address: addresses.address,
@@ -711,6 +724,8 @@ export function App({ networkId: networkIdProp }: AppProps) {
               onImportAccount={async (phrase, passphrase) => {
                 const { importCardanoAccount } = await import('@shieldedtech/moth-wallet/cardano/accounts');
                 const { account } = await importCardanoAccount(storage, activeWalletName, phrase, passphrase);
+                // Usable at once, without re-unlocking: the phrase is in hand here.
+                secret?.importedPhrases.set(account.id, phrase.trim().replace(/\s+/g, ' '));
                 logs.info(`Cardano account imported: ${account.label}`);
               }}
               onSend={(to, lovelace, cnight) =>
@@ -724,14 +739,19 @@ export function App({ networkId: networkIdProp }: AppProps) {
               onRemoveAccount={async (id) => {
                 const { removeCardanoAccount } = await import('@shieldedtech/moth-wallet/cardano/accounts');
                 await removeCardanoAccount(storage, activeWalletName, id);
+                secret?.importedPhrases.delete(id);
                 logs.info('Cardano account removed');
               }}
               loadStatus={async () => {
-                if (!cardanoConfig || !secret?.mnemonic) throw new Error(reason ?? 'Cardano unavailable');
+                if (!cardanoConfig || !secret || reason) throw new Error(reason ?? 'Cardano unavailable');
                 const { withCardanoSession } = await import('@shieldedtech/moth-wallet/cardano');
                 const { readCardanoDustStatus } = await import('@shieldedtech/moth-wallet/cardano');
-                const status = await withCardanoSession(secret.mnemonic, cardanoConfig, (session) =>
-                  readCardanoDustStatus(session, networkConfig.indexerUrl),
+                const { mnemonic, accountIndex } = await activeKey();
+                const status = await withCardanoSession(
+                  mnemonic,
+                  cardanoConfig,
+                  (session) => readCardanoDustStatus(session, networkConfig.indexerUrl),
+                  accountIndex,
                 );
                 return {
                   cardanoNetwork: status.network,

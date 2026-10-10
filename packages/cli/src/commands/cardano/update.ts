@@ -8,7 +8,7 @@ export default class CardanoUpdate extends CardanoCommand {
 
   static override args = {
     receiver: Args.string({
-      description: 'Midnight coin public key to generate DUST to, 64 hex chars',
+      description: 'Midnight DUST address (mn_dust_…) or its 66-hex serialization',
       required: true,
     }),
   };

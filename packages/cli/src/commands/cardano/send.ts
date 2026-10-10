@@ -1,11 +1,15 @@
 import { Args, Flags } from '@oclif/core';
 import { CardanoCommand, cardanoFlags } from '../../cardano-command.js';
 import { getPassphrase } from '../../adapters/passphrase.js';
+import { WalletError } from '@shieldedtech/moth-wallet';
 import {
+  assertSendableAddress,
+  cnightUnit,
   explorerTxUrl,
   findRegistration,
   formatAda,
   formatCnight,
+  minLovelaceForOutput,
   parseAda,
   parseCnight,
   readCardanoBalance,
@@ -51,6 +55,16 @@ export default class CardanoSend extends CardanoCommand {
       // rotates them. Someone sending away registered cNIGHT should be told
       // that here, not discover it when generation drops.
       const registration = cnight > 0n ? await findRegistration(session) : null;
+      // Checked before the prompt, so the user approves the ADA that will actually move.
+      await assertSendableAddress(session, args.to);
+      const tokens = cnight > 0n ? { [cnightUnit(config)]: cnight } : {};
+      const minimum = await minLovelaceForOutput(session, args.to, tokens);
+      if (lovelace > 0n && lovelace < minimum) {
+        throw new WalletError(
+          'INVALID_INPUT',
+          `This output needs at least ${formatAda(minimum)} ADA; ${formatAda(lovelace)} was requested.`,
+        );
+      }
 
       await this.confirmTransaction(
         {
@@ -59,7 +73,7 @@ export default class CardanoSend extends CardanoCommand {
           'Wallet': walletName,
           'Account': `${account.label} (${account.kind})`,
           'To': args.to,
-          ...(lovelace > 0n ? { 'ADA': formatAda(lovelace) } : {}),
+          'ADA': lovelace > 0n ? formatAda(lovelace) : `${formatAda(minimum)} (minimum carried with cNIGHT)`,
           ...(cnight > 0n
             ? { 'cNIGHT': `${formatCnight(cnight)} of ${formatCnight(balance.cnight)}` }
             : {}),

@@ -20,7 +20,7 @@ export default class DaemonCardanoRegister extends BaseCommand {
     ...daemonClientFlags,
     receiver: Flags.string({
       description:
-        "Midnight coin public key to generate DUST to, 64 hex chars (default: this wallet's own)",
+        "Midnight DUST address (mn_dust_…) or its 66-hex serialization (default: this wallet's own)",
     }),
     'timeout-ms': Flags.integer({
       description: 'Override the RPC timeout (default: 300000)',

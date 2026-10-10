@@ -31,7 +31,14 @@ import {
   deriveAllAddressesFromSeed,
   mnemonicToSeed,
 } from '@shieldedtech/moth-wallet';
-import {dustAddressBytes, loadCardanoConfig} from '@shieldedtech/moth-wallet/cardano';
+import {
+  CardanoNetworkUnavailableError,
+  dustAddressBytes,
+  loadCardanoConfig,
+  resolveActiveCardanoKey,
+  unlockImportedCardanoPhrases,
+  type CardanoNetworkConfig,
+} from '@shieldedtech/moth-wallet/cardano';
 import {BaseCommand} from '../../base-command.js';
 import {getPassphrase} from '../../adapters/passphrase.js';
 
@@ -149,10 +156,20 @@ export default class DaemonServe extends BaseCommand {
     // cleared alongside the Midnight keys on shutdown.
     //
     // A hex-seed wallet has no mnemonic and never will; `cardanoMnemonic` stays
-    // null and the cardano* verbs refuse with that reason.
-    const cardanoConfig = await loadCardanoConfig(this.storage, network.id);
+    // null and the cardano* verbs refuse with that reason. A network with no
+    // Cardano pair leaves the capability out, and those verbs refuse cleanly.
+    let cardanoConfig: CardanoNetworkConfig | null = null;
+    try {
+      cardanoConfig = await loadCardanoConfig(this.storage, network.id);
+    } catch (err) {
+      if (!(err instanceof CardanoNetworkUnavailableError)) throw err;
+    }
     const phrase = await this.walletManager.exportPhrase(walletName, passphrase);
     let cardanoMnemonic: string | null = phrase.kind === 'mnemonic' ? phrase.value : null;
+    // Imported accounts' phrases, decrypted now so the daemon need not keep the passphrase.
+    let cardanoImported = cardanoConfig
+      ? await unlockImportedCardanoPhrases(this.storage, walletName, passphrase)
+      : new Map<string, string>();
     // The default DUST receiver: this wallet's own DUST address, serialized.
     // NOT the shielded coin public key — the registration datum records a DUST
     // address, and the two are different keys.
@@ -165,9 +182,11 @@ export default class DaemonServe extends BaseCommand {
       cardanoDustAddress = bech32 ? dustAddressBytes(bech32) : '';
     }
     process.stderr.write(
-      cardanoMnemonic
-        ? `[daemon-serve] Cardano enabled on ${cardanoConfig.network}\n`
-        : '[daemon-serve] Cardano unavailable — wallet has no mnemonic (hex-seed import)\n',
+      !cardanoConfig
+        ? `[daemon-serve] Cardano unavailable — ${network.id} has no Cardano network\n`
+        : cardanoMnemonic || cardanoImported.size > 0
+          ? `[daemon-serve] Cardano enabled on ${cardanoConfig.network}\n`
+          : '[daemon-serve] Cardano unavailable — wallet has no mnemonic (hex-seed import)\n',
     );
 
     process.stderr.write('[daemon-serve] starting wallet sync\n');
@@ -207,11 +226,16 @@ export default class DaemonServe extends BaseCommand {
       queue,
       auditLog,
       maxSpendRaw,
-      cardano: {
-        config: cardanoConfig,
-        getMnemonic: () => cardanoMnemonic,
-        getDustAddress: () => cardanoDustAddress,
-      },
+      ...(cardanoConfig
+        ? {
+            cardano: {
+              config: cardanoConfig,
+              resolveAccountKey: () =>
+                resolveActiveCardanoKey(this.storage, walletName, cardanoMnemonic, cardanoImported),
+              getDustAddress: () => cardanoDustAddress,
+            },
+          }
+        : {}),
       log: (level, msg) => {
         if (level === 'info') this.log_verbose(`[daemon] ${msg}`);
         else process.stderr.write(`[daemon ${level}] ${msg}\n`);
@@ -350,6 +374,7 @@ export default class DaemonServe extends BaseCommand {
       // it collectable — holding it past lock() would outlive the keys it sits
       // beside.
       cardanoMnemonic = null;
+      cardanoImported = new Map();
       cardanoDustAddress = '';
       auditLog.recordLifecycle({wallet: walletName, network: network.id, event: 'daemon-stop'});
       process.stderr.write('[daemon-serve] stopped\n');

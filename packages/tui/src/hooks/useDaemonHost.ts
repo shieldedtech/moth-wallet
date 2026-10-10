@@ -47,7 +47,8 @@ export interface UseDaemonHostOptions {
    */
   readonly cardano?: {
     readonly config: CardanoNetworkConfig;
-    readonly getMnemonic: () => string | null;
+    /** The active Cardano account's phrase and index, resolved per call. */
+    readonly resolveAccountKey: () => Promise<{mnemonic: string; accountIndex: number}>;
     readonly getDustAddress: () => string;
   };
   readonly daemonVersion: string;
@@ -127,7 +128,11 @@ export function useDaemonHost(opts: UseDaemonHostOptions): UseDaemonHostState {
         ? {
             cardano: {
               config: cardano.config,
-              getMnemonic: () => cardanoRef.current?.getMnemonic() ?? null,
+              resolveAccountKey: () => {
+                const current = cardanoRef.current;
+                if (!current) return Promise.reject(new Error('Cardano is not available in this session'));
+                return current.resolveAccountKey();
+              },
               getDustAddress: () => cardanoRef.current?.getDustAddress() ?? '',
             },
           }

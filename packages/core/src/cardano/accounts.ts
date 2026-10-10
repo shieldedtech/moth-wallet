@@ -320,3 +320,53 @@ export async function resolveCardanoAccountKey(
   };
   return { mnemonic: await decryptKeystore(keystore, passphrase), accountIndex: 0 };
 }
+
+/**
+ * Decrypt every imported account's phrase once, so a long-lived session (the TUI,
+ * a daemon) can sign for it later without keeping the wallet passphrase. An
+ * account that cannot be read is left out rather than failing the unlock.
+ */
+export async function unlockImportedCardanoPhrases(
+  storage: Pick<StorageAdapter, 'read'>,
+  walletName: string,
+  passphrase: string,
+): Promise<Map<string, string>> {
+  const { accounts } = await readState(storage, walletName);
+  const phrases = new Map<string, string>();
+  for (const account of accounts) {
+    if (account.kind !== 'imported') continue;
+    try {
+      const { mnemonic } = await resolveCardanoAccountKey(storage, walletName, account, null, passphrase);
+      phrases.set(account.id, mnemonic);
+    } catch {
+      // Reported when the account is used, by resolveActiveCardanoKey.
+    }
+  }
+  return phrases;
+}
+
+/**
+ * The active account and the key to sign with, read at the moment of use so a
+ * switch made anywhere takes effect on the next action.
+ */
+export async function resolveActiveCardanoKey(
+  storage: Pick<StorageAdapter, 'read'>,
+  walletName: string,
+  walletMnemonic: string | null,
+  importedPhrases: ReadonlyMap<string, string>,
+): Promise<{ account: CardanoAccountRecord; mnemonic: string; accountIndex: number }> {
+  const account = await getActiveCardanoAccount(storage, walletName);
+  if (account.kind === 'derived') {
+    const key = await resolveCardanoAccountKey(storage, walletName, account, walletMnemonic);
+    return { account, ...key };
+  }
+  const mnemonic = importedPhrases.get(account.id);
+  if (!mnemonic) {
+    throw new WalletError(
+      'WALLET_ERROR',
+      `Cardano account "${account.label}" is not unlocked in this session: it was imported after unlock, `
+        + 'or its phrase could not be decrypted. Lock and unlock the wallet to retry.',
+    );
+  }
+  return { account, mnemonic, accountIndex: 0 };
+}

@@ -135,9 +135,10 @@ export interface WalletHandlerDeps {
    */
   readonly cardano?: {
     readonly config: CardanoNetworkConfig;
-    /** The wallet's mnemonic, or null when it has none (hex-seed import). */
-    readonly getMnemonic: () => string | null;
-    /** The wallet's own Midnight coin public key — the default DUST receiver. */
+    /** The active Cardano account's phrase and index, resolved on every call so
+     *  an account switch takes effect immediately. */
+    readonly resolveAccountKey: () => Promise<{mnemonic: string; accountIndex: number}>;
+    /** The wallet's own serialized DUST address — the default DUST receiver. */
     readonly getDustAddress: () => string;
   };
 }
@@ -165,16 +166,13 @@ export function buildWalletHandlers(deps: WalletHandlerDeps): Record<string, Rpc
   };
 
   /**
-   * Resolve the Cardano capability, or refuse with a reason.
-   *
-   * Two distinct refusals, because the remedies differ: the host was built
-   * without Cardano support at all, or this particular wallet has no mnemonic
-   * to derive a Cardano key from.
+   * Resolve the Cardano capability, or refuse when the host has none. A wallet
+   * with no key for its active account is refused later, when the key is resolved.
    */
   const requireCardano = (): {
     config: CardanoNetworkConfig;
-    mnemonic: string;
     dustAddress: string;
+    resolveAccountKey: () => Promise<{mnemonic: string; accountIndex: number}>;
   } => {
     const cardano = deps.cardano;
     if (!cardano) {
@@ -183,32 +181,28 @@ export function buildWalletHandlers(deps: WalletHandlerDeps): Record<string, Rpc
         'this daemon was started without Cardano support, so it cannot sign cNIGHT transactions',
       );
     }
-    const mnemonic = cardano.getMnemonic();
-    if (!mnemonic) {
-      throw new DaemonProtocolError(
-        'INVALID_PARAMS',
-        `wallet "${walletName}" was imported from a raw hex seed, so it has no Cardano address`,
-      );
+    return {config: cardano.config, dustAddress: cardano.getDustAddress(), resolveAccountKey: cardano.resolveAccountKey};
+  };
+
+  /** Core's Cardano guards are operator-fixable states, so they reach the wire as INVALID_PARAMS. */
+  const mapCardanoError = (verb: string, err: unknown): never => {
+    if (err instanceof DaemonProtocolError) throw err;
+    const category = (err as {category?: string} | null)?.category;
+    if (category === 'WALLET_ERROR' || category === 'INVALID_INPUT') {
+      throw new DaemonProtocolError('INVALID_PARAMS', (err as Error).message);
     }
-    return {config: cardano.config, mnemonic, dustAddress: cardano.getDustAddress()};
+    throw new DaemonProtocolError('INTERNAL_ERROR', `${verb}: ${errorChainMessage(err)}`);
   };
 
   /** Open a Cardano session for `fn`, mapping core's errors onto the wire. */
   const withCardano = async <R>(verb: string, fn: (session: CardanoSession) => Promise<R>): Promise<R> => {
-    const {config, mnemonic} = requireCardano();
+    const {config, resolveAccountKey} = requireCardano();
     const {withCardanoSession} = await import('../cardano/session.js');
     try {
-      return await withCardanoSession(mnemonic, config, fn);
+      const {mnemonic, accountIndex} = await resolveAccountKey();
+      return await withCardanoSession(mnemonic, config, fn, accountIndex);
     } catch (err) {
-      if (err instanceof DaemonProtocolError) throw err;
-      // Core's Cardano guards ("no cNIGHT", "not registered", "already
-      // registered", "no Blockfrost project id") are all operator-fixable
-      // states, not daemon faults. INTERNAL_ERROR would render them as a bug.
-      const category = (err as {category?: string} | null)?.category;
-      if (category === 'WALLET_ERROR' || category === 'INVALID_INPUT') {
-        throw new DaemonProtocolError('INVALID_PARAMS', (err as Error).message);
-      }
-      throw new DaemonProtocolError('INTERNAL_ERROR', `${verb}: ${errorChainMessage(err)}`);
+      return mapCardanoError(verb, err);
     }
   };
 
@@ -775,9 +769,15 @@ export function buildWalletHandlers(deps: WalletHandlerDeps): Record<string, Rpc
     // ─────────────────────────────────────────────────────────────────
 
     cardanoAddress: async (): Promise<DaemonCardanoAddressResult> => {
-      const {mnemonic, config, dustAddress} = requireCardano();
+      const {config, dustAddress, resolveAccountKey} = requireCardano();
       const {deriveCardanoAddresses} = await import('../cardano/session.js');
-      const addresses = await deriveCardanoAddresses(mnemonic, config);
+      let addresses;
+      try {
+        const {mnemonic, accountIndex} = await resolveAccountKey();
+        addresses = await deriveCardanoAddresses(mnemonic, config, accountIndex);
+      } catch (err) {
+        return mapCardanoError('cardanoAddress', err);
+      }
       return {
         cardanoNetwork: config.network,
         address: addresses.address,

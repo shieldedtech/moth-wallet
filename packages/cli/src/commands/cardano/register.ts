@@ -12,7 +12,7 @@ export default class CardanoRegister extends CardanoCommand {
     ...cardanoFlags,
     receiver: Flags.string({
       description:
-        'Midnight coin public key to generate DUST to, 64 hex chars (default: this wallet\'s own)',
+        "Midnight DUST address (mn_dust_…) or its 66-hex serialization (default: this wallet's own)",
     }),
     yes: Flags.boolean({
       char: 'y',

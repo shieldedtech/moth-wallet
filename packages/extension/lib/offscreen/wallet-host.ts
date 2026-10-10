@@ -1205,10 +1205,10 @@ export async function cardanoReceiverAccounts(
 
 
 /**
- * Turn whatever the user pasted into the coin public key a registration takes.
+ * Turn whatever the user pasted into the DUST address bytes a registration takes.
  * Offscreen because the bech32 decode needs the ledger WASM.
  */
 export async function cardanoResolveReceiver(input: string): Promise<{ dustAddressBytes: string }> {
-  const { resolveDustReceiver } = await import('@shieldedtech/moth-wallet/cardano/registration');
+  const { resolveDustReceiver } = await import('@shieldedtech/moth-wallet/cardano/receiver');
   return { dustAddressBytes: resolveDustReceiver(input) };
 }

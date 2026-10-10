@@ -59,8 +59,6 @@ type Mode =
 
 type Action = 'register' | 'deregister' | 'update' | 'send';
 
-const COIN_PUBLIC_KEY = /^[0-9a-f]{64}$/;
-
 /** Lovelace are 6dp. Rendered, never rounded. */
 function formatAda(lovelace: string): string {
   const value = BigInt(lovelace);
@@ -168,7 +166,7 @@ export function Cardano({
   /**
    * Midnight accounts offered as DUST receivers.
    *
-   * The coin public key comes out of each account's *public* shielded address,
+   * The DUST address comes out of each account's *public* addresses,
    * so every account can be offered without unlocking it — which matters,
    * because the account holding the cNIGHT is usually not the one being paid.
    */
@@ -801,8 +799,8 @@ export function Cardano({
       >
         {header}
 
-        {/* Picking beats typing: a coin public key is 64 hex characters, and a
-            typo produces a valid-looking key that pays DUST to nobody. */}
+        {/* Picking beats typing: a DUST address is long, and a typo can still
+            decode to a valid address that pays DUST to nobody. */}
         {midnightAccounts.length > 0 && (
           <Card className="flex flex-col gap-1 p-2">
             <span className="px-2 pt-1 text-[12.5px] text-muted-foreground">

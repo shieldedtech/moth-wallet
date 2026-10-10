@@ -4,6 +4,8 @@ import {
   formatAda,
   formatCnight,
   LOVELACE_PER_ADA,
+  MIN_ADA_OUTPUT,
+  minLovelaceForOutput,
   parseAda,
   parseCnight,
   sendCardanoAssets,
@@ -117,5 +119,61 @@ describe('cNIGHT scaling', () => {
     }
     expect(() => parseCnight('0.0000001')).toThrow(/6 places/);
     expect(() => parseCnight('-1')).toThrow();
+  });
+});
+
+describe('minimum output', () => {
+  // Preview's coinsPerUtxoByte. The minimum itself comes from CML, as Lucid's does.
+  const COINS_PER_UTXO_BYTE = 4310n;
+  const config = resolveCardanoNetwork('preview');
+  const cnightUnitId = config.cnightPolicyId + config.cnightAssetName;
+
+  /** A session whose builder records what would be paid, then stops before signing. */
+  function fundedSession() {
+    const paid: Array<Record<string, bigint>> = [];
+    const lucid = {
+      config: () => ({ protocolParameters: { coinsPerUtxoByte: COINS_PER_UTXO_BYTE } }),
+      wallet: () => ({
+        getUtxos: async () => [{ assets: { lovelace: 100_000_000n, [cnightUnitId]: 50_000_000n } }],
+      }),
+      newTx: () => ({
+        pay: { ToAddress: (_to: string, assets: Record<string, bigint>) => { paid.push(assets); } },
+        complete: async () => { throw new Error('stop-before-signing'); },
+      }),
+    };
+    return { session: { config, lucid } as unknown as CardanoSession, paid };
+  }
+
+  it('is at least one ADA, and more once the output carries cNIGHT', async () => {
+    const { session } = fundedSession();
+    const plain = await minLovelaceForOutput(session, PREVIEW, {});
+    const withToken = await minLovelaceForOutput(session, PREVIEW, { [cnightUnitId]: 1n });
+    expect(plain).toBe(MIN_ADA_OUTPUT);
+    expect(withToken).toBeGreaterThan(MIN_ADA_OUTPUT);
+  });
+
+  // Lucid raises a smaller amount to the minimum without saying so, so the user
+  // would have sent more than they approved.
+  it('refuses an ADA amount below the minimum instead of raising it', async () => {
+    const { session, paid } = fundedSession();
+    await expect(sendCardanoAssets(session, { to: PREVIEW, lovelace: 100_000n })).rejects.toThrow(/needs at least 1 ADA/);
+    const minimum = await minLovelaceForOutput(session, PREVIEW, { [cnightUnitId]: 1_000_000n });
+    await expect(
+      sendCardanoAssets(session, { to: PREVIEW, lovelace: MIN_ADA_OUTPUT, cnight: 1_000_000n }),
+    ).rejects.toThrow(new RegExp(`needs at least ${formatAda(minimum).replace('.', '\\.')} ADA`));
+    expect(paid).toEqual([]);
+  });
+
+  it('pays exactly the requested amount at or above the minimum', async () => {
+    const { session, paid } = fundedSession();
+    await expect(sendCardanoAssets(session, { to: PREVIEW, lovelace: 2_000_000n })).rejects.toThrow('stop-before-signing');
+    expect(paid).toEqual([{ lovelace: 2_000_000n }]);
+  });
+
+  it('adds the real minimum for a cNIGHT-only send', async () => {
+    const { session, paid } = fundedSession();
+    const minimum = await minLovelaceForOutput(session, PREVIEW, { [cnightUnitId]: 1_000_000n });
+    await expect(sendCardanoAssets(session, { to: PREVIEW, cnight: 1_000_000n })).rejects.toThrow('stop-before-signing');
+    expect(paid).toEqual([{ lovelace: minimum, [cnightUnitId]: 1_000_000n }]);
   });
 });

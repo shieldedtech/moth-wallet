@@ -9,6 +9,7 @@
 // INTERNAL_ERROR.
 
 import {DaemonProtocolError} from './protocol.js';
+import {resolveDustReceiver} from '../cardano/receiver.js';
 import type {
   DaemonCallCircuitParams,
   DaemonCardanoDeregisterParams,
@@ -361,22 +362,18 @@ export function parseInsertVerifierKeysBatchParams(raw: unknown): DaemonInsertVe
 // ─────────────────────────────────────────────────────────────────────
 
 /**
- * A Midnight coin public key is exactly 32 bytes of hex. Checked here rather
- * than only in core so a malformed value is refused as INVALID_PARAMS on the
- * wire, before a Cardano session is opened and a Blockfrost call is spent.
+ * A DUST receiver, validated by the same rule core applies, so a malformed value
+ * is refused as INVALID_PARAMS before a Cardano session is opened.
  */
 function parseDustAddressBytes(value: unknown, fieldName: string): string {
   if (typeof value !== 'string') {
     throw new DaemonProtocolError('INVALID_PARAMS', `${fieldName} must be a string`);
   }
-  const hex = value.startsWith('0x') ? value.slice(2) : value;
-  if (!/^[0-9a-fA-F]{64}$/.test(hex)) {
-    throw new DaemonProtocolError(
-      'INVALID_PARAMS',
-      `${fieldName} must be a Midnight coin public key: 32 bytes of hex (64 characters)`,
-    );
+  try {
+    return resolveDustReceiver(value);
+  } catch (err) {
+    throw new DaemonProtocolError('INVALID_PARAMS', `${fieldName}: ${(err as Error).message}`);
   }
-  return hex.toLowerCase();
 }
 
 export function parseCardanoRegisterParams(raw: unknown): DaemonCardanoRegisterParams {

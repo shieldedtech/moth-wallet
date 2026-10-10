@@ -438,9 +438,9 @@ interface ProtocolMap {
   }>;
 
   /**
-   * Resolve a pasted shielded address or raw hex into a coin public key.
-   * Rejects a DUST address by name — it is the obvious thing to paste and the
-   * wrong value.
+   * Resolve a pasted `mn_dust_…` address or its 66-hex serialization into the
+   * bytes a registration records. Rejects a shielded address by name — it is
+   * the obvious thing to paste and the wrong value.
    */
   cardanoResolveReceiver(data: { input: string }): { dustAddressBytes: string };
 
@@ -464,7 +464,7 @@ interface ProtocolMap {
     cnightUtxos: number;
     registered: boolean;
     registeredDustAddress: string | null;
-    /** True when the registration points at THIS account's coin public key. */
+    /** True when the registration points at THIS account's DUST address. */
     registeredToThisWallet: boolean;
     registrationUtxo: string | null;
     /** Midnight-side rate; null until the indexer has observed the registration. */

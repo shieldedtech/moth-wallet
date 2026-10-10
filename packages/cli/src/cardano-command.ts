@@ -4,6 +4,7 @@ import { WalletError, canonicalNetworkId, deriveAllAddressesFromSeed } from '@sh
 import {
   getActiveCardanoAccount,
   dustAddressBytes,
+  CardanoNetworkUnavailableError,
   loadCardanoConfig,
   resolveCardanoAccountKey,
   withCardanoSession,
@@ -37,23 +38,29 @@ export const cardanoFlags = {
 
 export abstract class CardanoCommand extends BaseCommand {
   /**
-   * Resolve the Cardano config for this invocation: flags beat environment,
-   * environment beats stored config, stored config beats the deployment
-   * defaults for whichever Cardano network pairs with `--network`.
-   */
-  /**
    * Resolve the Cardano config for this invocation. The precedence ladder
    * itself lives in core so the CLI, the TUI and `daemon serve` cannot drift.
+   * A network with no Cardano pair is a usage error, reported as one.
    */
   protected async getCardanoConfig(
     midnightNetworkId: string,
     flags: Record<string, unknown>,
   ): Promise<CardanoNetworkConfig> {
-    return loadCardanoConfig(this.storage, canonicalNetworkId(midnightNetworkId), {
-      blockfrostUrl: flags['blockfrost-url'] as string | undefined,
-      cnightPolicyId: flags['cnight-policy-id'] as string | undefined,
-      cnightAssetName: flags['cnight-asset-name'] as string | undefined,
-    });
+    try {
+      return await loadCardanoConfig(this.storage, canonicalNetworkId(midnightNetworkId), {
+        blockfrostUrl: flags['blockfrost-url'] as string | undefined,
+        cnightPolicyId: flags['cnight-policy-id'] as string | undefined,
+        cnightAssetName: flags['cnight-asset-name'] as string | undefined,
+      });
+    } catch (err) {
+      if (err instanceof CardanoNetworkUnavailableError) {
+        throw new WalletError(
+          'INVALID_INPUT',
+          `${err.message} This command needs cNIGHT on Cardano; use --network preprod or preview.`,
+        );
+      }
+      throw err;
+    }
   }
 
   /**
@@ -108,7 +115,7 @@ export abstract class CardanoCommand extends BaseCommand {
   }
 
   /**
-   * The wallet's own Midnight coin public key — the default DUST receiver.
+   * The wallet's own serialized DUST address — the default DUST receiver.
    *
    * Taken from the seed rather than the mnemonic so it also works for a
    * hex-seed wallet, which can still own imported Cardano accounts and so

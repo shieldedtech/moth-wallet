@@ -456,8 +456,8 @@ Every command accepts:
 
 DUST is generated either by NIGHT held on Midnight (above) or by cNIGHT held on
 Cardano. The Cardano route needs a transaction on Cardano: it maps your Cardano
-**stake** key to a Midnight coin public key, and the ledger then generates DUST
-to that key for as long as the mapping stands.
+**stake** key to a Midnight DUST address, and the ledger then generates DUST
+to that address for as long as the mapping stands.
 
 Cardano keys are derived from the account's existing recovery phrase (CIP-1852,
 account 0), so there is nothing extra to back up — but an account imported from
@@ -480,12 +480,12 @@ masked everywhere it is shown back.
 
 | Command | Description |
 |---------|-------------|
-| `moth cardano address` | Cardano payment and stake addresses for this account, plus its Midnight coin public key |
+| `moth cardano address` | Cardano payment and stake addresses for this account, plus its Midnight DUST address |
 | `moth cardano balance` | ADA and cNIGHT held on Cardano |
 | `moth cardano status` | cNIGHT holdings, the on-chain mapping, and what Midnight has observed of it |
-| `moth cardano register [--receiver <coin-pubkey>]` | Map this Cardano stake key to a Midnight coin public key (default: this wallet's) |
+| `moth cardano register [--receiver <dust-address>]` | Map this Cardano stake key to a Midnight DUST address, `mn_dust_…` or its 66-hex form (default: this wallet's) |
 | `moth cardano deregister` | Burn the mapping and stop generating |
-| `moth cardano update <coin-pubkey>` | Point an existing mapping at a different Midnight address |
+| `moth cardano update <dust-address>` | Point an existing mapping at a different Midnight address |
 | `moth cardano send <to> [--ada <n>] [--cnight <n>]` | Send ADA and/or cNIGHT. Refuses an address for the wrong network, and warns when sending cNIGHT that is generating DUST |
 | `moth cardano account list [--addresses]` | List Cardano accounts and which is active |
 | `moth cardano account add [<label>]` | Next CIP-1852 index of the wallet's phrase — own address, own registration, nothing extra to back up |

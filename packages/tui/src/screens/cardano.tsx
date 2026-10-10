@@ -11,6 +11,7 @@ import Spinner from 'ink-spinner';
 import { SectionHeader } from '../components/SectionHeader.js';
 import { HelpFooter, type HelpHint } from '../components/HelpFooter.js';
 import { DUST_DENOMINATION } from '../utils/balance.js';
+import { resolveDustReceiver } from '@shieldedtech/moth-wallet/cardano/receiver';
 
 export interface CardanoStatusView {
   readonly cardanoNetwork: string;
@@ -366,15 +367,17 @@ export function Cardano({
   };
 
   const submitReceiver = (raw: string) => {
-    const value = raw.trim().replace(/^0x/, '').toLowerCase();
     if (mode.kind !== 'receiver') return;
-    if (mode.action === 'register' && value.length === 0) {
+    if (mode.action === 'register' && raw.trim().length === 0) {
       // Empty means "this wallet", which is the common case for register.
       setMode({ kind: 'confirm', action: 'register', status: mode.status });
       return;
     }
-    if (!/^[0-9a-f]{64}$/.test(value)) {
-      setReceiverError('Expected a Midnight coin public key: 32 bytes of hex (64 characters)');
+    let value: string;
+    try {
+      value = resolveDustReceiver(raw);
+    } catch (err) {
+      setReceiverError(err instanceof Error ? err.message : String(err));
       return;
     }
     setMode({ kind: 'confirm', action: mode.action, status: mode.status, receiver: value });
@@ -831,8 +834,8 @@ export function Cardano({
           <Box flexDirection="column">
             <Text bold>
               {mode.action === 'register'
-                ? 'Midnight coin public key to generate DUST to'
-                : 'New Midnight coin public key'}
+                ? 'Midnight DUST address (mn_dust_…) to generate DUST to'
+                : 'New Midnight DUST address (mn_dust_…)'}
             </Text>
             {mode.action === 'register' && (
               <Text dimColor>Leave blank to use this wallet.</Text>

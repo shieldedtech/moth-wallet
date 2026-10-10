@@ -7,8 +7,10 @@ import {
   listCardanoAccounts,
   removeCardanoAccount,
   renameCardanoAccount,
+  resolveActiveCardanoKey,
   resolveCardanoAccountKey,
   setActiveCardanoAccount,
+  unlockImportedCardanoPhrases,
 } from '../../../src/cardano/accounts.js';
 import { deriveCardanoAddresses } from '../../../src/cardano/session.js';
 import { resolveCardanoNetwork } from '../../../src/cardano/network.js';
@@ -154,5 +156,37 @@ describe('per-wallet isolation', () => {
     await expect(listCardanoAccounts(storage, 'bob')).resolves.toMatchObject({
       accounts: [DEFAULT_CARDANO_ACCOUNT],
     });
+  });
+});
+
+describe('resolveActiveCardanoKey', () => {
+  // The TUI and daemon once signed every action with account 0, whatever was active.
+  it('follows the active account, read at the moment of use', async () => {
+    expect((await resolveActiveCardanoKey(storage, 'w', WALLET_MNEMONIC, new Map())).accountIndex).toBe(0);
+    const { account } = await addDerivedCardanoAccount(storage, 'w');
+    const key = await resolveActiveCardanoKey(storage, 'w', WALLET_MNEMONIC, new Map());
+    expect(key.account.id).toBe(account.id);
+    expect(key.accountIndex).toBe(account.accountIndex);
+    expect(key.mnemonic).toBe(WALLET_MNEMONIC);
+  });
+
+  it('signs an imported account with the phrase decrypted at unlock, without the passphrase', async () => {
+    const { account } = await importCardanoAccount(storage, 'w', OTHER_MNEMONIC, 'pw');
+    const phrases = await unlockImportedCardanoPhrases(storage, 'w', 'pw');
+    expect(phrases.get(account.id)).toBe(OTHER_MNEMONIC);
+    const key = await resolveActiveCardanoKey(storage, 'w', WALLET_MNEMONIC, phrases);
+    expect(key).toMatchObject({ mnemonic: OTHER_MNEMONIC, accountIndex: 0 });
+  });
+
+  it('asks for a fresh unlock when an account was imported after this session unlocked', async () => {
+    await importCardanoAccount(storage, 'w', OTHER_MNEMONIC, 'pw');
+    await expect(resolveActiveCardanoKey(storage, 'w', WALLET_MNEMONIC, new Map())).rejects.toThrow(/Lock and unlock/);
+  });
+
+  // Unlock runs this for the whole wallet, so one broken Cardano account must not lock the user out.
+  it('leaves out an imported account it cannot decrypt instead of failing the unlock', async () => {
+    const { account } = await importCardanoAccount(storage, 'w', OTHER_MNEMONIC, 'pw');
+    const phrases = await unlockImportedCardanoPhrases(storage, 'w', 'a-different-passphrase');
+    expect(phrases.has(account.id)).toBe(false);
   });
 });
