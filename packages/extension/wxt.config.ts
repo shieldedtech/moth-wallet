@@ -135,6 +135,11 @@ export default defineConfig({
     resolve: { dedupe: SHARED_WITH_CAPSULE_RUNTIME, alias: POLYFILL_SHIMS },
     build: {
       target: 'esnext',
+      // The onchain runtime's WASM travels inside the script as a data URL rather than as a file
+      // the page fetches, so the capsule executor page can be served under `connect-src 'none'`:
+      // a contract module evaluated there has no network at all, not even the extension's own
+      // files. The ledger's WASM, loaded by the worker alone, stays a file.
+      assetsInlineLimit: (file: string) => (file.endsWith('midnight_onchain_runtime_wasm_bg.wasm') ? true : undefined),
       // No <link rel="modulepreload"> in the generated HTML. Vite emits one per
       // shared chunk per entry, with `crossorigin` — and on a chrome-extension://
       // URL that puts the preload in a different fetch world from the module load
