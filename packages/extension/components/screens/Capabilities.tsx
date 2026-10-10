@@ -25,6 +25,28 @@ function shown(value: unknown): string {
   return text.length > 72 ? `${text.slice(0, 69)}…` : text;
 }
 
+/** One card per interface: its functions and the values each is answered with. */
+export function CapabilityCards({ document }: { document: AnswersDocument }) {
+  return (
+    <>
+      {Object.entries(document).map(([interfaceId, functions]) => (
+        <Card key={interfaceId} className="p-0">
+          <p className="m-0 px-4 pb-1 pt-3 font-mono text-xs text-muted-foreground">{interfaceId}</p>
+          {Object.entries(functions).map(([name, value], index) => (
+            <div key={name}>
+              {index > 0 && <Separator />}
+              <div className="px-4 py-[11px]">
+                <span className="block text-sm font-semibold">{name}</span>
+                <span className="block break-all font-mono text-xs text-muted-foreground">{shown(value)}</span>
+              </div>
+            </div>
+          ))}
+        </Card>
+      ))}
+    </>
+  );
+}
+
 export function Capabilities({ onBack }: { onBack: () => void }) {
   const [view, setView] = useState<CapsuleCapabilitiesDTO | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -69,7 +91,7 @@ export function Capabilities({ onBack }: { onBack: () => void }) {
     void apply(parsed);
   };
 
-  const interfaces = Object.entries(view?.document ?? {});
+  const interfaces = Object.keys(view?.document ?? {});
 
   return (
     <PanelScreen
@@ -119,20 +141,7 @@ export function Capabilities({ onBack }: { onBack: () => void }) {
               <p className="m-0 text-[13px] text-muted-foreground">{t('capsule_capabilitiesEmptyBody')}</p>
             </div>
           )}
-          {interfaces.map(([interfaceId, functions]) => (
-            <Card key={interfaceId} className="p-0">
-              <p className="m-0 px-4 pb-1 pt-3 font-mono text-xs text-muted-foreground">{interfaceId}</p>
-              {Object.entries(functions).map(([name, value], index) => (
-                <div key={name}>
-                  {index > 0 && <Separator />}
-                  <div className="px-4 py-[11px]">
-                    <span className="block text-sm font-semibold">{name}</span>
-                    <span className="block break-all font-mono text-xs text-muted-foreground">{shown(value)}</span>
-                  </div>
-                </div>
-              ))}
-            </Card>
-          ))}
+          {view && <CapabilityCards document={view.document} />}
           {view?.isDefault === true && <p className="m-0 text-[13px] text-muted-foreground">{t('capsule_capabilitiesDemoNote')}</p>}
           {view?.isDefault === false && (
             <Button variant="ghost" onClick={() => void apply(null)}>
