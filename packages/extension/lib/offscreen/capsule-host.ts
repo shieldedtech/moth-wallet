@@ -17,7 +17,9 @@ import {
   ExecutableResolver,
   HttpRegistryClient,
   IndexerClient,
+  SealedCapsuleStore,
   capsuleKeysAnswers,
+  deriveStorageKey,
   freshMaintenanceKey,
   singleAccount,
   type ConsentPort,
@@ -117,9 +119,12 @@ async function open(host: Host, account: CapsuleAccount): Promise<Opened> {
     // Capsules are per chain, so each network has its own database; the account id, which the
     // capsule secret is derived from, is the wallet's name as the web host's is its account name.
     const db = await openDatabase(`capsule-wallet-${account.network.id}`);
+    // The storage key is derived here and the seed dropped, as the capsule keys' answers are below.
+    const seedBytes = masterSeedBytes(account.seedHex);
+    const store = await SealedCapsuleStore.open(new IndexedDbCapsuleStore(db), deriveStorageKey(seedBytes, account.walletName));
     const runtime = await CapsuleRuntime.open({
       accountId: account.walletName,
-      store: new IndexedDbCapsuleStore(db),
+      store,
       chain,
       registry,
       resolver,
@@ -129,7 +134,7 @@ async function open(host: Host, account: CapsuleAccount): Promise<Opened> {
       networkId: account.network.id,
       maintenanceKey: freshMaintenanceKey(),
       hostAnswers: {
-        ...capsuleKeysAnswers(masterSeedBytes(account.seedHex), account.walletName),
+        ...capsuleKeysAnswers(seedBytes, account.walletName),
         ...ageCredentialAnswers({ birthDate: new Date(DEMO_CREDENTIAL_BIRTH_DATE), issuer: hexToBytes(DEMO_CREDENTIAL_ISSUER_HEX) }),
       },
     });
