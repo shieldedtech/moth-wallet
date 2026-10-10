@@ -36,6 +36,8 @@ export interface DiagnosticsInput {
   indexerUrl: string;
   proverType: 'wasm' | 'server';
   proverUrl?: string;
+  /** Where the capsule runtime fetches executables; a service endpoint, reported redacted like the others. */
+  registryUrl?: string;
   /** Whether a node auth header is configured. The value is never reported. */
   hasNodeAuthHeader: boolean;
   /** Whether a name resolver is configured. The URL is reported; it is a
@@ -111,6 +113,7 @@ export function buildDiagnosticsReport(input: DiagnosticsInput): string {
     `- Node: ${redactUrl(input.nodeUrl)}`,
     `- Indexer: ${redactUrl(input.indexerUrl)}`,
     `- Prover: ${input.proverType}${input.proverUrl ? ` — ${redactUrl(input.proverUrl)}` : ''}`,
+    `- Executable registry: ${input.registryUrl ? redactUrl(input.registryUrl) : 'not set'}`,
     `- Node auth header: ${input.hasNodeAuthHeader ? 'set (value not reported)' : 'not set'}`,
     `- Name resolver: ${input.nameResolverUrl ? redactUrl(input.nameResolverUrl) : 'not set'}`,
     `- Auto-lock: ${input.autoLockMinutes === null ? 'never (demo mode)' : `${input.autoLockMinutes} min`}`,

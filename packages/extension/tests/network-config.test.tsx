@@ -86,10 +86,21 @@ describe('NetworkFields', () => {
     expect(html).not.toContain('Custom');
     expect(html).toContain('Node URL');
     expect(html).toContain('Indexer URL');
+    expect(html).toContain('Executable registry URL');
+    expect(html).toContain('nothing is guessed');
     expect(html).toContain('Proof server URL');
     expect(html).toContain('WASM');
     expect(html).toContain('recommended for simple transactions');
     expect(html).toContain('Complex transactions, such as contract calls, require a proof server');
+  });
+
+  // The registry is an endpoint like the others, shown as the network names it and empty when it
+  // names none: a network without one runs no capsules, and the wallet guesses no host for it.
+  it('shows the executable registry the network names, and nothing when it names none', () => {
+    const named = networkState({ urls: { ...networkState().urls, registryUrl: 'http://localhost:8787' } });
+    expect(renderToStaticMarkup(<NetworkFields state={named} />)).toContain('value="http://localhost:8787"');
+    const unnamed = networkState();
+    expect(renderToStaticMarkup(<NetworkFields state={unnamed} />)).not.toContain('8787');
   });
 
   // A network added to SUPPORTED_NETWORKS without a NETWORK_LABELS entry still

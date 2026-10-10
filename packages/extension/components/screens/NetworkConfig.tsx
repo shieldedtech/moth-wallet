@@ -77,12 +77,14 @@ const presetFor = (network: SupportedNetwork): NetworkEndpoints => {
     nodeUrl: preset.nodeUrl,
     indexerUrl: preset.indexerUrl,
     prover: resolveProverConfig(preset),
+    ...(preset.registryUrl ? { registryUrl: preset.registryUrl } : {}),
   };
 };
 
 const normalized = (endpoints: NetworkEndpoints): NetworkEndpoints => {
   const name = endpoints.nodeAuthHeader?.name.trim() ?? '';
   const value = endpoints.nodeAuthHeader?.value.trim() ?? '';
+  const registryUrl = endpoints.registryUrl?.trim() ?? '';
   return {
     nodeUrl: endpoints.nodeUrl.trim(),
     indexerUrl: endpoints.indexerUrl.trim(),
@@ -92,6 +94,8 @@ const normalized = (endpoints: NetworkEndpoints): NetworkEndpoints => {
     // A header with no value is no header, so it must normalise away — otherwise
     // typing a name and deleting it again reads as an unsaved change for ever.
     ...(name !== '' && value !== '' ? { nodeAuthHeader: { name, value } } : {}),
+    // An emptied registry field is no registry, for the same reason.
+    ...(registryUrl !== '' ? { registryUrl } : {}),
   };
 };
 
@@ -103,7 +107,8 @@ const endpointsEqual = (left: NetworkEndpoints, right: NetworkEndpoints): boolea
     a.indexerUrl === b.indexerUrl &&
     proverConfigsEqual(a.prover, b.prover) &&
     a.nodeAuthHeader?.name === b.nodeAuthHeader?.name &&
-    a.nodeAuthHeader?.value === b.nodeAuthHeader?.value
+    a.nodeAuthHeader?.value === b.nodeAuthHeader?.value &&
+    a.registryUrl === b.registryUrl
   );
 };
 
@@ -149,7 +154,7 @@ export interface NetworkConfigState {
   available: readonly SupportedNetwork[];
   needsValueWarning: boolean;
   pick: (next: SupportedNetwork) => void;
-  edit: (field: 'nodeUrl' | 'indexerUrl') => (value: string) => void;
+  edit: (field: 'nodeUrl' | 'indexerUrl' | 'registryUrl') => (value: string) => void;
   editAuthHeader: (field: 'name' | 'value') => (value: string) => void;
   setProverType: (type: ProverConfig['type']) => void;
   editProverUrl: (value: string) => void;
@@ -186,7 +191,7 @@ export function useNetworkConfig(fallback: SupportedNetwork = 'mainnet'): Networ
     setUrls(next === current ? currentUrls : presetFor(next));
   };
 
-  const edit = (field: 'nodeUrl' | 'indexerUrl') => (value: string) => {
+  const edit = (field: 'nodeUrl' | 'indexerUrl' | 'registryUrl') => (value: string) => {
     setUrls((previous) => ({ ...previous, [field]: value }));
   };
 
@@ -292,6 +297,8 @@ export function NetworkFields({ state }: { state: NetworkConfigState }) {
         </div>
         <UrlField label={t('network_nodeUrl')} value={state.urls.nodeUrl} onChange={state.edit('nodeUrl')} />
         <UrlField label={t('network_indexerUrl')} value={state.urls.indexerUrl} onChange={state.edit('indexerUrl')} />
+        <UrlField label={t('network_registryUrl')} value={state.urls.registryUrl ?? ''} onChange={state.edit('registryUrl')} />
+        <p className="m-0 text-[12px] text-muted-foreground">{t('network_registryHelp')}</p>
         <UrlField
           label={t('network_authHeaderName')}
           value={state.urls.nodeAuthHeader?.name ?? DEFAULT_AUTH_HEADER_NAME}

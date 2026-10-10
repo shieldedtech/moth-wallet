@@ -80,8 +80,6 @@ const SYNC_WAIT_MS = 120_000;
 /** The label a seed's first sub-account starts with; the user renames it. */
 const DEFAULT_SUB_ACCOUNT_LABEL = 'Personal';
 const SETTLE_TIMEOUT_MS = 180_000;
-/** The registry service listens beside the stack's indexer; a wallet setting of its own is plan §12. */
-const REGISTRY_PORT = 8787;
 
 let executor: PortExecutor | null = null;
 
@@ -139,9 +137,14 @@ interface Opened {
 const seeds = new Map<string, Promise<Seed>>();
 const opened = new Map<string, Promise<Opened>>();
 
+/** The network names where executables come from, or it runs no capsules: nothing is guessed from the indexer's host. */
 function registryUrlFor(network: NetworkConfig): string {
-  const indexer = new URL(network.indexerUrl);
-  return `${indexer.protocol}//${indexer.hostname}:${REGISTRY_PORT}`;
+  if (network.registryUrl === undefined || network.registryUrl === '') {
+    throw new Error(
+      `the network '${network.id}' names no executable registry, so contract capsules cannot run on it; set one under Settings → Network`,
+    );
+  }
+  return network.registryUrl;
 }
 
 function proofServerUrlFor(network: NetworkConfig): string {

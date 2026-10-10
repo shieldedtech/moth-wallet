@@ -1547,6 +1547,12 @@
   "network_authHeaderHelp": {
     "message": "Optional. Manche Node-Endpunkte begrenzen die Anfragerate und lehnen Verbindungen ohne einen vom Betreiber ausgestellten Header ab. Wird nur an den Node gesendet, nie an den Indexer. Unverschlüsselt auf diesem Gerät gespeichert und nicht durch Ihr Passwort geschützt — behandeln Sie ihn wie ein geteiltes Geheimnis."
   },
+  "network_registryUrl": {
+    "message": "Registry-URL für Ausführbares"
+  },
+  "network_registryHelp": {
+    "message": "Woher der Vertragscode geladen wird, wenn eine dApp einen Vertrag verwendet: die Registry, die eine Vertragsadresse auf ihr Ausführbares abbildet. Auf einem Netzwerk ohne Registry leer lassen; Vertragskapseln werden dort dann abgelehnt, und nichts wird erraten."
+  },
   "network_authHeaderName": {
     "message": "Node-Auth-Header"
   },

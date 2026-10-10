@@ -634,6 +634,7 @@ export function registerConnectorHandlers(): void {
       nodeUrl: network.nodeUrl,
       indexerUrl: network.indexerUrl,
       prover: resolveProverConfig(network),
+      ...(network.registryUrl ? { registryUrl: network.registryUrl } : {}),
     };
   });
 

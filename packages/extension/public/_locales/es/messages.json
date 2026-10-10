@@ -1547,6 +1547,12 @@
   "network_authHeaderHelp": {
     "message": "Opcional. Algunos extremos de nodo limitan la tasa de peticiones y rechazan las conexiones sin una cabecera emitida por el operador. Se envía solo al nodo, nunca al indexador. Se guarda sin cifrar en este dispositivo y no está protegida por su contraseña: trátela como un secreto compartido."
   },
+  "network_registryUrl": {
+    "message": "URL del registro de ejecutables"
+  },
+  "network_registryHelp": {
+    "message": "De dónde se obtiene el código del contrato cuando una dApp usa un contrato: el registro que asocia una dirección de contrato con su ejecutable. Déjelo vacío en una red sin registro; las cápsulas de contrato se rechazan entonces en esa red, y no se adivina nada."
+  },
   "network_authHeaderName": {
     "message": "Cabecera de autenticación del nodo"
   },

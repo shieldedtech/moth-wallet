@@ -1547,6 +1547,12 @@
   "network_authHeaderHelp": {
     "message": "Facultatif. Certains points de terminaison de nœud limitent le débit et refusent les connexions sans un en-tête fourni par l’opérateur. Envoyé uniquement au nœud, jamais à l’indexeur. Stocké non chiffré sur cet appareil et non protégé par votre mot de passe : traitez-le comme un secret partagé."
   },
+  "network_registryUrl": {
+    "message": "URL du registre d’exécutables"
+  },
+  "network_registryHelp": {
+    "message": "D’où le code du contrat est récupéré lorsqu’une dApp utilise un contrat : le registre qui associe une adresse de contrat à son exécutable. Laisser vide sur un réseau sans registre ; les capsules de contrat y sont alors refusées, et rien n’est deviné."
+  },
   "network_authHeaderName": {
     "message": "En-tête d’authentification du nœud"
   },

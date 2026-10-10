@@ -14,7 +14,7 @@ import {
   validateNetworkConfig,
 } from '@shieldedtech/moth-wallet/types/network';
 import { onMessage, type NetworkEndpoints, type SessionStatus } from '../messaging/protocol';
-import { endpointOverridesFor, getSettings, updateSettings, getNetworkConfig, parseNodeAuthHeader } from './settings';
+import { endpointOverridesFor, getSettings, updateSettings, getNetworkConfig, parseNodeAuthHeader, parseRegistryUrl } from './settings';
 import { resolveName } from './name-resolve';
 import { saveSession, getSession, clearSession, type Session } from './session';
 import { getTokenNames, setTokenName } from './token-names';
@@ -160,6 +160,7 @@ export async function saveNetworkConfig(data: {
     ...(parseNodeAuthHeader(data.endpoints.nodeAuthHeader)
       ? { nodeAuthHeader: parseNodeAuthHeader(data.endpoints.nodeAuthHeader) }
       : {}),
+    ...(parseRegistryUrl(data.endpoints.registryUrl) ? { registryUrl: parseRegistryUrl(data.endpoints.registryUrl) } : {}),
   };
   validateNetworkConfig(nextConfig);
 

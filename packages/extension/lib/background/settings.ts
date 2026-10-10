@@ -64,12 +64,14 @@ function parseEndpoints(value: unknown): NetworkEndpoints | null {
   const candidate = value as Partial<NetworkEndpoints> & { proofServerUrl?: unknown };
   if (typeof candidate.nodeUrl !== 'string' || typeof candidate.indexerUrl !== 'string') return null;
   const nodeAuthHeader = parseNodeAuthHeader(candidate.nodeAuthHeader);
+  const registryUrl = parseRegistryUrl(candidate.registryUrl);
   if (isProverConfig(candidate.prover)) {
     return {
       nodeUrl: candidate.nodeUrl,
       indexerUrl: candidate.indexerUrl,
       prover: candidate.prover,
       ...(nodeAuthHeader ? { nodeAuthHeader } : {}),
+      ...(registryUrl ? { registryUrl } : {}),
     };
   }
   // Migrate settings written before prover modalities were introduced.
@@ -79,9 +81,17 @@ function parseEndpoints(value: unknown): NetworkEndpoints | null {
       indexerUrl: candidate.indexerUrl,
       prover: serverProver(candidate.proofServerUrl),
       ...(nodeAuthHeader ? { nodeAuthHeader } : {}),
+      ...(registryUrl ? { registryUrl } : {}),
     };
   }
   return null;
+}
+
+/** A stored registry URL: a non-empty string, trimmed; anything else is no registry. */
+export function parseRegistryUrl(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed === '' ? undefined : trimmed;
 }
 
 /** Accept a stored auto-lock value, tolerating legacy/absent settings.
@@ -145,6 +155,7 @@ export async function getNetworkConfig(networkId?: string): Promise<NetworkConfi
     nodeUrl: customEndpoints.nodeUrl,
     indexerUrl: customEndpoints.indexerUrl,
     prover: customEndpoints.prover,
+    ...(customEndpoints.registryUrl ? { registryUrl: customEndpoints.registryUrl } : {}),
   };
 }
 
@@ -152,6 +163,7 @@ export async function getNetworkConfig(networkId?: string): Promise<NetworkConfi
 export function endpointOverridesFor(network: string, endpoints: NetworkEndpoints): NetworkEndpoints | null {
   const preset = DEFAULT_NETWORKS[network];
   const nodeAuthHeader = parseNodeAuthHeader(endpoints.nodeAuthHeader);
+  const registryUrl = parseRegistryUrl(endpoints.registryUrl);
   const normalized = {
     nodeUrl: endpoints.nodeUrl.trim(),
     indexerUrl: endpoints.indexerUrl.trim(),
@@ -159,6 +171,7 @@ export function endpointOverridesFor(network: string, endpoints: NetworkEndpoint
       ? serverProver(endpoints.prover.url.trim())
       : endpoints.prover,
     ...(nodeAuthHeader ? { nodeAuthHeader } : {}),
+    ...(registryUrl ? { registryUrl } : {}),
   };
   // An auth header is itself an override. Without this clause a header set
   // against otherwise-default URLs collapses to null and is silently discarded
@@ -169,7 +182,8 @@ export function endpointOverridesFor(network: string, endpoints: NetworkEndpoint
     !nodeAuthHeader &&
     normalized.nodeUrl === preset.nodeUrl &&
     normalized.indexerUrl === preset.indexerUrl &&
-    proverConfigsEqual(normalized.prover, resolveProverConfig(preset))
+    proverConfigsEqual(normalized.prover, resolveProverConfig(preset)) &&
+    normalized.registryUrl === preset.registryUrl
   ) {
     return null;
   }

@@ -7,6 +7,13 @@ export interface NetworkEndpoints {
   readonly nodeUrl: string;
   readonly indexerUrl: string;
   /**
+   * Where contract executables are fetched from, for the capsule runtime: the
+   * registry mapping a contract address to its bundle. Optional, since only a
+   * network with such a service can run capsules; a network without one
+   * refuses capsule work by name rather than guessing a host.
+   */
+  readonly registryUrl?: string;
+  /**
    * Optional header attached to node requests, for endpoints that gate access
    * behind one (preprod rate-limits and answers 403 without the operator's
    * bypass header). SECRET — never log it, never include it in diagnostics.
@@ -84,6 +91,7 @@ export function validateNetworkConfig(config: NetworkConfig): void {
   validateNetworkUrl(config.indexerUrl, 'Indexer URL');
   const prover = resolveProverConfig(config);
   if (prover.type === 'server') validateNetworkUrl(prover.url, 'Proof server URL');
+  if (config.registryUrl !== undefined) validateNetworkUrl(config.registryUrl, 'Executable registry URL');
 }
 
 // Endpoint values mirror midnight-wallet-cli/src/config/environments.ts.
@@ -124,6 +132,7 @@ export const DEFAULT_NETWORKS: Record<string, NetworkConfig> = {
     id: 'undeployed',
     nodeUrl: 'ws://localhost:9944',
     indexerUrl: 'http://localhost:8088/api/v4/graphql',
+    registryUrl: 'http://localhost:8787',
     prover: serverProver(),
   },
 };

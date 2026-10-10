@@ -125,6 +125,8 @@ export interface NetworkEndpoints {
   nodeUrl: string;
   indexerUrl: string;
   prover: ProverConfig;
+  /** Where the capsule runtime fetches contract executables; absent on a network with no registry, which then runs no capsules. */
+  registryUrl?: string;
   /** Optional; scoped to the node host only. The indexer is not rate-limited
    *  today, and a credential should reach as few destinations as possible. */
   nodeAuthHeader?: NodeAuthHeader;
@@ -391,7 +393,7 @@ interface ProtocolMap {
   approvalPending(): { approval: PendingApproval | null; locked: boolean };
 
   /** Resolved endpoints for the active network (read-only, for Settings). */
-  networkConfigGet(): { id: string; nodeUrl: string; indexerUrl: string; prover: ProverConfig };
+  networkConfigGet(): { id: string; nodeUrl: string; indexerUrl: string; prover: ProverConfig; registryUrl?: string };
   /** Where the unlocked account's wallets stand on the protocol version line, as
    *  the wallet SDK reports it (read-only, for Settings); null while locked or
    *  before a sync session is up. */

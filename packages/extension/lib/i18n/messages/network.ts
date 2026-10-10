@@ -27,6 +27,9 @@ export const network = {
   network_authHeaderValue: 'Header value',
   network_authHeaderHelp:
     'Optional. Some node endpoints rate-limit and refuse connections without an operator-issued header. Sent only to the node, never to the indexer. Stored unencrypted on this device and not protected by your password — treat it as a shared secret.',
+  network_registryUrl: 'Executable registry URL',
+  network_registryHelp:
+    'Where contract code is fetched from when a dApp uses a contract: the registry mapping a contract address to its executable. Leave empty on a network without one; contract capsules are then refused on that network, and nothing is guessed.',
   network_saveError: 'The network configuration could not be saved.',
   network_saving: 'Saving…',
   network_mainnetHidden:

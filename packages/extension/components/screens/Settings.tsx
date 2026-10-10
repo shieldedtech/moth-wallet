@@ -155,6 +155,7 @@ export function Settings({ onBack, navigate }: { onBack: () => void; navigate: (
       proverType: settings.customEndpoints?.prover.type ?? 'server',
       proverUrl:
         settings.customEndpoints?.prover.type === 'server' ? settings.customEndpoints.prover.url : undefined,
+      registryUrl: settings.customEndpoints?.registryUrl,
       hasNodeAuthHeader: settings.customEndpoints?.nodeAuthHeader !== undefined,
       nameResolverUrl: settings.nameResolverUrl,
       autoLockMinutes: settings.autoLockMinutes,

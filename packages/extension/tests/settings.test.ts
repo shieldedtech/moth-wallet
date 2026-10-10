@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { fakeBrowser } from 'wxt/testing';
 import { DEFAULT_NETWORKS, serverProver } from '@shieldedtech/moth-wallet/types/network';
-import { DEFAULT_SETTINGS, getNetworkConfig, getSettings, updateSettings } from '../lib/background/settings';
+import { DEFAULT_SETTINGS, endpointOverridesFor, getNetworkConfig, getSettings, updateSettings } from '../lib/background/settings';
 
 describe('extension settings', () => {
   beforeEach(() => fakeBrowser.reset());
@@ -80,5 +80,31 @@ describe('extension settings', () => {
     await fakeBrowser.storage.local.set({settings: {network: 'devnet', customEndpoints}});
 
     expect(await getNetworkConfig()).toEqual({id: 'devnet', ...customEndpoints});
+  });
+
+  // The registry is where the capsule runtime fetches executables. The local stack's preset names
+  // one; an override on another host names its own; and an empty field is no registry, so a
+  // network without one refuses capsules by name rather than the runtime guessing a host.
+  it('carries the executable registry as an endpoint of the network', async () => {
+    expect(DEFAULT_NETWORKS.undeployed!.registryUrl).toBe('http://localhost:8787');
+    expect(DEFAULT_NETWORKS.preprod!.registryUrl).toBeUndefined();
+
+    const customEndpoints = {
+      nodeUrl: 'ws://192.168.1.158:9944',
+      indexerUrl: 'http://192.168.1.158:8088/api/v4/graphql',
+      prover: serverProver('http://192.168.1.158:6300'),
+      registryUrl: ' http://192.168.1.158:8787 ',
+    };
+    await fakeBrowser.storage.local.set({ settings: { network: 'undeployed', customEndpoints } });
+    expect((await getNetworkConfig()).registryUrl).toBe('http://192.168.1.158:8787');
+
+    // The preset's own values, registry included, are no override; a registry alone is one.
+    const preset = DEFAULT_NETWORKS.undeployed!;
+    const presetEndpoints = { nodeUrl: preset.nodeUrl, indexerUrl: preset.indexerUrl, prover: serverProver() };
+    expect(endpointOverridesFor('undeployed', { ...presetEndpoints, registryUrl: preset.registryUrl })).toBeNull();
+    expect(endpointOverridesFor('undeployed', { ...presetEndpoints, registryUrl: 'http://other:8787' })).toMatchObject({
+      registryUrl: 'http://other:8787',
+    });
+    expect(endpointOverridesFor('undeployed', { ...presetEndpoints, registryUrl: '  ' })).toEqual(presetEndpoints);
   });
 });
