@@ -32,6 +32,7 @@ import {
   type PendingTransaction,
   type RenderedArgument,
   type SettlementReport,
+  type WalletPort,
 } from '@shieldedtech/capsule-core';
 import { PortExecutor } from '@shieldedtech/capsule-executor';
 import {
@@ -55,6 +56,7 @@ import type {
   CapsuleSiteGrantsDTO,
 } from '../capsule/protocol';
 import { DEMO_CAPABILITIES } from '../capsule/demo-credential';
+import { healthTracked } from './capsule-wallet-port';
 import type { SubmissionSettled, SubmittedTx } from './submissions';
 import type { HostEventData } from './worker-rpc';
 
@@ -111,7 +113,7 @@ interface Capabilities {
  */
 interface Seed {
   account: CapsuleAccount;
-  wallet: SdkWallet;
+  wallet: WalletPort;
   chain: IndexerClient;
   registry: HttpRegistryClient;
   resolver: ExecutableResolver;
@@ -161,8 +163,9 @@ async function seedOf(host: Host, account: CapsuleAccount): Promise<Seed> {
   if (pending !== undefined) return pending;
   pending = (async (): Promise<Seed> => {
     const synced = await host.syncEnsure(account.seedHex, account.walletName, account.network);
-    const wallet = SdkWallet.overFacade(account.seedHex, synced.facade, account.network.id);
-    await wallet.waitUntilSettled(SYNC_WAIT_MS);
+    const sdkWallet = SdkWallet.overFacade(account.seedHex, synced.facade, account.network.id);
+    await sdkWallet.waitUntilSettled(SYNC_WAIT_MS);
+    const wallet = healthTracked(sdkWallet, { network: account.network, walletName: account.walletName });
     const chain = new IndexerClient({ url: account.network.indexerUrl });
     const registry = new HttpRegistryClient({ url: registryUrlFor(account.network) });
     const resolver = new ExecutableResolver(registry, requireExecutor(), chain);
