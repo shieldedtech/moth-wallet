@@ -37,6 +37,23 @@ screen is used for wallet and dApp transactions. Local WASM proving is
 recommended for simple transactions, such as token transfers; complex
 transactions, such as contract calls, require a configured proof server.
 
+### Fast wallet switching (opt-in)
+
+Switching wallets normally rebuilds the sync from scratch — even between wallets on the same
+network, since sync state, WASM wallet state and the indexer subscription are all per-wallet.
+Setting `warmWallets` keeps that many previously-used wallets syncing in the background, so
+switching back to one is instant.
+
+```jsonc
+// ~/.moth/tui/settings.json
+{ "warmWallets": 1 }
+```
+
+Off by default (`0`), capped at `5`, and overridable per run with `MOTH_WARM_WALLETS=1`. Each warm
+wallet holds its full sync state in memory and keeps an open indexer subscription — roughly the
+cost of a second wallet syncing — so raise it only as far as you want to pay for. Warm wallets are
+dropped when the wallet is locked or removed, its sync cache is cleared, or the TUI quits.
+
 ### Keybindings
 
 | Key | Action |
