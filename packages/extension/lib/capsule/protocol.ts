@@ -95,7 +95,11 @@ export type CapsuleConsentDTO =
       origin: string;
       account: string;
       calls: Array<{ contract: string; bundle: string; entrypoint: string; arguments: CapsuleRenderedArgument[] }>;
+      /** Calls the asked call reached in other contracts; their arguments were the caller's. */
+      reached: Array<{ contract: string; bundle: string; entrypoint: string }>;
       deploys: Array<{ bundle: string; fingerprint: string; address: string; arguments: CapsuleRenderedArgument[] }>;
+      /** The installed capabilities the transaction's contracts are handed, by contract. */
+      capabilities: Array<{ contract: string; bundle: string; interfaceId: string; functions: string[] }>;
       /** ISO 8601. */
       ttl: string;
     };

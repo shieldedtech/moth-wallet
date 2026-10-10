@@ -2,7 +2,7 @@
 // fallback approval window. Offers inline unlock when locked.
 
 import { useEffect, useState } from 'react';
-import { Moon, TriangleAlert } from 'lucide-react';
+import { KeyRound, Moon, TriangleAlert } from 'lucide-react';
 import { t } from '../../lib/i18n';
 import { sendMessage } from '../../lib/messaging/protocol';
 import { useTokenNames } from '../../lib/ui/client';
@@ -333,6 +333,15 @@ function CapsuleConsent({ consent, host }: { consent: CapsuleConsentPayload; hos
             </div>
           </div>
         ))}
+        {consent.reached.map((call, index) => (
+          <div key={`reached-${index}`}>
+            <Separator />
+            <div className="px-4 py-[11px]">
+              <span className="block text-sm">{t('capsule_reachedLine', [call.entrypoint, call.bundle])}</span>
+              <span className="block font-mono text-xs text-muted-foreground">{t('capsule_atAddress', [shortHex(call.contract)])}</span>
+            </div>
+          </div>
+        ))}
         {consent.deploys.map((deploy, index) => (
           <div key={`deploy-${index}`}>
             {(index > 0 || consent.calls.length > 0) && <Separator />}
@@ -344,6 +353,16 @@ function CapsuleConsent({ consent, host }: { consent: CapsuleConsentPayload; hos
           </div>
         ))}
       </Card>
+      {consent.capabilities.length > 0 && (
+        <NoteCard icon={KeyRound}>
+          {consent.capabilities.map((capability, index) => (
+            <span key={`capability-${index}`} className="block">
+              {t('capsule_capabilityHanded', [capability.bundle, capability.interfaceId, capability.functions.join(', ')])}
+            </span>
+          ))}
+          <span className="block pt-1">{t('capsule_capabilityNote')}</span>
+        </NoteCard>
+      )}
       <DetailCard
         rows={[
           { label: t('capsule_accountLabel'), value: consent.account },

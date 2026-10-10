@@ -1778,6 +1778,15 @@
   "capsule_callLine": {
     "message": "$1 auf $2 aufrufen"
   },
+  "capsule_reachedLine": {
+    "message": "… das $1 auf $2 aufruft"
+  },
+  "capsule_capabilityHanded": {
+    "message": "$1 erhält Ihr $2 ($3)."
+  },
+  "capsule_capabilityNote": {
+    "message": "Die Seite sieht es nie; die Chain sieht nur den Beweis."
+  },
   "capsule_deployLine": {
     "message": "$1 bereitstellen (Build $2)"
   },

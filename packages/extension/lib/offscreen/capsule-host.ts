@@ -221,11 +221,18 @@ const consent: ConsentPort = {
         entrypoint: call.entrypoint,
         arguments: call.arguments.map(rendered),
       })),
+      reached: c.reached.map((call) => ({ contract: call.contract, bundle: call.bundle, entrypoint: call.entrypoint })),
       deploys: c.deploys.map((deploy) => ({
         bundle: deploy.bundle,
         fingerprint: deploy.fingerprint,
         address: deploy.address,
         arguments: deploy.arguments.map(rendered),
+      })),
+      capabilities: c.capabilities.map((capability) => ({
+        contract: capability.contract,
+        bundle: capability.bundle,
+        interfaceId: capability.interfaceId,
+        functions: [...capability.functions],
       })),
       ttl: c.ttl.toISOString(),
     }),

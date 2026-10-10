@@ -1778,6 +1778,15 @@
   "capsule_callLine": {
     "message": "Llamar a $1 en $2"
   },
+  "capsule_reachedLine": {
+    "message": "… que llama a $1 en $2"
+  },
+  "capsule_capabilityHanded": {
+    "message": "$1 recibe tu $2 ($3)."
+  },
+  "capsule_capabilityNote": {
+    "message": "El sitio nunca lo ve; la cadena solo ve la prueba."
+  },
   "capsule_deployLine": {
     "message": "Desplegar $1 (build $2)"
   },

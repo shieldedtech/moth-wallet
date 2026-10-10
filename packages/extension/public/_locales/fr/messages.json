@@ -1778,6 +1778,15 @@
   "capsule_callLine": {
     "message": "Appeler $1 sur $2"
   },
+  "capsule_reachedLine": {
+    "message": "… qui appelle $1 sur $2"
+  },
+  "capsule_capabilityHanded": {
+    "message": "$1 reçoit votre $2 ($3)."
+  },
+  "capsule_capabilityNote": {
+    "message": "Le site ne le voit jamais ; la chaîne ne voit que la preuve."
+  },
   "capsule_deployLine": {
     "message": "Déployer $1 (build $2)"
   },
