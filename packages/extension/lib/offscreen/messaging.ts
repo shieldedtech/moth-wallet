@@ -20,6 +20,7 @@ import type { DustNotYet } from '../messaging/protocol';
 import type { AnswersDocument } from '@shieldedtech/capsule-core';
 import type {
   CapsuleAccount,
+  CapsuleAccountsDTO,
   CapsuleCall,
   CapsuleCapabilitiesDTO,
   CapsuleConsentDTO,
@@ -371,6 +372,12 @@ export interface OffscreenProtocol {
   'os/capsuleGrants'(data: CapsuleAccount): CapsuleSiteGrantsDTO[];
   /** Takes a site's capsule grants under the account: on one contract, or every one. */
   'os/capsuleRevoke'(data: CapsuleAccount & { origin: string; contract?: string }): void;
+  /** The seed's sub-accounts and which is current, for the capsule screen. */
+  'os/capsuleAccounts'(data: CapsuleAccount): CapsuleAccountsDTO;
+  /** Selects, creates or renames a sub-account. */
+  'os/capsuleAccountsSet'(
+    data: CapsuleAccount & ({ select: number } | { create: string } | { rename: { number: number; label: string } }),
+  ): CapsuleAccountsDTO;
   /** The account's installed capabilities, for the settings screen. */
   'os/capsuleCapabilities'(data: CapsuleAccount): CapsuleCapabilitiesDTO;
   /** Replaces the account's installed capabilities; `null` restores the demo's. */

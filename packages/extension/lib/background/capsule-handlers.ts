@@ -184,6 +184,16 @@ export function registerCapsuleHandlers(): void {
     const network = await getNetworkConfig();
     await offscreen.capsuleRevoke({ seedHex: session.seedHex, walletName: session.walletName, network, ...data });
   });
+  onMessage('capsuleAccountsGet', async () => {
+    const session = await requireSession();
+    const network = await getNetworkConfig();
+    return offscreen.capsuleAccounts({ seedHex: session.seedHex, walletName: session.walletName, network });
+  });
+  onMessage('capsuleAccountsSet', async ({ data }) => {
+    const session = await requireSession();
+    const network = await getNetworkConfig();
+    return offscreen.capsuleAccountsSet({ seedHex: session.seedHex, walletName: session.walletName, network, ...data });
+  });
   onMessage('capsuleCapabilitiesGet', async () => {
     const session = await requireSession();
     const network = await getNetworkConfig();

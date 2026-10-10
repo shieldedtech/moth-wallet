@@ -105,6 +105,8 @@ describe('HOST_METHODS', () => {
     'os/capsuleRevoke',
     'os/capsuleCapabilities',
     'os/capsuleCapabilitiesSet',
+    'os/capsuleAccounts',
+    'os/capsuleAccountsSet',
   ];
 
   it('covers every request method exactly once', () => {

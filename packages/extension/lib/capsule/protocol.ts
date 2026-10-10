@@ -125,7 +125,15 @@ export interface CapsuleSettledDTO {
  * runtime's own, JSON throughout: both states rendered, the interface, its history and its calls
  * in flight.
  */
+/** The seed's sub-accounts — the MIP's accounts, numbered by the runtime and labelled by the user — and which is current. */
+export interface CapsuleAccountsDTO {
+  accounts: Array<{ number: number; label: string }>;
+  current: number;
+}
+
 export interface CapsuleInspectorDTO {
+  /** The sub-account these capsules belong to. */
+  account: { number: number; label: string };
   capsules: CapsuleView[];
   pending: Array<{ identifier: string; calls: Array<{ address: string; circuit: string }>; submittedAt: string; ttl: string }>;
   /** Capsules folded on another chain (a reset network), set aside when the account opened on this one. */

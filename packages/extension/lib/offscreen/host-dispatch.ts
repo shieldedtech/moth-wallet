@@ -104,6 +104,8 @@ export const hostDispatch: Dispatch = {
   'os/capsuleList': async (host, d) => (await capsule()).list(host, d),
   'os/capsuleGrants': async (host, d) => (await capsule()).grants(host, d),
   'os/capsuleRevoke': async (host, d) => (await capsule()).revoke(host, d),
+  'os/capsuleAccounts': async (host, d) => (await capsule()).accounts(host, d),
+  'os/capsuleAccountsSet': async (host, d) => (await capsule()).setAccounts(host, d),
   'os/capsuleCapabilities': async (host, d) => (await capsule()).capabilities(host, d),
   'os/capsuleCapabilitiesSet': async (host, d) => (await capsule()).setCapabilities(host, d),
 };

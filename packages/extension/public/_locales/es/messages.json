@@ -1829,6 +1829,33 @@
   "capsule_inspectorRefresh": {
     "message": "Actualizar"
   },
+  "capsule_accountsTitle": {
+    "message": "Subcuenta"
+  },
+  "capsule_accountsNote": {
+    "message": "Cada subcuenta tiene sus propias cápsulas para los mismos contratos; los sitios se conectan a la actual, y todas comparten los fondos de esta cartera."
+  },
+  "capsule_accountsNew": {
+    "message": "+ Nueva"
+  },
+  "capsule_accountsRename": {
+    "message": "Renombrar"
+  },
+  "capsule_accountsAdd": {
+    "message": "Añadir"
+  },
+  "capsule_accountsSave": {
+    "message": "Guardar"
+  },
+  "capsule_accountsCancel": {
+    "message": "Cancelar"
+  },
+  "capsule_accountsLabelPlaceholder": {
+    "message": "Etiqueta, p. ej. Trabajo"
+  },
+  "capsule_accountsNumber": {
+    "message": "Cuenta $1"
+  },
   "capsule_inspectorLive": {
     "message": "Se vuelve a leer cuando una transacción se liquida y cada $1 s: el estado público se mueve con las transacciones de todos."
   },

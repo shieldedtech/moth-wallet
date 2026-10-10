@@ -1829,6 +1829,33 @@
   "capsule_inspectorRefresh": {
     "message": "Aktualisieren"
   },
+  "capsule_accountsTitle": {
+    "message": "Unterkonto"
+  },
+  "capsule_accountsNote": {
+    "message": "Jedes Unterkonto hält eigene Kapseln für dieselben Verträge; Seiten verbinden sich mit dem aktuellen, und alle teilen das Guthaben dieser Wallet."
+  },
+  "capsule_accountsNew": {
+    "message": "+ Neu"
+  },
+  "capsule_accountsRename": {
+    "message": "Umbenennen"
+  },
+  "capsule_accountsAdd": {
+    "message": "Hinzufügen"
+  },
+  "capsule_accountsSave": {
+    "message": "Speichern"
+  },
+  "capsule_accountsCancel": {
+    "message": "Abbrechen"
+  },
+  "capsule_accountsLabelPlaceholder": {
+    "message": "Bezeichnung, z. B. Arbeit"
+  },
+  "capsule_accountsNumber": {
+    "message": "Konto $1"
+  },
   "capsule_inspectorLive": {
     "message": "Wird neu gelesen, wenn eine Transaktion abgeschlossen ist, und alle $1 s: der öffentliche Zustand bewegt sich mit den Transaktionen aller."
   },

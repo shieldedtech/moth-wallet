@@ -7,7 +7,13 @@ import type { WalletInfo, TxStage, ProverConfig } from '@shieldedtech/moth-brows
 import type { SerializedConnectorError } from '../connector/errors';
 import type { PendingApproval } from '../background/approvals';
 import type { AnswersDocument } from '@shieldedtech/capsule-core';
-import type { CapsuleCapabilitiesDTO, CapsuleEventDTO, CapsuleInspectorDTO, CapsuleSiteGrantsDTO } from '../capsule/protocol';
+import type {
+  CapsuleAccountsDTO,
+  CapsuleCapabilitiesDTO,
+  CapsuleEventDTO,
+  CapsuleInspectorDTO,
+  CapsuleSiteGrantsDTO,
+} from '../capsule/protocol';
 import type { OriginGrant } from '../background/permissions';
 import type { AddressBookEntry } from '../background/address-book';
 import type { AddressKind } from '../ui/address';
@@ -402,6 +408,10 @@ interface ProtocolMap {
   capsuleGrantsList(): CapsuleSiteGrantsDTO[];
   /** Takes a site's capsule grants: on one contract, or every one of them. */
   capsuleGrantRevoke(data: { origin: string; contract?: string }): void;
+  /** The unlocked seed's sub-accounts and which is current. */
+  capsuleAccountsGet(): CapsuleAccountsDTO;
+  /** Selects, creates or renames a sub-account. */
+  capsuleAccountsSet(data: { select: number } | { create: string } | { rename: { number: number; label: string } }): CapsuleAccountsDTO;
   /** The unlocked account's installed capabilities, for the settings screen. */
   capsuleCapabilitiesGet(): CapsuleCapabilitiesDTO;
   /** Replaces the unlocked account's installed capabilities; `null` restores the demo's. */

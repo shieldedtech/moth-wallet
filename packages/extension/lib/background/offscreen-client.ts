@@ -341,6 +341,14 @@ export const offscreen = {
     await ensureOffscreen();
     return offscreenSend('os/capsuleRevoke', data);
   },
+  async capsuleAccounts(data: CapsuleAccount) {
+    await ensureOffscreen();
+    return offscreenSend('os/capsuleAccounts', data);
+  },
+  async capsuleAccountsSet(data: CapsuleAccount & ({ select: number } | { create: string } | { rename: { number: number; label: string } })) {
+    await ensureOffscreen();
+    return offscreenSend('os/capsuleAccountsSet', data);
+  },
   async capsuleCapabilities(data: CapsuleAccount) {
     await ensureOffscreen();
     return offscreenSend('os/capsuleCapabilities', data);

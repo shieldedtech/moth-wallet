@@ -12,12 +12,14 @@ import {
   type TransactionBlueprint,
 } from '@shieldedtech/capsule-blueprint';
 import {
+  AccountBook,
   CapsuleRuntime,
   Connector,
   ExecutableResolver,
   HttpRegistryClient,
   IndexerClient,
   SealedCapsuleStore,
+  accountIdOf,
   answersFromJson,
   capsuleKeysAnswers,
   isAnswersDocument,
@@ -34,6 +36,7 @@ import {
 } from '@shieldedtech/capsule-core';
 import { PortExecutor } from '@shieldedtech/capsule-executor';
 import {
+  IndexedDbAccountBookStore,
   IndexedDbCapabilitiesStore,
   IndexedDbCapsuleStore,
   IndexedDbGrantStore,
@@ -44,6 +47,7 @@ import { SdkWallet, masterSeedBytes } from '@shieldedtech/capsule-wallet-sdk-por
 import { resolveProverConfig, type NetworkConfig } from '@shieldedtech/moth-wallet/types/network';
 import type {
   CapsuleAccount,
+  CapsuleAccountsDTO,
   CapsuleCall,
   CapsuleCapabilitiesDTO,
   CapsuleConsentDTO,
@@ -74,6 +78,8 @@ export function setCapsuleChannel(next: CapsuleChannel): void {
 }
 
 const SYNC_WAIT_MS = 120_000;
+/** The label a seed's first sub-account starts with; the user renames it. */
+const DEFAULT_SUB_ACCOUNT_LABEL = 'Personal';
 const SETTLE_TIMEOUT_MS = 180_000;
 /** The registry service listens beside the stack's indexer; a wallet setting of its own is plan §12. */
 const REGISTRY_PORT = 8787;
@@ -85,6 +91,7 @@ export function attachExecutor(port: MessagePort): void {
   executor?.close();
   executor = new PortExecutor(domEndpoint(port));
   opened.clear();
+  seeds.clear();
 }
 
 function requireExecutor(): PortExecutor {
@@ -100,7 +107,27 @@ interface Capabilities {
   isDefault: boolean;
 }
 
+/**
+ * What one top-level moth account (one seed) holds on one network: the synced wallet, the chain and
+ * registry clients, its own database — the MIP's account numbers repeat from seed to seed, so no two
+ * seeds share one — and the book of its sub-accounts, one of which is current.
+ */
+interface Seed {
+  account: CapsuleAccount;
+  wallet: SdkWallet;
+  chain: IndexerClient;
+  registry: HttpRegistryClient;
+  resolver: ExecutableResolver;
+  db: IDBDatabase;
+  seedBytes: Uint8Array;
+  book: AccountBook;
+}
+
+/** One sub-account's runtime: its capsules, grants, capabilities and the connectors of the sites using it. */
 interface Opened {
+  seed: Seed;
+  /** The sub-account's number, whose decimal string is the id in every derivation. */
+  number: number;
   runtime: CapsuleRuntime;
   resolver: ExecutableResolver;
   grants: IndexedDbGrantStore;
@@ -110,6 +137,7 @@ interface Opened {
   watching: Map<string, () => void>;
 }
 
+const seeds = new Map<string, Promise<Seed>>();
 const opened = new Map<string, Promise<Opened>>();
 
 function registryUrlFor(network: NetworkConfig): string {
@@ -124,32 +152,53 @@ function proofServerUrlFor(network: NetworkConfig): string {
   return prover.url;
 }
 
-/** The runtime for an account, opened on first use over the wallet the sync engine already runs for it. */
-async function open(host: Host, account: CapsuleAccount): Promise<Opened> {
+/** The seed's wallet, clients, database and account book, opened on first use; the sync engine already runs the wallet. */
+async function seedOf(host: Host, account: CapsuleAccount): Promise<Seed> {
   const key = `${account.network.id}/${account.walletName}`;
-  let pending = opened.get(key);
+  let pending = seeds.get(key);
   if (pending !== undefined) return pending;
-  pending = (async (): Promise<Opened> => {
+  pending = (async (): Promise<Seed> => {
     const synced = await host.syncEnsure(account.seedHex, account.walletName, account.network);
     const wallet = SdkWallet.overFacade(account.seedHex, synced.facade, account.network.id);
     await wallet.waitUntilSettled(SYNC_WAIT_MS);
     const chain = new IndexerClient({ url: account.network.indexerUrl });
     const registry = new HttpRegistryClient({ url: registryUrlFor(account.network) });
     const resolver = new ExecutableResolver(registry, requireExecutor(), chain);
-    // Capsules are per chain, so each network has its own database; the account id, which the
-    // capsule secret is derived from, is the wallet's name as the web host's is its account name.
-    const db = await openDatabase(`capsule-wallet-${account.network.id}`);
-    // The storage key is derived here and the seed dropped, as the capsule keys' answers are below.
+    // Capsules are per chain and the account numbers inside are per seed, so the database is per (network, seed).
+    const db = await openDatabase(`capsule-wallet-${account.network.id}-${account.walletName}`);
+    // The storage keys and the capsule keys' answers are derived from these bytes per sub-account; the hex is kept nowhere else.
     const seedBytes = masterSeedBytes(account.seedHex);
-    const store = await SealedCapsuleStore.open(new IndexedDbCapsuleStore(db), deriveStorageKey(seedBytes, account.walletName));
-    // The installed capabilities are the account's document when it has one, else the demo's credential; the
+    const book = await AccountBook.open(new IndexedDbAccountBookStore(db), DEFAULT_SUB_ACCOUNT_LABEL);
+    return { account, wallet, chain, registry, resolver, db, seedBytes, book };
+  })();
+  seeds.set(key, pending);
+  pending.catch(() => seeds.delete(key));
+  return pending;
+}
+
+/** The runtime for the seed's current sub-account, opened on first use; a switch opens the other one and leaves this one be. */
+async function open(host: Host, account: CapsuleAccount): Promise<Opened> {
+  const seed = await seedOf(host, account);
+  return openNumbered(seed, seed.book.current().number, host);
+}
+
+async function openNumbered(seed: Seed, number: number, host: Host): Promise<Opened> {
+  const { account } = seed;
+  const key = `${account.network.id}/${account.walletName}/${number}`;
+  let pending = opened.get(key);
+  if (pending !== undefined) return pending;
+  pending = (async (): Promise<Opened> => {
+    const id = accountIdOf(number);
+    const { db, seedBytes, chain, registry, resolver, wallet } = seed;
+    const store = await SealedCapsuleStore.open(new IndexedDbCapsuleStore(db), deriveStorageKey(seedBytes, id));
+    // The installed capabilities are the sub-account's document when it has one, else the demo's credential; the
     // runtime reads whichever is current at each call, and the capsule keys come last so no document can stand in for them.
     const capabilitiesStore = new IndexedDbCapabilitiesStore(db);
-    const own = await capabilitiesStore.load(account.walletName);
+    const own = await capabilitiesStore.load(id);
     const capabilities: Capabilities = { store: capabilitiesStore, current: own ?? DEMO_CAPABILITIES, isDefault: own === undefined };
-    const keys = capsuleKeysAnswers(seedBytes, account.walletName);
+    const keys = capsuleKeysAnswers(seedBytes, id);
     const runtime = await CapsuleRuntime.open({
-      accountId: account.walletName,
+      accountId: id,
       store,
       chain,
       registry,
@@ -163,7 +212,7 @@ async function open(host: Host, account: CapsuleAccount): Promise<Opened> {
     });
     // The wallet's activity feed: a capsule transaction is recorded as it is submitted and its
     // outcome when the runtime settles it, like a send, so the feed names the contract and the
-    // circuit where history alone would show the fee (plan §12 row 36).
+    // circuit where history alone would show the fee (plan §12 row 36). The feed is the seed's: the money is.
     runtime.onSubmission((tx) => void host.noteSubmitted(account.network.id, account.walletName, contractSubmission(tx)));
     runtime.onSettlement((report) => {
       void host.noteSettled(account.network.id, account.walletName, report.identifier, settlementOf(report));
@@ -178,7 +227,7 @@ async function open(host: Host, account: CapsuleAccount): Promise<Opened> {
     if (runtime.account.pendingTransactions().length > 0) {
       runtime.settlePending({ timeoutMs: SETTLE_TIMEOUT_MS }).catch(() => {});
     }
-    return { runtime, resolver, grants: new IndexedDbGrantStore(db), capabilities, connectors: new Map(), watching: new Map() };
+    return { seed, number, runtime, resolver, grants: new IndexedDbGrantStore(db), capabilities, connectors: new Map(), watching: new Map() };
   })();
   opened.set(key, pending);
   pending.catch(() => opened.delete(key));
@@ -209,24 +258,34 @@ const rendered = (argument: RenderedArgument): CapsuleRenderedArgument => ({
   bytes: { value: [...argument.bytes.value] },
 });
 
-/** The runtime's questions, put to the user by the background's approval screens. */
-const consent: ConsentPort = {
+/** The sub-account as the approval screens name it: its label, never the number the derivations use. */
+const labelOf = (book: AccountBook, id: string): string => book.list().find((a) => accountIdOf(a.number) === id)?.label ?? id;
+
+/** The runtime's questions, put to the user by the background's approval screens, the account named by its label. */
+const consentFor = (book: AccountBook): ConsentPort => ({
   connect: (c) =>
     channel.ask({
       kind: 'capsuleConnect',
       origin: c.origin,
-      account: c.account,
+      account: labelOf(book, c.account),
       ...(c.contract === undefined ? {} : { contract: c.contract }),
       ...(c.bundle === undefined ? {} : { bundle: c.bundle }),
       ...(c.fingerprint === undefined ? {} : { fingerprint: c.fingerprint }),
     }),
   read: (c) =>
-    channel.ask({ kind: 'capsuleRead', origin: c.origin, account: c.account, contract: c.contract, bundle: c.bundle, name: c.name }),
+    channel.ask({
+      kind: 'capsuleRead',
+      origin: c.origin,
+      account: labelOf(book, c.account),
+      contract: c.contract,
+      bundle: c.bundle,
+      name: c.name,
+    }),
   transaction: (c) =>
     channel.ask({
       kind: 'capsuleTransaction',
       origin: c.origin,
-      account: c.account,
+      account: labelOf(book, c.account),
       calls: c.calls.map((call) => ({
         contract: call.contract,
         bundle: call.bundle,
@@ -248,7 +307,7 @@ const consent: ConsentPort = {
       })),
       ttl: c.ttl.toISOString(),
     }),
-};
+});
 
 /** The connector for one attested origin under one account, made on first contact and kept. */
 async function connectorFor(host: Host, call: CapsuleCall): Promise<{ connector: Connector; account: Opened }> {
@@ -259,7 +318,7 @@ async function connectorFor(host: Host, call: CapsuleCall): Promise<{ connector:
       origin: call.origin,
       accounts: singleAccount(account.runtime),
       grants: account.grants,
-      consent,
+      consent: consentFor(account.seed.book),
       settleTimeoutMs: SETTLE_TIMEOUT_MS,
       onError: (error) => console.warn('[capsule]', error),
     });
@@ -320,7 +379,10 @@ export async function disconnect(host: Host, data: CapsuleCall & { session: stri
 
 export async function grants(host: Host, data: CapsuleAccount): Promise<CapsuleSiteGrantsDTO[]> {
   const account = await open(host, data);
-  return (await originGrants(account.grants, data.walletName)).map(({ origin, contracts }) => ({ origin, contracts: [...contracts] }));
+  return (await originGrants(account.grants, accountIdOf(account.number))).map(({ origin, contracts }) => ({
+    origin,
+    contracts: [...contracts],
+  }));
 }
 
 /** The account's installed capabilities, for the settings screen. */
@@ -331,31 +393,71 @@ export async function capabilities(host: Host, data: CapsuleAccount): Promise<Ca
 
 /** Replaces the account's installed capabilities, or restores the demo's with `null`; the next call answers from it. */
 export async function setCapabilities(host: Host, data: CapsuleAccount & { document: AnswersDocument | null }): Promise<CapsuleCapabilitiesDTO> {
-  const { capabilities } = await open(host, data);
+  const { capabilities, number } = await open(host, data);
   if (data.document !== null && !isAnswersDocument(data.document)) {
     throw new Error('installed capabilities are an object of interface ids, each an object of function names to values');
   }
+  const id = accountIdOf(number);
   if (data.document === null) {
-    await capabilities.store.clear(data.walletName);
+    await capabilities.store.clear(id);
     capabilities.current = DEMO_CAPABILITIES;
     capabilities.isDefault = true;
   } else {
-    await capabilities.store.save(data.walletName, data.document);
+    await capabilities.store.save(id, data.document);
     capabilities.current = data.document;
     capabilities.isDefault = false;
   }
   return { document: capabilities.current, isDefault: capabilities.isDefault };
 }
 
+/**
+ * Takes a site's grants back: on one contract under the current sub-account (a row of Connected
+ * sites), or the site's whole standing under every sub-account of the seed (forgetting the site).
+ */
 export async function revoke(host: Host, data: CapsuleAccount & { origin: string; contract?: string }): Promise<void> {
-  const account = await open(host, data);
-  await revokeGrants(account.grants, data.origin, data.walletName, data.contract);
+  if (data.contract !== undefined) {
+    const account = await open(host, data);
+    await revokeGrants(account.grants, data.origin, accountIdOf(account.number), data.contract);
+    return;
+  }
+  const seed = await seedOf(host, data);
+  const grants = new IndexedDbGrantStore(seed.db);
+  for (const entry of seed.book.list()) {
+    await revokeGrants(grants, data.origin, accountIdOf(entry.number));
+  }
+}
+
+/** The seed's sub-accounts and which is current, for the capsule screen's selector. */
+export async function accounts(host: Host, data: CapsuleAccount): Promise<CapsuleAccountsDTO> {
+  const seed = await seedOf(host, data);
+  return { accounts: [...seed.book.list()], current: seed.book.current().number };
+}
+
+/**
+ * Changes the seed's sub-accounts: selects one (the next session any site opens runs under it; the
+ * sites' sessions under the old one are left to lapse, so a site reconnects and is asked afresh),
+ * creates one, or renames one — a rename moves nothing, the label being part of no key.
+ */
+export async function setAccounts(
+  host: Host,
+  data: CapsuleAccount & ({ select: number } | { create: string } | { rename: { number: number; label: string } }),
+): Promise<CapsuleAccountsDTO> {
+  const seed = await seedOf(host, data);
+  if ('select' in data) {
+    await seed.book.select(data.select);
+  } else if ('create' in data) {
+    await seed.book.create(data.create);
+  } else {
+    await seed.book.rename(data.rename.number, data.rename.label);
+  }
+  return { accounts: [...seed.book.list()], current: seed.book.current().number };
 }
 
 export async function list(host: Host, data: CapsuleAccount): Promise<CapsuleInspectorDTO> {
   const account = await open(host, data);
   const setAside = account.runtime.setAside;
   return {
+    account: { number: account.number, label: labelOf(account.seed.book, accountIdOf(account.number)) },
     capsules: await capsuleViews(account.runtime),
     pending: account.runtime.account.pendingTransactions().map((tx) => ({
       identifier: tx.identifier,

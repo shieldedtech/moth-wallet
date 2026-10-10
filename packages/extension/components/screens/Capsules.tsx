@@ -9,7 +9,8 @@ import { Box, ChevronRight } from 'lucide-react';
 import { t } from '../../lib/i18n';
 import { sendMessage } from '../../lib/messaging/protocol';
 import { useCapsuleLiveness } from '../../lib/ui/client';
-import type { CapsuleInspectorDTO } from '../../lib/capsule/protocol';
+import type { CapsuleAccountsDTO, CapsuleInspectorDTO } from '../../lib/capsule/protocol';
+import { SubAccounts, type SubAccountChange } from '../moth/sub-accounts';
 import { Button } from '../ui/button';
 import { Card, Separator } from '../ui/card';
 import { PanelScreen, PanelHeader } from '../moth/panel';
@@ -19,17 +20,34 @@ const short = (hex: string) => (hex.length > 18 ? `${hex.slice(0, 10)}…${hex.s
 
 export function Capsules({ onBack }: { onBack: () => void }) {
   const [view, setView] = useState<CapsuleInspectorDTO | null>(null);
+  const [accounts, setAccounts] = useState<CapsuleAccountsDTO | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [opened, setOpened] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
+      setAccounts(await sendMessage('capsuleAccountsGet', undefined));
       setView(await sendMessage('capsuleList', undefined));
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
   }, []);
+
+  /** A selection, a new sub-account or a rename; the list and the capsules are re-read after it. */
+  const changeAccounts = useCallback(
+    async (change: SubAccountChange) => {
+      try {
+        setAccounts(await sendMessage('capsuleAccountsSet', change));
+        setOpened(null);
+        setView(await sendMessage('capsuleList', undefined));
+        setError(null);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     void refresh();
@@ -53,6 +71,7 @@ export function Capsules({ onBack }: { onBack: () => void }) {
       }
     >
       <PanelHeader title={t('capsule_inspectorTitle')} onBack={onBack} />
+      {accounts && <SubAccounts accounts={accounts} onChange={(change) => void changeAccounts(change)} />}
       <p className="m-0 text-[12px] text-muted-foreground">{t('capsule_inspectorLive', [5])}</p>
       {error && <p className="m-0 text-[13px] text-destructive">{t('capsule_inspectorError', [error])}</p>}
       {view?.setAside && (

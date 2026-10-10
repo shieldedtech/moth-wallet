@@ -1829,6 +1829,33 @@
   "capsule_inspectorRefresh": {
     "message": "Actualiser"
   },
+  "capsule_accountsTitle": {
+    "message": "Sous-compte"
+  },
+  "capsule_accountsNote": {
+    "message": "Chaque sous-compte a ses propres capsules pour les mêmes contrats ; les sites se connectent au sous-compte courant, et tous partagent les fonds de ce portefeuille."
+  },
+  "capsule_accountsNew": {
+    "message": "+ Nouveau"
+  },
+  "capsule_accountsRename": {
+    "message": "Renommer"
+  },
+  "capsule_accountsAdd": {
+    "message": "Ajouter"
+  },
+  "capsule_accountsSave": {
+    "message": "Enregistrer"
+  },
+  "capsule_accountsCancel": {
+    "message": "Annuler"
+  },
+  "capsule_accountsLabelPlaceholder": {
+    "message": "Libellé, p. ex. Travail"
+  },
+  "capsule_accountsNumber": {
+    "message": "Compte $1"
+  },
   "capsule_inspectorLive": {
     "message": "Relu quand une transaction est réglée, et toutes les $1 s : l'état public bouge avec les transactions de tous."
   },
