@@ -184,6 +184,16 @@ export function registerCapsuleHandlers(): void {
     const network = await getNetworkConfig();
     await offscreen.capsuleRevoke({ seedHex: session.seedHex, walletName: session.walletName, network, ...data });
   });
+  onMessage('capsuleCapabilitiesGet', async () => {
+    const session = await requireSession();
+    const network = await getNetworkConfig();
+    return offscreen.capsuleCapabilities({ seedHex: session.seedHex, walletName: session.walletName, network });
+  });
+  onMessage('capsuleCapabilitiesSet', async ({ data }) => {
+    const session = await requireSession();
+    const network = await getNetworkConfig();
+    return offscreen.capsuleCapabilitiesSet({ seedHex: session.seedHex, walletName: session.walletName, network, ...data });
+  });
 }
 
 /** Takes a site's capsule grants under the unlocked account with the site's own permission, so one revoke means both. */

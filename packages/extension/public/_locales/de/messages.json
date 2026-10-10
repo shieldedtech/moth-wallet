@@ -1826,6 +1826,39 @@
   "capsule_inspectorError": {
     "message": "Die Kapseln konnten nicht gelesen werden: $1"
   },
+  "capsule_capabilitiesTitle": {
+    "message": "Vertragsfähigkeiten"
+  },
+  "capsule_capabilitiesIntro": {
+    "message": "Was dieses Konto antwortet, wenn ein Vertrag die Wallet fragt: jede Schnittstelle, die ein Vertrag deklarieren kann, jede Funktion und der Wert, den sie erhält. Die dApp sieht diese nie."
+  },
+  "capsule_capabilitiesEmptyTitle": {
+    "message": "Nichts installiert"
+  },
+  "capsule_capabilitiesEmptyBody": {
+    "message": "Ein Vertrag, der die Wallet um einen Nachweis bittet, wird abgewiesen, bis einer installiert ist."
+  },
+  "capsule_capabilitiesDemoNote": {
+    "message": "Dies ist der Demo-Nachweis; er gilt, bis dieses Konto eigene Fähigkeiten hat."
+  },
+  "capsule_capabilitiesEdit": {
+    "message": "Als JSON bearbeiten"
+  },
+  "capsule_capabilitiesSave": {
+    "message": "Speichern"
+  },
+  "capsule_capabilitiesCancel": {
+    "message": "Abbrechen"
+  },
+  "capsule_capabilitiesRestoreDemo": {
+    "message": "Demo-Nachweis wiederherstellen"
+  },
+  "capsule_capabilitiesError": {
+    "message": "Die Fähigkeiten konnten nicht gelesen werden: $1"
+  },
+  "capsule_capabilitiesInvalid": {
+    "message": "Kein Antwortdokument: ein Objekt aus Schnittstellen-IDs, jede ein Objekt aus Funktionsnamen und Werten."
+  },
   "capsule_inFlightCount": {
     "message": "$1 unterwegs"
   },
@@ -1936,5 +1969,8 @@
   },
   "settings_capsules": {
     "message": "Vertragskapseln"
+  },
+  "settings_capabilities": {
+    "message": "Vertragsfähigkeiten"
   }
 }

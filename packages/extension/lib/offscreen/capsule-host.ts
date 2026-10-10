@@ -18,12 +18,15 @@ import {
   HttpRegistryClient,
   IndexerClient,
   SealedCapsuleStore,
+  answersFromJson,
   capsuleKeysAnswers,
+  isAnswersDocument,
   deriveStorageKey,
   freshMaintenanceKey,
   originGrants,
   revokeGrants,
   singleAccount,
+  type AnswersDocument,
   type ConsentPort,
   type PendingTransaction,
   type RenderedArgument,
@@ -31,9 +34,9 @@ import {
 } from '@shieldedtech/capsule-core';
 import { PortExecutor } from '@shieldedtech/capsule-executor';
 import {
+  IndexedDbCapabilitiesStore,
   IndexedDbCapsuleStore,
   IndexedDbGrantStore,
-  ageCredentialAnswers,
   capsuleViews,
   openDatabase,
 } from '@shieldedtech/capsule-host-browser';
@@ -42,12 +45,13 @@ import { resolveProverConfig, type NetworkConfig } from '@shieldedtech/moth-wall
 import type {
   CapsuleAccount,
   CapsuleCall,
+  CapsuleCapabilitiesDTO,
   CapsuleConsentDTO,
   CapsuleInspectorDTO,
   CapsuleRenderedArgument,
   CapsuleSiteGrantsDTO,
 } from '../capsule/protocol';
-import { DEMO_CREDENTIAL_BIRTH_DATE, DEMO_CREDENTIAL_ISSUER_HEX } from '../capsule/demo-credential';
+import { DEMO_CAPABILITIES } from '../capsule/demo-credential';
 import type { SubmissionSettled, SubmittedTx } from './submissions';
 import type { HostEventData } from './worker-rpc';
 
@@ -85,10 +89,19 @@ function requireExecutor(): PortExecutor {
   return executor;
 }
 
+/** The account's installed capabilities: the document the runtime answers from, and where it is kept. */
+interface Capabilities {
+  store: IndexedDbCapabilitiesStore;
+  /** The account's own document, or the demo's when it has none; the runtime reads it afresh for every call. */
+  current: AnswersDocument;
+  isDefault: boolean;
+}
+
 interface Opened {
   runtime: CapsuleRuntime;
   resolver: ExecutableResolver;
   grants: IndexedDbGrantStore;
+  capabilities: Capabilities;
   connectors: Map<string, Connector>;
   /** Unsubscribers for the sessions a dApp is watching, by session id. */
   watching: Map<string, () => void>;
@@ -108,8 +121,6 @@ function proofServerUrlFor(network: NetworkConfig): string {
   return prover.url;
 }
 
-const hexToBytes = (hex: string): Uint8Array => Uint8Array.from(hex.match(/.{2}/g) ?? [], (byte) => Number.parseInt(byte, 16));
-
 /** The runtime for an account, opened on first use over the wallet the sync engine already runs for it. */
 async function open(host: Host, account: CapsuleAccount): Promise<Opened> {
   const key = `${account.network.id}/${account.walletName}`;
@@ -128,6 +139,12 @@ async function open(host: Host, account: CapsuleAccount): Promise<Opened> {
     // The storage key is derived here and the seed dropped, as the capsule keys' answers are below.
     const seedBytes = masterSeedBytes(account.seedHex);
     const store = await SealedCapsuleStore.open(new IndexedDbCapsuleStore(db), deriveStorageKey(seedBytes, account.walletName));
+    // The installed capabilities are the account's document when it has one, else the demo's credential; the
+    // runtime reads whichever is current at each call, and the capsule keys come last so no document can stand in for them.
+    const capabilitiesStore = new IndexedDbCapabilitiesStore(db);
+    const own = await capabilitiesStore.load(account.walletName);
+    const capabilities: Capabilities = { store: capabilitiesStore, current: own ?? DEMO_CAPABILITIES, isDefault: own === undefined };
+    const keys = capsuleKeysAnswers(seedBytes, account.walletName);
     const runtime = await CapsuleRuntime.open({
       accountId: account.walletName,
       store,
@@ -139,10 +156,7 @@ async function open(host: Host, account: CapsuleAccount): Promise<Opened> {
       proofServerUrl: proofServerUrlFor(account.network),
       networkId: account.network.id,
       maintenanceKey: freshMaintenanceKey(),
-      hostAnswers: {
-        ...capsuleKeysAnswers(seedBytes, account.walletName),
-        ...ageCredentialAnswers({ birthDate: new Date(DEMO_CREDENTIAL_BIRTH_DATE), issuer: hexToBytes(DEMO_CREDENTIAL_ISSUER_HEX) }),
-      },
+      hostAnswers: () => ({ ...answersFromJson(capabilities.current), ...keys }),
     });
     // The wallet's activity feed: a capsule transaction is recorded as it is submitted and its
     // outcome when the runtime settles it, like a send, so the feed names the contract and the
@@ -152,7 +166,7 @@ async function open(host: Host, account: CapsuleAccount): Promise<Opened> {
     if (runtime.account.pendingTransactions().length > 0) {
       runtime.settlePending({ timeoutMs: SETTLE_TIMEOUT_MS }).catch(() => {});
     }
-    return { runtime, resolver, grants: new IndexedDbGrantStore(db), connectors: new Map(), watching: new Map() };
+    return { runtime, resolver, grants: new IndexedDbGrantStore(db), capabilities, connectors: new Map(), watching: new Map() };
   })();
   opened.set(key, pending);
   pending.catch(() => opened.delete(key));
@@ -288,6 +302,30 @@ export async function disconnect(host: Host, data: CapsuleCall & { session: stri
 export async function grants(host: Host, data: CapsuleAccount): Promise<CapsuleSiteGrantsDTO[]> {
   const account = await open(host, data);
   return (await originGrants(account.grants, data.walletName)).map(({ origin, contracts }) => ({ origin, contracts: [...contracts] }));
+}
+
+/** The account's installed capabilities, for the settings screen. */
+export async function capabilities(host: Host, data: CapsuleAccount): Promise<CapsuleCapabilitiesDTO> {
+  const { capabilities } = await open(host, data);
+  return { document: capabilities.current, isDefault: capabilities.isDefault };
+}
+
+/** Replaces the account's installed capabilities, or restores the demo's with `null`; the next call answers from it. */
+export async function setCapabilities(host: Host, data: CapsuleAccount & { document: AnswersDocument | null }): Promise<CapsuleCapabilitiesDTO> {
+  const { capabilities } = await open(host, data);
+  if (data.document !== null && !isAnswersDocument(data.document)) {
+    throw new Error('installed capabilities are an object of interface ids, each an object of function names to values');
+  }
+  if (data.document === null) {
+    await capabilities.store.clear(data.walletName);
+    capabilities.current = DEMO_CAPABILITIES;
+    capabilities.isDefault = true;
+  } else {
+    await capabilities.store.save(data.walletName, data.document);
+    capabilities.current = data.document;
+    capabilities.isDefault = false;
+  }
+  return { document: capabilities.current, isDefault: capabilities.isDefault };
 }
 
 export async function revoke(host: Host, data: CapsuleAccount & { origin: string; contract?: string }): Promise<void> {

@@ -14,6 +14,7 @@ import {
 import type { NetworkConfig, SignEncoding } from '@shieldedtech/moth-browser';
 import type { ConnectRequest, DescribeRequest, ReadLocalStateRequest, TransactionBlueprint } from '@shieldedtech/capsule-blueprint';
 import { decodeBigintJson, encodeBigintJson } from '../messaging/bigint-json';
+import type { AnswersDocument } from '@shieldedtech/capsule-core';
 import type { CapsuleAccount, CapsuleCall } from '../capsule/protocol';
 
 const OFFSCREEN_URL = 'offscreen.html';
@@ -339,5 +340,13 @@ export const offscreen = {
   async capsuleRevoke(data: CapsuleAccount & { origin: string; contract?: string }) {
     await ensureOffscreen();
     return offscreenSend('os/capsuleRevoke', data);
+  },
+  async capsuleCapabilities(data: CapsuleAccount) {
+    await ensureOffscreen();
+    return offscreenSend('os/capsuleCapabilities', data);
+  },
+  async capsuleCapabilitiesSet(data: CapsuleAccount & { document: AnswersDocument | null }) {
+    await ensureOffscreen();
+    return offscreenSend('os/capsuleCapabilitiesSet', data);
   },
 };

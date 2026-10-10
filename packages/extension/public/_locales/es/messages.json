@@ -1826,6 +1826,39 @@
   "capsule_inspectorError": {
     "message": "No se pudieron leer las cápsulas: $1"
   },
+  "capsule_capabilitiesTitle": {
+    "message": "Capacidades de contratos"
+  },
+  "capsule_capabilitiesIntro": {
+    "message": "Lo que esta cuenta responde cuando un contrato pregunta a la cartera: cada interfaz que un contrato puede declarar, cada función y el valor que recibe. La dApp nunca los ve."
+  },
+  "capsule_capabilitiesEmptyTitle": {
+    "message": "Nada instalado"
+  },
+  "capsule_capabilitiesEmptyBody": {
+    "message": "Un contrato que pida una credencial a la cartera será rechazado hasta que haya una instalada."
+  },
+  "capsule_capabilitiesDemoNote": {
+    "message": "Esta es la credencial de demostración; sirve hasta que esta cuenta tenga capacidades propias."
+  },
+  "capsule_capabilitiesEdit": {
+    "message": "Editar como JSON"
+  },
+  "capsule_capabilitiesSave": {
+    "message": "Guardar"
+  },
+  "capsule_capabilitiesCancel": {
+    "message": "Cancelar"
+  },
+  "capsule_capabilitiesRestoreDemo": {
+    "message": "Restaurar la credencial de demostración"
+  },
+  "capsule_capabilitiesError": {
+    "message": "No se pudieron leer las capacidades: $1"
+  },
+  "capsule_capabilitiesInvalid": {
+    "message": "No es un documento de respuestas: un objeto de ids de interfaz, cada uno un objeto de nombres de función a valores."
+  },
   "capsule_inFlightCount": {
     "message": "$1 en curso"
   },
@@ -1936,5 +1969,8 @@
   },
   "settings_capsules": {
     "message": "Cápsulas de contratos"
+  },
+  "settings_capabilities": {
+    "message": "Capacidades de contratos"
   }
 }

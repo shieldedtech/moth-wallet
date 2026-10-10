@@ -1826,6 +1826,39 @@
   "capsule_inspectorError": {
     "message": "Impossible de lire les capsules : $1"
   },
+  "capsule_capabilitiesTitle": {
+    "message": "Capacités de contrats"
+  },
+  "capsule_capabilitiesIntro": {
+    "message": "Ce que ce compte répond quand un contrat interroge le portefeuille : chaque interface qu'un contrat peut déclarer, chaque fonction et la valeur qui lui est remise. La dApp ne les voit jamais."
+  },
+  "capsule_capabilitiesEmptyTitle": {
+    "message": "Rien d’installé"
+  },
+  "capsule_capabilitiesEmptyBody": {
+    "message": "Un contrat qui demande une attestation au portefeuille sera refusé tant qu'aucune n'est installée."
+  },
+  "capsule_capabilitiesDemoNote": {
+    "message": "Ceci est l'attestation de démonstration ; elle sert tant que ce compte n'a pas de capacités propres."
+  },
+  "capsule_capabilitiesEdit": {
+    "message": "Modifier en JSON"
+  },
+  "capsule_capabilitiesSave": {
+    "message": "Enregistrer"
+  },
+  "capsule_capabilitiesCancel": {
+    "message": "Annuler"
+  },
+  "capsule_capabilitiesRestoreDemo": {
+    "message": "Restaurer l'attestation de démonstration"
+  },
+  "capsule_capabilitiesError": {
+    "message": "Impossible de lire les capacités : $1"
+  },
+  "capsule_capabilitiesInvalid": {
+    "message": "Pas un document de réponses : un objet d'identifiants d'interface, chacun un objet de noms de fonction vers des valeurs."
+  },
   "capsule_inFlightCount": {
     "message": "$1 en cours"
   },
@@ -1936,5 +1969,8 @@
   },
   "settings_capsules": {
     "message": "Capsules de contrats"
+  },
+  "settings_capabilities": {
+    "message": "Capacités de contrats"
   }
 }

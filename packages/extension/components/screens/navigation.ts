@@ -8,6 +8,7 @@ export type Screen =
   | 'settings'
   | 'connected-sites'
   | 'capsules'
+  | 'capabilities'
   | 'network-config'
   | 'address-book'
   | 'approval';

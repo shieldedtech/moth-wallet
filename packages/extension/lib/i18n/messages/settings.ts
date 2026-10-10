@@ -3,6 +3,7 @@ export const settings = {
   settings_sectionPrivacy: 'Privacy',
   settings_connectedSites: 'Connected sites',
   settings_capsules: 'Contract capsules',
+  settings_capabilities: 'Contract capabilities',
   settings_sectionAddresses: 'Addresses',
   settings_addressBook: 'Address book',
   settings_nameResolver: 'Name resolver',

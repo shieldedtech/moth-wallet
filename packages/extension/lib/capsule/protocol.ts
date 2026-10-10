@@ -6,7 +6,7 @@
 // IMPORTANT: no runtime imports. This module is read by the service worker, the offscreen page,
 // the wallet worker and the injected page script alike.
 
-import type { CapsuleView } from '@shieldedtech/capsule-core';
+import type { AnswersDocument, CapsuleView } from '@shieldedtech/capsule-core';
 import type {
   CapsuleEvent,
   ConnectRequest,
@@ -58,6 +58,12 @@ export interface CapsuleMethodMap {
   capsuleWatch: { params: [string, boolean]; result: null };
   /** Ends a session; the grants behind it stay, the user's to revoke in Connected sites. */
   capsuleDisconnect: { params: [string]; result: null };
+}
+
+/** The unlocked account's installed capabilities: its answers document, or the demo's when it has none of its own. */
+export interface CapsuleCapabilitiesDTO {
+  document: AnswersDocument;
+  isDefault: boolean;
 }
 
 /** A site's standing with the capsule runtime under the unlocked account: each contract with what the site may do. */

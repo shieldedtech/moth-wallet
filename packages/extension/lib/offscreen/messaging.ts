@@ -17,9 +17,11 @@ import type { WalletInfo, TxStage, NetworkConfig, SignEncoding, SignedMessage } 
 import type { HistoryEntry } from '@midnight-ntwrk/dapp-connector-api';
 import type { RelayState } from './relay-socket';
 import type { DustNotYet } from '../messaging/protocol';
+import type { AnswersDocument } from '@shieldedtech/capsule-core';
 import type {
   CapsuleAccount,
   CapsuleCall,
+  CapsuleCapabilitiesDTO,
   CapsuleConsentDTO,
   CapsuleEventDTO,
   CapsuleInspectorDTO,
@@ -368,6 +370,10 @@ export interface OffscreenProtocol {
   'os/capsuleGrants'(data: CapsuleAccount): CapsuleSiteGrantsDTO[];
   /** Takes a site's capsule grants under the account: on one contract, or every one. */
   'os/capsuleRevoke'(data: CapsuleAccount & { origin: string; contract?: string }): void;
+  /** The account's installed capabilities, for the settings screen. */
+  'os/capsuleCapabilities'(data: CapsuleAccount): CapsuleCapabilitiesDTO;
+  /** Replaces the account's installed capabilities; `null` restores the demo's. */
+  'os/capsuleCapabilitiesSet'(data: CapsuleAccount & { document: AnswersDocument | null }): CapsuleCapabilitiesDTO;
 
   // --- offscreen → SW (handled in the service worker) ---
   'os/eventBalances'(data: string): void;

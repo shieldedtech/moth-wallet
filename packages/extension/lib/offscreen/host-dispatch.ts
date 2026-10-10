@@ -104,6 +104,8 @@ export const hostDispatch: Dispatch = {
   'os/capsuleList': async (host, d) => (await capsule()).list(host, d),
   'os/capsuleGrants': async (host, d) => (await capsule()).grants(host, d),
   'os/capsuleRevoke': async (host, d) => (await capsule()).revoke(host, d),
+  'os/capsuleCapabilities': async (host, d) => (await capsule()).capabilities(host, d),
+  'os/capsuleCapabilitiesSet': async (host, d) => (await capsule()).setCapabilities(host, d),
 };
 
 /** The capsule runtime's own entry points, for the worker entry and the dev inline host to wire the executor and the consents. */
