@@ -4,7 +4,7 @@
 // (see lib/background/token-names.ts).
 
 import { useState } from 'react';
-import { ArrowDown, ArrowUp, Settings as SettingsIcon } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronRight, Settings as SettingsIcon } from 'lucide-react';
 import { NIGHT_TOKEN_ID } from '@shieldedtech/moth-wallet/types/tokens';
 import type { WalletBalances } from '@shieldedtech/moth-browser';
 import { t } from '../../lib/i18n';
@@ -124,6 +124,20 @@ export function Home({
           onOpen={() => navigate('dust')}
         />
       )}
+
+      {/* Cardano sits next to the DUST meter because it is the other way to
+          generate DUST. It lived only in Settings before, which made a whole
+          second DUST source look absent. */}
+      <button
+        onClick={() => navigate('cardano')}
+        className="group flex w-full cursor-pointer items-center justify-between rounded-[18px] border border-border bg-card px-4 py-[15px] text-left transition duration-150 hover:bg-muted"
+      >
+        <span className="flex flex-col gap-0.5">
+          <span className="text-sm font-medium">{t('cardano_title')}</span>
+          <span className="text-[12.5px] text-muted-foreground">{t('cardano_homeSubtitle', [labels.dust])}</span>
+        </span>
+        <ChevronRight size={15} className="shrink-0 text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5" />
+      </button>
 
       {fresh ? (
         <div className="rounded-[18px] bg-accent p-4">

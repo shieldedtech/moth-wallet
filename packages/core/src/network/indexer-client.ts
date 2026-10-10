@@ -27,6 +27,31 @@ export interface DustGenerationStatus {
   currentCapacity: string;
 }
 
+/**
+ * One registration the indexer has ingested for a Cardano stake key.
+ *
+ * `valid` is the field that matters: it separates "the bridge has not seen the
+ * registration" (no entry at all) from "the bridge saw it and rejected it"
+ * (entry with valid=false). `dustGenerationStatus` collapses both into zeros,
+ * which makes a rejected registration indistinguishable from an unobserved one
+ * — and the wait for finality is twelve hours, so the difference is expensive.
+ */
+export interface DustRegistrationRecord {
+  readonly dustAddress: string | null;
+  readonly valid: boolean;
+  readonly nightBalance: string;
+  readonly generationRate: string;
+  readonly maxCapacity: string;
+  readonly currentCapacity: string;
+  readonly utxoTxHash: string;
+  readonly utxoOutputIndex: number;
+}
+
+export interface DustGenerations {
+  readonly cardanoRewardAddress: string;
+  readonly registrations: readonly DustRegistrationRecord[];
+}
+
 export interface TransactionInfo {
   id: number;
   hash: string;
@@ -106,6 +131,28 @@ export class IndexerClient {
       offset: offset ?? null,
     });
     return result.contractAction;
+  }
+
+  /**
+   * Registrations the indexer holds for these reward addresses, with the
+   * per-registration `valid` flag `dustGenerationStatus` does not expose.
+   */
+  async getDustGenerations(cardanoRewardAddresses: string[]): Promise<DustGenerations[]> {
+    const query = `
+      query ($addresses: [CardanoRewardAddress!]!) {
+        dustGenerations(cardanoRewardAddresses: $addresses) {
+          cardanoRewardAddress
+          registrations {
+            dustAddress valid nightBalance generationRate
+            maxCapacity currentCapacity utxoTxHash utxoOutputIndex
+          }
+        }
+      }
+    `;
+    const result = await this.query<{ dustGenerations: DustGenerations[] }>(query, {
+      addresses: cardanoRewardAddresses,
+    });
+    return result.dustGenerations;
   }
 
   async getDustGenerationStatus(cardanoRewardAddresses: string[]): Promise<DustGenerationStatus[]> {

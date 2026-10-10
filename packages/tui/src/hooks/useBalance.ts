@@ -83,6 +83,12 @@ export function useBalance(
   const onLogRef = useRef(onLog);
   onLogRef.current = onLog;
 
+  // Bumped to force a fresh sync of the SAME wallet on the same network.
+  // Without it there is no dep change to restart on, so a cache clear leaves
+  // the old in-memory wallet running — and it re-persists the state that was
+  // just deleted.
+  const [syncGeneration, setSyncGeneration] = useState(0);
+
   const startSync = useCallback(async () => {
     if (!walletKeys || !network) {
       onLogRef.current?.(`[sync] not starting — ${!walletKeys ? 'no wallet keys (wallet locked?)' : 'no network'}`);
@@ -123,7 +129,7 @@ export function useBalance(
       onLogRef.current?.(`Sync failed: ${msg}`);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [walletKeys, network?.id, network?.nodeUrl, network?.indexerUrl, proverKey, walletName, isNewWallet, getBirthday]);
+  }, [walletKeys, network?.id, network?.nodeUrl, network?.indexerUrl, proverKey, walletName, isNewWallet, getBirthday, syncGeneration]);
 
   useEffect(() => {
     startSync();
@@ -181,5 +187,19 @@ export function useBalance(
     ]);
   }, []);
 
-  return { ...state, refresh, getFacade, stop };
+  /**
+   * Tear the sync down, run `between` with nothing holding the state, then
+   * start fresh.
+   *
+   * The ordering is the whole point for a cache clear: deleting the persisted
+   * state under a live wallet achieves nothing, because the wallet still holds
+   * the bad state in memory and writes it back at its next checkpoint.
+   */
+  const restart = useCallback(async (between?: () => Promise<void>): Promise<void> => {
+    await stop();
+    if (between) await between();
+    setSyncGeneration((n) => n + 1);
+  }, [stop]);
+
+  return { ...state, refresh, getFacade, stop, restart };
 }

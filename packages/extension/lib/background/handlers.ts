@@ -22,6 +22,10 @@ import { getAddressBook, saveAddressEntry, removeAddressEntry } from './address-
 import { offscreen } from './offscreen-client';
 import { record as recordTiming, getTimings, clearTimings, setTimingsEnabled, timingsEnabled } from './timings';
 import { applyNodeAuthHeader } from './node-auth-header';
+import { requireCardano } from './cardano-session';
+import { t } from '../i18n';
+// Pure config resolution — no Lucid, so it is safe in the service worker.
+import { cardanoNetworkFor, explorerTxUrl, resolveCardanoNetwork } from '@shieldedtech/moth-wallet/cardano/network';
 import { registerTimingLabel } from '../ui/dust-register-outcome';
 import {
   clear as clearStats,
@@ -241,6 +245,31 @@ export async function saveNetworkConfig(data: {
  * between the clear and the restart. Nothing is spent and nothing on chain
  * changes.
  */
+/**
+ * This wallet's own DUST address in the form a registration datum records it,
+ * or '' when it has none on the current network.
+ *
+ * Resolved through the same path the registration writes, so the two sides of
+ * the ownership comparison cannot drift apart. They did: this used to compare
+ * the datum against `session.shieldedCoinPublicKey`, which the datum has not
+ * held since the receiver became a DUST address. Both are 32 bytes and both
+ * are plausible receivers, so nothing failed — every registration this wallet
+ * made for itself simply read as "registered to another wallet".
+ *
+ * '' on failure rather than a guess: a wallet with no DUST address here cannot
+ * own the registration, and the caller renders the raw bytes instead of
+ * claiming them.
+ */
+export async function ownDustAddressBytes(session: Session): Promise<string> {
+  const bech32 = session.addresses?.dust?.bech32m?.[session.network] ?? '';
+  if (!bech32) return '';
+  try {
+    return (await offscreen.cardanoResolveReceiver({ input: bech32 })).dustAddressBytes;
+  } catch {
+    return '';
+  }
+}
+
 export async function resyncFromScratch(): Promise<void> {
   const session = await getSession();
   if (!session) throw new Error('Wallet is locked');
@@ -423,6 +452,23 @@ export function registerHandlers(): void {
     await recordTiming('marker', 'unlock: start (keystore decrypt + offscreen + WASM ahead)');
     let settings = await getSettings();
     const unlocked = await offscreen.walletUnlock(data.name, data.passphrase, settings.network);
+    // Cardano's CIP-1852 derivation starts from BIP-39 entropy, which the seed
+    // cannot be reversed into — so the mnemonic itself has to be captured here,
+    // at the one moment the passphrase is in hand. Hex-seed accounts have none;
+    // `kind` is what says so, and the Cardano verbs refuse with that reason.
+    // Best-effort: a failure here must not cost the user their unlock.
+    const backup = await offscreen
+      .walletExportPhrase(data.name, data.passphrase, settings.network, 'backup')
+      .catch(() => null);
+    // Imported Cardano accounts are encrypted under this same passphrase, and
+    // this is the only moment it is available. See Session.cardanoImported.
+    const cardanoImported = await offscreen
+      .cardanoImportedPhrases({
+        network: settings.network,
+        walletName: data.name,
+        passphrase: data.passphrase,
+      })
+      .catch(() => ({}) as Record<string, string>);
     // Each account lives on its own network: the unlocked account's network
     // becomes the wallet-wide selection.
     if (unlocked.network !== settings.network) {
@@ -432,6 +478,8 @@ export function registerHandlers(): void {
       walletName: unlocked.name,
       walletLabel: unlocked.label,
       seedHex: unlocked.seedHex,
+      ...(backup?.kind === 'mnemonic' ? { cardanoMnemonic: backup.value } : {}),
+      ...(Object.keys(cardanoImported).length > 0 ? { cardanoImported } : {}),
       address: unlocked.address,
       addresses: unlocked.addresses,
       shieldedCoinPublicKey: unlocked.shieldedCoinPublicKey,
@@ -637,6 +685,151 @@ export function registerHandlers(): void {
   onMessage('addressBookSave', ({ data }) => saveAddressEntry(data));
 
   onMessage('addressBookRemove', ({ data }) => removeAddressEntry(data.id));
+
+  // ---------------------------------------------------------------------
+  // Cardano / cNIGHT
+  // ---------------------------------------------------------------------
+
+  /**
+   * Resolve the session and the Cardano config together, because every verb
+   * needs both and each has its own distinct failure the user can act on.
+   */
+
+  /** Session + wallet name, or the locked error. Accounts need no config. */
+  const requireCardanoWallet = async () => {
+    const session = await getSession();
+    if (!session) throw new Error(t('cardano_errorLocked'));
+    return { network: session.network, walletName: session.walletName, session };
+  };
+
+  onMessage('cardanoAccountList', async () => {
+    const { network, walletName } = await requireCardanoWallet();
+    return offscreen.cardanoAccountList({ network, walletName });
+  });
+
+  onMessage('cardanoAccountAdd', async ({ data }) => {
+    const { network, walletName, session } = await requireCardanoWallet();
+    // A derived account is an index of the wallet's phrase, so a wallet with
+    // no phrase cannot have one. Imports are still available to it.
+    if (!session.cardanoMnemonic) throw new Error(t('cardano_errorNoMnemonic'));
+    return offscreen.cardanoAccountAdd({ network, walletName, ...(data?.label ? { label: data.label } : {}) });
+  });
+
+  onMessage('cardanoAccountImport', async ({ data }) => {
+    const { network, walletName } = await requireCardanoWallet();
+    const { list, id } = await offscreen.cardanoAccountImport({
+      network,
+      walletName,
+      mnemonic: data.mnemonic,
+      passphrase: data.passphrase,
+      ...(data.label ? { label: data.label } : {}),
+    });
+    // Cache the plaintext now. It is only otherwise recoverable at unlock, and
+    // the account was just made active — the next Cardano call would fail.
+    const session = await getSession();
+    if (session) {
+      await saveSession({
+        ...session,
+        cardanoImported: { ...(session.cardanoImported ?? {}), [id]: data.mnemonic.trim().replace(/\s+/g, ' ') },
+      });
+    }
+    return list;
+  });
+
+  onMessage('cardanoAccountSelect', async ({ data }) => {
+    const { network, walletName } = await requireCardanoWallet();
+    return offscreen.cardanoAccountSelect({ network, walletName, id: data.id });
+  });
+
+  onMessage('cardanoAccountRename', async ({ data }) => {
+    const { network, walletName } = await requireCardanoWallet();
+    return offscreen.cardanoAccountRename({ network, walletName, id: data.id, label: data.label });
+  });
+
+  onMessage('cardanoAccountRemove', async ({ data }) => {
+    const { network, walletName } = await requireCardanoWallet();
+    const list = await offscreen.cardanoAccountRemove({ network, walletName, id: data.id });
+    const session = await getSession();
+    if (session?.cardanoImported?.[data.id]) {
+      // Drop the cached phrase with the account it belongs to; leaving it would
+      // keep a removed account's key in memory for the rest of the session.
+      const { [data.id]: _removed, ...rest } = session.cardanoImported;
+      await saveSession({ ...session, cardanoImported: rest });
+    }
+    return list;
+  });
+
+  onMessage('cardanoResolveReceiver', async ({ data }) =>
+    offscreen.cardanoResolveReceiver({ input: data.input }),
+  );
+
+  onMessage('cardanoReceiverAccounts', async () => {
+    const { network } = await requireCardanoWallet();
+    return offscreen.cardanoReceiverAccounts({ network });
+  });
+
+  onMessage('cardanoAddresses', async () => {
+    const { config, mnemonic, accountIndex } = await requireCardano(false);
+    return offscreen.cardanoAddresses({ mnemonic, config, accountIndex });
+  });
+
+  onMessage('cardanoStatus', async () => {
+    const { config, mnemonic, session, accountIndex } = await requireCardano(true);
+    const network = await getNetworkConfig();
+    const status = await offscreen.cardanoStatus({
+      mnemonic,
+      config,
+      indexerUrl: network.indexerUrl,
+      accountIndex,
+    });
+    const ownDustBytes = await ownDustAddressBytes(session);
+    return {
+      ...status,
+      // Resolved here rather than offscreen: the session is what knows which
+      // account is unlocked, and a registration pointing at some *other*
+      // wallet is still a valid registration — just not one that pays you.
+      registeredToThisWallet:
+        ownDustBytes !== '' && status.registeredDustAddress === ownDustBytes,
+    };
+  });
+
+  onMessage('cardanoRegister', async ({ data }) => {
+    const { config, mnemonic, session, accountIndex } = await requireCardano(true);
+    // This wallet's own DUST address, serialized — the datum records a DUST
+    // address, not the shielded coin public key.
+    const ownBech32 = session.addresses?.dust?.bech32m?.[session.network] ?? '';
+    if (!data?.dustAddress && !ownBech32) {
+      throw new Error(t('cardano_errorNoDustAddress'));
+    }
+    const receiver =
+      data?.dustAddress
+      ?? (await offscreen.cardanoResolveReceiver({ input: ownBech32 })).dustAddressBytes;
+    const r = await offscreen.cardanoRegister({ mnemonic, config, receiver, accountIndex });
+    return { ...r, explorer: explorerTxUrl(config, r.txHash) };
+  });
+
+  onMessage('cardanoDeregister', async () => {
+    const { config, mnemonic, accountIndex } = await requireCardano(true);
+    const r = await offscreen.cardanoDeregister({ mnemonic, config, accountIndex });
+    return { ...r, explorer: explorerTxUrl(config, r.txHash) };
+  });
+
+  onMessage('cardanoSend', async ({ data }) => {
+    const { config, mnemonic, accountIndex } = await requireCardano(true);
+    const r = await offscreen.cardanoSend({
+      mnemonic,
+      config,
+      request: { to: data.to, lovelace: data.lovelace, cnight: data.cnight },
+      accountIndex,
+    });
+    return { ...r, explorer: explorerTxUrl(config, r.txHash) };
+  });
+
+  onMessage('cardanoUpdate', async ({ data }) => {
+    const { config, mnemonic, accountIndex } = await requireCardano(true);
+    const r = await offscreen.cardanoUpdate({ mnemonic, config, receiver: data.dustAddress, accountIndex });
+    return { ...r, explorer: explorerTxUrl(config, r.txHash) };
+  });
 
   onMessage('settingsGet', () => getSettings());
 

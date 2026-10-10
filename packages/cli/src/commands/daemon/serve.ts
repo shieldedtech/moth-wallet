@@ -27,6 +27,20 @@ import {
   type WalletBalances,
   type AuthHandler,
 } from '@shieldedtech/moth-wallet';
+import {
+  deriveAllAddressesFromSeed,
+  mnemonicToSeed,
+} from '@shieldedtech/moth-wallet';
+import {
+  CardanoNetworkUnavailableError,
+  dustAddressBytes,
+  loadCardanoConfig,
+  parseAda,
+  parseCnight,
+  resolveActiveCardanoKey,
+  unlockImportedCardanoPhrases,
+  type CardanoNetworkConfig,
+} from '@shieldedtech/moth-wallet/cardano';
 import {BaseCommand} from '../../base-command.js';
 import {getPassphrase} from '../../adapters/passphrase.js';
 
@@ -47,6 +61,14 @@ export default class DaemonServe extends BaseCommand {
     'max-spend': Flags.string({
       description:
         'Per-transaction NIGHT spend cap enforced under --auto-approve. Any NIGHT transfer above this amount is refused, bounding blast radius when there is no human to approve. REQUIRED with --auto-approve. Example: --max-spend 100 (NIGHT).',
+    }),
+    // Separate from --max-spend because ADA and cNIGHT are different assets on
+    // another chain. Omitted means that asset cannot be sent unattended.
+    'max-spend-ada': Flags.string({
+      description: 'Per-send ADA cap for cardanoSend under --auto-approve, e.g. 5. Without it, unattended Cardano sends are refused.',
+    }),
+    'max-spend-cnight': Flags.string({
+      description: 'Per-send cNIGHT cap for cardanoSend under --auto-approve, e.g. 10. Without it, unattended cNIGHT sends are refused.',
     }),
     'idle-timeout': Flags.integer({
       description:
@@ -113,6 +135,18 @@ export default class DaemonServe extends BaseCommand {
       return;
     }
 
+    let cardanoSpendCap: {lovelace: bigint | null; cnight: bigint | null};
+    try {
+      cardanoSpendCap = {
+        lovelace: flags['max-spend-ada'] ? parseAda(flags['max-spend-ada']) : null,
+        cnight: flags['max-spend-cnight'] ? parseCnight(flags['max-spend-cnight']) : null,
+      };
+    } catch (err) {
+      this.outputError('INVALID_INPUT', `--max-spend-ada / --max-spend-cnight: ${(err as Error).message}`);
+      this.exit(2);
+      return;
+    }
+
     const walletName = await this.resolveWalletName(flags);
     const network = await this.getNetworkConfig(flags.network, this.getNetworkOverrides(flags));
     const passphrase = await getPassphrase();
@@ -137,6 +171,45 @@ export default class DaemonServe extends BaseCommand {
     // the raw seedHex was dropped inside walletManager.unlock and is
     // never exposed (D-KM-3).
     const walletKeys = unlocked.walletKeys;
+
+    // Cardano capability. Held here rather than in the key bundle because
+    // CIP-1852 derives from BIP-39 entropy, which unlock() deliberately drops —
+    // so the mnemonic is re-read once, kept for the daemon's lifetime, and
+    // cleared alongside the Midnight keys on shutdown.
+    //
+    // A hex-seed wallet has no mnemonic and never will; `cardanoMnemonic` stays
+    // null and the cardano* verbs refuse with that reason. A network with no
+    // Cardano pair leaves the capability out, and those verbs refuse cleanly.
+    let cardanoConfig: CardanoNetworkConfig | null = null;
+    try {
+      cardanoConfig = await loadCardanoConfig(this.storage, network.id);
+    } catch (err) {
+      if (!(err instanceof CardanoNetworkUnavailableError)) throw err;
+    }
+    const phrase = await this.walletManager.exportPhrase(walletName, passphrase);
+    let cardanoMnemonic: string | null = phrase.kind === 'mnemonic' ? phrase.value : null;
+    // Imported accounts' phrases, decrypted now so the daemon need not keep the passphrase.
+    let cardanoImported = cardanoConfig
+      ? await unlockImportedCardanoPhrases(this.storage, walletName, passphrase)
+      : new Map<string, string>();
+    // The default DUST receiver: this wallet's own DUST address, serialized.
+    // NOT the shielded coin public key — the registration datum records a DUST
+    // address, and the two are different keys.
+    let cardanoDustAddress = '';
+    if (cardanoMnemonic) {
+      const seed = await mnemonicToSeed(cardanoMnemonic);
+      const seedHex = Array.from(seed).map((b) => b.toString(16).padStart(2, '0')).join('');
+      seed.fill(0);
+      const bech32 = deriveAllAddressesFromSeed(seedHex).dust.bech32m[network.id];
+      cardanoDustAddress = bech32 ? dustAddressBytes(bech32) : '';
+    }
+    process.stderr.write(
+      !cardanoConfig
+        ? `[daemon-serve] Cardano unavailable — ${network.id} has no Cardano network\n`
+        : cardanoMnemonic || cardanoImported.size > 0
+          ? `[daemon-serve] Cardano enabled on ${cardanoConfig.network}\n`
+          : '[daemon-serve] Cardano unavailable — wallet has no mnemonic (hex-seed import)\n',
+    );
 
     process.stderr.write('[daemon-serve] starting wallet sync\n');
     const synced: SyncedWallet = await startWalletSync(
@@ -175,6 +248,17 @@ export default class DaemonServe extends BaseCommand {
       queue,
       auditLog,
       maxSpendRaw,
+      cardanoSpendCap,
+      ...(cardanoConfig
+        ? {
+            cardano: {
+              config: cardanoConfig,
+              resolveAccountKey: () =>
+                resolveActiveCardanoKey(this.storage, walletName, cardanoMnemonic, cardanoImported),
+              getDustAddress: () => cardanoDustAddress,
+            },
+          }
+        : {}),
       log: (level, msg) => {
         if (level === 'info') this.log_verbose(`[daemon] ${msg}`);
         else process.stderr.write(`[daemon ${level}] ${msg}\n`);
@@ -308,6 +392,13 @@ export default class DaemonServe extends BaseCommand {
       } catch (err) {
         process.stderr.write(`[daemon-serve] wallet lock error: ${err}\n`);
       }
+      // Drop the Cardano secret on the same beat as the Midnight keys. A JS
+      // string cannot be zeroed, but releasing the only reference is what makes
+      // it collectable — holding it past lock() would outlive the keys it sits
+      // beside.
+      cardanoMnemonic = null;
+      cardanoImported = new Map();
+      cardanoDustAddress = '';
       auditLog.recordLifecycle({wallet: walletName, network: network.id, event: 'daemon-stop'});
       process.stderr.write('[daemon-serve] stopped\n');
       // Exit cleanly past oclif's catch chain.

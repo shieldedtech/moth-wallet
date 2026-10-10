@@ -11,6 +11,7 @@ import { nativeAssetLabelsForNetwork } from '../../lib/ui/token-labels';
 import { txSummaryRows } from '../../lib/ui/tx-summary-view';
 import type { PendingApproval } from '../../lib/background/approvals';
 import type { BalanceApprovalPayload, TransferApprovalPayload } from '../../lib/background/connector-handlers';
+import type { CardanoSignApprovalPayload } from '../../lib/messaging/protocol';
 import { Button } from '../ui/button';
 import { Badge, Card, Separator } from '../ui/card';
 import { Input } from '../ui/input';
@@ -167,6 +168,25 @@ export function Approval({
           </Card>
           <NoteCard icon={Moon}>
             {t('approval_deriveNote')}
+          </NoteCard>
+        </>
+      ) : approval.kind === 'cardanoSign' ? (
+        <>
+          <SiteChip origin={approval.origin} />
+          <div className="text-center">
+            <h1 className="m-0 font-display text-[26px] font-extrabold leading-tight">
+              {t('approval_cardanoSignTitle')}
+            </h1>
+            <p className="m-0 pt-1.5 text-[13.5px] text-muted-foreground">
+              {t('approval_cardanoSignSubtitle', [host])}
+            </p>
+          </div>
+          <DetailCard rows={cardanoSignRows(approval.payload as Partial<CardanoSignApprovalPayload>)} />
+          {/* Deliberately not a transaction summary. The dApp supplies CBOR
+              and moth does not decode it yet; showing an amount it has not
+              verified would be worse than showing none. */}
+          <NoteCard variant="error" icon={TriangleAlert}>
+            {t('approval_cardanoSignWarning')}
           </NoteCard>
         </>
       ) : approval.kind === 'balance' ? (
@@ -367,4 +387,19 @@ function ApprovalUnlock({ walletName, onUnlocked }: { walletName: string | null;
       </Button>
     </div>
   );
+}
+
+/** Which key, on which network, a CIP-30 request would sign with. */
+export function cardanoSignRows(payload: Partial<CardanoSignApprovalPayload>) {
+  const account = payload.accountLabel
+    ? payload.accountKind === 'imported'
+      ? t('approval_cardanoAccountImported', [payload.accountLabel])
+      : payload.accountLabel
+    : '—';
+  return [
+    { label: t('approval_cardanoMethodLabel'), value: payload.method ?? '—' },
+    { label: t('approval_cardanoNetworkLabel'), value: payload.cardanoNetwork ?? '—' },
+    { label: t('approval_cardanoWalletLabel'), value: payload.walletName ?? '—' },
+    { label: t('approval_cardanoAccountLabel'), value: account },
+  ];
 }

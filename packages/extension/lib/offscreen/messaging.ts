@@ -17,6 +17,23 @@ import type { WalletInfo, TxStage, NetworkConfig, SignEncoding, SignedMessage } 
 import type { HistoryEntry } from '@midnight-ntwrk/dapp-connector-api';
 import type { RelayState } from './relay-socket';
 import type { DustNotYet } from '../messaging/protocol';
+import type { CardanoNetworkConfig } from '@shieldedtech/moth-wallet/cardano/network';
+import type { CardanoAddressesResult, CardanoStatusResult } from './cardano-host';
+import type { CardanoAccountList } from '@shieldedtech/moth-wallet/cardano/accounts';
+
+/**
+ * Everything a CIP-30 method can return, across all of them.
+ *
+ * Spelled out rather than `unknown`: the protocol map is a mapped type, and one
+ * `unknown` member widens the inference for every other method in it.
+ */
+export type Cip30Result =
+  | number
+  | string
+  | string[]
+  | null
+  | { signature: string; key: string }
+  | ReadonlyArray<{ readonly cip: number }>;
 
 export type { RelayState };
 
@@ -131,6 +148,99 @@ export interface OffscreenProtocol {
     kind: 'mnemonic' | 'seed';
     value: string;
   };
+  // Cardano / cNIGHT. The mnemonic travels with each call rather than being
+  // cached offscreen: the offscreen document is torn down and recreated at
+  // Chrome's discretion, so a cached copy would be neither reliably present nor
+  // reliably gone. The background holds it in storage.session, which is.
+  // Account management. Storage-only; no key material crosses except the
+  // phrase being imported and the passphrase that encrypts it.
+  'os/cardanoAccountList'(data: { network: string; walletName: string }): CardanoAccountList;
+  'os/cardanoAccountAdd'(data: {
+    network: string;
+    walletName: string;
+    label?: string;
+  }): CardanoAccountList;
+  'os/cardanoAccountImport'(data: {
+    network: string;
+    walletName: string;
+    mnemonic: string;
+    passphrase: string;
+    label?: string;
+  }): { list: CardanoAccountList; id: string };
+  'os/cardanoAccountSelect'(data: {
+    network: string;
+    walletName: string;
+    id: string;
+  }): CardanoAccountList;
+  'os/cardanoAccountRemove'(data: {
+    network: string;
+    walletName: string;
+    id: string;
+  }): CardanoAccountList;
+  'os/cardanoAccountRename'(data: {
+    network: string;
+    walletName: string;
+    id: string;
+    label: string;
+  }): CardanoAccountList;
+  'os/cardanoImportedPhrases'(data: {
+    network: string;
+    walletName: string;
+    passphrase: string;
+  }): Record<string, string>;
+
+  'os/cardanoResolveReceiver'(data: { input: string }): { dustAddressBytes: string };
+  'os/cardanoReceiverAccounts'(data: { network: string }): Array<{
+    name: string;
+    label: string;
+    shieldedAddress: string;
+    /** bech32m, for display. */
+    dustAddress: string;
+    /** Serialized DUST address — what a registration datum records. */
+    dustAddressBytes: string;
+  }>;
+  'os/cardanoAddresses'(data: {
+    mnemonic: string;
+    config: CardanoNetworkConfig;
+    accountIndex?: number;
+  }): CardanoAddressesResult;
+  'os/cardanoStatus'(data: {
+    mnemonic: string;
+    config: CardanoNetworkConfig;
+    indexerUrl: string;
+    accountIndex?: number;
+  }): CardanoStatusResult;
+  'os/cardanoRegister'(data: {
+    mnemonic: string;
+    config: CardanoNetworkConfig;
+    receiver: string;
+    accountIndex?: number;
+  }): { txHash: string };
+  'os/cardanoDeregister'(data: {
+    mnemonic: string;
+    config: CardanoNetworkConfig;
+    accountIndex?: number;
+  }): { txHash: string; cleared: number };
+  'os/cardanoCip30'(data: {
+    mnemonic: string;
+    config: CardanoNetworkConfig;
+    method: string;
+    params: unknown[];
+    accountIndex?: number;
+  }): Cip30Result;
+  'os/cardanoSend'(data: {
+    mnemonic: string;
+    config: CardanoNetworkConfig;
+    request: { to: string; lovelace: string; cnight: string };
+    accountIndex?: number;
+  }): { txHash: string };
+  'os/cardanoUpdate'(data: {
+    mnemonic: string;
+    config: CardanoNetworkConfig;
+    receiver: string;
+    accountIndex?: number;
+  }): { txHash: string };
+
   /** Stop/reset one wallet's network-scoped state, move its metadata, and
    *  return the public addresses derived from the already-unlocked seed. */
   'os/walletSetNetwork'(data: {

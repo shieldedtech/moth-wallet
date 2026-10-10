@@ -129,4 +129,7 @@ export const dust = {
   // how a user leaves, thinking it hung.
   dust_rebuildNote:
     "Some registered $1 still isn't generating $2. Rebuilding rescans your records from the chain — it spends nothing, but can take up to an hour. Leave the wallet open.",
+  dust_addressRow: '$1 address',
+  dust_addressCopied: 'Address copied',
+  dust_addressCopy: 'Copy',
 } as const;

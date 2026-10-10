@@ -153,6 +153,62 @@ export interface ExtensionSettings {
    * ignore warnings. Never gates a warning itself, only how much it says.
    */
   developerMode: boolean;
+  /**
+   * Blockfrost project id. Required for anything that reads Cardano state or
+   * submits a Cardano transaction; address derivation works without it.
+   *
+   * SECRET, on the same terms as `NodeAuthHeader.value` above: stored in
+   * `storage.local`, masked in the UI, never logged, never in diagnostics — and
+   * NOT protected by the wallet passphrase, so anything with access to the
+   * browser profile can read it.
+   */
+  blockfrostProjectId: string | null;
+  /**
+   * Blockfrost project ids keyed by Cardano network ('Mainnet' | 'Preprod' |
+   * 'Preview'). A project id is issued for one network and rejected by the
+   * others — a preview key against preprod is a 403, not a fallback — so
+   * switching networks must switch credentials with it.
+   *
+   * `blockfrostProjectId` above is the legacy single value, still honoured as
+   * a fallback for a setup made before the split.
+   */
+  blockfrostProjectIds: Record<string, string>;
+  /**
+   * Overrides for a redeployed cNIGHT token or a self-hosted Blockfrost. No UI:
+   * they exist so a contract redeploy does not need an extension release, and
+   * the defaults are right until one happens.
+   */
+  blockfrostUrl: string | null;
+  cnightPolicyId: string | null;
+  cnightAssetName: string | null;
+}
+
+/**
+ * Cardano accounts as the panel sees them. Mirrors core's
+ * `CardanoAccountList` — readonly, because that is what core returns and the
+ * panel has no business mutating it.
+ */
+export interface CardanoAccountListDTO {
+  readonly accounts: ReadonlyArray<{
+    readonly id: string;
+    readonly label: string;
+    readonly kind: 'derived' | 'imported';
+    readonly accountIndex: number;
+  }>;
+  readonly activeId: string;
+}
+
+/**
+ * What a CIP-30 signing approval shows: the request, and which key on which
+ * network would sign it. Not a transaction summary — the dApp supplies CBOR,
+ * and amounts must not be shown until moth decodes it.
+ */
+export interface CardanoSignApprovalPayload {
+  readonly method: string;
+  readonly cardanoNetwork: string;
+  readonly walletName: string;
+  readonly accountLabel: string;
+  readonly accountKind: 'derived' | 'imported';
 }
 
 /** Result of resolving a `.shielded` name to a send target (send-to-name). */
@@ -342,6 +398,119 @@ interface ProtocolMap {
     total: number;
   };
   dustRebuild(): { started: boolean };
+
+  // -------------------------------------------------------------------------
+  // Cardano / cNIGHT
+  //
+  // Every verb needs the unlocked session's mnemonic, so all of them reject
+  // while locked. `cardanoAddresses` is the only one that works without a
+  // Blockfrost project id — derivation is pure.
+  // -------------------------------------------------------------------------
+
+  /**
+   * Cardano accounts for the unlocked wallet, and which one is active.
+   *
+   * `derived` accounts are CIP-1852 indices of the wallet's own recovery
+   * phrase; `imported` ones carry a separate phrase and are Cardano-only.
+   */
+  cardanoAccountList(): CardanoAccountListDTO;
+  /** Add the next CIP-1852 index of the wallet's own phrase, and select it. */
+  cardanoAccountAdd(data: { label?: string } | undefined): CardanoAccountListDTO;
+  /**
+   * Import a Cardano-only account from a separate recovery phrase. Requires the
+   * wallet passphrase, which encrypts the imported phrase at rest.
+   */
+  cardanoAccountImport(data: { mnemonic: string; passphrase: string; label?: string }): CardanoAccountListDTO;
+  cardanoAccountSelect(data: { id: string }): CardanoAccountListDTO;
+  /** Removing an imported account destroys moth's only copy of its phrase. */
+  cardanoAccountRemove(data: { id: string }): CardanoAccountListDTO;
+  cardanoAccountRename(data: { id: string; label: string }): CardanoAccountListDTO;
+
+  /**
+   * Midnight accounts offerable as DUST receivers, each with the coin public
+   * key a registration needs. Derived from public addresses, so locked
+   * accounts are included.
+   */
+  cardanoReceiverAccounts(): Array<{
+    name: string;
+    label: string;
+    shieldedAddress: string;
+    /** bech32m, for display. */
+    dustAddress: string;
+    /** Serialized DUST address — what a registration datum records. */
+    dustAddressBytes: string;
+  }>;
+
+  /**
+   * Resolve a pasted `mn_dust_…` address or its 66-hex serialization into the
+   * bytes a registration records. Rejects a shielded address by name — it is
+   * the obvious thing to paste and the wrong value.
+   */
+  cardanoResolveReceiver(data: { input: string }): { dustAddressBytes: string };
+
+  /** Derived Cardano addresses for the unlocked account. No network access. */
+  cardanoAddresses(): {
+    cardanoNetwork: string;
+    address: string;
+    rewardAddress: string;
+    stakeKeyHash: string;
+    paymentKeyHash: string;
+  };
+
+  /** cNIGHT holdings plus both sides of the DUST designation picture. */
+  cardanoStatus(): {
+    cardanoNetwork: string;
+    address: string;
+    rewardAddress: string;
+    /** Decimal strings — both exceed Number's safe integer range. */
+    lovelace: string;
+    cnight: string;
+    cnightUtxos: number;
+    registered: boolean;
+    registeredDustAddress: string | null;
+    /** True when the registration points at THIS account's DUST address. */
+    registeredToThisWallet: boolean;
+    registrationUtxo: string | null;
+    /** Midnight-side rate; null until the indexer has observed the registration. */
+    generationRate: string | null;
+    /** Accrued DUST and its ceiling, in SPECK (10^15 per DUST). */
+    currentCapacity: string | null;
+    maxCapacity: string | null;
+    /**
+     * Midnight waits for Cardano finality (k=2160 blocks, ~12 hours) before
+     * acting on a registration. These carry that wait so the panel can count
+     * down instead of saying "soon". Null when there is nothing to wait for or
+     * the registration transaction is not yet in a block.
+     */
+    generatingFrom: number | null;
+    secondsRemaining: number | null;
+    /**
+     * What Midnight made of the registration. null = no record (not yet seen,
+     * or finality has not passed); false = ingested and REJECTED, which waiting
+     * will not fix; true = generating.
+     */
+    midnightValid: boolean | null;
+    /** More than one registration on a stake key forces deregistration. */
+    registrationCount: number;
+    /**
+     * The registration records something that is not a 33-byte DUST address,
+     * so it can never generate DUST. `update` rewrites it in one transaction.
+     */
+    legacyDustAddress: boolean;
+  };
+
+  /** `dustAddress` omitted means this account's own. */
+  cardanoRegister(data: { dustAddress?: string } | undefined): { txHash: string; explorer: string };
+  cardanoDeregister(): { txHash: string; explorer: string; cleared: number };
+  cardanoUpdate(data: { dustAddress: string }): { txHash: string; explorer: string };
+
+  /**
+   * Send ADA and/or cNIGHT from the active Cardano account.
+   *
+   * Amounts are decimal strings: lovelace and token counts both exceed
+   * Number's safe integer range, and this channel is JSON.
+   */
+  cardanoSend(data: { to: string; lovelace: string; cnight: string }): { txHash: string; explorer: string };
 
   /** Activity feed (on-chain history + pending local submissions), newest
    *  first, serialized with serializeActivity (entries carry bigints). */

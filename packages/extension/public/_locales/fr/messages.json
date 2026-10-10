@@ -1669,5 +1669,440 @@
   },
   "dust_etaRecordsSettling": {
     "message": "Enregistrements de génération en cours"
+  },
+  "cardano_title": {
+    "message": "Cardano"
+  },
+  "cardano_subtitle": {
+    "message": "cNIGHT et désignation DUST"
+  },
+  "cardano_openFromHome": {
+    "message": "Cardano"
+  },
+  "cardano_networkRow": {
+    "message": "Réseau Cardano"
+  },
+  "cardano_addressRow": {
+    "message": "Adresse"
+  },
+  "cardano_stakeAddressRow": {
+    "message": "Adresse de stake"
+  },
+  "cardano_adaRow": {
+    "message": "ADA"
+  },
+  "cardano_cnightRow": {
+    "message": "cNIGHT"
+  },
+  "cardano_cnightUtxos": {
+    "message": "répartis sur $1 UTXO"
+  },
+  "cardano_cnightUtxosOne": {
+    "message": "dans 1 UTXO"
+  },
+  "cardano_designationRow": {
+    "message": "Désignation DUST"
+  },
+  "cardano_registered": {
+    "message": "Enregistré"
+  },
+  "cardano_registeredElsewhere": {
+    "message": "Enregistré pour un autre portefeuille"
+  },
+  "cardano_notRegistered": {
+    "message": "Non enregistré"
+  },
+  "cardano_dustToRow": {
+    "message": "Le DUST va à"
+  },
+  "cardano_dustToThisWallet": {
+    "message": "Ce portefeuille"
+  },
+  "cardano_generatingRow": {
+    "message": "Génération"
+  },
+  "cardano_notYetObserved": {
+    "message": "Pas encore vu sur Midnight"
+  },
+  "cardano_legacyDustAddress": {
+    "message": "Cet enregistrement référence un destinataire ancien et inutilisable : il ne générera donc jamais de DUST — Cardano l'a accepté, mais Midnight ne peut pas le faire correspondre. Utilisez « Changer l'adresse DUST » pour le pointer vers votre adresse DUST actuelle ; il n'est pas nécessaire de se désenregistrer d'abord."
+  },
+  "cardano_notYetObservedHint": {
+    "message": "Cardano a l'enregistrement ; Midnight n'a pas encore agi dessus. C'est normal juste après l'enregistrement."
+  },
+  "cardano_register": {
+    "message": "Enregistrer"
+  },
+  "cardano_deregister": {
+    "message": "Désenregistrer"
+  },
+  "cardano_update": {
+    "message": "Changer l'adresse DUST"
+  },
+  "cardano_refresh": {
+    "message": "Actualiser"
+  },
+  "cardano_registerHint": {
+    "message": "Générez du DUST sur Midnight à partir du cNIGHT que vous détenez sur Cardano."
+  },
+  "cardano_updateHint": {
+    "message": "Envoyez le DUST généré vers une autre adresse Midnight."
+  },
+  "cardano_rotationNote": {
+    "message": "Tout votre cNIGHT est renvoyé vers votre propre adresse dans la même transaction. C'est ce qui rend le changement effectif."
+  },
+  "cardano_confirmTitle": {
+    "message": "Confirmer sur Cardano"
+  },
+  "cardano_confirm": {
+    "message": "Confirmer"
+  },
+  "cardano_confirmActionLabel": {
+    "message": "Action"
+  },
+  "cardano_confirmNetworkLabel": {
+    "message": "Réseau Cardano"
+  },
+  "cardano_confirmAccountLabel": {
+    "message": "Compte"
+  },
+  "cardano_confirmDustToLabel": {
+    "message": "DUST vers"
+  },
+  "cardano_confirmCnightMovedLabel": {
+    "message": "cNIGHT déplacé"
+  },
+  "cardano_confirmThisWallet": {
+    "message": "Ce portefeuille"
+  },
+  "cardano_confirmMinAda": {
+    "message": "Minimum joint au cNIGHT"
+  },
+  "cardano_confirmDeregisterNote": {
+    "message": "Ce cNIGHT cesse de générer du DUST dès que la désinscription est sur la chaîne. Vous pourrez vous réinscrire plus tard."
+  },
+  "cardano_cancel": {
+    "message": "Annuler"
+  },
+  "cardano_submitting": {
+    "message": "Envoi à Cardano…"
+  },
+  "cardano_submitted": {
+    "message": "Envoyé"
+  },
+  "cardano_txRow": {
+    "message": "Transaction"
+  },
+  "cardano_afterRegisterNote": {
+    "message": "Enregistré. Le DUST s'accumule dès maintenant et devient utilisable une fois que Cardano a finalisé l'enregistrement — environ 12 heures."
+  },
+  "cardano_receiverLabel": {
+    "message": "Adresse DUST Midnight"
+  },
+  "cardano_receiverPlaceholder": {
+    "message": "mn_dust_…"
+  },
+  "cardano_receiverUseThisWallet": {
+    "message": "Utiliser ce portefeuille"
+  },
+  "cardano_receiverInvalid": {
+    "message": "Collez une adresse DUST Midnight (mn_dust_…) ou son hexadécimal de 66 caractères."
+  },
+  "cardano_errorLocked": {
+    "message": "Déverrouillez votre portefeuille pour utiliser Cardano."
+  },
+  "cardano_errorNoMnemonic": {
+    "message": "Ce compte a été restauré depuis une graine hexadécimale : il n'a donc pas d'adresse Cardano. Les clés Cardano proviennent d'une phrase de récupération."
+  },
+  "cardano_errorNoBlockfrostKey": {
+    "message": "Ajoutez un identifiant de projet Blockfrost dans les Réglages pour lire Cardano et envoyer des transactions."
+  },
+  "cardano_errorNoCnight": {
+    "message": "Il vous faut au moins un cNIGHT pour vous enregistrer."
+  },
+  "cardano_loading": {
+    "message": "Lecture de Cardano…"
+  },
+  "cardano_retry": {
+    "message": "Réessayer"
+  },
+  "cardano_settingsSection": {
+    "message": "Cardano"
+  },
+  "cardano_settingsBlockfrostLabel": {
+    "message": "Identifiant de projet Blockfrost"
+  },
+  "cardano_settingsBlockfrostHint": {
+    "message": "Nécessaire pour lire Cardano et envoyer des transactions cNIGHT. Gratuit sur blockfrost.io."
+  },
+  "cardano_settingsBlockfrostStored": {
+    "message": "Enregistré. Saisissez un nouvel identifiant pour le remplacer."
+  },
+  "cardano_settingsSaved": {
+    "message": "Réglages Cardano enregistrés"
+  },
+  "cardano_homeSubtitle": {
+    "message": "Générez du $1 à partir du cNIGHT que vous détenez sur Cardano"
+  },
+  "cardano_accountSection": {
+    "message": "Votre compte Cardano"
+  },
+  "cardano_accountDerived": {
+    "message": "Dérivé de la phrase de récupération de ce portefeuille. Il n'y a pas de compte Cardano distinct à créer, ni rien de plus à sauvegarder."
+  },
+  "cardano_accountFundHint": {
+    "message": "Envoyez des ADA et du cNIGHT à cette adresse pour commencer."
+  },
+  "cardano_chainUnavailable": {
+    "message": "Les soldes et l'enregistrement ne peuvent pas encore être lus."
+  },
+  "cardano_copy": {
+    "message": "Copier"
+  },
+  "cardano_addressCopied": {
+    "message": "Adresse copiée"
+  },
+  "cardano_accountsTitle": {
+    "message": "Comptes Cardano"
+  },
+  "cardano_accountsManage": {
+    "message": "Gérer les comptes"
+  },
+  "cardano_accountActive": {
+    "message": "Actif"
+  },
+  "cardano_accountDerivedTag": {
+    "message": "Depuis la phrase de récupération"
+  },
+  "cardano_accountImportedTag": {
+    "message": "Importé"
+  },
+  "cardano_accountAdd": {
+    "message": "Ajouter un compte"
+  },
+  "cardano_accountAddHint": {
+    "message": "Crée le compte suivant à partir de la phrase de récupération de ce portefeuille. Il a sa propre adresse et son propre enregistrement DUST, et la phrase que vous avez déjà le restaure."
+  },
+  "cardano_accountImport": {
+    "message": "Importer depuis une phrase de récupération"
+  },
+  "cardano_accountImportHint": {
+    "message": "Ajoute un compte uniquement Cardano à partir d'une phrase distincte de 12 ou 24 mots. Il ne détiendra pas de fonds Midnight, et votre phrase de récupération moth ne le restaure PAS — conservez cette phrase vous-même."
+  },
+  "cardano_accountImportPhrase": {
+    "message": "Phrase de récupération"
+  },
+  "cardano_accountImportPhrasePlaceholder": {
+    "message": "mot un mot deux mot trois…"
+  },
+  "cardano_accountImportPassphrase": {
+    "message": "Mot de passe du portefeuille"
+  },
+  "cardano_accountImportPassphraseHint": {
+    "message": "Sert à chiffrer la phrase importée sur cet appareil."
+  },
+  "cardano_accountLabel": {
+    "message": "Nom (facultatif)"
+  },
+  "cardano_accountRemove": {
+    "message": "Supprimer"
+  },
+  "cardano_accountRemoveConfirm": {
+    "message": "Supprimer ce compte ? Pour un compte importé, cela efface l'unique copie de sa phrase conservée ici."
+  },
+  "cardano_accountSwitch": {
+    "message": "Basculer"
+  },
+  "cardano_accountInvalidPhrase": {
+    "message": "Ce n'est pas une phrase de récupération BIP-39 valide."
+  },
+  "cardano_accountPassphraseRequired": {
+    "message": "Saisissez le mot de passe de votre portefeuille."
+  },
+  "cardano_accountAdded": {
+    "message": "Compte ajouté"
+  },
+  "cardano_accountImported": {
+    "message": "Compte importé"
+  },
+  "cardano_accountRemoved": {
+    "message": "Compte supprimé"
+  },
+  "cardano_accountBack": {
+    "message": "Terminé"
+  },
+  "cardano_errorImportedLocked": {
+    "message": "Ce compte importé n'a pas pu être déverrouillé. Verrouillez puis déverrouillez votre portefeuille, et réessayez."
+  },
+  "cardano_send": {
+    "message": "Envoyer"
+  },
+  "cardano_sendTitle": {
+    "message": "Envoyer sur Cardano"
+  },
+  "cardano_sendTo": {
+    "message": "Adresse du destinataire"
+  },
+  "cardano_sendToPlaceholder": {
+    "message": "addr_test1…"
+  },
+  "cardano_sendAda": {
+    "message": "ADA"
+  },
+  "cardano_sendCnight": {
+    "message": "cNIGHT"
+  },
+  "cardano_sendAvailable": {
+    "message": "Disponible : $1"
+  },
+  "cardano_sendNothing": {
+    "message": "Saisissez un montant en ADA, en cNIGHT, ou les deux."
+  },
+  "cardano_sendBadAddress": {
+    "message": "Ce n'est pas une adresse Cardano pour ce réseau."
+  },
+  "cardano_sendBadAmount": {
+    "message": "Saisissez un nombre."
+  },
+  "cardano_sendRegisteredWarning": {
+    "message": "Ce compte est enregistré pour le DUST. Le cNIGHT envoyé cesse de générer, et l'envoi fait tourner le reste."
+  },
+  "cardano_sendSent": {
+    "message": "Envoyé"
+  },
+  "cardano_txCopied": {
+    "message": "ID de transaction copié"
+  },
+  "cardano_viewInExplorer": {
+    "message": "Voir dans l'explorateur"
+  },
+  "receive_dustTab": {
+    "message": "DUST"
+  },
+  "receive_dustAddressOf": {
+    "message": "Adresse DUST de $1"
+  },
+  "receive_dustNote": {
+    "message": "Personne ne peut vous envoyer du DUST — il est généré par le NIGHT ou le cNIGHT que vous détenez. C'est l'adresse vers laquelle la génération verse ; utilisez-la pour enregistrer depuis un autre portefeuille."
+  },
+  "dust_addressRow": {
+    "message": "Adresse $1"
+  },
+  "dust_addressCopied": {
+    "message": "Adresse copiée"
+  },
+  "dust_addressCopy": {
+    "message": "Copier"
+  },
+  "cardano_finalityHint": {
+    "message": "Le DUST s'accumule dès l'enregistrement. Il devient utilisable une fois que Cardano a finalisé l'enregistrement — environ 12 heures — et rien n'est cassé entre-temps."
+  },
+  "cardano_receiverPickAccount": {
+    "message": "Envoyer le DUST vers un de vos comptes"
+  },
+  "cardano_receiverSelected": {
+    "message": "Sélectionné"
+  },
+  "cardano_generatingAccruing": {
+    "message": "Accumule depuis l'enregistrement"
+  },
+  "cardano_generationRateValue": {
+    "message": "$1 $2/s"
+  },
+  "cardano_usableRow": {
+    "message": "Utilisable"
+  },
+  "cardano_usableIn": {
+    "message": "dans environ $1"
+  },
+  "cardano_usableAnyMoment": {
+    "message": "d'un instant à l'autre"
+  },
+  "cardano_usableNow": {
+    "message": "Maintenant"
+  },
+  "cardano_accountRename": {
+    "message": "Renommer"
+  },
+  "cardano_accountRenameTitle": {
+    "message": "Renommer le compte"
+  },
+  "cardano_accountRenamed": {
+    "message": "Compte renommé"
+  },
+  "cardano_accountNameEmpty": {
+    "message": "Saisissez un nom."
+  },
+  "cardano_usableUnknown": {
+    "message": "En attente de confirmation"
+  },
+  "cardano_meterSubtitle": {
+    "message": "Depuis votre cNIGHT"
+  },
+  "cardano_dustAddressRow": {
+    "message": "Le DUST est versé à"
+  },
+  "cardano_notSubmitted": {
+    "message": "Non envoyé"
+  },
+  "cardano_receiverUnchanged": {
+    "message": "C'est déjà là que ce cNIGHT envoie son DUST."
+  },
+  "cardano_settingsBlockfrostFor": {
+    "message": "Identifiant de projet Blockfrost pour $1"
+  },
+  "cardano_settingsNoNetwork": {
+    "message": "Aucun réseau Cardano n'est associé à $1."
+  },
+  "cardano_midnightRow": {
+    "message": "Sur Midnight"
+  },
+  "cardano_midnightPending": {
+    "message": "Pas encore vue"
+  },
+  "cardano_midnightRejected": {
+    "message": "Rejetée"
+  },
+  "cardano_midnightLive": {
+    "message": "Génère"
+  },
+  "cardano_midnightPendingHint": {
+    "message": "Cardano a l'enregistrement et Midnight ne l'a pas encore repris. Avant la finalité c'est normal ; longtemps après, le pont n'ingère peut-être pas les enregistrements."
+  },
+  "cardano_midnightRejectedHint": {
+    "message": "Midnight a lu cet enregistrement et l'a rejeté. Attendre n'y changera rien — désenregistrez-vous puis recommencez."
+  },
+  "cardano_multipleRegistrations": {
+    "message": "Cette clé de stake Cardano a $1 enregistrements. Plus d'un force le désenregistrement, donc rien ne génère. Désenregistrez-vous pour les effacer, puis enregistrez une seule fois."
+  },
+  "cardano_deregisteredCleared": {
+    "message": "$1 enregistrements effacés. Ce doublon expliquait l'absence de génération — vous pouvez maintenant vous enregistrer une seule fois."
+  },
+  "approval_cardanoSignTitle": {
+    "message": "Signer sur Cardano"
+  },
+  "approval_cardanoSignSubtitle": {
+    "message": "$1 demande à votre clé Cardano de signer"
+  },
+  "approval_cardanoMethodLabel": {
+    "message": "Requête"
+  },
+  "approval_cardanoNetworkLabel": {
+    "message": "Réseau Cardano"
+  },
+  "approval_cardanoWalletLabel": {
+    "message": "Portefeuille"
+  },
+  "approval_cardanoAccountLabel": {
+    "message": "Compte signataire"
+  },
+  "approval_cardanoAccountImported": {
+    "message": "$1 (importé)"
+  },
+  "approval_cardanoSignWarning": {
+    "message": "Moth ne peut pas encore montrer ce que fait cette transaction : le site la fournit déjà encodée. N'approuvez que si vous faites confiance à ce site."
+  },
+  "cardano_errorNoDustAddress": {
+    "message": "Ce portefeuille n'a pas d'adresse DUST sur le réseau actuel : le DUST généré n'aurait nulle part où aller."
   }
 }

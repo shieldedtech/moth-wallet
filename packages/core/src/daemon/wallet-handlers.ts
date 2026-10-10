@@ -26,6 +26,10 @@ import {
   parseDeployContractParams,
   parseDustRegisterParams,
   parseDustDeregisterParams,
+  parseCardanoRegisterParams,
+  parseCardanoDeregisterParams,
+  parseCardanoSendParams,
+  parseCardanoUpdateParams,
   parseInsertVerifierKeyParams,
   parseInsertVerifierKeysBatchParams,
   shortenAddress,
@@ -33,6 +37,13 @@ import {
 } from './wallet-rpc-parsers.js';
 import type {
   DaemonCallCircuitResult,
+  DaemonCardanoAddressResult,
+  DaemonCardanoBalanceResult,
+  DaemonCardanoDeregisterResult,
+  DaemonCardanoRegisterResult,
+  DaemonCardanoSendResult,
+  DaemonCardanoStatusResult,
+  DaemonCardanoUpdateResult,
   DaemonDeployContractResult,
   DaemonDustDeregisterResult,
   DaemonDustRegisterResult,
@@ -57,6 +68,12 @@ import {callCircuit} from '../contract/call.js';
 import {deployContract} from '../contract/deploy.js';
 import {insertVerifierKey, insertVerifierKeys} from '../contract/maintenance.js';
 import {loadContractArtifact} from '../contract/artifact-loader.js';
+// Type-only: importing the Cardano module for real would pull Lucid's WASM
+// into every daemon, including the ones that will never touch Cardano. The
+// handlers below import it dynamically, on first use.
+import type {CardanoNetworkConfig} from '../cardano/network.js';
+import {formatAda as formatAdaAmount, formatCnight as formatCnightAmount} from '../cardano/send.js';
+import type {CardanoSession} from '../cardano/session.js';
 import {parseArgs, toPositionalArgs} from '../contract/args-parser.js';
 import {resolveInitialPrivateState} from '../contract/initial-private-state.js';
 import {clearSyncCache} from '../sync/wallet-sync.js';
@@ -65,6 +82,11 @@ import type {SyncedWallet, WalletBalances} from '../sync/wallet-sync.js';
 import type {NetworkConfig} from '../types/network.js';
 import type {TransactionResult} from '../types/transaction.js';
 import type {DerivedKeys} from '../types/wallet.js';
+
+/** A spend cap for an approval line; a null cap means the asset cannot be sent. */
+function capLabel(cap: bigint | null, format: (v: bigint) => string, unit: string): string {
+  return cap === null ? `no ${unit}` : `${format(cap)} ${unit}`;
+}
 
 const NIGHT_TOKEN_ID = '0'.repeat(64);
 
@@ -105,6 +127,29 @@ export interface WalletHandlerDeps {
    *  auto-approve mode), a NIGHT transfer above this is refused. Undefined
    *  in interactive hosts, where a human approves each transfer instead. */
   readonly maxSpendRaw?: bigint;
+  /** Per-send Cardano caps for headless auto-approve hosts, in lovelace and
+   *  STARs. A null cap means that asset cannot be sent unattended at all.
+   *  Undefined in interactive hosts, where a human approves each send. */
+  readonly cardanoSpendCap?: {readonly lovelace: bigint | null; readonly cnight: bigint | null};
+  /**
+   * Cardano / cNIGHT support. Optional because it is the one capability the
+   * daemon's key handling cannot derive for itself: CIP-1852 starts from
+   * BIP-39 entropy, and `unlock()` drops the mnemonic after deriving the
+   * Midnight key bundle (D-KM-3). Only a host that kept the mnemonic can
+   * supply this.
+   *
+   * The `cardano*` verbs are always present in the method table whether or not
+   * this is set — a client should get "this host cannot do Cardano" rather
+   * than "no such method", which is indistinguishable from an old daemon.
+   */
+  readonly cardano?: {
+    readonly config: CardanoNetworkConfig;
+    /** The active Cardano account's phrase and index, resolved on every call so
+     *  an account switch takes effect immediately. */
+    readonly resolveAccountKey: () => Promise<{mnemonic: string; accountIndex: number}>;
+    /** The wallet's own serialized DUST address — the default DUST receiver. */
+    readonly getDustAddress: () => string;
+  };
 }
 
 /**
@@ -127,6 +172,47 @@ export function buildWalletHandlers(deps: WalletHandlerDeps): Record<string, Rpc
       );
     }
     return {facade, walletKeys};
+  };
+
+  /**
+   * Resolve the Cardano capability, or refuse when the host has none. A wallet
+   * with no key for its active account is refused later, when the key is resolved.
+   */
+  const requireCardano = (): {
+    config: CardanoNetworkConfig;
+    dustAddress: string;
+    resolveAccountKey: () => Promise<{mnemonic: string; accountIndex: number}>;
+  } => {
+    const cardano = deps.cardano;
+    if (!cardano) {
+      throw new DaemonProtocolError(
+        'INVALID_PARAMS',
+        'this daemon was started without Cardano support, so it cannot sign cNIGHT transactions',
+      );
+    }
+    return {config: cardano.config, dustAddress: cardano.getDustAddress(), resolveAccountKey: cardano.resolveAccountKey};
+  };
+
+  /** Core's Cardano guards are operator-fixable states, so they reach the wire as INVALID_PARAMS. */
+  const mapCardanoError = (verb: string, err: unknown): never => {
+    if (err instanceof DaemonProtocolError) throw err;
+    const category = (err as {category?: string} | null)?.category;
+    if (category === 'WALLET_ERROR' || category === 'INVALID_INPUT') {
+      throw new DaemonProtocolError('INVALID_PARAMS', (err as Error).message);
+    }
+    throw new DaemonProtocolError('INTERNAL_ERROR', `${verb}: ${errorChainMessage(err)}`);
+  };
+
+  /** Open a Cardano session for `fn`, mapping core's errors onto the wire. */
+  const withCardano = async <R>(verb: string, fn: (session: CardanoSession) => Promise<R>): Promise<R> => {
+    const {config, resolveAccountKey} = requireCardano();
+    const {withCardanoSession} = await import('../cardano/session.js');
+    try {
+      const {mnemonic, accountIndex} = await resolveAccountKey();
+      return await withCardanoSession(mnemonic, config, fn, accountIndex);
+    } catch (err) {
+      return mapCardanoError(verb, err);
+    }
   };
 
   /** Wrap a section that may throw into an INTERNAL_ERROR with a
@@ -683,6 +769,223 @@ export function buildWalletHandlers(deps: WalletHandlerDeps): Record<string, Rpc
           }
         },
         (r) => ({txHash: r.txId}),
+      );
+    },
+
+    // ─────────────────────────────────────────────────────────────────
+    // cardanoAddress / cardanoBalance / cardanoStatus
+    // cardanoRegister / cardanoDeregister / cardanoUpdate
+    // ─────────────────────────────────────────────────────────────────
+
+    cardanoAddress: async (): Promise<DaemonCardanoAddressResult> => {
+      const {config, dustAddress, resolveAccountKey} = requireCardano();
+      const {deriveCardanoAddresses} = await import('../cardano/session.js');
+      let addresses;
+      try {
+        const {mnemonic, accountIndex} = await resolveAccountKey();
+        addresses = await deriveCardanoAddresses(mnemonic, config, accountIndex);
+      } catch (err) {
+        return mapCardanoError('cardanoAddress', err);
+      }
+      return {
+        cardanoNetwork: config.network,
+        address: addresses.address,
+        rewardAddress: addresses.rewardAddress,
+        stakeKeyHash: addresses.stakeKeyHash,
+        paymentKeyHash: addresses.paymentKeyHash,
+        midnightDustAddress: dustAddress,
+      };
+    },
+
+    cardanoBalance: async (): Promise<DaemonCardanoBalanceResult> =>
+      withCardano('cardanoBalance', async (session) => {
+        const {readCardanoBalance} = await import('../cardano/registration.js');
+        const {cnightUnit} = await import('../cardano/network.js');
+        const balance = await readCardanoBalance(session);
+        return {
+          cardanoNetwork: session.config.network,
+          lovelace: balance.lovelace.toString(),
+          // Raw STARs on the wire; surfaces format. Amounts here must stay
+          // exact, and a decimal string is the thing that gets mis-parsed.
+          cnight: balance.cnight.toString(),
+          cnightUtxos: balance.cnightUtxoCount,
+          cnightUnit: cnightUnit(session.config),
+        };
+      }),
+
+    cardanoStatus: async (): Promise<DaemonCardanoStatusResult> =>
+      withCardano('cardanoStatus', async (session) => {
+        const {readCardanoDustStatus} = await import('../cardano/status.js');
+        const status = await readCardanoDustStatus(session, network.indexerUrl);
+        const own = requireCardano().dustAddress;
+        return {
+          cardanoNetwork: status.network,
+          address: status.addresses.address,
+          rewardAddress: status.addresses.rewardAddress,
+          lovelace: status.balance.lovelace.toString(),
+          cnight: status.balance.cnight.toString(),
+          cnightUtxos: status.balance.cnightUtxoCount,
+          registered: status.registered,
+          registeredDustAddress: status.dustAddress,
+          registeredToThisWallet: status.dustAddress === own,
+          legacyDustAddress: status.legacyDustAddress,
+          registrationUtxo: status.registrationUtxo
+            ? `${status.registrationUtxo.txHash}#${status.registrationUtxo.outputIndex}`
+            : null,
+          mappingValidator: status.mappingValidatorAddress,
+          dustGeneration: status.generation,
+        };
+      }),
+
+    cardanoRegister: async (rawParams: unknown, ctx: ConnectionContext): Promise<DaemonCardanoRegisterResult> => {
+      const params = parseCardanoRegisterParams(rawParams);
+      const {dustAddress: own, config} = requireCardano();
+      const receiver = params.receiver ?? own;
+      return withAudit(
+        'cardanoRegister',
+        params.summary ?? 'Register cNIGHT on Cardano for DUST generation',
+        [
+          `Wallet: ${walletName}`,
+          `Cardano network: ${config.network}`,
+          receiver === own
+            ? 'DUST receiver: (this wallet)'
+            : `DUST receiver: ${shortenHex(receiver)} — NOT this wallet`,
+          'Scope: spends every cNIGHT UTXO in this Cardano address',
+          ...(params.details ?? []),
+        ],
+        ctx,
+        async () =>
+          withCardano('cardanoRegister', async (session) => {
+            const {registerForDust} = await import('../cardano/registration.js');
+            const txHash = await registerForDust(session, receiver, (stage) =>
+              log('info', `[cardanoRegister] ${stage}`),
+            );
+            return {txHash, receiver};
+          }),
+        (r) => ({txHash: r.txHash}),
+      );
+    },
+
+    cardanoDeregister: async (rawParams: unknown, ctx: ConnectionContext): Promise<DaemonCardanoDeregisterResult> => {
+      const params = parseCardanoDeregisterParams(rawParams);
+      const {config} = requireCardano();
+      return withAudit(
+        'cardanoDeregister',
+        params.summary ?? 'Deregister cNIGHT from DUST generation',
+        [
+          `Wallet: ${walletName}`,
+          `Cardano network: ${config.network}`,
+          'Scope: burns EVERY registration token for this stake key, and spends every cNIGHT UTXO',
+          'Effect: DUST will stop generating from this Cardano stake key.',
+          ...(params.details ?? []),
+        ],
+        ctx,
+        async () =>
+          withCardano('cardanoDeregister', async (session) => {
+            const {deregisterFromDust} = await import('../cardano/registration.js');
+            return deregisterFromDust(session, (stage) =>
+              log('info', `[cardanoDeregister] ${stage}`),
+            );
+          }),
+        (r) => ({txHash: r.txHash}),
+      );
+    },
+
+    cardanoSend: async (rawParams: unknown, ctx: ConnectionContext): Promise<DaemonCardanoSendResult> => {
+      const params = parseCardanoSendParams(rawParams);
+      const {config} = requireCardano();
+      const lovelace = BigInt(params.lovelace ?? '0');
+      const cnight = BigInt(params.cnight ?? '0');
+      return withAudit(
+        'cardanoSend',
+        params.summary ?? 'Send ADA and/or cNIGHT on Cardano',
+        [
+          `Wallet: ${walletName}`,
+          `Cardano network: ${config.network}`,
+          `To: ${shortenAddress(params.to)}`,
+          ...(lovelace > 0n ? [`ADA: ${lovelace} lovelace`] : []),
+          ...(deps.cardanoSpendCap
+            ? [
+                `Spend cap per send: ${capLabel(deps.cardanoSpendCap.lovelace, formatAdaAmount, 'ADA')}, `
+                  + capLabel(deps.cardanoSpendCap.cnight, formatCnightAmount, 'cNIGHT'),
+              ]
+            : []),
+          ...(cnight > 0n
+            ? [
+                // Formatted: an approval line reading "4500400000000" invites
+                // approving four and a half trillion of something.
+                `cNIGHT: ${formatCnightAmount(cnight)}`,
+                // Spending cNIGHT rotates its UTXOs and removes what leaves
+                // from DUST generation. Worth stating before approval.
+                'Effect: sent cNIGHT stops generating DUST, and the rest is rotated.',
+              ]
+            : []),
+          ...(params.details ?? []),
+        ],
+        ctx,
+        async () =>
+          withCardano('cardanoSend', async (session) => {
+            const {assertSendableAddress, minLovelaceForOutput, sendCardanoAssets} = await import('../cardano/send.js');
+            const cap = deps.cardanoSpendCap;
+            if (cap) {
+              // Headless spend cap, as --max-spend is for NIGHT. The ADA counted
+              // is what the output actually carries, including a cNIGHT send's minimum.
+              await assertSendableAddress(session, params.to);
+              const {cnightUnit} = await import('../cardano/network.js');
+              const tokens = cnight > 0n ? {[cnightUnit(session.config)]: cnight} : {};
+              const ada = lovelace > 0n ? lovelace : await minLovelaceForOutput(session, params.to, tokens);
+              if (cap.lovelace === null || ada > cap.lovelace) {
+                throw new DaemonProtocolError(
+                  'UNAUTHORIZED',
+                  cap.lovelace === null
+                    ? 'cardanoSend under auto-approve needs a --max-spend-ada cap'
+                    : `send of ${formatAdaAmount(ada)} ADA exceeds the --max-spend-ada cap of ${formatAdaAmount(cap.lovelace)} ADA`,
+                );
+              }
+              if (cnight > 0n && (cap.cnight === null || cnight > cap.cnight)) {
+                throw new DaemonProtocolError(
+                  'UNAUTHORIZED',
+                  cap.cnight === null
+                    ? 'sending cNIGHT under auto-approve needs a --max-spend-cnight cap'
+                    : `send of ${formatCnightAmount(cnight)} cNIGHT exceeds the --max-spend-cnight cap of ${formatCnightAmount(cap.cnight)} cNIGHT`,
+                );
+              }
+            }
+            const txHash = await sendCardanoAssets(
+              session,
+              {to: params.to, lovelace, cnight},
+              (stage) => log('info', `[cardanoSend] ${stage}`),
+            );
+            return {txHash};
+          }),
+        (r) => ({txHash: r.txHash}),
+      );
+    },
+
+    cardanoUpdate: async (rawParams: unknown, ctx: ConnectionContext): Promise<DaemonCardanoUpdateResult> => {
+      const params = parseCardanoUpdateParams(rawParams);
+      const {dustAddress: own, config} = requireCardano();
+      return withAudit(
+        'cardanoUpdate',
+        params.summary ?? 'Change where cNIGHT generates DUST to',
+        [
+          `Wallet: ${walletName}`,
+          `Cardano network: ${config.network}`,
+          params.receiver === own
+            ? 'New DUST receiver: (this wallet)'
+            : `New DUST receiver: ${shortenHex(params.receiver)} — NOT this wallet`,
+          ...(params.details ?? []),
+        ],
+        ctx,
+        async () =>
+          withCardano('cardanoUpdate', async (session) => {
+            const {updateDustAddress} = await import('../cardano/registration.js');
+            const txHash = await updateDustAddress(session, params.receiver, (stage) =>
+              log('info', `[cardanoUpdate] ${stage}`),
+            );
+            return {txHash, receiver: params.receiver};
+          }),
+        (r) => ({txHash: r.txHash}),
       );
     },
 

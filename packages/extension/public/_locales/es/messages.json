@@ -1669,5 +1669,440 @@
   },
   "dust_etaRecordsSettling": {
     "message": "Registros de generación asentándose"
+  },
+  "cardano_title": {
+    "message": "Cardano"
+  },
+  "cardano_subtitle": {
+    "message": "cNIGHT y designación de DUST"
+  },
+  "cardano_openFromHome": {
+    "message": "Cardano"
+  },
+  "cardano_networkRow": {
+    "message": "Red de Cardano"
+  },
+  "cardano_addressRow": {
+    "message": "Dirección"
+  },
+  "cardano_stakeAddressRow": {
+    "message": "Dirección de stake"
+  },
+  "cardano_adaRow": {
+    "message": "ADA"
+  },
+  "cardano_cnightRow": {
+    "message": "cNIGHT"
+  },
+  "cardano_cnightUtxos": {
+    "message": "repartidos en $1 UTXO"
+  },
+  "cardano_cnightUtxosOne": {
+    "message": "en 1 UTXO"
+  },
+  "cardano_designationRow": {
+    "message": "Designación de DUST"
+  },
+  "cardano_registered": {
+    "message": "Registrado"
+  },
+  "cardano_registeredElsewhere": {
+    "message": "Registrado para otra cartera"
+  },
+  "cardano_notRegistered": {
+    "message": "Sin registrar"
+  },
+  "cardano_dustToRow": {
+    "message": "El DUST va a"
+  },
+  "cardano_dustToThisWallet": {
+    "message": "Esta cartera"
+  },
+  "cardano_generatingRow": {
+    "message": "Generando"
+  },
+  "cardano_notYetObserved": {
+    "message": "Aún no visto en Midnight"
+  },
+  "cardano_legacyDustAddress": {
+    "message": "Este registro apunta a un receptor antiguo e inservible, por lo que nunca generará DUST — Cardano lo aceptó, pero Midnight no puede emparejarlo. Usa «Cambiar dirección DUST» para apuntarlo a tu dirección DUST actual; no hace falta cancelar el registro primero."
+  },
+  "cardano_notYetObservedHint": {
+    "message": "Cardano tiene el registro; Midnight aún no ha actuado sobre él. Es normal justo después de registrarse."
+  },
+  "cardano_register": {
+    "message": "Registrar"
+  },
+  "cardano_deregister": {
+    "message": "Cancelar registro"
+  },
+  "cardano_update": {
+    "message": "Cambiar la dirección de DUST"
+  },
+  "cardano_refresh": {
+    "message": "Actualizar"
+  },
+  "cardano_registerHint": {
+    "message": "Genera DUST en Midnight a partir del cNIGHT que tienes en Cardano."
+  },
+  "cardano_updateHint": {
+    "message": "Envía el DUST generado a otra dirección de Midnight."
+  },
+  "cardano_rotationNote": {
+    "message": "Todo tu cNIGHT se envía de vuelta a tu propia dirección en la misma transacción. Eso es lo que hace efectivo el cambio."
+  },
+  "cardano_confirmTitle": {
+    "message": "Confirmar en Cardano"
+  },
+  "cardano_confirm": {
+    "message": "Confirmar"
+  },
+  "cardano_confirmActionLabel": {
+    "message": "Acción"
+  },
+  "cardano_confirmNetworkLabel": {
+    "message": "Red de Cardano"
+  },
+  "cardano_confirmAccountLabel": {
+    "message": "Cuenta"
+  },
+  "cardano_confirmDustToLabel": {
+    "message": "DUST a"
+  },
+  "cardano_confirmCnightMovedLabel": {
+    "message": "cNIGHT movido"
+  },
+  "cardano_confirmThisWallet": {
+    "message": "Esta billetera"
+  },
+  "cardano_confirmMinAda": {
+    "message": "Mínimo que acompaña al cNIGHT"
+  },
+  "cardano_confirmDeregisterNote": {
+    "message": "Este cNIGHT deja de generar DUST en cuanto la baja está en la cadena. Puedes volver a registrarte más tarde."
+  },
+  "cardano_cancel": {
+    "message": "Cancelar"
+  },
+  "cardano_submitting": {
+    "message": "Enviando a Cardano…"
+  },
+  "cardano_submitted": {
+    "message": "Enviado"
+  },
+  "cardano_txRow": {
+    "message": "Transacción"
+  },
+  "cardano_afterRegisterNote": {
+    "message": "Registrado. El DUST se acumula desde ahora y pasa a ser utilizable cuando Cardano finaliza el registro: unas 12 horas."
+  },
+  "cardano_receiverLabel": {
+    "message": "Dirección DUST de Midnight"
+  },
+  "cardano_receiverPlaceholder": {
+    "message": "mn_dust_…"
+  },
+  "cardano_receiverUseThisWallet": {
+    "message": "Usar esta cartera"
+  },
+  "cardano_receiverInvalid": {
+    "message": "Pega una dirección DUST de Midnight (mn_dust_…) o su hexadecimal de 66 caracteres."
+  },
+  "cardano_errorLocked": {
+    "message": "Desbloquea tu cartera para usar Cardano."
+  },
+  "cardano_errorNoMnemonic": {
+    "message": "Esta cuenta se restauró desde una semilla hexadecimal, así que no tiene dirección de Cardano. Las claves de Cardano vienen de una frase de recuperación."
+  },
+  "cardano_errorNoBlockfrostKey": {
+    "message": "Añade un ID de proyecto de Blockfrost en Ajustes para leer Cardano y enviar transacciones."
+  },
+  "cardano_errorNoCnight": {
+    "message": "Necesitas al menos un cNIGHT para registrarte."
+  },
+  "cardano_loading": {
+    "message": "Leyendo Cardano…"
+  },
+  "cardano_retry": {
+    "message": "Reintentar"
+  },
+  "cardano_settingsSection": {
+    "message": "Cardano"
+  },
+  "cardano_settingsBlockfrostLabel": {
+    "message": "ID de proyecto de Blockfrost"
+  },
+  "cardano_settingsBlockfrostHint": {
+    "message": "Necesario para leer Cardano y enviar transacciones de cNIGHT. Gratis en blockfrost.io."
+  },
+  "cardano_settingsBlockfrostStored": {
+    "message": "Guardado. Introduce un ID nuevo para reemplazarlo."
+  },
+  "cardano_settingsSaved": {
+    "message": "Ajustes de Cardano guardados"
+  },
+  "cardano_homeSubtitle": {
+    "message": "Genera $1 a partir del cNIGHT que tienes en Cardano"
+  },
+  "cardano_accountSection": {
+    "message": "Tu cuenta de Cardano"
+  },
+  "cardano_accountDerived": {
+    "message": "Derivada de la frase de recuperación de esta cartera. No hay una cuenta de Cardano aparte que crear, ni nada más que respaldar."
+  },
+  "cardano_accountFundHint": {
+    "message": "Envía ADA y cNIGHT a esta dirección para empezar."
+  },
+  "cardano_chainUnavailable": {
+    "message": "Los saldos y el registro aún no se pueden leer."
+  },
+  "cardano_copy": {
+    "message": "Copiar"
+  },
+  "cardano_addressCopied": {
+    "message": "Dirección copiada"
+  },
+  "cardano_accountsTitle": {
+    "message": "Cuentas de Cardano"
+  },
+  "cardano_accountsManage": {
+    "message": "Gestionar cuentas"
+  },
+  "cardano_accountActive": {
+    "message": "Activa"
+  },
+  "cardano_accountDerivedTag": {
+    "message": "De la frase de recuperación"
+  },
+  "cardano_accountImportedTag": {
+    "message": "Importada"
+  },
+  "cardano_accountAdd": {
+    "message": "Añadir cuenta"
+  },
+  "cardano_accountAddHint": {
+    "message": "Crea la siguiente cuenta a partir de la frase de recuperación de esta cartera. Tiene su propia dirección y su propio registro de DUST, y la frase que ya tienes la restaura."
+  },
+  "cardano_accountImport": {
+    "message": "Importar desde una frase de recuperación"
+  },
+  "cardano_accountImportHint": {
+    "message": "Añade una cuenta solo de Cardano a partir de una frase aparte de 12 o 24 palabras. No tendrá fondos de Midnight, y tu frase de recuperación de moth NO la restaura: guarda esa frase tú mismo."
+  },
+  "cardano_accountImportPhrase": {
+    "message": "Frase de recuperación"
+  },
+  "cardano_accountImportPhrasePlaceholder": {
+    "message": "palabra uno palabra dos palabra tres…"
+  },
+  "cardano_accountImportPassphrase": {
+    "message": "Contraseña de la cartera"
+  },
+  "cardano_accountImportPassphraseHint": {
+    "message": "Se usa para cifrar la frase importada en este dispositivo."
+  },
+  "cardano_accountLabel": {
+    "message": "Nombre (opcional)"
+  },
+  "cardano_accountRemove": {
+    "message": "Quitar"
+  },
+  "cardano_accountRemoveConfirm": {
+    "message": "¿Quitar esta cuenta? En una cuenta importada esto borra la única copia de su frase guardada aquí."
+  },
+  "cardano_accountSwitch": {
+    "message": "Cambiar"
+  },
+  "cardano_accountInvalidPhrase": {
+    "message": "Esa no es una frase de recuperación BIP-39 válida."
+  },
+  "cardano_accountPassphraseRequired": {
+    "message": "Introduce la contraseña de tu cartera."
+  },
+  "cardano_accountAdded": {
+    "message": "Cuenta añadida"
+  },
+  "cardano_accountImported": {
+    "message": "Cuenta importada"
+  },
+  "cardano_accountRemoved": {
+    "message": "Cuenta quitada"
+  },
+  "cardano_accountBack": {
+    "message": "Hecho"
+  },
+  "cardano_errorImportedLocked": {
+    "message": "No se pudo desbloquear esta cuenta importada. Bloquea y desbloquea tu cartera e inténtalo de nuevo."
+  },
+  "cardano_send": {
+    "message": "Enviar"
+  },
+  "cardano_sendTitle": {
+    "message": "Enviar en Cardano"
+  },
+  "cardano_sendTo": {
+    "message": "Dirección de destino"
+  },
+  "cardano_sendToPlaceholder": {
+    "message": "addr_test1…"
+  },
+  "cardano_sendAda": {
+    "message": "ADA"
+  },
+  "cardano_sendCnight": {
+    "message": "cNIGHT"
+  },
+  "cardano_sendAvailable": {
+    "message": "Disponible: $1"
+  },
+  "cardano_sendNothing": {
+    "message": "Introduce una cantidad en ADA, en cNIGHT o ambas."
+  },
+  "cardano_sendBadAddress": {
+    "message": "Esa no es una dirección de Cardano para esta red."
+  },
+  "cardano_sendBadAmount": {
+    "message": "Introduce un número."
+  },
+  "cardano_sendRegisteredWarning": {
+    "message": "Esta cuenta está registrada para DUST. El cNIGHT que envíes deja de generar, y el envío rota el resto."
+  },
+  "cardano_sendSent": {
+    "message": "Enviado"
+  },
+  "cardano_txCopied": {
+    "message": "ID de transacción copiado"
+  },
+  "cardano_viewInExplorer": {
+    "message": "Ver en el explorador"
+  },
+  "receive_dustTab": {
+    "message": "DUST"
+  },
+  "receive_dustAddressOf": {
+    "message": "Dirección DUST de $1"
+  },
+  "receive_dustNote": {
+    "message": "Nadie puede enviarte DUST: lo genera el NIGHT o el cNIGHT que tienes. Esta es la dirección a la que paga la generación; úsala al registrar desde otra cartera."
+  },
+  "dust_addressRow": {
+    "message": "Dirección de $1"
+  },
+  "dust_addressCopied": {
+    "message": "Dirección copiada"
+  },
+  "dust_addressCopy": {
+    "message": "Copiar"
+  },
+  "cardano_finalityHint": {
+    "message": "El DUST se acumula desde el momento del registro. Pasa a ser utilizable cuando Cardano finaliza el registro —unas 12 horas— y mientras tanto no pasa nada malo."
+  },
+  "cardano_receiverPickAccount": {
+    "message": "Enviar el DUST a una de tus cuentas"
+  },
+  "cardano_receiverSelected": {
+    "message": "Seleccionada"
+  },
+  "cardano_generatingAccruing": {
+    "message": "Acumulando desde el registro"
+  },
+  "cardano_generationRateValue": {
+    "message": "$1 $2/s"
+  },
+  "cardano_usableRow": {
+    "message": "Utilizable"
+  },
+  "cardano_usableIn": {
+    "message": "en unas $1"
+  },
+  "cardano_usableAnyMoment": {
+    "message": "en cualquier momento"
+  },
+  "cardano_usableNow": {
+    "message": "Ahora"
+  },
+  "cardano_accountRename": {
+    "message": "Renombrar"
+  },
+  "cardano_accountRenameTitle": {
+    "message": "Renombrar cuenta"
+  },
+  "cardano_accountRenamed": {
+    "message": "Cuenta renombrada"
+  },
+  "cardano_accountNameEmpty": {
+    "message": "Introduce un nombre."
+  },
+  "cardano_usableUnknown": {
+    "message": "Esperando confirmación"
+  },
+  "cardano_meterSubtitle": {
+    "message": "De tu cNIGHT"
+  },
+  "cardano_dustAddressRow": {
+    "message": "El DUST se paga a"
+  },
+  "cardano_notSubmitted": {
+    "message": "No enviado"
+  },
+  "cardano_receiverUnchanged": {
+    "message": "Ahí es donde este cNIGHT ya envía su DUST."
+  },
+  "cardano_settingsBlockfrostFor": {
+    "message": "ID de proyecto de Blockfrost para $1"
+  },
+  "cardano_settingsNoNetwork": {
+    "message": "No hay ninguna red de Cardano emparejada con $1."
+  },
+  "cardano_midnightRow": {
+    "message": "En Midnight"
+  },
+  "cardano_midnightPending": {
+    "message": "Aún no vista"
+  },
+  "cardano_midnightRejected": {
+    "message": "Rechazada"
+  },
+  "cardano_midnightLive": {
+    "message": "Generando"
+  },
+  "cardano_midnightPendingHint": {
+    "message": "Cardano tiene el registro y Midnight aún no lo ha recogido. Antes de la finalidad es normal; mucho después, puede que el puente no esté ingiriendo registros."
+  },
+  "cardano_midnightRejectedHint": {
+    "message": "Midnight leyó este registro y lo rechazó. Esperar no lo cambiará: cancela el registro y vuelve a registrarte."
+  },
+  "cardano_multipleRegistrations": {
+    "message": "Esta clave de stake de Cardano tiene $1 registros. Más de uno fuerza la cancelación, así que no se genera nada. Cancela el registro para limpiarlos y luego regístrate una sola vez."
+  },
+  "cardano_deregisteredCleared": {
+    "message": "Se eliminaron $1 registros. Ese estado duplicado era la razón de que no se generara nada: ahora puedes registrarte una sola vez."
+  },
+  "approval_cardanoSignTitle": {
+    "message": "Firmar en Cardano"
+  },
+  "approval_cardanoSignSubtitle": {
+    "message": "$1 pide a tu clave de Cardano que firme"
+  },
+  "approval_cardanoMethodLabel": {
+    "message": "Solicitud"
+  },
+  "approval_cardanoNetworkLabel": {
+    "message": "Red de Cardano"
+  },
+  "approval_cardanoWalletLabel": {
+    "message": "Billetera"
+  },
+  "approval_cardanoAccountLabel": {
+    "message": "Cuenta que firma"
+  },
+  "approval_cardanoAccountImported": {
+    "message": "$1 (importada)"
+  },
+  "approval_cardanoSignWarning": {
+    "message": "Moth aún no puede mostrar qué hace esta transacción: el sitio la envía ya codificada. Apruébala solo si confías en este sitio."
+  },
+  "cardano_errorNoDustAddress": {
+    "message": "Esta cartera no tiene dirección DUST en la red actual, así que el DUST generado no tendría destino."
   }
 }

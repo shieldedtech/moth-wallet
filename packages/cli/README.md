@@ -55,6 +55,7 @@ moth tui
 | Tokens | `balance`, `transfer [amount]`, `transfer batch <file>`, `airdrop` |
 | Contracts | `deploy`, `call`, `state`, `mint`, `maintenance insert-vk`, `maintenance insert-vks-batch` |
 | DUST | `dust register`, `dust deregister`, `dust status` |
+| Cardano (cNIGHT) | `cardano address`, `cardano balance`, `cardano status`, `cardano send`, `cardano register`, `cardano deregister`, `cardano update`, `cardano account list/add/import/use/remove` |
 | Utility | `info`, `config get/set`, `tui` |
 
 ## Documentation
