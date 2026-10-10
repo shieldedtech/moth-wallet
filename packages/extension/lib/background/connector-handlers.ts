@@ -705,11 +705,21 @@ async function dispatchCip30(
     throw { code: CIP30_CODES.apiRefused, info: `${origin} is not authorized; call enable() first` };
   }
 
+  // Resolved before any prompt and reused to sign, so the key that signs is the
+  // one the approval named, even if the active account changes meanwhile.
+  const context = await requireCardano(!CIP30_OFFLINE.has(method));
+
   if (CIP30_SIGNING.has(method)) {
     const approved = await requestApproval(
       'cardanoSign',
       origin,
-      { method } satisfies CardanoSignApprovalPayload,
+      {
+        method,
+        cardanoNetwork: context.config.network,
+        walletName: context.session.walletName,
+        accountLabel: context.account.label,
+        accountKind: context.account.kind,
+      } satisfies CardanoSignApprovalPayload,
       senderTabId,
     );
     if (!approved) {
@@ -722,6 +732,6 @@ async function dispatchCip30(
     }
   }
 
-  const { config, mnemonic, accountIndex } = await requireCardano(!CIP30_OFFLINE.has(method));
+  const { config, mnemonic, accountIndex } = context;
   return offscreen.cardanoCip30({ mnemonic, config, method, params, accountIndex });
 }

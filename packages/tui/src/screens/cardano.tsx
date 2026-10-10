@@ -102,7 +102,13 @@ interface CardanoProps {
   onBack: () => void;
 }
 
-type Action = 'register' | 'deregister' | 'update';
+type Action = 'register' | 'deregister' | 'update' | 'send';
+
+interface SendRequest {
+  readonly to: string;
+  readonly lovelace: bigint;
+  readonly cnight: bigint;
+}
 
 type Mode =
   | { kind: 'loading' }
@@ -114,7 +120,7 @@ type Mode =
   | { kind: 'sendCnight'; status: CardanoStatusView; to: string; lovelace: bigint }
   | { kind: 'overview'; status: CardanoStatusView }
   | { kind: 'receiver'; action: Extract<Action, 'register' | 'update'>; status: CardanoStatusView }
-  | { kind: 'confirm'; action: Action; status: CardanoStatusView; receiver?: string }
+  | { kind: 'confirm'; action: Action; status: CardanoStatusView; receiver?: string; send?: SendRequest }
   | { kind: 'processing'; action: Action }
   | { kind: 'result'; action: Action; result: CardanoActionResult }
   | { kind: 'error'; message: string };
@@ -261,7 +267,7 @@ export function Cardano({
   // Which actions make sense depends entirely on whether a registration
   // exists: offering "deregister" on an unregistered stake key is an error the
   // user only discovers after a round trip to Blockfrost.
-  const actionsFor = (status: CardanoStatusView): { id: Action; label: string; description: string }[] =>
+  const actionsFor = (status: CardanoStatusView): { id: Exclude<Action, 'send'>; label: string; description: string }[] =>
     status.registered
       ? [
           { id: 'update', label: 'Update', description: 'send DUST to a different Midnight address' },
@@ -350,15 +356,16 @@ export function Cardano({
     }
     const { to, lovelace } = mode;
     setSendInput('');
-    setMode({ kind: 'processing', action: 'register' });
-    const result = await onSend(to, lovelace, cnight);
-    setMode({ kind: 'result', action: 'register', result });
+    setAccountError(undefined);
+    setMode({ kind: 'confirm', action: 'send', status: mode.status, send: { to, lovelace, cnight } });
   };
 
-  const submit = async (action: Action, receiver?: string) => {
+  const submit = async (action: Action, receiver?: string, send?: SendRequest) => {
     setMode({ kind: 'processing', action });
     const result =
-      action === 'register'
+      action === 'send'
+        ? await onSend(send!.to, send!.lovelace, send!.cnight)
+        : action === 'register'
         ? await onRegister(receiver)
         : action === 'deregister'
           ? await onDeregister()
@@ -507,7 +514,7 @@ export function Cardano({
     }
 
     if (mode.kind === 'confirm' && key.return) {
-      void submit(mode.action, mode.receiver);
+      void submit(mode.action, mode.receiver, mode.send);
       return;
     }
 
@@ -854,34 +861,44 @@ export function Cardano({
 
       case 'confirm': {
         const s = mode.status;
+        const account = accounts.find(a => a.active)?.label ?? 'active account';
+        const row = (label: string, value: string) => (
+          <Box key={label}>
+            <Text dimColor>{label.padEnd(14)}</Text>
+            <Text>{value}</Text>
+          </Box>
+        );
+        const send = mode.send;
         return (
           <Box flexDirection="column">
             <Text bold>Confirm</Text>
             <Box marginTop={1} flexDirection="column">
-              <Box>
-                <Text dimColor>{'Action'.padEnd(14)}</Text>
-                <Text>{mode.action}</Text>
-              </Box>
-              <Box>
-                <Text dimColor>{'Cardano net'.padEnd(14)}</Text>
-                <Text>{s.cardanoNetwork}</Text>
-              </Box>
-              <Box>
-                <Text dimColor>{'DUST to'.padEnd(14)}</Text>
-                <Text>{mode.receiver ? shorten(mode.receiver, 16, 8) : 'this wallet'}</Text>
-              </Box>
-              <Box>
-                <Text dimColor>{'cNIGHT moved'.padEnd(14)}</Text>
-                <Text>{`${formatCnight(s.cnight)} across ${s.cnightUtxos} UTXO${s.cnightUtxos === 1 ? '' : 's'}`}</Text>
-              </Box>
+              {row('Action', mode.action)}
+              {row('Cardano net', s.cardanoNetwork)}
+              {row('Account', account)}
+              {send && row('To', shorten(send.to, 16, 8))}
+              {send && row('ADA', send.lovelace > 0n ? formatAda(send.lovelace) : 'minimum carried with cNIGHT')}
+              {send && send.cnight > 0n && row('cNIGHT', `${formatCnight(send.cnight)} of ${formatCnight(s.cnight)}`)}
+              {(mode.action === 'register' || mode.action === 'update')
+                && row('DUST to', mode.receiver ? shorten(mode.receiver, 16, 8) : 'this wallet')}
+              {mode.action !== 'send'
+                && row('cNIGHT moved', `${formatCnight(s.cnight)} across ${s.cnightUtxos} UTXO${s.cnightUtxos === 1 ? '' : 's'}`)}
             </Box>
-            <Box marginTop={1}>
+            <Box marginTop={1} flexDirection="column">
+              {mode.action === 'deregister' && (
+                <Text color="yellow">This cNIGHT stops generating DUST once the deregistration is on chain.</Text>
+              )}
+              {send && send.cnight > 0n && s.registered && (
+                <Text color="yellow">This account is registered for DUST; sent cNIGHT stops generating, and the rest is rotated.</Text>
+              )}
               {/* Spending every cNIGHT UTXO is what makes the change take
                   effect immediately. It looks alarming in a wallet, so it is
                   stated here rather than discovered in a block explorer. */}
-              <Text dimColor>
-                Every cNIGHT UTXO is spent back to this address, which is what applies the change.
-              </Text>
+              {mode.action !== 'send' && (
+                <Text dimColor>
+                  Every cNIGHT UTXO is spent back to this address, which is what applies the change.
+                </Text>
+              )}
             </Box>
           </Box>
         );
@@ -903,7 +920,7 @@ export function Cardano({
               <Text dimColor>{'Tx  '}</Text>
               <Text>{mode.result.txHash}</Text>
             </Box>
-            {mode.action !== 'deregister' && (
+            {(mode.action === 'register' || mode.action === 'update') && (
               <Box marginTop={1}>
                 <Text dimColor>DUST generation starts once the Midnight indexer observes it.</Text>
               </Box>

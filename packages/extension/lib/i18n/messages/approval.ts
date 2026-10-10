@@ -54,6 +54,10 @@ export const approval = {
     '$1 is asking your Cardano key to sign',
   approval_cardanoMethodLabel:
     'Request',
+  approval_cardanoNetworkLabel: 'Cardano network',
+  approval_cardanoWalletLabel: 'Wallet',
+  approval_cardanoAccountLabel: 'Signing account',
+  approval_cardanoAccountImported: '$1 (imported)',
   approval_cardanoSignWarning:
     'Moth cannot yet show what this transaction does — the site supplies it already encoded. Approve only if you trust this site.',
 } as const;

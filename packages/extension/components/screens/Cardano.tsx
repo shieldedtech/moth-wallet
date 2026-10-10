@@ -53,11 +53,19 @@ type Mode =
   | { kind: 'unavailable'; message: string }
   | { kind: 'overview' }
   | { kind: 'receiver'; action: 'register' | 'update' }
+  // Every action is reviewed before it is signed, as the CLI and TUI do.
+  | { kind: 'confirm'; action: Action; dustAddress?: string; send?: SendRequest }
   | { kind: 'pending'; action: Action }
   | { kind: 'done'; action: Action; txHash: string; explorer: string; cleared?: number }
   | { kind: 'failed'; action: Action; message: string };
 
 type Action = 'register' | 'deregister' | 'update' | 'send';
+
+interface SendRequest {
+  readonly to: string;
+  readonly lovelace: bigint;
+  readonly cnight: bigint;
+}
 
 /** Lovelace are 6dp. Rendered, never rounded. */
 function formatAda(lovelace: string): string {
@@ -222,15 +230,27 @@ export function Cardano({
     void refresh();
   }, [refresh]);
 
-  const run = async (action: Action, dustAddress?: string) => {
+  const run = async (action: Action, dustAddress?: string, send?: SendRequest) => {
     setMode({ kind: 'pending', action });
     try {
       const result =
-        action === 'register'
+        action === 'send'
+          ? await sendMessage('cardanoSend', {
+              to: send!.to,
+              lovelace: send!.lovelace.toString(),
+              cnight: send!.cnight.toString(),
+            })
+          : action === 'register'
           ? await sendMessage('cardanoRegister', dustAddress ? { dustAddress } : undefined)
           : action === 'deregister'
             ? await sendMessage('cardanoDeregister', undefined)
             : await sendMessage('cardanoUpdate', { dustAddress: dustAddress! });
+      if (action === 'send') {
+        setSendTo('');
+        setSendAda('');
+        setSendCnight('');
+        toast(t('cardano_sendSent'));
+      }
       setMode({
         kind: 'done',
         action,
@@ -251,7 +271,7 @@ export function Cardano({
   const submitReceiver = async (action: 'register' | 'update') => {
     const raw = receiver.trim();
     if (action === 'register' && raw === '') {
-      void run('register');
+      setMode({ kind: 'confirm', action: 'register' });
       return;
     }
     try {
@@ -265,7 +285,7 @@ export function Cardano({
         setReceiverError(t('cardano_receiverUnchanged'));
         return;
       }
-      void run(action, dustAddressBytes);
+      setMode({ kind: 'confirm', action, dustAddress: dustAddressBytes });
     } catch (err) {
       setReceiverError(err instanceof Error ? err.message : t('cardano_receiverInvalid'));
     }
@@ -375,7 +395,7 @@ export function Cardano({
     };
     const toCnight = parseCnightInput;
 
-    const submitSend = async () => {
+    const submitSend = () => {
       const lovelace = toLovelace(sendAda);
       const cnight = toCnight(sendCnight);
       if (lovelace === null || cnight === null) {
@@ -390,24 +410,8 @@ export function Cardano({
         setSendError(t('cardano_sendBadAddress'));
         return;
       }
-      setBusy(true);
       setSendError(null);
-      try {
-        const result = await sendMessage('cardanoSend', {
-          to: sendTo.trim(),
-          lovelace: lovelace.toString(),
-          cnight: cnight.toString(),
-        });
-        setSendTo('');
-        setSendAda('');
-        setSendCnight('');
-        toast(t('cardano_sendSent'));
-        setMode({ kind: 'done', action: 'send', txHash: result.txHash, explorer: result.explorer });
-      } catch (err) {
-        setSendError(err instanceof Error ? err.message : String(err));
-      } finally {
-        setBusy(false);
-      }
+      setMode({ kind: 'confirm', action: 'send', send: { to: sendTo.trim(), lovelace, cnight } });
     };
 
     return (
@@ -417,9 +421,7 @@ export function Cardano({
             <Button variant="secondary" onClick={() => setMode({ kind: 'overview' })}>
               {t('cardano_cancel')}
             </Button>
-            <Button disabled={busy} onClick={() => void submitSend()}>
-              {busy ? t('cardano_sendSubmitting') : t('cardano_send')}
-            </Button>
+            <Button onClick={submitSend}>{t('cardano_send')}</Button>
           </>
         }
       >
@@ -710,6 +712,63 @@ export function Cardano({
     );
   }
 
+  if (mode.kind === 'confirm') {
+    const { action, dustAddress, send } = mode;
+    const back = () => setMode(action === 'send' ? { kind: 'send' } : { kind: 'overview' });
+    const actionLabel = {
+      send: t('cardano_send'),
+      register: t('cardano_register'),
+      deregister: t('cardano_deregister'),
+      update: t('cardano_update'),
+    }[action];
+    const receiverName = dustAddress
+      ? midnightAccounts.find((a) => a.dustAddressBytes === dustAddress)?.name ?? truncateAddress(dustAddress)
+      : t('cardano_confirmThisWallet');
+    const rows = [
+      { label: t('cardano_confirmActionLabel'), value: actionLabel },
+      { label: t('cardano_confirmNetworkLabel'), value: status?.cardanoNetwork ?? account?.cardanoNetwork ?? '—' },
+      { label: t('cardano_confirmAccountLabel'), value: activeAccount?.label ?? '—' },
+      ...(send
+        ? [
+            { label: t('cardano_sendTo'), value: displayAddress(send.to), mono: true },
+            {
+              label: t('cardano_sendAda'),
+              value: send.lovelace > 0n ? formatAda(send.lovelace.toString()) : t('cardano_confirmMinAda'),
+            },
+            ...(send.cnight > 0n ? [{ label: t('cardano_sendCnight'), value: formatCnight(send.cnight.toString()) }] : []),
+          ]
+        : []),
+      ...(action === 'register' || action === 'update'
+        ? [{ label: t('cardano_confirmDustToLabel'), value: receiverName }]
+        : []),
+      ...(action !== 'send' && status
+        ? [{ label: t('cardano_confirmCnightMovedLabel'), value: formatCnight(status.cnight) }]
+        : []),
+    ];
+    return (
+      <PanelScreen
+        cta={
+          <>
+            <Button variant="secondary" onClick={back}>{t('cardano_cancel')}</Button>
+            <Button onClick={() => void run(action, dustAddress, send)}>{t('cardano_confirm')}</Button>
+          </>
+        }
+      >
+        <PanelHeader title={t('cardano_confirmTitle')} onBack={back} />
+        <DetailCard rows={rows} />
+        {action === 'deregister' && (
+          <NoteCard variant="error" icon={TriangleAlert}>{t('cardano_confirmDeregisterNote')}</NoteCard>
+        )}
+        {action === 'send' && status?.registered && (send?.cnight ?? 0n) > 0n && (
+          <NoteCard variant="error" icon={TriangleAlert}>{t('cardano_sendRegisteredWarning')}</NoteCard>
+        )}
+        {action !== 'send' && (
+          <NoteCard variant="info" icon={Link2}>{t('cardano_rotationNote')}</NoteCard>
+        )}
+      </PanelScreen>
+    );
+  }
+
   if (mode.kind === 'pending') {
     return (
       <PanelScreen>
@@ -871,7 +930,7 @@ export function Cardano({
       cta={
         status.registered ? (
           <>
-            <Button variant="secondary" onClick={() => void run('deregister')}>
+            <Button variant="secondary" onClick={() => setMode({ kind: 'confirm', action: 'deregister' })}>
               {t('cardano_deregister')}
             </Button>
             <Button

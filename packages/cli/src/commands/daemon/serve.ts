@@ -35,6 +35,8 @@ import {
   CardanoNetworkUnavailableError,
   dustAddressBytes,
   loadCardanoConfig,
+  parseAda,
+  parseCnight,
   resolveActiveCardanoKey,
   unlockImportedCardanoPhrases,
   type CardanoNetworkConfig,
@@ -59,6 +61,14 @@ export default class DaemonServe extends BaseCommand {
     'max-spend': Flags.string({
       description:
         'Per-transaction NIGHT spend cap enforced under --auto-approve. Any NIGHT transfer above this amount is refused, bounding blast radius when there is no human to approve. REQUIRED with --auto-approve. Example: --max-spend 100 (NIGHT).',
+    }),
+    // Separate from --max-spend because ADA and cNIGHT are different assets on
+    // another chain. Omitted means that asset cannot be sent unattended.
+    'max-spend-ada': Flags.string({
+      description: 'Per-send ADA cap for cardanoSend under --auto-approve, e.g. 5. Without it, unattended Cardano sends are refused.',
+    }),
+    'max-spend-cnight': Flags.string({
+      description: 'Per-send cNIGHT cap for cardanoSend under --auto-approve, e.g. 10. Without it, unattended cNIGHT sends are refused.',
     }),
     'idle-timeout': Flags.integer({
       description:
@@ -121,6 +131,18 @@ export default class DaemonServe extends BaseCommand {
         'INVALID_INPUT',
         `--max-spend must be a positive NIGHT amount (up to 6 decimals); got "${flags['max-spend']}".`,
       );
+      this.exit(2);
+      return;
+    }
+
+    let cardanoSpendCap: {lovelace: bigint | null; cnight: bigint | null};
+    try {
+      cardanoSpendCap = {
+        lovelace: flags['max-spend-ada'] ? parseAda(flags['max-spend-ada']) : null,
+        cnight: flags['max-spend-cnight'] ? parseCnight(flags['max-spend-cnight']) : null,
+      };
+    } catch (err) {
+      this.outputError('INVALID_INPUT', `--max-spend-ada / --max-spend-cnight: ${(err as Error).message}`);
       this.exit(2);
       return;
     }
@@ -226,6 +248,7 @@ export default class DaemonServe extends BaseCommand {
       queue,
       auditLog,
       maxSpendRaw,
+      cardanoSpendCap,
       ...(cardanoConfig
         ? {
             cardano: {

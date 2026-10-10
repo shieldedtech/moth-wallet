@@ -70,6 +70,15 @@ export const cardano = {
     'Every cNIGHT you hold is sent back to your own address in the same transaction. That is what makes the change take effect.',
   cardano_confirmTitle: 'Confirm on Cardano',
   cardano_confirm: 'Confirm',
+  cardano_confirmActionLabel: 'Action',
+  cardano_confirmNetworkLabel: 'Cardano network',
+  cardano_confirmAccountLabel: 'Account',
+  cardano_confirmDustToLabel: 'DUST to',
+  cardano_confirmCnightMovedLabel: 'cNIGHT moved',
+  cardano_confirmThisWallet: 'This wallet',
+  cardano_confirmMinAda: 'Minimum carried with cNIGHT',
+  cardano_confirmDeregisterNote:
+    'This cNIGHT stops generating DUST once the deregistration is on chain. You can register again later.',
   cardano_cancel: 'Cancel',
   cardano_submitting: 'Submitting to Cardano…',
   cardano_submitted: 'Submitted',
@@ -147,7 +156,6 @@ export const cardano = {
   cardano_sendBadAmount: 'Enter a number.',
   cardano_sendRegisteredWarning:
     'This account is registered for DUST. cNIGHT you send away stops generating, and sending rotates the rest.',
-  cardano_sendSubmitting: 'Sending\u2026',
   cardano_sendSent: 'Sent',
 
   // Settings

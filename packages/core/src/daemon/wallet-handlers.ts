@@ -72,7 +72,7 @@ import {loadContractArtifact} from '../contract/artifact-loader.js';
 // into every daemon, including the ones that will never touch Cardano. The
 // handlers below import it dynamically, on first use.
 import type {CardanoNetworkConfig} from '../cardano/network.js';
-import {formatCnight as formatCnightAmount} from '../cardano/send.js';
+import {formatAda as formatAdaAmount, formatCnight as formatCnightAmount} from '../cardano/send.js';
 import type {CardanoSession} from '../cardano/session.js';
 import {parseArgs, toPositionalArgs} from '../contract/args-parser.js';
 import {resolveInitialPrivateState} from '../contract/initial-private-state.js';
@@ -82,6 +82,11 @@ import type {SyncedWallet, WalletBalances} from '../sync/wallet-sync.js';
 import type {NetworkConfig} from '../types/network.js';
 import type {TransactionResult} from '../types/transaction.js';
 import type {DerivedKeys} from '../types/wallet.js';
+
+/** A spend cap for an approval line; a null cap means the asset cannot be sent. */
+function capLabel(cap: bigint | null, format: (v: bigint) => string, unit: string): string {
+  return cap === null ? `no ${unit}` : `${format(cap)} ${unit}`;
+}
 
 const NIGHT_TOKEN_ID = '0'.repeat(64);
 
@@ -122,6 +127,10 @@ export interface WalletHandlerDeps {
    *  auto-approve mode), a NIGHT transfer above this is refused. Undefined
    *  in interactive hosts, where a human approves each transfer instead. */
   readonly maxSpendRaw?: bigint;
+  /** Per-send Cardano caps for headless auto-approve hosts, in lovelace and
+   *  STARs. A null cap means that asset cannot be sent unattended at all.
+   *  Undefined in interactive hosts, where a human approves each send. */
+  readonly cardanoSpendCap?: {readonly lovelace: bigint | null; readonly cnight: bigint | null};
   /**
    * Cardano / cNIGHT support. Optional because it is the one capability the
    * daemon's key handling cannot derive for itself: CIP-1852 starts from
@@ -895,6 +904,12 @@ export function buildWalletHandlers(deps: WalletHandlerDeps): Record<string, Rpc
           `Cardano network: ${config.network}`,
           `To: ${shortenAddress(params.to)}`,
           ...(lovelace > 0n ? [`ADA: ${lovelace} lovelace`] : []),
+          ...(deps.cardanoSpendCap
+            ? [
+                `Spend cap per send: ${capLabel(deps.cardanoSpendCap.lovelace, formatAdaAmount, 'ADA')}, `
+                  + capLabel(deps.cardanoSpendCap.cnight, formatCnightAmount, 'cNIGHT'),
+              ]
+            : []),
           ...(cnight > 0n
             ? [
                 // Formatted: an approval line reading "4500400000000" invites
@@ -910,7 +925,32 @@ export function buildWalletHandlers(deps: WalletHandlerDeps): Record<string, Rpc
         ctx,
         async () =>
           withCardano('cardanoSend', async (session) => {
-            const {sendCardanoAssets} = await import('../cardano/send.js');
+            const {assertSendableAddress, minLovelaceForOutput, sendCardanoAssets} = await import('../cardano/send.js');
+            const cap = deps.cardanoSpendCap;
+            if (cap) {
+              // Headless spend cap, as --max-spend is for NIGHT. The ADA counted
+              // is what the output actually carries, including a cNIGHT send's minimum.
+              await assertSendableAddress(session, params.to);
+              const {cnightUnit} = await import('../cardano/network.js');
+              const tokens = cnight > 0n ? {[cnightUnit(session.config)]: cnight} : {};
+              const ada = lovelace > 0n ? lovelace : await minLovelaceForOutput(session, params.to, tokens);
+              if (cap.lovelace === null || ada > cap.lovelace) {
+                throw new DaemonProtocolError(
+                  'UNAUTHORIZED',
+                  cap.lovelace === null
+                    ? 'cardanoSend under auto-approve needs a --max-spend-ada cap'
+                    : `send of ${formatAdaAmount(ada)} ADA exceeds the --max-spend-ada cap of ${formatAdaAmount(cap.lovelace)} ADA`,
+                );
+              }
+              if (cnight > 0n && (cap.cnight === null || cnight > cap.cnight)) {
+                throw new DaemonProtocolError(
+                  'UNAUTHORIZED',
+                  cap.cnight === null
+                    ? 'sending cNIGHT under auto-approve needs a --max-spend-cnight cap'
+                    : `send of ${formatCnightAmount(cnight)} cNIGHT exceeds the --max-spend-cnight cap of ${formatCnightAmount(cap.cnight)} cNIGHT`,
+                );
+              }
+            }
             const txHash = await sendCardanoAssets(
               session,
               {to: params.to, lovelace, cnight},

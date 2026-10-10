@@ -1757,6 +1757,30 @@
   "cardano_confirm": {
     "message": "Confirmar"
   },
+  "cardano_confirmActionLabel": {
+    "message": "Acción"
+  },
+  "cardano_confirmNetworkLabel": {
+    "message": "Red de Cardano"
+  },
+  "cardano_confirmAccountLabel": {
+    "message": "Cuenta"
+  },
+  "cardano_confirmDustToLabel": {
+    "message": "DUST a"
+  },
+  "cardano_confirmCnightMovedLabel": {
+    "message": "cNIGHT movido"
+  },
+  "cardano_confirmThisWallet": {
+    "message": "Esta billetera"
+  },
+  "cardano_confirmMinAda": {
+    "message": "Mínimo que acompaña al cNIGHT"
+  },
+  "cardano_confirmDeregisterNote": {
+    "message": "Este cNIGHT deja de generar DUST en cuanto la baja está en la cadena. Puedes volver a registrarte más tarde."
+  },
   "cardano_cancel": {
     "message": "Cancelar"
   },
@@ -1943,9 +1967,6 @@
   "cardano_sendRegisteredWarning": {
     "message": "Esta cuenta está registrada para DUST. El cNIGHT que envíes deja de generar, y el envío rota el resto."
   },
-  "cardano_sendSubmitting": {
-    "message": "Enviando…"
-  },
   "cardano_sendSent": {
     "message": "Enviado"
   },
@@ -2065,6 +2086,18 @@
   },
   "approval_cardanoMethodLabel": {
     "message": "Solicitud"
+  },
+  "approval_cardanoNetworkLabel": {
+    "message": "Red de Cardano"
+  },
+  "approval_cardanoWalletLabel": {
+    "message": "Billetera"
+  },
+  "approval_cardanoAccountLabel": {
+    "message": "Cuenta que firma"
+  },
+  "approval_cardanoAccountImported": {
+    "message": "$1 (importada)"
   },
   "approval_cardanoSignWarning": {
     "message": "Moth aún no puede mostrar qué hace esta transacción: el sitio la envía ya codificada. Apruébala solo si confías en este sitio."

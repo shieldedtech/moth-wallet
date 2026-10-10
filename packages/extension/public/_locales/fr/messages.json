@@ -1757,6 +1757,30 @@
   "cardano_confirm": {
     "message": "Confirmer"
   },
+  "cardano_confirmActionLabel": {
+    "message": "Action"
+  },
+  "cardano_confirmNetworkLabel": {
+    "message": "Réseau Cardano"
+  },
+  "cardano_confirmAccountLabel": {
+    "message": "Compte"
+  },
+  "cardano_confirmDustToLabel": {
+    "message": "DUST vers"
+  },
+  "cardano_confirmCnightMovedLabel": {
+    "message": "cNIGHT déplacé"
+  },
+  "cardano_confirmThisWallet": {
+    "message": "Ce portefeuille"
+  },
+  "cardano_confirmMinAda": {
+    "message": "Minimum joint au cNIGHT"
+  },
+  "cardano_confirmDeregisterNote": {
+    "message": "Ce cNIGHT cesse de générer du DUST dès que la désinscription est sur la chaîne. Vous pourrez vous réinscrire plus tard."
+  },
   "cardano_cancel": {
     "message": "Annuler"
   },
@@ -1943,9 +1967,6 @@
   "cardano_sendRegisteredWarning": {
     "message": "Ce compte est enregistré pour le DUST. Le cNIGHT envoyé cesse de générer, et l'envoi fait tourner le reste."
   },
-  "cardano_sendSubmitting": {
-    "message": "Envoi en cours…"
-  },
   "cardano_sendSent": {
     "message": "Envoyé"
   },
@@ -2065,6 +2086,18 @@
   },
   "approval_cardanoMethodLabel": {
     "message": "Requête"
+  },
+  "approval_cardanoNetworkLabel": {
+    "message": "Réseau Cardano"
+  },
+  "approval_cardanoWalletLabel": {
+    "message": "Portefeuille"
+  },
+  "approval_cardanoAccountLabel": {
+    "message": "Compte signataire"
+  },
+  "approval_cardanoAccountImported": {
+    "message": "$1 (importé)"
   },
   "approval_cardanoSignWarning": {
     "message": "Moth ne peut pas encore montrer ce que fait cette transaction : le site la fournit déjà encodée. N'approuvez que si vous faites confiance à ce site."

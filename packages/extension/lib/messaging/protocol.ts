@@ -199,12 +199,16 @@ export interface CardanoAccountListDTO {
 }
 
 /**
- * What a CIP-30 signing approval shows. Only the method name: a dApp-supplied
- * transaction is CBOR, and decoding it to display amounts is a separate piece
- * of work that must not be faked with a reassuring summary in the meantime.
+ * What a CIP-30 signing approval shows: the request, and which key on which
+ * network would sign it. Not a transaction summary — the dApp supplies CBOR,
+ * and amounts must not be shown until moth decodes it.
  */
 export interface CardanoSignApprovalPayload {
   readonly method: string;
+  readonly cardanoNetwork: string;
+  readonly walletName: string;
+  readonly accountLabel: string;
+  readonly accountKind: 'derived' | 'imported';
 }
 
 /** Result of resolving a `.shielded` name to a send target (send-to-name). */
