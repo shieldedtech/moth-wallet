@@ -61,10 +61,13 @@ type Host = typeof import('./wallet-host');
 export interface CapsuleChannel {
   ask(consent: CapsuleConsentDTO): Promise<boolean>;
   emit(event: HostEventData['os/eventCapsule']): void;
+  /** A settlement under an account, for the panels; the dApp's sessions hear of it through `emit`. */
+  settled(event: HostEventData['os/eventCapsuleSettled']): void;
 }
 let channel: CapsuleChannel = {
   ask: () => Promise.reject(new Error('the capsule runtime has no consent channel')),
   emit: () => {},
+  settled: () => {},
 };
 export function setCapsuleChannel(next: CapsuleChannel): void {
   channel = next;
@@ -162,7 +165,16 @@ async function open(host: Host, account: CapsuleAccount): Promise<Opened> {
     // outcome when the runtime settles it, like a send, so the feed names the contract and the
     // circuit where history alone would show the fee (plan §12 row 36).
     runtime.onSubmission((tx) => void host.noteSubmitted(account.network.id, account.walletName, contractSubmission(tx)));
-    runtime.onSettlement((report) => void host.noteSettled(account.network.id, account.walletName, report.identifier, settlementOf(report)));
+    runtime.onSettlement((report) => {
+      void host.noteSettled(account.network.id, account.walletName, report.identifier, settlementOf(report));
+      channel.settled({
+        walletName: account.walletName,
+        networkId: account.network.id,
+        identifier: report.identifier,
+        status: report.outcome.status,
+        contracts: [...report.capsules.map((c) => c.address), ...report.deploys.map((d) => d.address)],
+      });
+    });
     if (runtime.account.pendingTransactions().length > 0) {
       runtime.settlePending({ timeoutMs: SETTLE_TIMEOUT_MS }).catch(() => {});
     }

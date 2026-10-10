@@ -1829,6 +1829,12 @@
   "capsule_inspectorRefresh": {
     "message": "Actualizar"
   },
+  "capsule_inspectorLive": {
+    "message": "Se vuelve a leer cuando una transacción se liquida y cada $1 s: el estado público se mueve con las transacciones de todos."
+  },
+  "capsule_detailJustChanged": {
+    "message": "cambiado"
+  },
   "capsule_inspectorLocked": {
     "message": "Desbloquea la billetera para ver sus cápsulas."
   },

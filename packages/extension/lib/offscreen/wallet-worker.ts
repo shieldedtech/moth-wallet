@@ -7,7 +7,7 @@
 // once it exists — no ready handshake needed. The heavy host (WASM) is
 // lazy-imported on the first request, keeping worker startup instant.
 
-import type { CapsuleConsentDTO, CapsuleEventDTO } from '../capsule/protocol';
+import type { CapsuleConsentDTO, CapsuleEventDTO, CapsuleSettledDTO } from '../capsule/protocol';
 import { capsuleHost, hostDispatch } from './host-dispatch';
 import { installRelayBackoff, onRelayState } from './relay-socket';
 import { requestMeter, installRequestMeter } from './request-meter';
@@ -60,6 +60,7 @@ const capsuleChannel = {
       workerScope.postMessage({ ask, consent });
     }),
   emit: (data: CapsuleEventDTO) => workerScope.postMessage({ event: 'os/eventCapsule', data }),
+  settled: (data: CapsuleSettledDTO) => workerScope.postMessage({ event: 'os/eventCapsuleSettled', data }),
 };
 
 workerScope.onmessage = (event: MessageEvent<PageToWorker>) => {

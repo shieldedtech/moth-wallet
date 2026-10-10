@@ -32,6 +32,8 @@ export const capsule = {
   capsule_inFlightTitle: 'In flight',
   capsule_inFlightLine: '$1 · submitted $2 · valid until $3',
   capsule_inspectorRefresh: 'Refresh',
+  capsule_inspectorLive: 'Re-read when a transaction settles, and every $1 s: the public state moves with everyone’s transactions.',
+  capsule_detailJustChanged: 'changed',
   capsule_inspectorLocked: 'Unlock the wallet to see its capsules.',
   capsule_inspectorError: 'Could not read the capsules: $1',
   capsule_inFlightCount: '$1 in flight',

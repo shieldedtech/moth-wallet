@@ -80,7 +80,11 @@ function ensureCapsuleExecutor(w: Worker | null): Promise<void> {
       w.postMessage({ kind: 'capsuleExecutorPort' } satisfies PageToWorker, [port]);
     } else {
       const mod = await capsuleHost();
-      mod.setCapsuleChannel({ ask: askUser, emit: (data) => relayEvent('os/eventCapsule', data) });
+      mod.setCapsuleChannel({
+        ask: askUser,
+        emit: (data) => relayEvent('os/eventCapsule', data),
+        settled: (data) => relayEvent('os/eventCapsuleSettled', data),
+      });
       mod.attachExecutor(port);
     }
     return frame;

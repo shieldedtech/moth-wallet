@@ -1,12 +1,14 @@
 // The capsule inspector: the unlocked account's capsules, each with the contract it holds private
 // state for, the code that address resolved to and how many transactions have folded in, each
-// opening in full; then what is still in flight. Read from the runtime in the wallet worker; it
-// changes when the chain answers, not before.
+// opening in full; then what is still in flight. Read from the runtime in the wallet worker, again
+// when a transaction settles and every few seconds while open, since the public state beside each
+// capsule moves with other people's transactions too.
 
 import { useCallback, useEffect, useState } from 'react';
 import { Box, ChevronRight } from 'lucide-react';
 import { t } from '../../lib/i18n';
 import { sendMessage } from '../../lib/messaging/protocol';
+import { useCapsuleLiveness } from '../../lib/ui/client';
 import type { CapsuleInspectorDTO } from '../../lib/capsule/protocol';
 import { Button } from '../ui/button';
 import { Card, Separator } from '../ui/card';
@@ -32,11 +34,14 @@ export function Capsules({ onBack }: { onBack: () => void }) {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+  const reread = useCallback(() => void refresh(), [refresh]);
+  useCapsuleLiveness(reread);
 
   // The opened capsule is read from the latest view, so a refresh behind it shows through.
   const detail = opened === null ? undefined : view?.capsules.find((capsule) => capsule.address === opened);
   if (detail !== undefined) {
-    return <CapsuleDetail capsule={detail} onBack={() => setOpened(null)} />;
+    // Keyed by address, so the marks of what moved never carry from one capsule to another.
+    return <CapsuleDetail key={detail.address} capsule={detail} onBack={() => setOpened(null)} />;
   }
 
   return (
@@ -48,6 +53,7 @@ export function Capsules({ onBack }: { onBack: () => void }) {
       }
     >
       <PanelHeader title={t('capsule_inspectorTitle')} onBack={onBack} />
+      <p className="m-0 text-[12px] text-muted-foreground">{t('capsule_inspectorLive', [5])}</p>
       {error && <p className="m-0 text-[13px] text-destructive">{t('capsule_inspectorError', [error])}</p>}
       {view?.setAside && (
         <p className="m-0 text-[13px] text-muted-foreground">

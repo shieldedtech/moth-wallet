@@ -25,6 +25,7 @@ import type {
   CapsuleConsentDTO,
   CapsuleEventDTO,
   CapsuleInspectorDTO,
+  CapsuleSettledDTO,
   CapsuleSiteGrantsDTO,
 } from '../capsule/protocol';
 import type {
@@ -383,6 +384,8 @@ export interface OffscreenProtocol {
   'os/eventRelayState'(state: RelayState): void;
   /** A capsule event for a session a dApp is watching. */
   'os/eventCapsule'(data: CapsuleEventDTO): void;
+  /** A capsule transaction settled under an account; every open panel hears of it. */
+  'os/eventCapsuleSettled'(data: CapsuleSettledDTO): void;
   /** The capsule runtime asks the user; the background shows the approval and answers. */
   'os/capsuleConsent'(data: CapsuleConsentDTO): boolean;
 }

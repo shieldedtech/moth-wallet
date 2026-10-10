@@ -1829,6 +1829,12 @@
   "capsule_inspectorRefresh": {
     "message": "Actualiser"
   },
+  "capsule_inspectorLive": {
+    "message": "Relu quand une transaction est réglée, et toutes les $1 s : l'état public bouge avec les transactions de tous."
+  },
+  "capsule_detailJustChanged": {
+    "message": "modifié"
+  },
   "capsule_inspectorLocked": {
     "message": "Déverrouillez le portefeuille pour voir ses capsules."
   },

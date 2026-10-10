@@ -1,11 +1,13 @@
 // One capsule in full: the contract and the build that made the state; the private state beside
 // the public one at the block the chain answered, each field with its declared storage; the
 // interface the bundle declares, in the language's notation; and every call that made the state
-// or is still in flight, newest first, with the arguments the user consented to. Read once from
-// the inspector's view; the parent refreshes it when the chain answers.
+// or is still in flight, newest first, with the arguments the user consented to. Read from the
+// inspector's view, which the parent re-reads as transactions settle; a field whose value moved
+// since the last reading is marked for a while, with what it was, so a landing is seen to land.
 
+import { useEffect, useRef, useState } from 'react';
 import { presentField, showFieldSignature, showSignature, type Json } from '@shieldedtech/capsule-blueprint';
-import type { CapsuleView } from '@shieldedtech/capsule-core';
+import { changedFields, type CapsuleView, type FieldChange } from '@shieldedtech/capsule-host-browser';
 import { t } from '../../lib/i18n';
 import { Card, Separator } from '../ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
@@ -25,6 +27,9 @@ function callLine(call: { circuit: string; arguments?: readonly Json[]; within?:
   return call.circuit;
 }
 
+/** How long a field that just moved stays marked. */
+const CHANGED_FOR_MS = 8_000;
+
 function Fields({
   fields,
   values,
@@ -35,6 +40,21 @@ function Fields({
   empty: string;
 }) {
   const names = Object.keys(fields);
+  // What the last reading showed, and what moved since: marked for a while, then let go.
+  const previous = useRef<Readonly<Record<string, Json>> | undefined>(undefined);
+  const [changed, setChanged] = useState<Map<string, FieldChange>>(() => new Map());
+  useEffect(() => {
+    const moved = changedFields(previous.current, values, Date.now());
+    previous.current = values;
+    if (moved.size === 0) {
+      return undefined;
+    }
+    setChanged((current) => new Map([...current, ...moved]));
+    const timer = setTimeout(() => {
+      setChanged((current) => new Map([...current].filter(([, mark]) => Date.now() - mark.at < CHANGED_FOR_MS)));
+    }, CHANGED_FOR_MS + 50);
+    return () => clearTimeout(timer);
+  }, [values]);
   if (names.length === 0) {
     return <p className="m-0 px-4 py-[13px] text-[13px] text-muted-foreground">{empty}</p>;
   }
@@ -45,10 +65,14 @@ function Fields({
         const value = values[name];
         const presented = value === undefined ? undefined : presentField(signature, value);
         const inline = presented === undefined || isInline(presented);
+        const mark = changed.get(name);
+        const was = mark === undefined || mark.was === undefined ? undefined : presentField(signature, mark.was);
         return (
           <div key={name}>
             {index > 0 && <Separator />}
-            <div className="flex flex-col gap-2 px-4 py-[13px]">
+            <div
+              className={`flex flex-col gap-2 px-4 py-[13px] transition-colors duration-1000 ${mark === undefined ? '' : 'bg-success-tint'}`}
+            >
               <div className="flex items-baseline justify-between gap-3">
                 <span className="min-w-0">
                   <span className="block text-sm font-semibold">{name}</span>
@@ -58,9 +82,21 @@ function Fields({
                   {presented === undefined ? (
                     <span className="text-[13px] italic text-muted-foreground">{t('capsule_detailNotRead')}</span>
                   ) : inline ? (
-                    <CapsuleValue value={presented} />
+                    <span className="inline-flex items-baseline gap-1.5">
+                      {was !== undefined && isInline(was) && (
+                        <span className="text-[12px] text-muted-foreground line-through">
+                          <CapsuleValue value={was} />
+                        </span>
+                      )}
+                      {was !== undefined && isInline(was) && <span className="text-[12px] text-muted-foreground">→</span>}
+                      <CapsuleValue value={presented} />
+                    </span>
                   ) : (
-                    <span className="text-[12px] text-muted-foreground">{countOf(presented)}</span>
+                    <span className="text-[12px] text-muted-foreground">
+                      {mark !== undefined && t('capsule_detailJustChanged')}
+                      {mark !== undefined && ' · '}
+                      {countOf(presented)}
+                    </span>
                   )}
                 </span>
               </div>

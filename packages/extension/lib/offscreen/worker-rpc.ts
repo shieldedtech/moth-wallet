@@ -7,7 +7,7 @@
 // don't exist. Everything here is either a type-only import (erased) or pure JS.
 
 import type { TxStage } from '@shieldedtech/moth-browser';
-import type { CapsuleConsentDTO, CapsuleEventDTO } from '../capsule/protocol';
+import type { CapsuleConsentDTO, CapsuleEventDTO, CapsuleSettledDTO } from '../capsule/protocol';
 import type { OffscreenProtocol } from './messaging';
 import type { RelayState } from './relay-socket';
 
@@ -18,13 +18,15 @@ export type HostEvent =
   | 'os/eventSyncMessage'
   | 'os/eventTxStage'
   | 'os/eventRelayState'
-  | 'os/eventCapsule';
+  | 'os/eventCapsule'
+  | 'os/eventCapsuleSettled';
 export interface HostEventData {
   'os/eventBalances': string;
   'os/eventSyncMessage': string;
   'os/eventTxStage': TxStage;
   'os/eventRelayState': RelayState;
   'os/eventCapsule': CapsuleEventDTO;
+  'os/eventCapsuleSettled': CapsuleSettledDTO;
 }
 
 // Every request method the worker answers: the full os/* surface minus the

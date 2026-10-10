@@ -23,6 +23,26 @@ import { hasUnregisteredNightToNudge } from './dust-nudge';
  *  together. Dispatched by usePanelEvents; consumed by useSession. */
 const SESSION_LOCKED_EVENT = 'moth:sessionLocked';
 
+/** Fired on the window when a capsule transaction settles, so the capsule screens re-read the runtime. Dispatched by usePanelEvents. */
+export const CAPSULE_SETTLED_EVENT = 'moth:capsuleSettled';
+
+/**
+ * Re-runs `read` when a capsule transaction settles and, while mounted, every `everyMs` — the
+ * public state a capsule is shown beside moves with other people's transactions, which this
+ * wallet never hears of otherwise. The first read is the caller's.
+ */
+export function useCapsuleLiveness(read: () => void, everyMs = 5_000): void {
+  useEffect(() => {
+    const onSettled = () => read();
+    window.addEventListener(CAPSULE_SETTLED_EVENT, onSettled);
+    const timer = setInterval(read, everyMs);
+    return () => {
+      window.removeEventListener(CAPSULE_SETTLED_EVENT, onSettled);
+      clearInterval(timer);
+    };
+  }, [read, everyMs]);
+}
+
 export function useSession() {
   const [status, setStatus] = useState<SessionStatus | null>(null);
 
@@ -336,6 +356,7 @@ export function usePanelEvents(): PanelEvents {
           setApprovalId(event.id);
         } else if (event.kind === 'setupOpen') setSetupOpen(event.open);
         else if (event.kind === 'sessionLocked') window.dispatchEvent(new Event(SESSION_LOCKED_EVENT));
+        else if (event.kind === 'capsuleSettled') window.dispatchEvent(new CustomEvent(CAPSULE_SETTLED_EVENT, { detail: event }));
       });
       // Fires only when the other end dies (SW terminated, extension reload) —
       // our own disconnect() in the cleanup below doesn't raise it locally.

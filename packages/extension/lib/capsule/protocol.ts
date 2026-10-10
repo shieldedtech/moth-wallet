@@ -110,6 +110,16 @@ export interface CapsuleEventDTO {
   event: CapsuleEvent;
 }
 
+/** A settlement under an account, from the worker to every open panel: the inspector re-reads on it. */
+export interface CapsuleSettledDTO {
+  walletName: string;
+  networkId: string;
+  identifier: string;
+  status: 'success' | 'failure' | 'partial' | 'expired';
+  /** The contracts whose capsules the settlement touched or deployed. */
+  contracts: string[];
+}
+
 /**
  * The inspector's reading of an account's capsules and what is in flight. A capsule's view is the
  * runtime's own, JSON throughout: both states rendered, the interface, its history and its calls
