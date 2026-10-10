@@ -23,6 +23,7 @@ import type {
   CapsuleConsentDTO,
   CapsuleEventDTO,
   CapsuleInspectorDTO,
+  CapsuleSiteGrantsDTO,
 } from '../capsule/protocol';
 import type {
   ConnectRequest,
@@ -360,8 +361,13 @@ export interface OffscreenProtocol {
   'os/capsuleReadLocalState'(data: CapsuleCall & { session: string; request: ReadLocalStateRequest }): ReadLocalStateResult;
   /** Start or stop relaying a session's capsule events as `os/eventCapsule`. */
   'os/capsuleWatch'(data: CapsuleCall & { session: string; watch: boolean }): void;
+  'os/capsuleDisconnect'(data: CapsuleCall & { session: string }): void;
   /** The account's capsules and pending transactions, for the inspector. */
   'os/capsuleList'(data: CapsuleAccount): CapsuleInspectorDTO;
+  /** Every site's capsule grants under the account, for Connected sites. */
+  'os/capsuleGrants'(data: CapsuleAccount): CapsuleSiteGrantsDTO[];
+  /** Takes a site's capsule grants under the account: on one contract, or every one. */
+  'os/capsuleRevoke'(data: CapsuleAccount & { origin: string; contract?: string }): void;
 
   // --- offscreen → SW (handled in the service worker) ---
   'os/eventBalances'(data: string): void;

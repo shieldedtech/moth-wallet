@@ -1361,6 +1361,12 @@
   "sites_revoke": {
     "message": "Révoquer"
   },
+  "sites_capsuleCall": {
+    "message": "peut appeler ce contrat"
+  },
+  "sites_capsuleRead": {
+    "message": "peut lire son état privé"
+  },
   "syncStatus_synced": {
     "message": "Synchronisé"
   },

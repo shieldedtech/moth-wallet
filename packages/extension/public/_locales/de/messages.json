@@ -1361,6 +1361,12 @@
   "sites_revoke": {
     "message": "Widerrufen"
   },
+  "sites_capsuleCall": {
+    "message": "darf diesen Vertrag aufrufen"
+  },
+  "sites_capsuleRead": {
+    "message": "darf seinen privaten Zustand lesen"
+  },
   "syncStatus_synced": {
     "message": "Synchronisiert"
   },

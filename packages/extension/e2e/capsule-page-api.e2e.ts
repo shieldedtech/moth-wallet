@@ -38,7 +38,7 @@ test('a page finds the capsule API beside the standard one, and a locked wallet 
 
     const shape = await page.evaluate(() => Object.keys((window as { midnight?: { moth?: { capsule?: object } } }).midnight!.moth!.capsule!).sort());
     expect(shape).toEqual(
-      ['connect', 'describe', 'estimateBlueprint', 'makeBlueprintTransaction', 'onCapsuleEvent', 'readLocalState', 'submitBlueprint'].sort(),
+      ['connect', 'describe', 'disconnect', 'estimateBlueprint', 'makeBlueprintTransaction', 'onCapsuleEvent', 'readLocalState', 'submitBlueprint'].sort(),
     );
 
     const refusal = await page.evaluate(async () => {

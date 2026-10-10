@@ -17,6 +17,7 @@ import type { TransferRequestDTO, SwapInputDTO, ProvingKeyMaterialDTO, TxSummary
 import { getSettings, getNetworkConfig } from './settings';
 import { getSession, type Session } from './session';
 import { isAllowed, grant, revoke, listAll } from './permissions';
+import { revokeCapsuleGrantsOf } from './capsule-handlers';
 import {
   requestApproval,
   prepareApprovalPanel,
@@ -640,5 +641,6 @@ export function registerConnectorHandlers(): void {
 
   onMessage('permissionsRevoke', async ({ data }) => {
     await revoke(data.origin);
+    await revokeCapsuleGrantsOf(data.origin);
   });
 }

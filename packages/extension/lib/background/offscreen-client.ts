@@ -324,8 +324,20 @@ export const offscreen = {
     await ensureOffscreen();
     return offscreenSend('os/capsuleWatch', data);
   },
+  async capsuleDisconnect(data: CapsuleCall & { session: string }) {
+    await ensureOffscreen();
+    return offscreenSend('os/capsuleDisconnect', data);
+  },
   async capsuleList(data: CapsuleAccount) {
     await ensureOffscreen();
     return offscreenSend('os/capsuleList', data);
+  },
+  async capsuleGrants(data: CapsuleAccount) {
+    await ensureOffscreen();
+    return offscreenSend('os/capsuleGrants', data);
+  },
+  async capsuleRevoke(data: CapsuleAccount & { origin: string; contract?: string }) {
+    await ensureOffscreen();
+    return offscreenSend('os/capsuleRevoke', data);
   },
 };

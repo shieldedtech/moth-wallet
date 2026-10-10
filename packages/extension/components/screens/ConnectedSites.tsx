@@ -3,6 +3,7 @@ import { Globe } from 'lucide-react';
 import { t } from '../../lib/i18n';
 import { sendMessage } from '../../lib/messaging/protocol';
 import type { OriginGrant } from '../../lib/background/permissions';
+import type { CapsuleSiteGrantsDTO } from '../../lib/capsule/protocol';
 import { Button } from '../ui/button';
 import { Card, Separator } from '../ui/card';
 import { PanelScreen, PanelHeader } from '../moth/panel';
@@ -10,9 +11,12 @@ import { originHost } from '../moth/dapp';
 
 export function ConnectedSites({ onBack }: { onBack: () => void }) {
   const [grants, setGrants] = useState<Record<string, OriginGrant> | null>(null);
+  const [capsuleGrants, setCapsuleGrants] = useState<CapsuleSiteGrantsDTO[]>([]);
 
   const refresh = useCallback(async () => {
     setGrants(await sendMessage('permissionsList', undefined));
+    // The capsule grants live with the runtime, which needs the account unlocked; locked, a site shows without them.
+    setCapsuleGrants(await sendMessage('capsuleGrantsList', undefined).catch(() => []));
   }, []);
 
   useEffect(() => {
@@ -20,6 +24,8 @@ export function ConnectedSites({ onBack }: { onBack: () => void }) {
   }, [refresh]);
 
   const origins = Object.keys(grants ?? {}).sort();
+  const contractsOf = (origin: string) => capsuleGrants.find((g) => g.origin === origin)?.contracts ?? [];
+  const shortAddress = (hex: string) => `${hex.slice(0, 10)}…${hex.slice(-6)}`;
 
   return (
     <PanelScreen>
@@ -54,6 +60,25 @@ export function ConnectedSites({ onBack }: { onBack: () => void }) {
                   {t('sites_revoke')}
                 </Button>
               </div>
+              {contractsOf(origin).map((contract) => (
+                <div key={contract.address} className="flex items-center gap-3 px-4 pb-[13px] pl-16">
+                  <span className="flex-1">
+                    <span className="block font-mono text-xs">{shortAddress(contract.address)}</span>
+                    <span className="block text-xs text-muted-foreground">
+                      {[contract.call ? t('sites_capsuleCall') : undefined, contract.read ? t('sites_capsuleRead') : undefined]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </span>
+                  </span>
+                  <Button
+                    variant="chip"
+                    size="sm"
+                    onClick={() => void sendMessage('capsuleGrantRevoke', { origin, contract: contract.address }).then(refresh)}
+                  >
+                    {t('sites_revoke')}
+                  </Button>
+                </div>
+              ))}
             </div>
           ))}
         </Card>

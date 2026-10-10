@@ -144,6 +144,11 @@ export async function capsuleDispatch(
         await offscreen.capsuleWatch({ ...call, session: sessionId, watch });
         return null;
       }
+      case 'capsuleDisconnect': {
+        const sessionId = requireString(params[0], 'The session');
+        await offscreen.capsuleDisconnect({ ...call, session: sessionId });
+        return null;
+      }
     }
   } catch (error) {
     throw asRefusal(error);
@@ -169,4 +174,24 @@ export function registerCapsuleHandlers(): void {
     const network = await getNetworkConfig();
     return offscreen.capsuleList({ seedHex: session.seedHex, walletName: session.walletName, network });
   });
+  onMessage('capsuleGrantsList', async () => {
+    const session = await requireSession();
+    const network = await getNetworkConfig();
+    return offscreen.capsuleGrants({ seedHex: session.seedHex, walletName: session.walletName, network });
+  });
+  onMessage('capsuleGrantRevoke', async ({ data }) => {
+    const session = await requireSession();
+    const network = await getNetworkConfig();
+    await offscreen.capsuleRevoke({ seedHex: session.seedHex, walletName: session.walletName, network, ...data });
+  });
+}
+
+/** Takes a site's capsule grants under the unlocked account with the site's own permission, so one revoke means both. */
+export async function revokeCapsuleGrantsOf(origin: string): Promise<void> {
+  const session = await requireSession().catch(() => undefined);
+  if (session === undefined) {
+    return;
+  }
+  const network = await getNetworkConfig();
+  await offscreen.capsuleRevoke({ seedHex: session.seedHex, walletName: session.walletName, network, origin }).catch(() => {});
 }

@@ -21,6 +21,8 @@ import {
   capsuleKeysAnswers,
   deriveStorageKey,
   freshMaintenanceKey,
+  originGrants,
+  revokeGrants,
   singleAccount,
   type ConsentPort,
   type RenderedArgument,
@@ -41,6 +43,7 @@ import type {
   CapsuleConsentDTO,
   CapsuleInspectorDTO,
   CapsuleRenderedArgument,
+  CapsuleSiteGrantsDTO,
 } from '../capsule/protocol';
 import { DEMO_CREDENTIAL_BIRTH_DATE, DEMO_CREDENTIAL_ISSUER_HEX } from '../capsule/demo-credential';
 import type { HostEventData } from './worker-rpc';
@@ -246,6 +249,23 @@ export async function watch(host: Host, data: CapsuleCall & { session: string; w
       connector.onCapsuleEvent(session, (event) => channel.emit({ session, event })),
     );
   }
+}
+
+export async function disconnect(host: Host, data: CapsuleCall & { session: string }): Promise<void> {
+  const { connector, account } = await connectorFor(host, data);
+  account.watching.get(data.session)?.();
+  account.watching.delete(data.session);
+  await connector.disconnect(data.session);
+}
+
+export async function grants(host: Host, data: CapsuleAccount): Promise<CapsuleSiteGrantsDTO[]> {
+  const account = await open(host, data);
+  return (await originGrants(account.grants, data.walletName)).map(({ origin, contracts }) => ({ origin, contracts: [...contracts] }));
+}
+
+export async function revoke(host: Host, data: CapsuleAccount & { origin: string; contract?: string }): Promise<void> {
+  const account = await open(host, data);
+  await revokeGrants(account.grants, data.origin, data.walletName, data.contract);
 }
 
 export async function list(host: Host, data: CapsuleAccount): Promise<CapsuleInspectorDTO> {

@@ -42,6 +42,7 @@ export const CAPSULE_METHODS = [
   'capsuleEstimate',
   'capsuleReadLocalState',
   'capsuleWatch',
+  'capsuleDisconnect',
 ] as const;
 export type CapsuleMethod = (typeof CAPSULE_METHODS)[number];
 
@@ -55,6 +56,14 @@ export interface CapsuleMethodMap {
   capsuleReadLocalState: { params: [string, ReadLocalStateRequest]; result: ReadLocalStateResult };
   /** Start (true) or stop (false) hearing a session's capsule events; delivered as `capsuleEvent` messages to the tab. */
   capsuleWatch: { params: [string, boolean]; result: null };
+  /** Ends a session; the grants behind it stay, the user's to revoke in Connected sites. */
+  capsuleDisconnect: { params: [string]; result: null };
+}
+
+/** A site's standing with the capsule runtime under the unlocked account: each contract with what the site may do. */
+export interface CapsuleSiteGrantsDTO {
+  origin: string;
+  contracts: Array<{ address: string; call: boolean; read: boolean }>;
 }
 
 /** One rendered argument as the runtime shows it: the value by its declared type beside the bytes the proof commits to. */

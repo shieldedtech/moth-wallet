@@ -6,7 +6,7 @@ import { defineExtensionMessaging } from '@webext-core/messaging';
 import type { WalletInfo, TxStage, ProverConfig } from '@shieldedtech/moth-browser';
 import type { SerializedConnectorError } from '../connector/errors';
 import type { PendingApproval } from '../background/approvals';
-import type { CapsuleEventDTO, CapsuleInspectorDTO } from '../capsule/protocol';
+import type { CapsuleEventDTO, CapsuleInspectorDTO, CapsuleSiteGrantsDTO } from '../capsule/protocol';
 import type { OriginGrant } from '../background/permissions';
 import type { AddressBookEntry } from '../background/address-book';
 import type { AddressKind } from '../ui/address';
@@ -395,6 +395,10 @@ interface ProtocolMap {
   capsuleEvent(data: CapsuleEventDTO): void;
   /** The unlocked account's capsules and pending capsule transactions, for the inspector screen. */
   capsuleList(): CapsuleInspectorDTO;
+  /** Every site's capsule grants under the unlocked account, for Connected sites. */
+  capsuleGrantsList(): CapsuleSiteGrantsDTO[];
+  /** Takes a site's capsule grants: on one contract, or every one of them. */
+  capsuleGrantRevoke(data: { origin: string; contract?: string }): void;
 }
 
 export const { sendMessage, onMessage } = defineExtensionMessaging<ProtocolMap>();

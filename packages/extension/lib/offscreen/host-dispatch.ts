@@ -100,7 +100,10 @@ export const hostDispatch: Dispatch = {
   'os/capsuleEstimate': async (host, d) => (await capsule()).estimate(host, d),
   'os/capsuleReadLocalState': async (host, d) => (await capsule()).readLocalState(host, d),
   'os/capsuleWatch': async (host, d) => (await capsule()).watch(host, d),
+  'os/capsuleDisconnect': async (host, d) => (await capsule()).disconnect(host, d),
   'os/capsuleList': async (host, d) => (await capsule()).list(host, d),
+  'os/capsuleGrants': async (host, d) => (await capsule()).grants(host, d),
+  'os/capsuleRevoke': async (host, d) => (await capsule()).revoke(host, d),
 };
 
 /** The capsule runtime's own entry points, for the worker entry and the dev inline host to wire the executor and the consents. */

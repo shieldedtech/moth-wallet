@@ -99,7 +99,10 @@ describe('HOST_METHODS', () => {
     'os/capsuleEstimate',
     'os/capsuleReadLocalState',
     'os/capsuleWatch',
+    'os/capsuleDisconnect',
     'os/capsuleList',
+    'os/capsuleGrants',
+    'os/capsuleRevoke',
   ];
 
   it('covers every request method exactly once', () => {

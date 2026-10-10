@@ -44,6 +44,10 @@ export function buildCapsuleApi(client: PageClient): CapsuleConnector {
     makeBlueprintTransaction: (session, document) => call('capsuleMakeTransaction', [session, document]) as never,
     estimateBlueprint: (session, document) => call('capsuleEstimate', [session, document]) as never,
     readLocalState: (session, request) => call('capsuleReadLocalState', [session, request]),
+    disconnect: async (session) => {
+      listeners.delete(session);
+      await call('capsuleDisconnect', [session]);
+    },
     onCapsuleEvent(session, listener) {
       let set = listeners.get(session);
       if (set === undefined) {
