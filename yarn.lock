@@ -2896,16 +2896,8 @@ __metadata:
     "@midnightntwrk/onchain-runtime-v4": "npm:4.0.0-rc.4"
     "@noble/hashes": "npm:^2.0.1"
     "@shieldedtech/capsule-blueprint": "workspace:*"
-    "@shieldedtech/capsule-executable": "workspace:*"
     "@shieldedtech/capsule-executor": "workspace:*"
-  languageName: node
-  linkType: soft
-
-"@shieldedtech/capsule-executable@portal:../capsule-runtime/packages/executable::locator=moth-wallet%40workspace%3A.":
-  version: 0.0.0-use.local
-  resolution: "@shieldedtech/capsule-executable@portal:../capsule-runtime/packages/executable::locator=moth-wallet%40workspace%3A."
-  dependencies:
-    "@midnight-ntwrk/compact-runtime": "npm:0.20.102"
+    "@shieldedtech/midnight-contract-bundle": "workspace:*"
   languageName: node
   linkType: soft
 
@@ -2938,6 +2930,12 @@ __metadata:
     "@shieldedtech/capsule-core": "workspace:*"
     effect: "npm:^3.19.19"
     rxjs: "npm:^7.8.2"
+  languageName: node
+  linkType: soft
+
+"@shieldedtech/midnight-contract-bundle@portal:../capsule-runtime/midnight-tools/contract-bundle::locator=moth-wallet%40workspace%3A.":
+  version: 0.0.0-use.local
+  resolution: "@shieldedtech/midnight-contract-bundle@portal:../capsule-runtime/midnight-tools/contract-bundle::locator=moth-wallet%40workspace%3A."
   languageName: node
   linkType: soft
 
