@@ -6,7 +6,7 @@
 // that watches the session.
 
 import { browser, type Browser } from 'wxt/browser';
-import type { ConnectRequest, DescribeRequest, ReadLocalStateRequest, TransactionBlueprint } from '@shieldedtech/capsule-blueprint';
+import type { ConnectRequest, ReadLocalStateRequest, TransactionBlueprint } from '@shieldedtech/capsule-blueprint';
 import { CAPSULE_METHODS, type CapsuleCall, type CapsuleErrorDTO, type CapsuleMethod } from '../capsule/protocol';
 import { offscreenOn } from '../offscreen/messaging';
 import { onMessage, sendMessage } from '../messaging/protocol';
@@ -114,12 +114,6 @@ export async function capsuleDispatch(
         if (!(await isAllowed(origin))) await grant(origin, network.id);
         await rememberSessionTab(result.session, senderTabId);
         return result;
-      }
-      case 'capsuleDescribe': {
-        const sessionId = requireString(params[0], 'The session');
-        const request = requireObject(params[1], 'The describe request') as DescribeRequest;
-        await rememberSessionTab(sessionId, senderTabId);
-        return await offscreen.capsuleDescribe({ ...call, session: sessionId, request });
       }
       case 'capsuleSubmitBlueprint':
       case 'capsuleMakeTransaction':

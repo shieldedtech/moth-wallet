@@ -94,7 +94,6 @@ export const hostDispatch: Dispatch = {
     host.makeIntent(d.seedHex, d.walletName, d.network, d.inputs, d.outputs, d.payFees),
   'os/txSummary': (host, d) => host.txSummary(d.network, d.txHex, d.sealed),
   'os/capsuleConnect': async (host, d) => (await capsule()).connect(host, d),
-  'os/capsuleDescribe': async (host, d) => (await capsule()).describe(host, d),
   'os/capsuleSubmitBlueprint': async (host, d) => (await capsule()).submitBlueprint(host, d),
   'os/capsuleMakeTransaction': async (host, d) => (await capsule()).makeTransaction(host, d),
   'os/capsuleEstimate': async (host, d) => (await capsule()).estimate(host, d),

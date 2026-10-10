@@ -93,7 +93,6 @@ describe('HOST_METHODS', () => {
     'os/balanceTransaction',
     'os/makeIntent',
     'os/capsuleConnect',
-    'os/capsuleDescribe',
     'os/capsuleSubmitBlueprint',
     'os/capsuleMakeTransaction',
     'os/capsuleEstimate',

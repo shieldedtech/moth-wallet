@@ -11,8 +11,6 @@ import type {
   CapsuleEvent,
   ConnectRequest,
   ConnectResult,
-  DescribeRequest,
-  ExecutableDescription,
   Json,
   ReadLocalStateRequest,
   ReadLocalStateResult,
@@ -36,7 +34,6 @@ export interface CapsuleCall extends CapsuleAccount {
 /** The page-facing methods, relayed as `connectorRequest`s like the standard connector's. */
 export const CAPSULE_METHODS = [
   'capsuleConnect',
-  'capsuleDescribe',
   'capsuleSubmitBlueprint',
   'capsuleMakeTransaction',
   'capsuleEstimate',
@@ -49,7 +46,6 @@ export type CapsuleMethod = (typeof CAPSULE_METHODS)[number];
 /** What each method takes from the page and answers, in order of `params`. */
 export interface CapsuleMethodMap {
   capsuleConnect: { params: [ConnectRequest]; result: ConnectResult };
-  capsuleDescribe: { params: [string, DescribeRequest]; result: ExecutableDescription };
   capsuleSubmitBlueprint: { params: [string, TransactionBlueprint]; result: SubmitResult };
   capsuleMakeTransaction: { params: [string, TransactionBlueprint]; result: Json };
   capsuleEstimate: { params: [string, TransactionBlueprint]; result: Json };

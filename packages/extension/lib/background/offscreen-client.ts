@@ -12,7 +12,7 @@ import {
   type ProvingProviderProvePayload,
 } from '../offscreen/messaging';
 import type { NetworkConfig, SignEncoding } from '@shieldedtech/moth-browser';
-import type { ConnectRequest, DescribeRequest, ReadLocalStateRequest, TransactionBlueprint } from '@shieldedtech/capsule-blueprint';
+import type { ConnectRequest, ReadLocalStateRequest, TransactionBlueprint } from '@shieldedtech/capsule-blueprint';
 import { decodeBigintJson, encodeBigintJson } from '../messaging/bigint-json';
 import type { AnswersDocument } from '@shieldedtech/capsule-core';
 import type { CapsuleAccount, CapsuleCall } from '../capsule/protocol';
@@ -300,10 +300,6 @@ export const offscreen = {
   async capsuleConnect(data: CapsuleCall & { request: ConnectRequest }) {
     await ensureOffscreen();
     return offscreenSend('os/capsuleConnect', data);
-  },
-  async capsuleDescribe(data: CapsuleCall & { session: string; request: DescribeRequest }) {
-    await ensureOffscreen();
-    return offscreenSend('os/capsuleDescribe', data);
   },
   async capsuleSubmitBlueprint(data: CapsuleCall & { session: string; document: TransactionBlueprint }) {
     await ensureOffscreen();

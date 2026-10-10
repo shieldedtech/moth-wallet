@@ -7,7 +7,6 @@
 import {
   domEndpoint,
   type ConnectRequest,
-  type DescribeRequest,
   type ReadLocalStateRequest,
   type TransactionBlueprint,
 } from '@shieldedtech/capsule-blueprint';
@@ -330,11 +329,6 @@ async function connectorFor(host: Host, call: CapsuleCall): Promise<{ connector:
 export async function connect(host: Host, data: CapsuleCall & { request: ConnectRequest }) {
   const { connector } = await connectorFor(host, data);
   return connector.connect(data.request);
-}
-
-export async function describe(host: Host, data: CapsuleCall & { session: string; request: DescribeRequest }) {
-  const { connector } = await connectorFor(host, data);
-  return connector.describe(data.session, data.request);
 }
 
 export async function submitBlueprint(host: Host, data: CapsuleCall & { session: string; document: TransactionBlueprint }) {

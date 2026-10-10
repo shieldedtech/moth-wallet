@@ -32,8 +32,6 @@ import type {
 import type {
   ConnectRequest,
   ConnectResult,
-  DescribeRequest,
-  ExecutableDescription,
   Json,
   ReadLocalStateRequest,
   ReadLocalStateResult,
@@ -356,9 +354,8 @@ export interface OffscreenProtocol {
   // --- The capsule runtime (lib/offscreen/capsule-host.ts, in the worker) ---
   // Each call carries the account and the dApp's origin; the runtime for the
   // account is opened on first use over the synced wallet's facade. The
-  // documents, descriptions and results are the blueprint's own JSON.
+  // documents and results are the blueprint's own JSON.
   'os/capsuleConnect'(data: CapsuleCall & { request: ConnectRequest }): ConnectResult;
-  'os/capsuleDescribe'(data: CapsuleCall & { session: string; request: DescribeRequest }): ExecutableDescription;
   'os/capsuleSubmitBlueprint'(data: CapsuleCall & { session: string; document: TransactionBlueprint }): SubmitResult;
   'os/capsuleMakeTransaction'(data: CapsuleCall & { session: string; document: TransactionBlueprint }): Json;
   'os/capsuleEstimate'(data: CapsuleCall & { session: string; document: TransactionBlueprint }): Json;

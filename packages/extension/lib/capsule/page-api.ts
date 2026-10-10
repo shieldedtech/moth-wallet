@@ -39,7 +39,6 @@ export function buildCapsuleApi(client: PageClient): CapsuleConnector {
 
   return Object.freeze({
     connect: (request) => call('capsuleConnect', [request]),
-    describe: (session, request) => call('capsuleDescribe', [session, request]),
     submitBlueprint: (session, document) => call('capsuleSubmitBlueprint', [session, document]),
     makeBlueprintTransaction: (session, document) => call('capsuleMakeTransaction', [session, document]) as never,
     estimateBlueprint: (session, document) => call('capsuleEstimate', [session, document]) as never,
