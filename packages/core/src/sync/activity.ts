@@ -19,7 +19,8 @@ function statusOf(entry: WalletEntry): ActivityStatus {
   return entry.lifecycle?.status === 'rejected' ? 'FAILURE' : 'SUCCESS';
 }
 
-export type ActivityKind = 'sent' | 'received' | 'swap' | 'dust';
+/** 'contract' is never derived from history: the wallet records it itself when its capsule runtime submits. */
+export type ActivityKind = 'sent' | 'received' | 'swap' | 'dust' | 'contract';
 export type ActivityStatus = 'SUCCESS' | 'FAILURE' | 'PARTIAL_SUCCESS';
 
 /** Net movement of one token for the wallet; negative = left the wallet. */
@@ -27,6 +28,13 @@ export interface ActivityDelta {
   tokenType: string;
   kind: 'shielded' | 'unshielded';
   amount: bigint;
+}
+
+/** The contract a 'contract' entry acted on: the circuit called, or the bundle deployed at the address. */
+export interface ActivityContract {
+  address: string;
+  circuit?: string;
+  bundle?: string;
 }
 
 export interface ActivityEntry {
@@ -47,6 +55,8 @@ export interface ActivityEntry {
   fees: bigint | null;
   /** True for a submitted transaction the chain has not yet applied. */
   pending: boolean;
+  /** For a 'contract' entry, what the transaction did; absent when it was recorded before this was kept. */
+  contract?: ActivityContract;
   /** Number of outgoing destination outputs the wallet can see — how many
    *  transfers a single (possibly batched) transaction carried. Counts
    *  external unshielded created UTxOs; shielded recipients are unknowable

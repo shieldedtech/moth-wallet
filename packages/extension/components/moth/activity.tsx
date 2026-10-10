@@ -1,4 +1,4 @@
-import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight, LoaderCircle, Moon, X } from 'lucide-react';
+import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight, Blocks, LoaderCircle, Moon, X } from 'lucide-react';
 import { cn } from '../../lib/ui/cn';
 import type { ActivityIcon, ActivityRowView } from '../../lib/ui/activity-view';
 
@@ -7,6 +7,7 @@ const ICONS: Record<ActivityIcon, typeof ArrowUpRight> = {
   received: ArrowDownLeft,
   swap: ArrowLeftRight,
   dust: Moon,
+  contract: Blocks,
   pending: LoaderCircle,
   failed: X,
 };

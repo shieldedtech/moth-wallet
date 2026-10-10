@@ -211,6 +211,42 @@ describe('activityRowView', () => {
     expect(view.tone).toBe('negative');
   });
 
+  it('renders a contract call by its circuit and address, with the fee as its amount', () => {
+    const address = 'ct1'.padEnd(70, 'q');
+    const landed = activityRowView(
+      entry({ kind: 'contract', contract: { address, circuit: 'vote' }, dustDelta: -400_000_000_000_000n }),
+      labels,
+      { now: NOW },
+    );
+    expect(landed.title).toBe('Called vote on ct1qqqqq…qqqq');
+    expect(landed.amount).toBe('-0.4 tDUST');
+    expect(landed.icon).toBe('contract');
+    expect(landed.tone).toBe('negative');
+
+    const pending = activityRowView(
+      entry({ kind: 'contract', contract: { address, circuit: 'vote' }, pending: true, timestamp: new Date('2026-07-13T09:58:00') }),
+      labels,
+      { now: NOW },
+    );
+    expect(pending.title).toBe('Calling vote on ct1qqqqq…qqqq');
+    expect(pending.sub).toBe('09:58 · Pending');
+    expect(pending.amount).toBeNull();
+    expect(pending.icon).toBe('pending');
+  });
+
+  it('renders a deploy by its bundle, and a contract transaction recorded without one plainly', () => {
+    const address = 'ct1'.padEnd(70, 'q');
+    expect(activityRowView(entry({ kind: 'contract', contract: { address, bundle: 'Ballot' } }), labels, { now: NOW }).title).toBe(
+      'Deployed Ballot',
+    );
+    expect(
+      activityRowView(entry({ kind: 'contract', contract: { address, bundle: 'Ballot' }, pending: true }), labels, { now: NOW }).title,
+    ).toBe('Deploying Ballot');
+    const bare = activityRowView(entry({ kind: 'contract', status: 'FAILURE' }), labels, { now: NOW });
+    expect(bare.title).toBe('Contract transaction');
+    expect(bare.icon).toBe('failed');
+  });
+
   it('marks failures in the subtitle and mutes the amount', () => {
     const view = activityRowView(
       entry({

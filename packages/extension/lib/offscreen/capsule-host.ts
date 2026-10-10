@@ -25,7 +25,9 @@ import {
   revokeGrants,
   singleAccount,
   type ConsentPort,
+  type PendingTransaction,
   type RenderedArgument,
+  type SettlementReport,
 } from '@shieldedtech/capsule-core';
 import { PortExecutor } from '@shieldedtech/capsule-executor';
 import {
@@ -46,6 +48,7 @@ import type {
   CapsuleSiteGrantsDTO,
 } from '../capsule/protocol';
 import { DEMO_CREDENTIAL_BIRTH_DATE, DEMO_CREDENTIAL_ISSUER_HEX } from '../capsule/demo-credential';
+import type { SubmissionSettled, SubmittedTx } from './submissions';
 import type { HostEventData } from './worker-rpc';
 
 type Host = typeof import('./wallet-host');
@@ -141,6 +144,11 @@ async function open(host: Host, account: CapsuleAccount): Promise<Opened> {
         ...ageCredentialAnswers({ birthDate: new Date(DEMO_CREDENTIAL_BIRTH_DATE), issuer: hexToBytes(DEMO_CREDENTIAL_ISSUER_HEX) }),
       },
     });
+    // The wallet's activity feed: a capsule transaction is recorded as it is submitted and its
+    // outcome when the runtime settles it, like a send, so the feed names the contract and the
+    // circuit where history alone would show the fee (plan §12 row 36).
+    runtime.onSubmission((tx) => void host.noteSubmitted(account.network.id, account.walletName, contractSubmission(tx)));
+    runtime.onSettlement((report) => void host.noteSettled(account.network.id, account.walletName, report.identifier, settlementOf(report)));
     if (runtime.account.pendingTransactions().length > 0) {
       runtime.settlePending({ timeoutMs: SETTLE_TIMEOUT_MS }).catch(() => {});
     }
@@ -149,6 +157,25 @@ async function open(host: Host, account: CapsuleAccount): Promise<Opened> {
   opened.set(key, pending);
   pending.catch(() => opened.delete(key));
   return pending;
+}
+
+/** A capsule transaction as the activity feed records it: the call asked for, else the first contract deployed. */
+function contractSubmission(tx: PendingTransaction): SubmittedTx {
+  const deploy = tx.deploys[0];
+  const contract =
+    tx.asked !== undefined
+      ? { address: tx.asked.address, circuit: tx.asked.circuit }
+      : deploy !== undefined
+        ? { address: deploy.address, bundle: deploy.bundle }
+        : undefined;
+  return { hash: tx.identifier, submittedAt: tx.submittedAt.getTime(), kind: 'contract', ...(contract === undefined ? {} : { contract }) };
+}
+
+function settlementOf(report: SettlementReport): SubmissionSettled {
+  const { outcome } = report;
+  const status =
+    outcome.status === 'expired' ? 'expired' : outcome.status === 'failure' ? 'failed' : outcome.status === 'partial' ? 'partial' : 'landed';
+  return { status, at: outcome.block.timestamp };
 }
 
 const rendered = (argument: RenderedArgument): CapsuleRenderedArgument => ({

@@ -65,7 +65,7 @@ export function groupActivity(entries: ActivityEntry[], now = new Date()): Activ
 // Row presentation
 // ---------------------------------------------------------------------------
 
-export type ActivityIcon = 'sent' | 'received' | 'swap' | 'dust' | 'pending' | 'failed';
+export type ActivityIcon = 'sent' | 'received' | 'swap' | 'dust' | 'contract' | 'pending' | 'failed';
 
 export interface ActivityRowView {
   key: string;
@@ -205,6 +205,24 @@ export function activityRowView(
     case 'dust': {
       if (entry.dustDelta < 0n) title = t('activity_networkFeePaid');
       else title = t('activity_dustRegistration', [labels.dust]);
+      break;
+    }
+    case 'contract': {
+      // A capsule transaction: the circuit called on the contract, or the bundle deployed. The
+      // amount is a token it moved, if any, else the fee it paid, which is all the chain shows
+      // of most of them.
+      amountDelta = negatives[0] ?? positives[0];
+      const contract = entry.contract;
+      if (contract?.circuit !== undefined) {
+        const target = shortAddress(contract.address);
+        title = entry.pending
+          ? t('activity_callingCircuit', [contract.circuit, target])
+          : t('activity_calledCircuit', [contract.circuit, target]);
+      } else if (contract?.bundle !== undefined) {
+        title = entry.pending ? t('activity_deployingContract', [contract.bundle]) : t('activity_deployedContract', [contract.bundle]);
+      } else {
+        title = t('activity_contractTransaction');
+      }
       break;
     }
   }

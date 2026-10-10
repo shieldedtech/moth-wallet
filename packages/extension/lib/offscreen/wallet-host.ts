@@ -61,9 +61,11 @@ import type { NightCoinRow } from '../messaging/protocol';
 import {
   loadSubmissions,
   mergeSubmissions,
+  recordSettlement,
   recordSubmission,
   saveSubmissions,
   submissionsKey,
+  type SubmissionSettled,
   type SubmittedTx,
 } from './submissions';
 import type {
@@ -699,10 +701,21 @@ function submitTracked<T>(network: NetworkConfig, walletName: string, submit: ()
 }
 
 // Best effort: a bookkeeping failure must never turn a submitted transaction
-// into a reported error — the tokens are already on their way.
-async function noteSubmitted(networkId: string, walletName: string, tx: SubmittedTx): Promise<void> {
+// into a reported error — the tokens are already on their way. Exported for the
+// capsule runtime's host, whose transactions go through the same facade and
+// belong in the same feed.
+export async function noteSubmitted(networkId: string, walletName: string, tx: SubmittedTx): Promise<void> {
   try {
     await recordSubmission(new IdbSyncStateStore(), networkId, walletName, tx);
+  } catch {
+    /* ignore */
+  }
+}
+
+/** How a contract transaction ended, from the capsule runtime's settlement; best effort like the submission. */
+export async function noteSettled(networkId: string, walletName: string, hash: string, settled: SubmissionSettled): Promise<void> {
+  try {
+    await recordSettlement(new IdbSyncStateStore(), networkId, walletName, hash, settled);
   } catch {
     /* ignore */
   }

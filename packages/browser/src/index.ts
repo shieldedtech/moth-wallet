@@ -84,6 +84,7 @@ export {
 } from '@shieldedtech/moth-wallet/sync/activity';
 export type {
   ActivityEntry,
+  ActivityContract,
   ActivityDelta,
   ActivityKind,
   ActivityStatus,

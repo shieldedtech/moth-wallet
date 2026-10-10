@@ -6,6 +6,7 @@ import {
   SUBMISSION_PENDING_TTL_MS,
   loadSubmissions,
   mergeSubmissions,
+  recordSettlement,
   recordSubmission,
   submissionsKey,
   type SubmittedTx,
@@ -189,6 +190,96 @@ describe('mergeSubmissions', () => {
     const { entries } = mergeSubmissions([older], [submission({})], NOW);
 
     expect(entries.map((entry) => entry.hash)).toEqual(['a'.repeat(64), 'b'.repeat(64)]);
+  });
+});
+
+describe('mergeSubmissions with contract transactions', () => {
+  const CONTRACT = 'ct1'.padEnd(70, 'q');
+  const call = (overrides: Partial<SubmittedTx> = {}): SubmittedTx => ({
+    hash: 'a'.repeat(64),
+    submittedAt: NOW - 60_000,
+    kind: 'contract',
+    contract: { address: CONTRACT, circuit: 'vote' },
+    ...overrides,
+  });
+
+  it('shows a fresh contract submission as a pending contract row naming the call', () => {
+    const { entries, prune } = mergeSubmissions([], [call()], NOW);
+
+    expect(prune).toEqual([]);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      kind: 'contract',
+      pending: true,
+      contract: { address: CONTRACT, circuit: 'vote' },
+      deltas: [],
+      counterparty: null,
+    });
+  });
+
+  it('turns the fee-only chain entry of a landed call into the contract row, keeping the fee', () => {
+    // The chain shows the wallet nothing of a contract call but the DUST it paid.
+    const feeOnly = chainEntry({ kind: 'dust', deltas: [], dustDelta: -5n, timestamp: null });
+    const { entries } = mergeSubmissions([feeOnly], [call({ settled: { status: 'landed', at: NOW - 20_000 } })], NOW);
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      kind: 'contract',
+      pending: false,
+      status: 'SUCCESS',
+      dustDelta: -5n,
+      contract: { address: CONTRACT, circuit: 'vote' },
+    });
+    // History kept no block time for the DUST entry; the settling block's is the better stand-in.
+    expect(entries[0]?.timestamp).toEqual(new Date(NOW - 20_000));
+  });
+
+  it("keeps the chain's verdict over the recorded one when both exist", () => {
+    const rejected = chainEntry({ kind: 'dust', status: 'FAILURE', dustDelta: -5n });
+    const { entries } = mergeSubmissions([rejected], [call({ settled: { status: 'landed', at: NOW } })], NOW);
+
+    expect(entries[0]).toMatchObject({ kind: 'contract', status: 'FAILURE' });
+  });
+
+  it('shows a settled transaction history does not hold by the runtime’s verdict, and never prunes it', () => {
+    const expired = call({ submittedAt: NOW - 2 * SUBMISSION_PENDING_TTL_MS, settled: { status: 'expired', at: NOW - SUBMISSION_PENDING_TTL_MS } });
+    const landed = call({ hash: 'b'.repeat(64), settled: { status: 'landed', at: NOW - 30_000 } });
+    const partial = call({ hash: 'c'.repeat(64), settled: { status: 'partial', at: NOW - 10_000 } });
+    const { entries, prune } = mergeSubmissions([], [expired, landed, partial], NOW);
+
+    expect(prune).toEqual([]);
+    expect(entries.map((entry) => [entry.hash[0], entry.status, entry.pending])).toEqual([
+      ['c', 'PARTIAL_SUCCESS', false],
+      ['b', 'SUCCESS', false],
+      ['a', 'FAILURE', false],
+    ]);
+    expect(entries[2]?.timestamp).toEqual(new Date(NOW - SUBMISSION_PENDING_TTL_MS));
+  });
+
+  it('still prunes an unsettled contract submission unseen past the pending TTL', () => {
+    const { entries, prune } = mergeSubmissions([], [call({ submittedAt: NOW - SUBMISSION_PENDING_TTL_MS - 1 })], NOW);
+
+    expect(entries).toEqual([]);
+    expect(prune).toEqual(['a'.repeat(64)]);
+  });
+
+  it('shows a deploy by its bundle, and a transaction recorded without its contract as a plain one', () => {
+    const deploy = call({ contract: { address: CONTRACT, bundle: 'Ballot' } });
+    const bare = call({ hash: 'b'.repeat(64), submittedAt: NOW - 30_000, contract: undefined });
+    const { entries } = mergeSubmissions([], [deploy, bare], NOW);
+
+    expect(entries.map((entry) => entry.contract)).toEqual([undefined, { address: CONTRACT, bundle: 'Ballot' }]);
+  });
+
+  it('records a settlement on the submission it belongs to and ignores one it never recorded', async () => {
+    const store = new MemoryStore();
+    await recordSubmission(store, 'devnet', 'alice', call());
+    await recordSettlement(store, 'devnet', 'alice', 'b'.repeat(64), { status: 'landed', at: NOW });
+    await recordSettlement(store, 'devnet', 'alice', 'a'.repeat(64), { status: 'failed', at: NOW });
+
+    const loaded = await loadSubmissions(store, 'devnet', 'alice');
+    expect(loaded).toHaveLength(1);
+    expect(loaded[0]).toMatchObject({ hash: 'a'.repeat(64), settled: { status: 'failed', at: NOW } });
   });
 });
 

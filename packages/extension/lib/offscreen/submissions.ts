@@ -8,8 +8,20 @@
 //
 // WASM-free: type-only imports plus the pure activity helpers.
 
-import { sortActivity, type ActivityEntry } from '@shieldedtech/moth-wallet/sync/activity';
+import { sortActivity, type ActivityContract, type ActivityEntry } from '@shieldedtech/moth-wallet/sync/activity';
 import type { SyncStateStore } from '@shieldedtech/moth-wallet/sync/sync-store';
+
+/**
+ * The capsule runtime's own verdict on a contract transaction, recorded at settlement. The chain
+ * shows the wallet only the fee such a transaction paid, and nothing at all when it expired, so
+ * the row's outcome comes from here rather than from history.
+ */
+export interface SubmissionSettled {
+  /** 'partial': the chain applied some of its segments; 'expired': a block past its TTL came without it. */
+  status: 'landed' | 'partial' | 'failed' | 'expired';
+  /** Epoch ms of the block that answered, or of the first block past the TTL. */
+  at: number;
+}
 
 export interface SubmittedTx {
   /** Stable logical identifier returned by the wallet facade. */
@@ -18,7 +30,8 @@ export interface SubmittedTx {
   transactionHash?: string;
   /** Epoch ms at submission. */
   submittedAt: number;
-  kind: 'send' | 'dust';
+  /** 'contract' is a capsule transaction: a circuit called or a bundle deployed through the runtime. */
+  kind: 'send' | 'dust' | 'contract';
   to?: string;
   tokenType?: string;
   tokenKind?: 'shielded' | 'unshielded';
@@ -26,6 +39,10 @@ export interface SubmittedTx {
   amount?: string;
   /** Number of transfers in a (possibly batched) send. */
   outputs?: number;
+  /** For a contract transaction, what it did. */
+  contract?: ActivityContract;
+  /** For a contract transaction, how it ended, once the runtime has settled it. */
+  settled?: SubmissionSettled;
 }
 
 /** Newest submissions kept per wallet + network. */
@@ -75,12 +92,30 @@ export async function recordSubmission(
   ]);
 }
 
+/** Records how a contract transaction ended; a hash this wallet never recorded is left alone. */
+export async function recordSettlement(
+  store: SyncStateStore,
+  networkId: string,
+  walletName: string,
+  hash: string,
+  settled: SubmissionSettled,
+): Promise<void> {
+  const existing = await loadSubmissions(store, networkId, walletName);
+  if (!existing.some((s) => s.hash === hash)) return;
+  await saveSubmissions(
+    store,
+    networkId,
+    walletName,
+    existing.map((s) => (s.hash === hash ? { ...s, settled } : s)),
+  );
+}
+
 /** Turn a not-yet-applied submission into a provisional activity entry. */
 function toPendingEntry(tx: SubmittedTx): ActivityEntry {
   const hasAmount = tx.amount !== undefined && tx.tokenType !== undefined;
   return {
     hash: tx.hash,
-    kind: tx.kind === 'dust' ? 'dust' : 'sent',
+    kind: tx.kind === 'dust' ? 'dust' : tx.kind === 'contract' ? 'contract' : 'sent',
     status: 'SUCCESS',
     timestamp: new Date(tx.submittedAt),
     deltas: hasAmount
@@ -91,6 +126,20 @@ function toPendingEntry(tx: SubmittedTx): ActivityEntry {
     fees: null,
     pending: true,
     outputs: tx.outputs,
+    ...(tx.contract === undefined ? {} : { contract: tx.contract }),
+  };
+}
+
+/**
+ * A contract transaction the runtime has settled but history does not show (it paid no visible
+ * fee, or it expired unseen): the row is the runtime's verdict, dated by the block that gave it.
+ */
+function toSettledEntry(tx: SubmittedTx, settled: SubmissionSettled): ActivityEntry {
+  return {
+    ...toPendingEntry(tx),
+    status: settled.status === 'landed' ? 'SUCCESS' : settled.status === 'partial' ? 'PARTIAL_SUCCESS' : 'FAILURE',
+    timestamp: new Date(settled.at),
+    pending: false,
   };
 }
 
@@ -132,9 +181,13 @@ export function mergeSubmissions(
       // The SDK stores shielded and DUST history entries without their block
       // timestamps (only the unshielded wallet keeps them), and sortActivity
       // sinks timestamp-less entries below the whole feed. For our own
-      // submissions the recorded submit time is a faithful stand-in.
-      if (!applied.timestamp) applied.timestamp = new Date(tx.submittedAt);
+      // submissions the recorded submit time is a faithful stand-in, and the
+      // block that settled a contract transaction a better one.
+      if (!applied.timestamp) applied.timestamp = new Date(tx.settled?.at ?? tx.submittedAt);
       graftSendDelta(applied, tx);
+      graftContract(applied, tx);
+    } else if (tx.settled !== undefined) {
+      entries.push(toSettledEntry(tx, tx.settled));
     } else if (now - tx.submittedAt < SUBMISSION_PENDING_TTL_MS) {
       entries.push(toPendingEntry(tx));
     } else {
@@ -163,4 +216,15 @@ function graftSendDelta(applied: ActivityEntry, tx: SubmittedTx): void {
     { tokenType: tx.tokenType, kind: tx.tokenKind ?? 'unshielded', amount: -BigInt(tx.amount) },
   ];
   if (applied.kind === 'dust') applied.kind = 'sent';
+}
+
+/**
+ * History shows a contract transaction only by the fee it paid — a bare "network fee" row — so
+ * the recorded contract names it: the circuit called or the bundle deployed, with the fee kept
+ * as the row's amount. The chain's verdict on the entry stands over the runtime's recorded one.
+ */
+function graftContract(applied: ActivityEntry, tx: SubmittedTx): void {
+  if (tx.kind !== 'contract') return;
+  applied.kind = 'contract';
+  if (tx.contract !== undefined) applied.contract = tx.contract;
 }

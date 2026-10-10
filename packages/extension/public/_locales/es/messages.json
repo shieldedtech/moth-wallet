@@ -143,6 +143,21 @@
   "activity_networkFeePaid": {
     "message": "Comisión de red pagada"
   },
+  "activity_callingCircuit": {
+    "message": "Llamando a $1 en $2"
+  },
+  "activity_calledCircuit": {
+    "message": "$1 llamado en $2"
+  },
+  "activity_deployingContract": {
+    "message": "Desplegando $1"
+  },
+  "activity_deployedContract": {
+    "message": "$1 desplegado"
+  },
+  "activity_contractTransaction": {
+    "message": "Transacción de contrato"
+  },
   "activity_dustRegistration": {
     "message": "Registro de $1"
   },

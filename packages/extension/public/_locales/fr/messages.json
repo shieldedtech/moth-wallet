@@ -143,6 +143,21 @@
   "activity_networkFeePaid": {
     "message": "Frais de réseau payés"
   },
+  "activity_callingCircuit": {
+    "message": "Appel de $1 sur $2"
+  },
+  "activity_calledCircuit": {
+    "message": "$1 appelé sur $2"
+  },
+  "activity_deployingContract": {
+    "message": "Déploiement de $1"
+  },
+  "activity_deployedContract": {
+    "message": "$1 déployé"
+  },
+  "activity_contractTransaction": {
+    "message": "Transaction de contrat"
+  },
   "activity_dustRegistration": {
     "message": "Enregistrement $1"
   },

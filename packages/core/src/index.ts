@@ -100,7 +100,7 @@ export {
 } from './sync/sync-store.js';
 export {
   deriveActivity, deriveActivityEntry, sortActivity,
-  type ActivityEntry, type ActivityDelta, type ActivityKind, type ActivityStatus,
+  type ActivityEntry, type ActivityContract, type ActivityDelta, type ActivityKind, type ActivityStatus,
 } from './sync/activity.js';
 export {
   estimateRegistrationAffordability,
