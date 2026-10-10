@@ -24,6 +24,7 @@ export const capsule = {
   capsule_inspectorTitle: 'Contract capsules',
   capsule_inspectorEmptyTitle: 'No capsules yet',
   capsule_inspectorEmptyBody: 'This account has not landed a call on any contract.',
+  capsule_setAside: '$1 capsule(s) from another chain (genesis $2…) were set aside when this account opened on the current one.',
   capsule_foldedCount: '$1 transaction(s) folded in',
   capsule_inFlightTitle: 'In flight',
   capsule_inFlightLine: '$1 · submitted $2 · valid until $3',

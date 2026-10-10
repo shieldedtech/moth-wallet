@@ -250,6 +250,7 @@ export async function watch(host: Host, data: CapsuleCall & { session: string; w
 
 export async function list(host: Host, data: CapsuleAccount): Promise<CapsuleInspectorDTO> {
   const account = await open(host, data);
+  const setAside = account.runtime.setAside;
   return {
     capsules: await capsuleViews(account.runtime),
     pending: account.runtime.account.pendingTransactions().map((tx) => ({
@@ -258,5 +259,8 @@ export async function list(host: Host, data: CapsuleAccount): Promise<CapsuleIns
       submittedAt: tx.submittedAt.toISOString(),
       ttl: tx.ttl.toISOString(),
     })),
+    ...(setAside === undefined
+      ? {}
+      : { setAside: { genesis: setAside.genesis, capsules: setAside.capsules, pending: setAside.pending } }),
   };
 }

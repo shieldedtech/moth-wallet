@@ -1784,6 +1784,9 @@
   "capsule_inspectorEmptyBody": {
     "message": "Esta cuenta no ha completado ninguna llamada a un contrato."
   },
+  "capsule_setAside": {
+    "message": "$1 cápsula(s) de otra cadena (génesis $2…) se apartaron cuando esta cuenta se abrió en la actual."
+  },
   "capsule_foldedCount": {
     "message": "$1 transacción(es) incorporada(s)"
   },

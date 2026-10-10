@@ -99,6 +99,8 @@ export interface CapsuleEventDTO {
 export interface CapsuleInspectorDTO {
   capsules: CapsuleView[];
   pending: Array<{ identifier: string; calls: Array<{ address: string; circuit: string }>; submittedAt: string; ttl: string }>;
+  /** Capsules folded on another chain (a reset network), set aside when the account opened on this one. */
+  setAside?: { genesis: string; capsules: number; pending: number };
 }
 
 /** A capsule refusal as it crosses to the page: the blueprint's code, reason and path, nothing else. */

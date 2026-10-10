@@ -1784,6 +1784,9 @@
   "capsule_inspectorEmptyBody": {
     "message": "Dieses Konto hat noch keinen Aufruf eines Vertrags auf der Chain."
   },
+  "capsule_setAside": {
+    "message": "$1 Kapsel(n) von einer anderen Chain (Genesis $2…) wurden beiseitegelegt, als dieses Konto auf der aktuellen geöffnet wurde."
+  },
   "capsule_foldedCount": {
     "message": "$1 Transaktion(en) eingefaltet"
   },
