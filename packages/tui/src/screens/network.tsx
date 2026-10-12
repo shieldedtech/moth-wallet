@@ -7,12 +7,41 @@ import type { NetworkOverrides } from '../settings.js';
 import { SectionHeader } from '../components/SectionHeader.js';
 import { HelpFooter, type HelpHint } from '../components/HelpFooter.js';
 
+/**
+ * Cardano settings as this screen needs to render them.
+ *
+ * `blockfrostProjectIdSet` and not the id itself: it is a credential, and the
+ * screen never has a reason to show it back. Setting a new one replaces it.
+ */
+export interface CardanoSettingsView {
+  /**
+   * The Cardano network this Midnight network pairs with, or null when it has
+   * none (devnet, qanet, undeployed). Derived, never chosen.
+   */
+  readonly effectiveNetwork: string | null;
+  readonly blockfrostProjectIdSet: boolean;
+}
+
+export interface CardanoSettingsPatch {
+  readonly blockfrostProjectId?: string;
+}
+
 interface NetworkProps {
   network: NetworkState;
   onSwitch: (networkId: string) => void;
   onSaveOverrides: (networkId: string, overrides: NetworkOverrides) => void;
+  /**
+   * Cardano config, or null while it loads (or if it failed to). The section
+   * renders its own unavailable line rather than disappearing — a section that
+   * is sometimes absent is harder to find than one that says why it is empty.
+   */
+  cardano: CardanoSettingsView | null;
+  onSaveCardano: (patch: CardanoSettingsPatch) => void;
   onBack: () => void;
 }
+
+
+
 
 const NETWORKS: readonly string[] = SUPPORTED_NETWORKS;
 
@@ -27,7 +56,16 @@ type SettingRow =
   | { kind: 'url'; field: UrlField; label: string }
   | { kind: 'prover'; label: string };
 
-export function Network({ network, onSwitch, onSaveOverrides, onBack }: NetworkProps) {
+type CardanoRow =
+  | { kind: 'cardanoNetwork'; label: string }
+  | { kind: 'blockfrost'; label: string };
+
+const CARDANO_ROWS: CardanoRow[] = [
+  { kind: 'cardanoNetwork', label: 'Cardano' },
+  { kind: 'blockfrost', label: 'Blockfrost' },
+];
+
+export function Network({ network, onSwitch, onSaveOverrides, cardano, onSaveCardano, onBack }: NetworkProps) {
   const networkCount = NETWORKS.length;
   const settingRows: SettingRow[] = [
     ...ENDPOINT_ROWS.map((row): SettingRow => ({ kind: 'url', ...row })),
@@ -36,18 +74,24 @@ export function Network({ network, onSwitch, onSaveOverrides, onBack }: NetworkP
       ? [{ kind: 'url', field: 'proofServerUrl', label: 'Proof URL' } satisfies SettingRow]
       : []),
   ];
-  const itemCount = networkCount + settingRows.length;
+  const cardanoRows = CARDANO_ROWS;
+  const itemCount = networkCount + settingRows.length + cardanoRows.length;
 
   const [highlighted, setHighlighted] = useState(() => {
     const active = NETWORKS.indexOf(network.id);
     return active >= 0 ? active : 0;
   });
-  const [editField, setEditField] = useState<UrlField | null>(null);
+  const [editField, setEditField] = useState<UrlField | 'blockfrost' | null>(null);
   const [editValue, setEditValue] = useState('');
   const [message, setMessage] = useState('');
 
   const isNetworkRow = highlighted < networkCount;
-  const settingRow = isNetworkRow ? null : settingRows[highlighted - networkCount] ?? null;
+  const settingIndex = highlighted - networkCount;
+  const settingRow = isNetworkRow || settingIndex >= settingRows.length
+    ? null
+    : settingRows[settingIndex] ?? null;
+  const cardanoIndex = settingIndex - settingRows.length;
+  const cardanoRow = cardanoIndex >= 0 ? cardanoRows[cardanoIndex] ?? null : null;
 
   useInput((input, key) => {
     if (key.escape) {
@@ -82,6 +126,18 @@ export function Network({ network, onSwitch, onSaveOverrides, onBack }: NetworkP
         setEditValue(network[settingRow.field]);
         setEditField(settingRow.field);
         setMessage('');
+      } else if (cardanoRow?.kind === 'cardanoNetwork') {
+        // Not editable. The pairing is derived from the Midnight network above;
+        // choosing them separately is how cNIGHT ends up registered on a chain
+        // the Midnight side never reads.
+        setMessage('Cardano network follows the Midnight network above');
+      } else if (cardanoRow?.kind === 'blockfrost') {
+        // Always starts empty. Pre-filling would mean reading the stored
+        // credential back out to put it on screen, which is the one thing this
+        // row is careful not to do.
+        setEditValue('');
+        setEditField('blockfrost');
+        setMessage('');
       }
       return;
     }
@@ -89,6 +145,21 @@ export function Network({ network, onSwitch, onSaveOverrides, onBack }: NetworkP
 
   const saveEdit = () => {
     if (!editField) return;
+    if (editField === 'blockfrost') {
+      const value = editValue.trim();
+      // An empty submit is "I changed my mind", not "clear it" — clearing a
+      // credential by pressing Enter on a blank field is too easy to do by
+      // accident, and there is no undo.
+      if (value === '') {
+        setMessage('Blockfrost project ID unchanged');
+      } else {
+        onSaveCardano({ blockfrostProjectId: value });
+        setMessage('Blockfrost project ID saved');
+      }
+      setEditValue('');
+      setEditField(null);
+      return;
+    }
     const overrides: NetworkOverrides = editField === 'proofServerUrl'
       ? { prover: serverProver(editValue) }
       : { [editField]: editValue };
@@ -172,6 +243,48 @@ export function Network({ network, onSwitch, onSaveOverrides, onBack }: NetworkP
               </Box>
             );
           })}
+        </Box>
+
+        <Box marginTop={1} flexDirection="column">
+          <Text bold>Cardano (cNIGHT)</Text>
+          {cardanoRows.map((row, i) => {
+            const idx = networkCount + settingRows.length + i;
+            const isHi = idx === highlighted;
+            const editing = row.kind === 'blockfrost' && editField === 'blockfrost';
+            return (
+              <Box key={row.kind} flexDirection="column">
+                <Box>
+                  <Text color={isHi ? 'cyan' : undefined} bold={isHi}>
+                    {isHi ? '› ' : '  '}{row.label.padEnd(9)}
+                  </Text>
+                  {!editing && row.kind === 'cardanoNetwork' && (
+                    <Text dimColor>
+                      {cardano?.effectiveNetwork
+                        ? `${cardano.effectiveNetwork} (follows ${network.id})`
+                        : `none for ${network.id}`}
+                    </Text>
+                  )}
+                  {!editing && row.kind === 'blockfrost' && (
+                    <Text color={cardano?.blockfrostProjectIdSet ? undefined : 'yellow'} dimColor={cardano?.blockfrostProjectIdSet}>
+                      {cardano?.blockfrostProjectIdSet ? 'set' : 'not set — required to read Cardano'}
+                    </Text>
+                  )}
+                </Box>
+                {editing && (
+                  <Box paddingLeft={11}>
+                    {/* Masked: this is a credential, and a TUI sits in a
+                        terminal someone may be sharing or recording. */}
+                    <TextInput value={editValue} onChange={setEditValue} mask="*"
+                      onSubmit={saveEdit} placeholder="Blockfrost project ID" />
+                  </Box>
+                )}
+              </Box>
+            );
+          })}
+          <Box marginTop={1} flexDirection="column">
+            <Text dimColor>Shared with the CLI and daemon (~/.moth/config). Get a free project ID at blockfrost.io.</Text>
+            <Text dimColor>MOTH_BLOCKFROST_PROJECT_ID overrides what is stored here.</Text>
+          </Box>
         </Box>
 
         <Box marginTop={1} flexDirection="column">

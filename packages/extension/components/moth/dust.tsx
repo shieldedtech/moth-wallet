@@ -1,5 +1,6 @@
 import { ChevronRight, LoaderCircle, Moon } from 'lucide-react';
 import { t } from '../../lib/i18n';
+import { cn } from '../../lib/ui/cn';
 import type { DustView } from '../../lib/ui/dust-view';
 import {
   DUST_WALLET_LABEL,
@@ -17,18 +18,30 @@ export function DustMeterCard({
   view,
   labels,
   onOpen,
+  subtitle,
 }: {
   view: DustView;
   /** Required deliberately: defaulting to testnet labels renders tNIGHT/tDUST
    *  on mainnet, and does it silently. A missing prop should not compile. */
   labels: NativeAssetLabels;
-  onOpen: () => void;
+  /**
+   * Omit to render the same meter as a plain block: no chevron, no hover, not
+   * focusable. A card that looks tappable and goes nowhere is worse than one
+   * that never offered.
+   */
+  onOpen?: () => void;
+  /** Overrides "Pays your fees" — e.g. to name which source this meter covers. */
+  subtitle?: string;
 }) {
+  const Tag = onOpen ? 'button' : 'div';
   return (
-    <button
-      onClick={onOpen}
+    <Tag
+      {...(onOpen ? { onClick: onOpen } : {})}
       aria-busy={view.syncing}
-      className="group relative w-full cursor-pointer rounded-[18px] border-0 bg-secondary p-4 text-left text-secondary-foreground transition duration-150 hover:brightness-110 active:scale-[0.99]"
+      className={cn(
+        'group relative w-full rounded-[18px] border-0 bg-secondary p-4 text-left text-secondary-foreground',
+        onOpen && 'cursor-pointer transition duration-150 hover:brightness-110 active:scale-[0.99]',
+      )}
     >
       {view.syncing && (
         <span className="absolute inset-0 z-10 flex items-center justify-center gap-2 rounded-[18px] bg-secondary/80 text-[13px] font-semibold backdrop-blur-[2px]">
@@ -42,16 +55,18 @@ export function DustMeterCard({
         </span>
         <span className="flex-1">
           <span className="block text-sm font-semibold">{labels.dust}</span>
-          <span className="block text-xs text-white/60">{t('dust_paysYourFees')}</span>
+          <span className="block text-xs text-white/60">{subtitle ?? t('dust_paysYourFees')}</span>
         </span>
         <span className="text-sm font-semibold">
           {view.current}
           {!view.capacityUnknown && <span className="text-white/50"> {t('dust_ofMax', [view.max])}</span>}
         </span>
-        <ChevronRight
-          size={16}
-          className="text-white/50 transition-transform duration-150 group-hover:translate-x-0.5"
-        />
+        {onOpen && (
+          <ChevronRight
+            size={16}
+            className="text-white/50 transition-transform duration-150 group-hover:translate-x-0.5"
+          />
+        )}
       </div>
       <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/16">
         <div className="h-full rounded-full bg-primary" style={{ width: `${view.percent}%` }} />
@@ -60,7 +75,7 @@ export function DustMeterCard({
         <span>{view.capacityUnknown ? t('dust_capacityUnknown') : t('dust_percentGenerated', [view.percent])}</span>
         <span>{view.etaText}</span>
       </div>
-    </button>
+    </Tag>
   );
 }
 
