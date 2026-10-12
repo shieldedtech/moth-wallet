@@ -49,4 +49,32 @@ export const approval = {
   approval_wrongPassword: "That password doesn't match. Try again.",
   approval_unlocking: 'Unlocking…',
   approval_unlock: 'Unlock',
+  approval_cardanoSignTitle:
+    'Sign on Cardano',
+  approval_cardanoSignSubtitle:
+    '$1 is asking your Cardano key to sign',
+  approval_cardanoMethodLabel:
+    'Request',
+  approval_cardanoNetworkLabel: 'Cardano network',
+  approval_cardanoWalletLabel: 'Wallet',
+  approval_cardanoAccountLabel: 'Signing account',
+  approval_cardanoAccountImported: '$1 (imported)',
+  approval_cardanoSignWarning:
+    'Moth decoded this from what the site sent. Approve only if every line is what you expect.',
+  approval_cardanoMessageLabel: 'Message',
+  approval_cardanoAda: '$1 ADA',
+  approval_cardanoAdaAssets: '$1 ADA + $2 assets',
+  approval_cardanoNetChange: 'Net change to this wallet',
+  approval_cardanoSpent: 'Spent from this wallet',
+  approval_cardanoFee: 'Network fee',
+  approval_cardanoOutput: 'Output $1',
+  approval_cardanoOutputOwn: 'Output $1 (this wallet)',
+  approval_cardanoForeignInputs: 'Inputs from others',
+  approval_cardanoCertificates: 'Certificates',
+  approval_cardanoWithdrawal: 'Reward withdrawal',
+  approval_cardanoMinting: 'Minting or burning (policies)',
+  approval_cardanoSignsWith: 'Signs with',
+  approval_cardanoSignsNothing: 'No key of this account',
+  approval_cardanoPaymentKey: 'payment key',
+  approval_cardanoStakeKey: 'stake key',
 } as const;
