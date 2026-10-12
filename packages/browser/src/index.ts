@@ -25,6 +25,7 @@ export type {
   SyncedWallet,
   WalletBalances,
 } from '@shieldedtech/moth-wallet/sync/wallet-sync';
+export type { DustFeePass } from '@shieldedtech/moth-wallet/sync/dust-transacting';
 export type {
   SendRequest,
   TxStage,
@@ -44,7 +45,14 @@ export { deriveAppSecret } from '@shieldedtech/moth-wallet/wallet/app-secret';
 export type { SignEncoding, SignedMessage } from '@shieldedtech/moth-wallet/wallet/sign-message';
 export { IndexerClient } from '@shieldedtech/moth-wallet/network/indexer-client';
 export { ProofClient } from '@shieldedtech/moth-wallet/proof/client';
-export { WalletError, NetworkError, ProofError } from '@shieldedtech/moth-wallet/types/errors';
+export {
+  WalletError,
+  NetworkError,
+  ProofError,
+  TransactionSubmissionError,
+  errorChainMessage,
+  errorChainMessages,
+} from '@shieldedtech/moth-wallet/types/errors';
 export { ExitCode } from '@shieldedtech/moth-wallet/types/exit-codes';
 export {
   canonicalNetworkId,
@@ -88,6 +96,20 @@ export type {
   ActivityKind,
   ActivityStatus,
 } from '@shieldedtech/moth-wallet/sync/activity';
+export {
+  isDustSpendProofRejection,
+  diagnoseSubmissionFailure,
+  dustSpendHealthTracker,
+  resetDustSpendHealthTrackers,
+  DustSpendHealthTracker,
+  DustLedgerWedgedError,
+  DEFAULT_WEDGE_THRESHOLD,
+  submitWithHealthTracking,
+} from '@shieldedtech/moth-wallet/sync/dust-ledger-health';
+export type {
+  DustLedgerHealthContext,
+  SubmitHealthContext,
+} from '@shieldedtech/moth-wallet/sync/dust-ledger-health';
 export { formatNight, NIGHT_TOKEN_ID } from '@shieldedtech/moth-wallet/types/tokens';
 export {
   sendTokens,
@@ -109,20 +131,6 @@ export {
   decodeConnectorTransaction,
 } from '@shieldedtech/moth-wallet/sync/tx-summary';
 export type { TransactionSummary, TxTokenAmount } from '@shieldedtech/moth-wallet/sync/tx-summary';
-export {
-  isDustSpendProofRejection,
-  diagnoseSubmissionFailure,
-  dustSpendHealthTracker,
-  resetDustSpendHealthTrackers,
-  DustSpendHealthTracker,
-  DustLedgerWedgedError,
-  DEFAULT_WEDGE_THRESHOLD,
-  submitWithHealthTracking,
-} from '@shieldedtech/moth-wallet/sync/dust-ledger-health';
-export type {
-  DustLedgerHealthContext,
-  SubmitHealthContext,
-} from '@shieldedtech/moth-wallet/sync/dust-ledger-health';
 
 import {
   canonicalNetworkId,

@@ -61,7 +61,7 @@ export default class DustRegister extends BaseCommand {
     process.stderr.write('Syncing wallet before registration...\n');
     const syncedWallet = await startWalletSync(wallet.walletKeys, network, (msg) => {
       this.log_verbose(msg);
-    }, walletName);
+    }, walletName, false, await this.syncBirthday(walletName, network.id));
 
     try {
       // Ask before building. The estimate is the only place the wait is
@@ -114,8 +114,8 @@ export default class DustRegister extends BaseCommand {
       }
 
       // Reclassifies a persistent run of InvalidDustSpendProof rejections as a
-      // wedged devnet dust ledger (docs/bugs-found #15) instead of a normal
-      // failure the operator retries forever — see core/sync/dust-ledger-health.ts.
+      // wedged devnet dust ledger instead of a normal failure the operator
+      // retries forever — see core/sync/dust-ledger-health.ts.
       const txHash = await submitWithHealthTracking(
         () => designateForDustWithKeys(
           syncedWallet.facade,

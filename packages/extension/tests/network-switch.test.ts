@@ -116,7 +116,7 @@ describe('saveNetworkConfig', () => {
       }),
       expect.objectContaining({ id: 'preview' }),
     );
-    expect(await getSettings()).toEqual({ network: 'preview', customEndpoints: null, autoLockMinutes: 15, nameResolverUrl: null, tokenRegistryUrl: null, tokenRegistryBuckets: false, preseedWarming: false, developerMode: false });
+    expect(await getSettings()).toEqual({ network: 'preview', customEndpoints: null, autoLockMinutes: 60, nameResolverUrl: null, tokenRegistryUrl: null, tokenRegistryBuckets: false, preseedWarming: false, developerMode: false, blockfrostProjectId: null, blockfrostProjectIds: {}, blockfrostUrl: null, cnightPolicyId: null, cnightAssetName: null });
     expect(await getSession()).toEqual(expect.objectContaining({ network: 'preview', address: 'mn_unshielded_preview' }));
     expect(status).toEqual(expect.objectContaining({ locked: false, network: 'preview', address: 'mn_unshielded_preview' }));
   });
@@ -139,7 +139,7 @@ describe('saveNetworkConfig', () => {
       expect.objectContaining({ walletName: 'alice', network: 'devnet' }),
       expect.objectContaining({ id: 'devnet', indexerUrl: changed.indexerUrl }),
     );
-    expect(await getSettings()).toEqual({ network: 'devnet', customEndpoints: changed, autoLockMinutes: 15, nameResolverUrl: null, tokenRegistryUrl: null, tokenRegistryBuckets: false, preseedWarming: false, developerMode: false });
+    expect(await getSettings()).toEqual({ network: 'devnet', customEndpoints: changed, autoLockMinutes: 60, nameResolverUrl: null, tokenRegistryUrl: null, tokenRegistryBuckets: false, preseedWarming: false, developerMode: false, blockfrostProjectId: null, blockfrostProjectIds: {}, blockfrostUrl: null, cnightPolicyId: null, cnightAssetName: null });
   });
 
   it('restarts without clearing sync state when the prover changes', async () => {
@@ -155,7 +155,7 @@ describe('saveNetworkConfig', () => {
       expect.objectContaining({ walletName: 'alice', network: 'devnet' }),
       expect.objectContaining({ id: 'devnet', prover: { type: 'wasm' } }),
     );
-    expect(await getSettings()).toEqual({ network: 'devnet', customEndpoints: changed, autoLockMinutes: 15, nameResolverUrl: null, tokenRegistryUrl: null, tokenRegistryBuckets: false, preseedWarming: false, developerMode: false });
+    expect(await getSettings()).toEqual({ network: 'devnet', customEndpoints: changed, autoLockMinutes: 60, nameResolverUrl: null, tokenRegistryUrl: null, tokenRegistryBuckets: false, preseedWarming: false, developerMode: false, blockfrostProjectId: null, blockfrostProjectIds: {}, blockfrostUrl: null, cnightPolicyId: null, cnightAssetName: null });
   });
 
   it('restarts on a node edit without deleting cached sync state', async () => {
@@ -170,6 +170,33 @@ describe('saveNetworkConfig', () => {
       expect.objectContaining({ walletName: 'alice', network: 'devnet' }),
       expect.objectContaining({ id: 'devnet', nodeUrl: changed.nodeUrl }),
     );
+  });
+
+  it('persists the edit before stopping the engine, so a slow stop cannot lose it', async () => {
+    // The regression. A node URL is edited precisely because it does not answer,
+    // and the write used to sit behind a stop that never returned against one.
+    let endpointsAtStop: NetworkEndpoints | null | undefined;
+    stopSync.mockImplementation(async () => {
+      endpointsAtStop = (await getSettings()).customEndpoints;
+    });
+    const changed = { ...endpoints('devnet'), nodeUrl: 'ws://localhost:9933' };
+
+    await saveNetworkConfig({ network: 'devnet', endpoints: changed, resyncApproved: false });
+
+    expect(endpointsAtStop).toEqual(changed);
+  });
+
+  it('rolls the edit back when the switch itself fails', async () => {
+    walletSetNetwork.mockRejectedValue(new Error('setNetwork exploded'));
+
+    await expect(
+      saveNetworkConfig({ network: 'preview', endpoints: endpoints('preview'), resyncApproved: true }),
+    ).rejects.toThrow('setNetwork exploded');
+
+    expect(await getSettings()).toEqual(
+      expect.objectContaining({ network: 'devnet', customEndpoints: null }),
+    );
+    expect(await getSession()).toEqual(expect.objectContaining({ network: 'devnet' }));
   });
 
   it('does not reset or restart sync when the saved config is unchanged', async () => {

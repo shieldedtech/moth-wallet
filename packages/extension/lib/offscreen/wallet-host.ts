@@ -52,12 +52,25 @@ import {
   diagnoseSubmissionFailure,
 } from '@shieldedtech/moth-browser';
 import { deriveAllAddressesFromSeed } from '@shieldedtech/moth-wallet/wallet/address';
+// The accounts module is storage-only — no Lucid, no WASM — so it is safe to
+// import for real here rather than lazily.
+import {
+  addDerivedCardanoAccount,
+  importCardanoAccount,
+  listCardanoAccounts,
+  removeCardanoAccount,
+  renameCardanoAccount,
+  resolveCardanoAccountKey,
+  setActiveCardanoAccount,
+  type CardanoAccountList,
+} from '@shieldedtech/moth-wallet/cardano/accounts';
 import type * as ledger from '@midnight-ntwrk/ledger-v8';
 import type { HistoryEntry } from '@midnight-ntwrk/dapp-connector-api';
 import { serializeBalances } from '../messaging/balances-json';
 import { serializeActivity } from '../messaging/activity-json';
 import { waitForSyncedBalances } from './wait-synced';
 import { dustHealKey } from './dust-heal';
+import { logDustFeeEstimate, logDustFeePass } from './dust-fee-log';
 import { NIGHT_TOKEN_ID } from '@shieldedtech/moth-wallet/types/tokens';
 import {
   createGloamRegistryClient,
@@ -191,8 +204,29 @@ export async function walletCreate(
   return { info, mnemonic: phrase };
 }
 
-export async function walletImport(name: string, mnemonic: string, passphrase: string, network: string) {
-  return (await getMoth(network)).wallets.import(name, mnemonic, passphrase, network);
+/**
+ * Restore an account from whichever backup artifact the caller holds.
+ *
+ * Two distinct core calls, not one with a branch inside it: `import` runs the
+ * BIP-39 checksum on the phrase, `importFromSeed` shape-checks the hex. Both
+ * record `createdHere: false` and no birthday, which is what keeps a restored
+ * account scanning from genesis — it may hold funds at any height, and seeding
+ * it past its own history would hide them (ADR 0003, rule 4).
+ */
+export async function walletImport(
+  name: string,
+  secret: {mnemonic?: string; seed?: string},
+  passphrase: string,
+  network: string,
+) {
+  const wallets = (await getMoth(network)).wallets;
+  if (secret.seed !== undefined) {
+    return wallets.importFromSeed(name, secret.seed, passphrase, network);
+  }
+  if (secret.mnemonic === undefined) {
+    throw new Error('walletImport requires either a mnemonic or a seed');
+  }
+  return wallets.import(name, secret.mnemonic, passphrase, network);
 }
 
 export async function walletRemove(name: string, network: string): Promise<void> {
@@ -214,8 +248,17 @@ export async function walletExportPhrase(
   name: string,
   passphrase: string,
   network: string,
+  as: 'backup' | 'seed' = 'backup',
 ): Promise<{ kind: 'mnemonic' | 'seed'; value: string }> {
-  return (await getMoth(network)).wallets.exportPhrase(name, passphrase);
+  const wallets = (await getMoth(network)).wallets;
+  // Both arms decrypt the keystore with the password just re-entered, and
+  // neither touches the unlocked session's key material — the rule in
+  // docs/spec/wallet-service/05-key-management.md D-KM-2 that seed export goes
+  // through the keystore, not through a live session.
+  if (as === 'seed') {
+    return { kind: 'seed', value: await wallets.exportSeedHex(name, passphrase) };
+  }
+  return wallets.exportPhrase(name, passphrase);
 }
 
 export async function walletSetNetwork(
@@ -299,6 +342,10 @@ function activeWalletKeys(): WalletKeys {
 // sync engine against it.
 let stopping: Promise<void> | null = null;
 
+/** Bound on waiting out a start-then-stop round trip. Well above a slow cold start,
+ *  because abandoning a healthy one leaves two engines coming up at once. */
+const STOP_TIMEOUT_MS = 30_000;
+
 export async function syncEnsure(
   seedHex: string,
   walletName: string,
@@ -346,19 +393,45 @@ export async function syncEnsure(
     walletName,
     false,
     birthday,
-    { syncStore: new IdbSyncStateStore(), ...(ON_MAIN_THREAD ? { batchUpdates: MAIN_THREAD_BATCH } : {}) },
+    {
+      syncStore: new IdbSyncStateStore(),
+      onDustFeePass: logDustFeePass,
+      ...(ON_MAIN_THREAD ? { batchUpdates: MAIN_THREAD_BATCH } : {}),
+    },
   );
   current = { key, synced, walletKeys };
 
   const wallet = await synced.catch((err) => {
-    current = null;
+    // Only disown the session if it is still ours. `current` can have moved on
+    // across this await, and syncStop bounds its wait at STOP_TIMEOUT_MS — so a
+    // start that fails after that bound would otherwise null the record of the
+    // wallet the user switched to, and every later op would report no wallet
+    // synced.
+    if (current?.key === key) current = null;
     throw err;
   });
 
+  // A subscription must not outlive its wallet's turn as the active one.
+  //
+  // `current` can change across the await above, and core's `subscribe` invokes
+  // the callback synchronously with that wallet's own balances before returning
+  // (sync/wallet-sync.ts). So an unguarded callback publishes a superseded
+  // wallet's balance into the shared channel at the instant it subscribes —
+  // which the panel then shows, attributed to the wallet the user is looking at,
+  // until the active wallet next emits. A synced wallet emits only on change,
+  // audited at 1s, so "until" can be minutes.
   const unsubscribe = wallet.subscribe((balances) => {
+    if (current?.key !== key) return;
     emit('os/eventBalances', serializeForClients(balances));
   });
-  if (current?.key === key) current.unsubscribe = unsubscribe;
+  if (current?.key === key) {
+    current.unsubscribe = unsubscribe;
+  } else {
+    // Superseded while starting: no record will ever hold this handle, so
+    // syncStop could not reach it. Drop it here rather than leaving the callback
+    // in core's subscriber list for the lifetime of the document.
+    unsubscribe();
+  }
   return wallet;
 }
 
@@ -498,10 +571,30 @@ export async function syncStop(): Promise<void> {
     stopping = (stopping ?? Promise.resolve()).then(async () => {
       try {
         target.unsubscribe?.();
-        const wallet = await target.synced;
-        await wallet.stop();
       } catch {
-        /* never finished starting */
+        /* subscription already gone */
+      }
+      // Unbounded on purpose: an engine that comes up after the wait below gave up
+      // must still be stopped, or it keeps writing the cache the next one restores.
+      const settled = target.synced.then(
+        (wallet) => wallet.stop().catch(() => {}),
+        () => {
+          /* never finished starting */
+        },
+      );
+      // The wait itself is bounded, because a start against an unreachable node
+      // settles neither way and every caller of syncStop inherits that.
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timedOut = await new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(true), STOP_TIMEOUT_MS);
+        void settled.then(() => resolve(false));
+      });
+      clearTimeout(timer);
+      if (timedOut) {
+        emit(
+          'os/eventSyncMessage',
+          `Sync stop still pending after ${STOP_TIMEOUT_MS / 1000}s — continuing without it`,
+        );
       }
     });
   }
@@ -512,7 +605,8 @@ export async function syncStop(): Promise<void> {
 }
 
 export async function syncCacheClear(walletName: string, networkIds: string[]): Promise<void> {
-  // syncStop writes its final state, so it must finish before deletion.
+  // syncStop writes its final state, so it must finish before deletion. Best-effort:
+  // an abandoned start can still come up later and write its cache back over this.
   await syncStop();
   const store = new IdbSyncStateStore();
   for (const networkId of new Set(networkIds)) {
@@ -678,6 +772,7 @@ export function estimateTransferFee(
       network.id,
       toRequests(requests),
     );
+    logDustFeeEstimate(fee, requests.length);
     return { fee: fee.toString() };
   }));
 }
@@ -726,6 +821,9 @@ export async function registerDust(
           },
         };
       }
+      // A DustRegistrationNotYetError never reached the node — it is a preflight
+      // bail-out — so it must not count toward the wedge streak; only what falls
+      // through here does.
       const usingLedger = activeLedgerVersion();
       throw usingLedger
         ? await diagnoseSubmissionFailure(dustSpendHealthTracker(network.id, walletName), e, {network, usingLedger})
@@ -768,6 +866,7 @@ export async function transferBuild(
   walletName: string,
   network: NetworkConfig,
   requests: TransferRequestDTO[],
+  payFees: boolean,
 ): Promise<{ txHex: string }> {
   // Load the ledger this network speaks before any core call reaches the seam.
   await initSdk((await detectLedgerVersion(network)).version);
@@ -780,6 +879,7 @@ export async function transferBuild(
       network.id,
       toRequests(requests),
       (stage) => emit('os/eventTxStage', stage),
+      { payFees },
     );
     return { txHex: toHex(finalized.serialize()) };
   });
@@ -827,6 +927,7 @@ export async function balanceTransaction(
   network: NetworkConfig,
   txHex: string,
   sealed: boolean,
+  payFees: boolean,
 ): Promise<{ txHex: string }> {
   // Load the ledger this network speaks before any core call reaches the seam.
   await initSdk((await detectLedgerVersion(network)).version);
@@ -840,13 +941,14 @@ export async function balanceTransaction(
       fromHex(txHex),
       sealed,
       (stage) => emit('os/eventTxStage', stage),
+      { tokenKindsToBalance: payFees ? 'all' : ['shielded', 'unshielded'] },
     );
     return { txHex: toHex(finalized.serialize()) };
   });
 }
 
 // Build a swap intent (connector makeIntent). Needs a synced wallet to source
-// the offered inputs; the result is unproven, so no proof server is required.
+// the offered inputs and the proof server, since the intent is returned sealed.
 export async function makeIntent(
   seedHex: string,
   walletName: string,
@@ -858,6 +960,7 @@ export async function makeIntent(
   // Load the ledger this network speaks before any core call reaches the seam.
   await initSdk((await detectLedgerVersion(network)).version);
   return trackOp(async () => {
+    await ensureProver(network);
     const wallet = await syncEnsure(seedHex, walletName, network);
     const intent = await buildSwapIntent(
       wallet.facade,
@@ -865,8 +968,8 @@ export async function makeIntent(
       network.id,
       toSwapInputs(inputs),
       toRequests(outputs),
-      payFees,
       (stage) => emit('os/eventTxStage', stage),
+      { payFees },
     );
     return { txHex: toHex(intent.serialize()) };
   });
@@ -1044,4 +1147,158 @@ export async function activityGet(
     await saveSubmissions(store, network.id, walletName, kept).catch(() => {});
   }
   return serializeActivity(merged);
+}
+
+
+// ---------------------------------------------------------------------------
+// Cardano accounts
+//
+// Storage lives here, in the offscreen document, because that is where the
+// wallet's IndexedDB adapter is. Key material does NOT: the background resolves
+// which phrase to sign with from its session, and passes it in per call.
+// ---------------------------------------------------------------------------
+
+export async function cardanoAccountList(network: string, walletName: string): Promise<CardanoAccountList> {
+  return listCardanoAccounts((await getMoth(network)).storage, walletName);
+}
+
+export async function cardanoAccountAdd(
+  network: string,
+  walletName: string,
+  label?: string,
+): Promise<CardanoAccountList> {
+  const { list } = await addDerivedCardanoAccount((await getMoth(network)).storage, walletName, label);
+  return list;
+}
+
+export async function cardanoAccountImport(
+  network: string,
+  walletName: string,
+  mnemonic: string,
+  passphrase: string,
+  label?: string,
+): Promise<{ list: CardanoAccountList; id: string }> {
+  const { list, account } = await importCardanoAccount(
+    (await getMoth(network)).storage,
+    walletName,
+    mnemonic,
+    passphrase,
+    label,
+  );
+  return { list, id: account.id };
+}
+
+export async function cardanoAccountSelect(
+  network: string,
+  walletName: string,
+  id: string,
+): Promise<CardanoAccountList> {
+  return setActiveCardanoAccount((await getMoth(network)).storage, walletName, id);
+}
+
+export async function cardanoAccountRemove(
+  network: string,
+  walletName: string,
+  id: string,
+): Promise<CardanoAccountList> {
+  return removeCardanoAccount((await getMoth(network)).storage, walletName, id);
+}
+
+export async function cardanoAccountRename(
+  network: string,
+  walletName: string,
+  id: string,
+  label: string,
+): Promise<CardanoAccountList> {
+  return renameCardanoAccount((await getMoth(network)).storage, walletName, id, label);
+}
+
+/**
+ * Decrypt every imported Cardano phrase for a wallet.
+ *
+ * Called once at unlock, while the passphrase is in hand, so the background can
+ * hold the plaintexts in its memory-only session for as long as the wallet is
+ * unlocked — the same lifetime as the wallet's own key material. Without this,
+ * using an imported account would mean re-prompting for the passphrase on every
+ * Cardano transaction.
+ */
+export async function cardanoImportedPhrases(
+  network: string,
+  walletName: string,
+  passphrase: string,
+): Promise<Record<string, string>> {
+  const storage = (await getMoth(network)).storage;
+  const { accounts } = await listCardanoAccounts(storage, walletName);
+  const out: Record<string, string> = {};
+  for (const account of accounts) {
+    if (account.kind !== 'imported') continue;
+    try {
+      const key = await resolveCardanoAccountKey(storage, walletName, account, null, passphrase);
+      out[account.id] = key.mnemonic;
+    } catch {
+      // A phrase that will not decrypt is a broken account, not a broken
+      // unlock. It surfaces when that account is selected.
+    }
+  }
+  return out;
+}
+
+
+/**
+ * Midnight accounts that can be named as a DUST receiver, with the coin public
+ * key a Cardano registration datum needs.
+ *
+ * Derived from each account's PUBLIC shielded address, so no account has to be
+ * unlocked — the wallet holding the cNIGHT is usually not the one being paid.
+ * Lives offscreen because the decode needs the ledger WASM, which must not be
+ * bundled into the side panel.
+ */
+export async function cardanoReceiverAccounts(
+  network: string,
+): Promise<Array<{
+  name: string;
+  label: string;
+  shieldedAddress: string;
+  dustAddress: string;
+  dustAddressBytes: string;
+}>> {
+  const { dustAddressBytes } = await import(
+    '@shieldedtech/moth-wallet/cardano/registration'
+  );
+  const wallets = await (await getMoth(network)).wallets.list();
+  return wallets.flatMap((w) => {
+    // Keyed by the network being asked about, not the account's home network.
+    // The same DUST key encodes differently per network, and using w.network
+    // handed out a preview encoding while the wallet was on preprod.
+    const shielded = w.addresses?.zswap?.bech32m?.[network];
+    if (!shielded) return [];
+    try {
+      return [{
+        name: w.name,
+        label: w.label ?? w.name,
+        shieldedAddress: shielded,
+        // Empty for an account last written before the manager persisted it;
+        // it fills in on that account's next unlock.
+        dustAddress: w.addresses?.dust?.bech32m?.[network] ?? '',
+        // The datum value: this account's DUST address, serialized.
+        dustAddressBytes: (() => {
+          const bech32 = w.addresses?.dust?.bech32m?.[network];
+          try { return bech32 ? dustAddressBytes(bech32) : ''; } catch { return ''; }
+        })(),
+      }];
+    } catch {
+      // An address that will not decode is simply not offered as a receiver.
+      return [];
+    }
+  });
+}
+
+
+/**
+ * Turn whatever the user pasted into the DUST address bytes a registration takes.
+ * Offscreen because the bech32 decode needs the ledger WASM.
+ */
+export async function cardanoResolveReceiver(input: string): Promise<{ dustAddressBytes: string }> {
+  const { resolveDustReceiver } = await import('@shieldedtech/moth-wallet/cardano/receiver');
+  return { dustAddressBytes: resolveDustReceiver(input) };
 }

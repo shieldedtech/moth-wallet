@@ -43,6 +43,45 @@ export type DaemonSubmitTransactionResult = {
 };
 
 // ─────────────────────────────────────────────────────────────────────
+// proveTransaction
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Same shape as transferTokens plus a ttl, because this is that verb with
+ * submission withheld: build, balance, prove and sign, then hand the
+ * finalized transaction back as hex for the caller to submit later via
+ * `submitTransaction`.
+ *
+ * Holding a proof is not free. See the note on buildTransferTransaction —
+ * the proof binds fee-side DUST UTXOs by nullifier, so any other spend from
+ * this wallet before submission invalidates it.
+ */
+export type DaemonProveTransactionParams = {
+  readonly type: 'shielded' | 'unshielded';
+  /** 64-char hex token id. NIGHT is '0' * 64. */
+  readonly tokenId: string;
+  /** Raw decimal amount in the token's smallest unit. */
+  readonly amount: string;
+  readonly to: string;
+  /**
+   * Intent deadline, in minutes from now. Clamped to [1, 60] — the ledger
+   * rejects an intent whose ttl exceeds the including block by more than
+   * 3600s. Defaults to 30 to match the build path's own default.
+   */
+  readonly ttlMinutes?: number;
+  readonly summary?: string;
+  readonly details?: readonly string[];
+};
+
+export type DaemonProveTransactionResult = {
+  /** Hex-encoded FinalizedTransaction. Feed straight to submitTransaction. */
+  readonly hex: string;
+  /** Unix ms deadline. Submitting after this point is rejected. */
+  readonly ttlUnix: number;
+  readonly sizeBytes: number;
+};
+
+// ─────────────────────────────────────────────────────────────────────
 // transferTokens
 // ─────────────────────────────────────────────────────────────────────
 
@@ -186,4 +225,108 @@ export type DaemonInsertVerifierKeysBatchResult = {
     readonly blockHeight?: number | null;
     readonly error?: string;
   }>;
+};
+
+// ─────────────────────────────────────────────────────────────────────
+// cardanoAddress / cardanoBalance / cardanoStatus
+// cardanoRegister / cardanoDeregister / cardanoUpdate
+//
+// Cardano verbs are only present on hosts that hold the wallet's mnemonic —
+// CIP-1852 derivation needs BIP-39 entropy, which the daemon's derive-and-drop
+// key bundle does not carry. Hosts that cannot supply one still answer these
+// verbs, with a refusal that says why.
+// ─────────────────────────────────────────────────────────────────────
+
+export type DaemonCardanoAddressParams = Record<string, never> | null;
+
+export type DaemonCardanoAddressResult = {
+  readonly cardanoNetwork: string;
+  readonly address: string;
+  readonly rewardAddress: string;
+  readonly stakeKeyHash: string;
+  readonly paymentKeyHash: string;
+  readonly midnightDustAddress: string;
+};
+
+export type DaemonCardanoBalanceParams = Record<string, never> | null;
+
+export type DaemonCardanoBalanceResult = {
+  readonly cardanoNetwork: string;
+  /** Raw lovelace, as a decimal string — amounts exceed Number's safe range. */
+  readonly lovelace: string;
+  readonly cnight: string;
+  readonly cnightUtxos: number;
+  readonly cnightUnit: string;
+};
+
+export type DaemonCardanoStatusParams = Record<string, never> | null;
+
+export type DaemonCardanoStatusResult = {
+  readonly cardanoNetwork: string;
+  readonly address: string;
+  readonly rewardAddress: string;
+  readonly lovelace: string;
+  readonly cnight: string;
+  readonly cnightUtxos: number;
+  readonly registered: boolean;
+  readonly registeredDustAddress: string | null;
+  readonly registeredToThisWallet: boolean;
+  /**
+   * The registration records something that is not a 33-byte DUST address, so
+   * Midnight can never match it: valid on Cardano, generating nothing.
+   */
+  readonly legacyDustAddress: boolean;
+  readonly registrationUtxo: string | null;
+  readonly mappingValidator: string;
+  /** Midnight-side view; null until the indexer has observed the registration. */
+  readonly dustGeneration: unknown | null;
+};
+
+export type DaemonCardanoRegisterParams = {
+  /** DUST receiver: an `mn_dust_…` address or its 66-hex serialization. Defaults to this wallet's own. */
+  readonly receiver?: string;
+  readonly summary?: string;
+  readonly details?: readonly string[];
+};
+
+export type DaemonCardanoRegisterResult = {
+  readonly txHash: string;
+  readonly receiver: string;
+};
+
+export type DaemonCardanoDeregisterParams = {
+  readonly summary?: string;
+  readonly details?: readonly string[];
+};
+
+export type DaemonCardanoDeregisterResult = {
+  readonly txHash: string;
+  /** Registrations cleared. More than one means the stake key was in the
+   *  duplicate state, where nothing generates. */
+  readonly cleared: number;
+};
+
+export type DaemonCardanoUpdateParams = {
+  /** DUST receiver: an `mn_dust_…` address or its 66-hex serialization. Required — this verb exists to change it. */
+  readonly receiver: string;
+  readonly summary?: string;
+  readonly details?: readonly string[];
+};
+
+export type DaemonCardanoUpdateResult = {
+  readonly txHash: string;
+  readonly receiver: string;
+};
+
+export type DaemonCardanoSendParams = {
+  readonly to: string;
+  /** Decimal strings — lovelace and token counts both exceed Number's range. */
+  readonly lovelace?: string;
+  readonly cnight?: string;
+  readonly summary?: string;
+  readonly details?: readonly string[];
+};
+
+export type DaemonCardanoSendResult = {
+  readonly txHash: string;
 };

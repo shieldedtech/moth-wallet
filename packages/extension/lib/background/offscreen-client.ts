@@ -12,6 +12,9 @@ import {
   type ProvingProviderProvePayload,
 } from '../offscreen/messaging';
 import type { NetworkConfig, SignEncoding } from '@shieldedtech/moth-browser';
+// The pure config subpath, not the cardano barrel: the barrel reaches Lucid,
+// and nothing with WASM may enter the service worker's module graph.
+import type { CardanoNetworkConfig } from '@shieldedtech/moth-wallet/cardano/network';
 import { decodeBigintJson, encodeBigintJson } from '../messaging/bigint-json';
 
 const OFFSCREEN_URL = 'offscreen.html';
@@ -113,7 +116,13 @@ export const offscreen = {
     await ensureOffscreen();
     return offscreenSend('os/walletCreate', data);
   },
-  async walletImport(data: { name: string; mnemonic: string; passphrase: string; network: string }) {
+  async walletImport(data: {
+    name: string;
+    mnemonic?: string;
+    seed?: string;
+    passphrase: string;
+    network: string;
+  }) {
     await ensureOffscreen();
     return offscreenSend('os/walletImport', data);
   },
@@ -129,9 +138,115 @@ export const offscreen = {
     await ensureOffscreen();
     return offscreenSend('os/walletSetLabel', { name, label, network });
   },
-  async walletExportPhrase(name: string, passphrase: string, network: string) {
+  async walletExportPhrase(
+    name: string,
+    passphrase: string,
+    network: string,
+    as?: 'backup' | 'seed',
+  ) {
     await ensureOffscreen();
-    return offscreenSend('os/walletExportPhrase', { name, passphrase, network });
+    return offscreenSend('os/walletExportPhrase', { name, passphrase, network, as });
+  },
+  // Cardano accounts. Storage-only, so these do not touch key material beyond
+  // the phrase being imported.
+  async cardanoAccountList(data: { network: string; walletName: string }) {
+    await ensureOffscreen();
+    return offscreenSend('os/cardanoAccountList', data);
+  },
+  async cardanoAccountAdd(data: { network: string; walletName: string; label?: string }) {
+    await ensureOffscreen();
+    return offscreenSend('os/cardanoAccountAdd', data);
+  },
+  async cardanoAccountImport(data: {
+    network: string;
+    walletName: string;
+    mnemonic: string;
+    passphrase: string;
+    label?: string;
+  }) {
+    await ensureOffscreen();
+    return offscreenSend('os/cardanoAccountImport', data);
+  },
+  async cardanoAccountSelect(data: { network: string; walletName: string; id: string }) {
+    await ensureOffscreen();
+    return offscreenSend('os/cardanoAccountSelect', data);
+  },
+  async cardanoAccountRemove(data: { network: string; walletName: string; id: string }) {
+    await ensureOffscreen();
+    return offscreenSend('os/cardanoAccountRemove', data);
+  },
+  async cardanoAccountRename(data: { network: string; walletName: string; id: string; label: string }) {
+    await ensureOffscreen();
+    return offscreenSend('os/cardanoAccountRename', data);
+  },
+  async cardanoImportedPhrases(data: { network: string; walletName: string; passphrase: string }) {
+    await ensureOffscreen();
+    return offscreenSend('os/cardanoImportedPhrases', data);
+  },
+
+  // Cardano / cNIGHT. The heavy work (Lucid + CML WASM) happens offscreen; the
+  // service worker only routes.
+  async cardanoResolveReceiver(data: { input: string }) {
+    await ensureOffscreen();
+    return offscreenSend('os/cardanoResolveReceiver', data);
+  },
+  async cardanoReceiverAccounts(data: { network: string }) {
+    await ensureOffscreen();
+    return offscreenSend('os/cardanoReceiverAccounts', data);
+  },
+  async cardanoAddresses(data: { mnemonic: string; config: CardanoNetworkConfig; accountIndex?: number }) {
+    await ensureOffscreen();
+    return offscreenSend('os/cardanoAddresses', data);
+  },
+  async cardanoStatus(data: {
+    mnemonic: string;
+    config: CardanoNetworkConfig;
+    indexerUrl: string;
+    accountIndex?: number;
+  }) {
+    await ensureOffscreen();
+    return offscreenSend('os/cardanoStatus', data);
+  },
+  async cardanoRegister(data: {
+    mnemonic: string;
+    config: CardanoNetworkConfig;
+    receiver: string;
+    accountIndex?: number;
+  }) {
+    await ensureOffscreen();
+    return offscreenSend('os/cardanoRegister', data);
+  },
+  async cardanoDeregister(data: { mnemonic: string; config: CardanoNetworkConfig; accountIndex?: number }) {
+    await ensureOffscreen();
+    return offscreenSend('os/cardanoDeregister', data);
+  },
+  async cardanoCip30(data: {
+    mnemonic: string;
+    config: CardanoNetworkConfig;
+    method: string;
+    params: unknown[];
+    accountIndex?: number;
+  }) {
+    await ensureOffscreen();
+    return offscreenSend('os/cardanoCip30', data);
+  },
+  async cardanoSend(data: {
+    mnemonic: string;
+    config: CardanoNetworkConfig;
+    request: { to: string; lovelace: string; cnight: string };
+    accountIndex?: number;
+  }) {
+    await ensureOffscreen();
+    return offscreenSend('os/cardanoSend', data);
+  },
+  async cardanoUpdate(data: {
+    mnemonic: string;
+    config: CardanoNetworkConfig;
+    receiver: string;
+    accountIndex?: number;
+  }) {
+    await ensureOffscreen();
+    return offscreenSend('os/cardanoUpdate', data);
   },
   async walletSetNetwork(data: {
     name: string;
@@ -212,7 +327,7 @@ export const offscreen = {
     await ensureOffscreen();
     return offscreenSend('os/dustRebuild', data);
   },
-  async transferBuild(data: SyncTarget & { requests: TransferRequestDTO[] }) {
+  async transferBuild(data: SyncTarget & { requests: TransferRequestDTO[]; payFees: boolean }) {
     await ensureOffscreen();
     return offscreenSend('os/transferBuild', data);
   },
@@ -279,7 +394,7 @@ export const offscreen = {
     await ensureOffscreen();
     return offscreenSend('os/tokenRegistryResolve', data);
   },
-  async balanceTransaction(data: SyncTarget & { txHex: string; sealed: boolean }) {
+  async balanceTransaction(data: SyncTarget & { txHex: string; sealed: boolean; payFees: boolean }) {
     await ensureOffscreen();
     return offscreenSend('os/balanceTransaction', data);
   },

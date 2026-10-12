@@ -35,8 +35,11 @@ export function ActivityRow({ view }: { view: ActivityRowView }) {
       </span>
       {view.amount && (
         <span
+          title={view.amountTokenId ?? undefined}
           className={cn(
-            'shrink-0 text-[13px] font-semibold',
+            // Capped and truncating: token names run to 30 characters, and an
+            // uncapped amount squeezed the title column to nothing.
+            'max-w-[45%] shrink-0 truncate text-[13px] font-semibold',
             view.tone === 'positive' && 'text-success',
             view.tone === 'muted' && 'text-muted-foreground',
           )}

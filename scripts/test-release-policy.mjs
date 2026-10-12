@@ -1,12 +1,42 @@
 // SPDX-FileCopyrightText: Copyright (C) Shielded Technologies
 // SPDX-License-Identifier: Apache-2.0
 
-import {readFileSync} from 'node:fs';
+import assert from 'node:assert/strict';
+import {spawnSync} from 'node:child_process';
+import {mkdirSync,mkdtempSync,readFileSync,rmSync,writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {resolve} from 'node:path';
 
 const workflow = readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
 const rootPackage = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 const publishingRunbook = readFileSync(new URL('../NPM_PUBLISHING.md', import.meta.url), 'utf8');
 const credentialPattern = /(?:SHIELDED_NPMJS_TOKEN|NPM_TOKEN|NODE_AUTH_TOKEN)/;
+const changesetsActionMajors = [
+  ...workflow.matchAll(/uses:\s+changesets\/action@[0-9a-f]{40}\s+#\s+v(\d+)\.\d+\.\d+/g),
+].map((match) => Number(match[1]));
+const changesetsCliMajor = Number(rootPackage.devDependencies['@changesets/cli'].match(/\d+/)?.[0]);
+
+const changelogFixtureRoot = mkdtempSync(resolve(tmpdir(), 'moth-release-changelogs-'));
+try {
+  const packageDirectory = resolve(changelogFixtureRoot, 'packages/example');
+  const changelogPath = resolve(packageDirectory, 'CHANGELOG.md');
+  mkdirSync(packageDirectory, {recursive: true});
+  writeFileSync(changelogPath, '# Changelog\n\n- First paragraph.\n  \n  Continued paragraph.\n\t\n');
+
+  const normalization = spawnSync(
+    process.execPath,
+    [resolve(import.meta.dirname, 'release-changelogs.mjs'), changelogFixtureRoot],
+    {encoding: 'utf8'},
+  );
+  assert.equal(normalization.status, 0, normalization.stderr || normalization.stdout);
+  assert.equal(
+    readFileSync(changelogPath, 'utf8'),
+    '# Changelog\n\n- First paragraph.\n\n  Continued paragraph.\n\n',
+    'release changelog normalization must remove whitespace-only lines without flattening content',
+  );
+} finally {
+  rmSync(changelogFixtureRoot, {recursive: true, force: true});
+}
 
 function requirePolicy(condition, message) {
   if (!condition) {
@@ -41,11 +71,49 @@ function job(name) {
   return nextJob === -1 ? workflow.slice(start) : workflow.slice(start, start + marker.length + nextJob);
 }
 
-for (const name of ['release', 'canary']) {
+for (const name of ['release', 'canary', 'prerelease']) {
   const block = job(name);
   requirePolicy(block.includes('id-token: write'), `${name} must use npm Trusted Publishing`);
   requirePolicy(!credentialPattern.test(block), `${name} must not receive an npm credential`);
   requirePolicy(block.includes('npm@12.0.2'), `${name} must install the reviewed npm version`);
+}
+
+for (const name of ['release', 'canary']) {
+  requirePolicy(
+    job(name).includes("if: ${{ github.event_name == 'push'"),
+    `${name} must run only for pushes to main, never for a dispatched branch`,
+  );
+}
+{
+  const prerelease = job('prerelease');
+  requirePolicy(workflow.includes('  workflow_dispatch:\n'), 'the prerelease channel must be manually dispatched');
+  requirePolicy(
+    prerelease.includes("github.event_name == 'workflow_dispatch'") &&
+      prerelease.includes("github.ref_type == 'branch'") &&
+      prerelease.includes("github.ref != 'refs/heads/main'"),
+    'the prerelease channel must refuse main and anything but a dispatched branch',
+  );
+  requirePolicy(
+    prerelease.includes('yarn changeset publish --tag next --no-git-tag') &&
+      !/--tag (?:latest|canary)\b/u.test(prerelease),
+    'the prerelease channel must publish under the next dist-tag without git tags',
+  );
+  requirePolicy(
+    !prerelease.includes('contents: write') && !prerelease.includes('changesets/action'),
+    'the prerelease channel must not commit, tag, or open version PRs',
+  );
+  requirePolicy(
+    prerelease.includes('yarn changeset status --since=origin/main'),
+    'the prerelease channel must compare against origin/main, since a dispatched branch has no local main',
+  );
+  requirePolicy(
+    prerelease.includes('persist-credentials: false'),
+    'the prerelease channel uploads an artifact, so its checkout must not persist the token',
+  );
+  requirePolicy(
+    prerelease.includes('git merge-base --is-ancestor "$LATEST" HEAD'),
+    'the prerelease channel must refuse a branch that predates the latest release',
+  );
 }
 
 requirePolicy(
@@ -69,6 +137,25 @@ requirePolicy(
   ) && workflow.includes('github-token: ${{ github.token }}'),
   'the version PR action must use the repository GITHUB_TOKEN and run only for releasable changesets',
 );
+requirePolicy(changesetsActionMajors.length === 2, 'both release paths must use the Changesets action');
+requirePolicy(
+  changesetsCliMajor === 3 && changesetsActionMajors.every((major) => major === 2),
+  'Changesets action v2 must be paired with Changesets CLI v3',
+);
+requirePolicy(
+  workflow.includes('version-script: yarn run version-release') &&
+    workflow.includes('publish-script: yarn run release') &&
+    workflow.includes('commit-message: "chore: version packages"') &&
+    workflow.includes('pr-title: "chore: version packages"') &&
+    !/^          (?:version|publish|commitMode|title|commit):/mu.test(workflow),
+  'Changesets action inputs must use the v2 names',
+);
+requirePolicy(
+  /publish-script:[^\S\r\n]+yarn run release\r?\n(?:[^\S\r\n]*#[^\r\n]*\r?\n)*[^\S\r\n]+push-with-git-cli:[^\S\r\n]+true/u.test(
+    workflow,
+  ),
+  'the custom publisher must push its annotated tags with Git so recovery preserves their target commits',
+);
 requirePolicy(
   !workflow.includes('secrets.') && !workflow.includes('MIDNIGHTCI_PACKAGES_WRITE'),
   'the release workflow must not depend on PATs or repository secrets',
@@ -88,6 +175,11 @@ requirePolicy(
 requirePolicy(
   rootPackage.scripts.release === 'node scripts/release-packages.mjs',
   'stable publishing must use the idempotent package reconciler',
+);
+requirePolicy(
+  rootPackage.scripts['version-release'] ===
+    'yarn run version && node scripts/release-changelogs.mjs && yarn install --mode=update-lockfile --no-immutable',
+  'version PR creation must normalize changelogs before regenerating the lockfile',
 );
 requirePolicy(
   publishingRunbook.includes('Approve workflows') &&

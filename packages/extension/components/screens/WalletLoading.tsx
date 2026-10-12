@@ -1,7 +1,9 @@
+import { Settings as SettingsIcon } from 'lucide-react';
 import { t } from '../../lib/i18n';
 import { SYNC_FAILURE_PREFIX } from '../../lib/messaging/protocol';
 import { PanelScreen, OrbitingMoth } from '../moth/panel';
 import { Button } from '../ui/button';
+import { NetworkBadge } from './Home';
 
 function loadingDetail(syncMessage: string): string {
   const message = syncMessage.toLowerCase();
@@ -18,27 +20,31 @@ function loadingDetail(syncMessage: string): string {
 
 /** Full-panel interstitial shown until the first complete balance snapshot is
  * available. It keeps half-restored account values out of view while the SDK
- * rebuilds its shielded, unshielded, and DUST state. */
+ * rebuilds its shielded, unshielded, and DUST state.
+ *
+ * That rebuild takes minutes on a large chain, so an unlocked wallet gets the
+ * network it is loading and a way into Settings: the user who opened the wrong
+ * network must be able to leave it without waiting for it to finish. */
 export function WalletLoading({
   syncMessage,
+  network,
+  onSettings,
   slow = false,
   onOpenNetwork,
 }: {
   syncMessage: string;
+  network?: string;
+  onSettings?: () => void;
   /**
    * True once this interstitial has been up long enough that "still
    * starting up" no longer explains it — see useSlowSync in lib/ui/client.ts,
    * which is what actually times this. A sync that never connects (wrong
    * network selected, an unreachable endpoint, or a subsystem that reports
    * progress but never finishes) does not throw, so `failure` below never
-   * fires — without this, that case has no error and no route out: the
-   * panel's router shows only WalletLoading until a balance snapshot
-   * arrives, so a genuinely stuck sync traps the user with a spinner and no
-   * way to reach Settings → Network to fix it.
+   * fires — without this, that case has no error and no route out.
    */
   slow?: boolean;
-  /** Present so a failure (or a slow sync, see `slow`) is not a dead end —
-   *  the panel has no other chrome here. */
+  /** Present so a failure (or a slow sync, see `slow`) is not a dead end. */
   onOpenNetwork?: () => void;
 }) {
   // A failure is not a slow step. Without this it falls through loadingDetail's
@@ -69,6 +75,25 @@ export function WalletLoading({
 
   return (
     <PanelScreen dark className="relative isolate overflow-hidden">
+      {(network || onSettings) && (
+        <div className="flex items-center gap-2 pt-[18px]">
+          {network && <NetworkBadge network={network} />}
+          {onSettings && (
+            <button
+              onClick={onSettings}
+              className="group ml-auto flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border-0 bg-muted transition duration-150 hover:bg-border active:scale-90"
+              aria-label={t('home_settingsAria')}
+            >
+              <SettingsIcon
+                size={16}
+                strokeWidth={2}
+                className="transition-transform duration-300 ease-out group-hover:rotate-90"
+              />
+            </button>
+          )}
+        </div>
+      )}
+
       <div className="flex flex-1 flex-col items-center justify-center px-2 text-center" role="status" aria-live="polite">
         <div className="mb-7">
           <OrbitingMoth />

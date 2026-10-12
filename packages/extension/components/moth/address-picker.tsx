@@ -40,8 +40,10 @@ export function AddressPicker({
   const paste = async () => {
     try {
       onChange((await navigator.clipboard.readText()).trim());
-    } catch {
-      /* clipboard denied */
+    } catch (error) {
+      // A refused read raises no UI of its own, so report it rather than leave
+      // the button looking dead. The field is untouched; Ctrl+V still works.
+      console.warn('Clipboard read denied; Paste unavailable:', error);
     }
   };
 

@@ -2,6 +2,8 @@ import type { StorageAdapter } from '../storage/adapter.js';
 import type { WalletInfo, UnlockedWallet, DerivedKeys, WalletAddresses, AddressEncoding } from '../types/wallet.js';
 import { WalletError } from '../types/errors.js';
 import { generateMnemonic24, validateMnemonic, mnemonicToSeed, hexSeedToUint8Array } from './mnemonic.js';
+import { assertHexSeed } from './hex-seed.js';
+import type { BackupKind } from '../types/wallet.js';
 import { encryptKeystore, decryptKeystore, keystoreNeedsUpgrade, type EncryptedKeystore } from './keystore.js';
 import { deriveAllAddressesFromSeed, deriveRawKeys, Roles } from './address.js';
 import type { SignatureKind } from './signature-encoding.js';
@@ -57,8 +59,38 @@ interface WalletMeta {
    * until re-registered.
    */
   signatureKind?: SignatureKind;
+  /**
+   * Which artifact this wallet's keystore holds, recorded at creation so a UI
+   * can tell before decrypting anything. The keystore itself distinguishes them
+   * (a hex import is stored as `seed:<hex>`), but only the password reveals
+   * that, which is too late to grey out an option.
+   *
+   * Absent on wallets written before this field: unknown, and deliberately not
+   * defaulted — see WalletInfo.backupKind.
+   */
+  backupKind?: BackupKind;
   /** Public night receive address (bech32m). Absent for wallets created before this field existed. */
   address?: string;
+  /**
+   * Public shielded and DUST addresses (bech32m), keyed by network.
+   *
+   * Stored in the clear beside `address` for the same reason: a UI has to be
+   * able to name an account as a *destination* without unlocking it. Offering
+   * another account as a DUST receiver is exactly that — the account holding
+   * the cNIGHT is usually not the one being paid — and `list()` cannot derive
+   * these, because deriving needs the seed.
+   *
+   * Keyed by network, not flattened to the wallet's own one. A DUST key is the
+   * same on every network but its bech32m encoding is not, and storing a single
+   * string made `list()` hand out (say) the preview encoding while the wallet
+   * was on preprod. Derivation produces every network at once, so keeping them
+   * all costs nothing.
+   *
+   * Absent on wallets last written before this field; backfilled on unlock,
+   * which is the one moment they can be derived.
+   */
+  shieldedAddresses?: Record<string, string>;
+  dustAddresses?: Record<string, string>;
   /**
    * Chain tip height at creation, for the network the wallet was created on.
    * Superseded by `birthdays`; kept so wallets written before that field are
@@ -327,10 +359,13 @@ export class WalletManager {
       network,
       createdAt: new Date().toISOString(),
       address,
+      shieldedAddresses: addresses.zswap.bech32m,
+      dustAddresses: addresses.dust.bech32m,
       createdHere: true,
       // Only recorded when it is not the default, so existing records and new
       // schnorr wallets stay byte-identical.
       ...(signatureKind !== 'schnorr' ? { signatureKind } : {}),
+      backupKind: 'mnemonic',
       ...(birthday !== undefined ? { birthdays: { [network]: birthday } } : {}),
     };
     await this.saveMeta(meta);
@@ -380,7 +415,10 @@ export class WalletManager {
       network,
       createdAt: new Date().toISOString(),
       address,
+      shieldedAddresses: addresses.zswap.bech32m,
+      dustAddresses: addresses.dust.bech32m,
       createdHere: false,
+      backupKind: 'mnemonic',
       ...(signatureKind !== 'schnorr' ? { signatureKind } : {}),
     };
     await this.saveMeta(meta);
@@ -401,6 +439,13 @@ export class WalletManager {
     network = 'devnet',
     signatureKind: SignatureKind = 'schnorr',
   ): Promise<WalletInfo> {
+    // Shape-checked before anything is derived or written. There was no
+    // validation here at all: a malformed seed reached the SDK and surfaced as
+    // a bare 'Invalid seed', and one that was merely the wrong *length* was
+    // accepted outright — silently producing a different wallet. A hex seed has
+    // no checksum, so shape is the only thing that can be checked; that makes
+    // checking it worth more here, not less. See wallet/hex-seed.ts.
+    hexSeed = assertHexSeed(hexSeed);
     // A caller-supplied id (a --network flag, a picker selection) is about to be
     // persisted, so a retired name is resolved here rather than written back out.
     network = canonicalNetworkId(network);
@@ -423,7 +468,10 @@ export class WalletManager {
       network,
       createdAt: new Date().toISOString(),
       address,
+      shieldedAddresses: addresses.zswap.bech32m,
+      dustAddresses: addresses.dust.bech32m,
       createdHere: false,
+      backupKind: 'seed',
       ...(signatureKind !== 'schnorr' ? { signatureKind } : {}),
     };
     await this.saveMeta(meta);
@@ -450,6 +498,27 @@ export class WalletManager {
       ciphertext: new Uint8Array(Object.values(keystore.ciphertext)),
       tag: new Uint8Array(Object.values(keystore.tag)),
     };
+  }
+
+  /**
+   * The birthday this wallet asserts for a SPECIFIC network.
+   *
+   * `list()` resolves against the wallet's own `meta.network`, which is wrong for
+   * a sync driven by `--network`: birthdays are per-network (see `birthdays`), so
+   * asking about the wallet's default network returns a height belonging to a
+   * different chain, or nothing at all. Callers about to sync must ask about the
+   * network they are syncing.
+   *
+   * Never throws. A wallet with no meta, or an unreadable one, asserts nothing —
+   * and "no claim" means scan from genesis, which is slow but never wrong.
+   */
+  async birthdayOn(name: string, networkId: string): Promise<number | undefined> {
+    try {
+      const meta = await this.loadMeta(name);
+      return meta ? birthdayFor(meta, networkId) : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   async unlock(name: string, passphrase: string): Promise<UnlockedWallet> {
@@ -485,7 +554,8 @@ export class WalletManager {
     // function — never escapes to the UnlockedWallet object.
     // See docs/spec/wallet-service/05-key-management.md D-KM-3.
     let seedHex: string;
-    if (decrypted.startsWith('seed:')) {
+    const backupKind: BackupKind = decrypted.startsWith('seed:') ? 'seed' : 'mnemonic';
+    if (backupKind === 'seed') {
       seedHex = decrypted.slice(5);
     } else {
       const seed = await mnemonicToSeed(decrypted);
@@ -508,8 +578,23 @@ export class WalletManager {
     // Backfill the public address for wallets created before it was stored (or
     // re-derive it after a network change), so the account list can show it
     // without another unlock.
-    if (meta && meta.address !== address) {
-      await this.saveMeta({ ...meta, address });
+    //
+    // backupKind rides along on the same write. It is recorded at creation for
+    // new wallets, but an existing wallet has no way to learn it without the
+    // password — the keystore is what distinguishes a `seed:` payload from a
+    // mnemonic. Unlock is the one moment that knowledge exists, so it is
+    // persisted here rather than left unknown for ever. Written only when
+    // missing or wrong, so a normal unlock does not touch storage.
+    // Backfilled on the same write: every network's public shielded and DUST
+    // address, so this account can be named as a destination while locked, on
+    // whichever network the caller is looking at.
+    const shieldedAddresses = addresses.zswap.bech32m;
+    const dustAddresses = addresses.dust.bech32m;
+    const addressesStale =
+      meta?.shieldedAddresses?.[network] !== shieldedAddresses[network]
+      || meta?.dustAddresses?.[network] !== dustAddresses[network];
+    if (meta && (meta.address !== address || meta.backupKind !== backupKind || addressesStale)) {
+      await this.saveMeta({ ...meta, address, backupKind, shieldedAddresses, dustAddresses });
     }
     const rawKeys = deriveRawKeys(seedHex);
     const keys: DerivedKeys = {
@@ -669,15 +754,26 @@ export class WalletManager {
 
     for (const name of config.wallets) {
       const meta = await this.loadMeta(name);
+      const network = meta?.network ?? config.defaultNetwork;
+      // Only the addresses stored in the clear. Everything else stays empty —
+      // this is still a locked view, not a derived one.
+      const publicAddresses: WalletAddresses = {
+        ...lockedAddresses,
+        ...(meta?.shieldedAddresses
+          ? { zswap: { hex: '', bech32m: meta.shieldedAddresses } }
+          : {}),
+        ...(meta?.dustAddresses ? { dust: { hex: '', bech32m: meta.dustAddresses } } : {}),
+      };
       wallets.push({
         name,
         address: meta?.address ?? '(locked)',
-        addresses: lockedAddresses,
-        network: meta?.network ?? config.defaultNetwork,
+        addresses: publicAddresses,
+        network,
         active: config.activeWallet === name,
         birthday: meta ? birthdayFor(meta, meta.network) : undefined,
         label: meta?.label,
         signatureKind: meta?.signatureKind,
+        backupKind: meta?.backupKind,
       });
     }
     return wallets;

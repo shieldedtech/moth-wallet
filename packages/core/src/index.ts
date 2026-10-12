@@ -55,6 +55,16 @@ export {
   formatDustBalance,
 } from './wallet/balance-format.js';
 export { generateMnemonic24, validateMnemonic, mnemonicToSeed, hexSeedToUint8Array } from './wallet/mnemonic.js';
+export {
+  checkHexSeed,
+  assertHexSeed,
+  describeHexSeedProblem,
+  MIN_SEED_BYTES,
+  MAX_SEED_BYTES,
+  CANONICAL_SEED_BYTES,
+  type HexSeedCheck,
+  type HexSeedProblem,
+} from './wallet/hex-seed.js';
 export { Roles } from './wallet/address.js';
 export { encryptKeystore, decryptKeystore, type EncryptedKeystore } from './wallet/keystore.js';
 export {
@@ -78,6 +88,7 @@ export { loadBatchFile, executeBatchTransfer, batchExitCode, type BatchTransferE
 // Storage
 export type { StorageAdapter } from './storage/adapter.js';
 export { FilesystemStorageAdapter } from './storage/fs-adapter.js';
+export { mothHome, MOTH_HOME_ENV } from './storage/home.js';
 
 // Network
 export { JsonRpcNodeClient, type NodeClient } from './network/node-client.js';
@@ -101,6 +112,12 @@ export {
   type SubWalletSyncProgress, type SubWalletProgress, type WalletCoinDetails,
   type ShieldedCoinInfo, type UnshieldedCoinInfo, type DustCoinInfo,
 } from './sync/wallet-sync.js';
+export type {DustFeePass} from './sync/dust-transacting.js';
+export {secondsUntilFull} from './sync/dust-generation.js';
+export {
+  summarizeTransaction, summarizeConnectorTransaction, decodeConnectorTransaction,
+  type TransactionSummary, type TxTokenAmount,
+} from './sync/tx-summary.js';
 export {
   // Union of both lines: main's build/estimate/submit + batch types the
   // extension imports, plus v8's derive-and-drop walletKeys write paths.
@@ -109,18 +126,8 @@ export {
   designateForDust, designateForDustWithKeys, estimateDustRegistration,
   dedesignateFromDust, dedesignateFromDustWithKeys,
   listNightUtxos,
-  type SendRequest, type TxStage, type NightUtxo, type FinalizedTransaction, type WalletKeys,
+  type SendRequest, type TxStage, type NightUtxo, type FinalizedTransaction, type TokenKindsToBalance, type WalletKeys,
 } from './sync/operations.js';
-export {
-  summarizeTransaction, summarizeConnectorTransaction, decodeConnectorTransaction,
-  type TransactionSummary, type TxTokenAmount,
-} from './sync/tx-summary.js';
-export {
-  isDustSpendProofRejection, diagnoseSubmissionFailure, dustSpendHealthTracker,
-  resetDustSpendHealthTrackers, DustSpendHealthTracker, DustLedgerWedgedError,
-  DEFAULT_WEDGE_THRESHOLD, submitWithHealthTracking,
-  type DustLedgerHealthContext, type SubmitHealthContext,
-} from './sync/dust-ledger-health.js';
 export {
   InMemorySyncStateStore, syncStateKey, emptyRefStateKey, emptyRefMnemonicKey, emptyRefHeightKey,
   type SyncStateStore, type WalletPart,
@@ -137,6 +144,12 @@ export {
   type DustRegistrationEstimate,
 } from './sync/dust-registration-estimate.js';
 export {
+  isDustSpendProofRejection, diagnoseSubmissionFailure, dustSpendHealthTracker,
+  resetDustSpendHealthTrackers, DustSpendHealthTracker, DustLedgerWedgedError,
+  DEFAULT_WEDGE_THRESHOLD, submitWithHealthTracking,
+  type DustLedgerHealthContext, type SubmitHealthContext,
+} from './sync/dust-ledger-health.js';
+export {
   readEventWitness,
   compareWitness,
   verifyCursorWitness,
@@ -144,6 +157,25 @@ export {
   type WitnessStream,
   type WitnessVerdict,
 } from './sync/cursor-witness.js';
+export {
+  createTimingRecorder,
+  createMemoryTimingStore,
+  DEFAULT_MAX_ENTRIES,
+  type TimingEntry,
+  type TimingSource,
+  type TimingStore,
+  type TimingRecorder,
+} from './diagnostics/timings.js';
+export { createFileTimingStore } from './diagnostics/file-timing-store.js';
+export {
+  exportReference,
+  importReference,
+  ReferenceImportError,
+  REFERENCE_PARTS,
+  type PortableReference,
+  type ReferenceManifest,
+} from './sync/preseed-portable.js';
+export { chainTip } from './sync/chain-tip.js';
 export { ensureEmptyRefCache, warmEmptyRefCache, clearEmptyRefCache, refreshEmptyRefCache, preseedReferenceStatus, preSeedNewWallet, type WarmProgress } from './sync/preseed.js';
 
 // Token registry (Gloam) — opt-in display data for held shielded colours

@@ -41,6 +41,7 @@ function sampleBalances(): WalletBalances {
           {
             generatedNow: 1n,
             maxCap: 100n,
+            rate: 2n,
             maxCapReachedAt: new Date('2026-08-01T00:00:00.000Z'),
             dtime: null,
           },
@@ -49,6 +50,7 @@ function sampleBalances(): WalletBalances {
           {
             generatedNow: 0n,
             maxCap: 50n,
+            rate: 1n,
             maxCapReachedAt: new Date('2026-09-01T00:00:00.000Z'),
             dtime: new Date('2026-09-02T00:00:00.000Z'),
           },

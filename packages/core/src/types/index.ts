@@ -1,6 +1,7 @@
 export type { NetworkConfig, NetworkEndpoints, ProverConfig } from './network.js';
 export type {
   WalletInfo,
+  BackupKind,
   WalletAddresses,
   AddressEncoding,
   UnlockedWallet,

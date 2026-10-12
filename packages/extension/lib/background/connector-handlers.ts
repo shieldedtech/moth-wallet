@@ -11,7 +11,15 @@ import type { WalletBalances } from '@shieldedtech/moth-browser';
 import { resolveProverConfig } from '@shieldedtech/moth-wallet/types/network';
 import { onMessage, deserializeBalances } from '../messaging/protocol';
 import { encodeBigintJson, decodeBigintJson } from '../messaging/bigint-json';
-import { connectorError, serializeError, type ErrorCode } from '../connector/errors';
+import {
+  asCip30Error,
+  CIP30_CODES,
+  connectorError,
+  describeCip30Error,
+  describeErrorFields,
+  serializeError,
+  type ErrorCode,
+} from '../connector/errors';
 import { NOT_IMPLEMENTED_METHODS, type ConnectorMethod } from '../connector/constants';
 import type { TransferRequestDTO, SwapInputDTO, ProvingKeyMaterialDTO, TxSummaryDTO } from '../offscreen/messaging';
 import { getSettings, getNetworkConfig } from './settings';
@@ -25,7 +33,9 @@ import {
   resolveApproval,
 } from './approvals';
 import { beginOp, endOp } from './sync-service';
+import { recordActivity } from './auto-lock';
 import { offscreen } from './offscreen-client';
+import type { CardanoSignApprovalPayload } from '../messaging/protocol';
 
 // These methods can display an approval. Their panel-open attempt starts at
 // dispatch entry, before any permission/session/storage await consumes the
@@ -150,7 +160,23 @@ function addressFor(session: Session, role: keyof Session['addresses'], networkI
  *  could not be read; the screen then says so instead of showing nothing. */
 export interface BalanceApprovalPayload {
   sealed: boolean;
+  payFees: boolean;
   summary: TxSummaryDTO | null;
+}
+
+/** Display data for a `transfer` approval (makeTransfer / makeIntent). */
+export interface TransferApprovalPayload {
+  outputs: Array<{ kind: string; type: string; value: string; recipient: string }>;
+  payFees: boolean;
+}
+
+// Connector options default to the wallet paying fees; only an explicit false opts out.
+function payFeesOption(options: unknown): boolean {
+  const value = (options as { payFees?: unknown } | null | undefined)?.payFees;
+  if (value !== undefined && typeof value !== 'boolean') {
+    throw connectorError('InvalidRequest', 'payFees must be a boolean');
+  }
+  return value !== false;
 }
 
 // Shared by balanceSealedTransaction / balanceUnsealedTransaction: validate the
@@ -167,23 +193,22 @@ async function balance(
 ): Promise<{ tx: string }> {
   const session = await requireConnected(origin);
   const tx = assertTxHex(String(params[0] ?? ''));
-  const options = (params[1] ?? {}) as { payFees?: boolean };
-  if (options.payFees === false) {
-    throw connectorError('InvalidRequest', 'Moth always pays fees; payFees: false is unsupported');
-  }
+  const payFees = payFeesOption(params[1]);
   const network = await getNetworkConfig();
   // The user is about to authorize spending, so the approval must say what
   // leaves the wallet. A summary that cannot be produced (a stage the ledger
-  // won't decode, a ledger mismatch) is not a reason to hide the request: the
-  // screen states plainly that the amounts are unknown, and balancing itself
-  // will surface the underlying error if the user goes ahead.
+  // won't decode) is not a reason to hide the request: the screen states
+  // plainly that the amounts are unknown, and balancing itself will surface
+  // the underlying error if the user goes ahead.
   let summary: TxSummaryDTO | null = null;
   try {
     summary = await offscreen.txSummary({ network, txHex: tx, sealed });
+    // Without fee payment the wallet leaves DUST imbalances for another payer.
+    if (!payFees) summary = { ...summary, spends: summary.spends.filter((entry) => entry.kind !== 'dust') };
   } catch {
     summary = null;
   }
-  const payload: BalanceApprovalPayload = { sealed, summary };
+  const payload: BalanceApprovalPayload = { sealed, payFees, summary };
   const approved = await requestApproval('balance', origin, payload, senderTabId, preparedPanel);
   if (!approved) throw connectorError('Rejected', 'User rejected the transaction');
 
@@ -193,6 +218,7 @@ async function balance(
     network,
     txHex: tx,
     sealed,
+    payFees,
   });
   return { tx: txHex };
 }
@@ -214,7 +240,11 @@ export async function dispatch(
   const preparedPanel = APPROVAL_METHODS.has(method) ? prepareApprovalPanel(senderTabId) : undefined;
   beginOp();
   try {
-    return await dispatchMethod(origin, method, params, senderTabId, preparedPanel);
+    const result = await dispatchMethod(origin, method, params, senderTabId, preparedPanel);
+    // A connected dApp talking to the wallet is the user at work, even with the
+    // panel closed; without this the auto-lock fires between two dApp requests.
+    if (await isAllowed(origin)) await recordActivity(Date.now());
+    return result;
   } finally {
     endOp();
   }
@@ -227,6 +257,14 @@ async function dispatchMethod(
   senderTabId?: number,
   preparedPanel?: Promise<boolean>,
 ): Promise<unknown> {
+  // CIP-30 shares this transport and its origin permissions, but not its
+  // method namespace: `cardano.*` is the Cardano bridge, everything else is the
+  // Midnight connector. Two wallets behind one relay, deliberately separate so
+  // a dApp on one chain can never reach the other's methods.
+  if (method.startsWith('cardano.')) {
+    return dispatchCip30(origin, method.slice('cardano.'.length), params, senderTabId);
+  }
+
   if ((NOT_IMPLEMENTED_METHODS as readonly string[]).includes(method)) {
     throw connectorError('InternalError', `${method} is not implemented by Moth (reference wallet MVP)`);
   }
@@ -452,12 +490,9 @@ async function dispatchMethod(
       const session = await requireConnected(origin);
       const inputs = (params[0] ?? []) as DesiredInput[];
       const outputs = (params[1] ?? []) as DesiredOutput[];
-      const options = (params[2] ?? {}) as { payFees?: boolean };
+      const payFees = payFeesOption(params[2]);
       if (!Array.isArray(inputs) || !Array.isArray(outputs) || inputs.length + outputs.length === 0) {
         throw connectorError('InvalidRequest', 'makeIntent requires at least one input or output');
-      }
-      if (options.payFees === false) {
-        throw connectorError('InvalidRequest', 'Moth always pays fees; payFees: false is unsupported');
       }
       const inputDtos: SwapInputDTO[] = inputs.map((input) => {
         if (input.kind !== 'shielded' && input.kind !== 'unshielded') {
@@ -475,7 +510,10 @@ async function dispatchMethod(
       const approved = await requestApproval(
         'transfer',
         origin,
-        { outputs: outputs.map((out) => ({ ...out, value: out.value.toString() })) },
+        {
+          outputs: outputs.map((out) => ({ ...out, value: out.value.toString() })),
+          payFees,
+        } satisfies TransferApprovalPayload,
         senderTabId,
         preparedPanel,
       );
@@ -488,7 +526,7 @@ async function dispatchMethod(
         network,
         inputs: inputDtos,
         outputs: outputDtos,
-        payFees: true,
+        payFees,
       });
       return { tx: txHex };
     }
@@ -496,12 +534,9 @@ async function dispatchMethod(
     case 'makeTransfer': {
       const session = await requireConnected(origin);
       const outputs = (params[0] ?? []) as DesiredOutput[];
-      const options = (params[1] ?? {}) as { payFees?: boolean };
+      const payFees = payFeesOption(params[1]);
       if (!Array.isArray(outputs) || outputs.length === 0) {
         throw connectorError('InvalidRequest', 'makeTransfer requires at least one desired output');
-      }
-      if (options.payFees === false) {
-        throw connectorError('InvalidRequest', 'Moth always pays fees; payFees: false is unsupported');
       }
       const requests: TransferRequestDTO[] = outputs.map((out) => {
         if (out.kind !== 'shielded' && out.kind !== 'unshielded') {
@@ -513,7 +548,10 @@ async function dispatchMethod(
       const approved = await requestApproval(
         'transfer',
         origin,
-        { outputs: outputs.map((out) => ({ ...out, value: out.value.toString() })) },
+        {
+          outputs: outputs.map((out) => ({ ...out, value: out.value.toString() })),
+          payFees,
+        } satisfies TransferApprovalPayload,
         senderTabId,
         preparedPanel,
       );
@@ -525,6 +563,7 @@ async function dispatchMethod(
         walletName: session.walletName,
         network,
         requests,
+        payFees,
       });
       return { tx: txHex };
     }
@@ -570,8 +609,21 @@ export function registerConnectorHandlers(): void {
       const result = await dispatch(origin, data.method as ConnectorMethod, params, sender?.tab?.id);
       return { ok: true as const, resultJson: encodeBigintJson(result ?? null) };
     } catch (err) {
+      // A CIP-30 error is a plain object with a NUMERIC code (or only
+      // `maxSize`), so the Midnight path below would stringify it to
+      // "[object Object]" and lose `info`. Carry it through intact instead.
+      const cip30 = asCip30Error(err);
+      if (cip30) {
+        const reason = describeCip30Error(cip30);
+        return { ok: false as const, error: { ...serializeError('InternalError', reason), cip30 } };
+      }
       const code: ErrorCode = (err as { code?: ErrorCode }).code ?? 'InternalError';
-      const reason = (err as { reason?: string; message?: string }).reason ?? (err as Error).message ?? String(err);
+      const base = (err as { reason?: string; message?: string }).reason ?? (err as Error).message ?? String(err);
+      // Fold the error's structured fields into the reason. Without this a DApp
+      // only ever sees the message, and SDK errors keep the useful part (e.g.
+      // InsufficientFundsError's tokenType and amount) in their fields.
+      const detail = describeErrorFields(err);
+      const reason = detail ? `${base} [${detail}]` : base;
       return { ok: false as const, error: serializeError(code, reason) };
     }
   });
@@ -607,4 +659,85 @@ export function registerConnectorHandlers(): void {
   onMessage('permissionsRevoke', async ({ data }) => {
     await revoke(data.origin);
   });
+}
+
+
+/** CIP-30 methods that only derive, so they need no Blockfrost project id. */
+const CIP30_OFFLINE = new Set([
+  'getNetworkId',
+  'getUsedAddresses',
+  'getUnusedAddresses',
+  'getChangeAddress',
+  'getRewardAddresses',
+  // Answered from a constant: it must work before a project id is configured,
+  // because dApps call it during feature detection, ahead of any chain read.
+  'getExtensions',
+]);
+
+/** CIP-30 methods that spend or sign, and so must be approved every time. */
+const CIP30_SIGNING = new Set(['signTx', 'signData', 'submitTx']);
+
+/**
+ * Route one CIP-30 call.
+ *
+ * `enable` is the only method that may prompt for authorization; everything
+ * else requires the origin to already hold a grant, exactly as CIP-30 says.
+ * Signing methods additionally take a per-call approval: a granted origin may
+ * read addresses freely, but must not be able to sign silently.
+ */
+async function dispatchCip30(
+  origin: string,
+  method: string,
+  params: unknown[],
+  senderTabId?: number,
+): Promise<unknown> {
+  const { requireCardano } = await import('./cardano-session');
+
+  if (method === 'isEnabled') return isAllowed(origin);
+
+  if (method === 'enable') {
+    const settings = await getSettings();
+    await ensureConnected(origin, settings.network, senderTabId);
+    // Fail here rather than at the first getBalance: a dApp that enabled
+    // successfully reasonably assumes the wallet can answer.
+    await requireCardano(false);
+    return true;
+  }
+
+  // Past this point every rejection is reported in CIP-30's own vocabulary
+  // rather than the Midnight connector's. A Cardano dApp switches on these
+  // numbers, and a string code like 'Rejected' matches none of its branches.
+  if (!(await isAllowed(origin))) {
+    throw { code: CIP30_CODES.apiRefused, info: `${origin} is not authorized; call enable() first` };
+  }
+
+  // Resolved before any prompt and reused to sign, so the key that signs is the
+  // one the approval named, even if the active account changes meanwhile.
+  const context = await requireCardano(!CIP30_OFFLINE.has(method));
+
+  if (CIP30_SIGNING.has(method)) {
+    const approved = await requestApproval(
+      'cardanoSign',
+      origin,
+      {
+        method,
+        cardanoNetwork: context.config.network,
+        walletName: context.session.walletName,
+        accountLabel: context.account.label,
+        accountKind: context.account.kind,
+      } satisfies CardanoSignApprovalPayload,
+      senderTabId,
+    );
+    if (!approved) {
+      // Each signing method has its own "user said no" code; APIError.Refused
+      // is not one of them, and a dApp waiting on TxSignError would hang.
+      const info = 'User rejected the request';
+      if (method === 'signTx') throw { code: CIP30_CODES.txSignUserDeclined, info };
+      if (method === 'signData') throw { code: CIP30_CODES.dataSignUserDeclined, info };
+      throw { code: CIP30_CODES.txSendRefused, info };
+    }
+  }
+
+  const { config, mnemonic, accountIndex } = context;
+  return offscreen.cardanoCip30({ mnemonic, config, method, params, accountIndex });
 }

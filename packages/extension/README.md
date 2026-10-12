@@ -84,10 +84,11 @@ A flavor changes every identifier the two installs could otherwise share:
 | | Regular | `gloam` flavor |
 |---|---|---|
 | Connector slot | `window.midnight.moth` | `window.midnight.mothGloam` |
+| CIP-30 (Cardano) slot | `window.cardano.moth` | `window.cardano.mothGloam` |
 | rdns | `io.shielded.moth` | `io.shielded.moth.gloam` |
 | Name (browser and dApp picker) | Moth Wallet | Moth Wallet (Gloam) |
 | Page request event | `__moth_connector_request__` | `__moth_gloam_connector_request__` |
-| Output folder | `.output/` | `.output-gloam/` |
+| Output folder | `.output/` (or `$MOTH_EXT_OUT_DIR`) | `.output-gloam/` (or `$MOTH_EXT_OUT_DIR-gloam`) |
 
 Extension storage, keys and the extension ID are separate per install anyway. Load the flavored
 build with **Load unpacked** from `.output-gloam/chrome-mv3`. dApps that list every
@@ -105,7 +106,7 @@ the release tag manually.
 ## Notes
 
 - **tsconfig deviation:** this package extends WXT's generated `.wxt/tsconfig.json` (path aliases, extension globals) instead of the repo's `tsconfig.base.json` — the base config's `rootDir`/`outDir`/`declaration` assumptions don't fit a Vite-bundled app. Run `yarn workspace @shieldedtech/moth-extension compile` for a typecheck.
-- Wallet keys live encrypted (ChaCha20-Poly1305) in IndexedDB via `@shieldedtech/moth-browser`; the unlocked seed is held only in `browser.storage.session` (memory-backed, cleared when the browser exits). Locking is explicit — lock button, account removal, network switch; there is no inactivity auto-lock for now (its timer used to kill a sync in progress).
+- Wallet keys live encrypted (ChaCha20-Poly1305) in IndexedDB via `@shieldedtech/moth-browser`; the unlocked seed is held only in `browser.storage.session` (memory-backed, cleared when the browser exits). Locking is explicit — lock button, account removal, network switch — or by the inactivity auto-lock (Settings; default 1 hour). Activity is panel input and any successful request from a connected dApp; the lock defers while a transaction is in flight.
 - **Settings → Network → Clear cache and resync** forgets everything synced for
   the active account on its network — sync state, cached balances, pending
   activity, and the network's pre-seed reference — and syncs again from genesis.
@@ -125,6 +126,7 @@ the release tag manually.
   amount the wallet has to supply, and any change it gets back — read from the
   transaction's own per-segment imbalances (`Transaction.imbalances`) before
   anything is spent. Fees are not in that list: they are only known once the
-  wallet has balanced and proven its segment, and are always paid in DUST. If
-  the transaction cannot be decoded, the screen says so instead of showing an
-  empty list.
+  wallet has balanced and proven its segment, and are paid in DUST. A dApp that
+  passes `payFees: false` gets the transaction back without a fee, and the screen
+  says the wallet is not paying it. If the transaction cannot be decoded, the
+  screen says so instead of showing an empty list.

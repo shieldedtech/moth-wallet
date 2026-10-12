@@ -8,6 +8,7 @@ import { accounts } from './accounts';
 import { activity } from './activity';
 import { addressBook } from './addressBook';
 import { approval } from './approval';
+import { cardano } from './cardano';
 import { common } from './common';
 import { dapp } from './dapp';
 import { dust } from './dust';
@@ -33,6 +34,7 @@ export const CATALOGS = {
   activity,
   addressBook,
   approval,
+  cardano,
   common,
   dapp,
   dust,
@@ -59,6 +61,7 @@ export const MESSAGES = {
   ...activity,
   ...addressBook,
   ...approval,
+  ...cardano,
   ...common,
   ...dapp,
   ...dust,

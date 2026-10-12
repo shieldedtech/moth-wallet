@@ -1,10 +1,56 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { WalletManager, type WalletInfo, type UnlockedWallet, type StorageAdapter, type WalletAddresses, type WalletKeys } from '@shieldedtech/moth-wallet';
+import { WalletManager, type WalletInfo, type UnlockedWallet, type StorageAdapter, type WalletAddresses, type WalletKeys , chainTip, DEFAULT_NETWORKS, deriveAllAddressesFromSeed, mnemonicToSeed} from '@shieldedtech/moth-wallet';
+import { dustAddressBytes } from '@shieldedtech/moth-wallet/cardano/receiver';
+import { unlockImportedCardanoPhrases } from '@shieldedtech/moth-wallet/cardano/accounts';
 import type { WalletState } from '../types.js';
+
+/**
+ * Cardano key material for an unlocked wallet.
+ *
+ * Kept beside the Midnight key bundle rather than inside it: CIP-1852 derives
+ * from BIP-39 entropy, which `unlock()` drops on purpose (D-KM-3), so the
+ * mnemonic has to be re-read from the keystore at unlock time and cached for
+ * exactly as long as the wallet is unlocked.
+ *
+ * `mnemonic` is null for a wallet imported from a raw hex seed — one never
+ * existed, so it has no Cardano identity at all.
+ */
+export interface CardanoSecret {
+  readonly mnemonic: string | null;
+  /** The wallet's own serialized DUST address: the default DUST receiver. */
+  readonly dustAddress: string;
+  /** Imported Cardano accounts' phrases by account id, decrypted at unlock so no
+   *  passphrase is kept. An account imported this session is added on import. */
+  readonly importedPhrases: Map<string, string>;
+}
 
 interface UnlockedEntry {
   wallet: UnlockedWallet;
   addresses: WalletAddresses;
+  cardano: CardanoSecret;
+}
+
+async function loadCardanoSecret(
+  manager: WalletManager,
+  storage: StorageAdapter,
+  name: string,
+  passphrase: string,
+  network: string,
+): Promise<CardanoSecret> {
+  const importedPhrases = await unlockImportedCardanoPhrases(storage, name, passphrase);
+  const phrase = await manager.exportPhrase(name, passphrase);
+  if (phrase.kind !== 'mnemonic') return { mnemonic: null, dustAddress: '', importedPhrases };
+  const seed = await mnemonicToSeed(phrase.value);
+  const seedHex = Array.from(seed).map(b => b.toString(16).padStart(2, '0')).join('');
+  seed.fill(0);
+  // The wallet's own DUST address, serialized — what a cNIGHT registration
+  // datum records. Not the shielded coin public key; different keys.
+  const bech32 = deriveAllAddressesFromSeed(seedHex).dust.bech32m[network];
+  return {
+    mnemonic: phrase.value,
+    dustAddress: bech32 ? dustAddressBytes(bech32) : '',
+    importedPhrases,
+  };
 }
 
 export function useWallet(storage: StorageAdapter) {
@@ -54,7 +100,8 @@ export function useWallet(storage: StorageAdapter) {
     if (cached) return cached.wallet;
 
     const wallet = await manager.unlock(name, passphrase);
-    sessionCache.current.set(name, { wallet, addresses: wallet.addresses });
+    const cardano = await loadCardanoSecret(manager, storage, name, passphrase, wallet.network);
+    sessionCache.current.set(name, { wallet, addresses: wallet.addresses, cardano });
 
     setActiveWallet(prev => {
       if (prev?.name === name) return { ...prev, address: wallet.address };
@@ -62,7 +109,7 @@ export function useWallet(storage: StorageAdapter) {
     });
 
     return wallet;
-  }, [manager]);
+  }, [manager, storage]);
 
   const lockAll = useCallback(() => {
     for (const [, entry] of sessionCache.current) {
@@ -85,27 +132,49 @@ export function useWallet(storage: StorageAdapter) {
   }, []);
 
   const generate = useCallback(async (name: string, passphrase: string, network: string) => {
-    const info = await manager.generate(name, passphrase, network);
+    // Record the chain tip as this wallet's birthday, so its first sync can start
+    // from a pre-seed reference rather than walking from genesis. Only wallets
+    // generated here get one — importWallet below deliberately passes none, since
+    // a restored wallet may hold funds at any height (ADR 0003).
+    //
+    // Resolved from the network preset rather than any custom endpoints the user
+    // has configured: this runs before a connection exists, and it is best-effort
+    // anyway — no tip simply means the slow first sync.
+    const preset = DEFAULT_NETWORKS[network];
+    const birthday = preset ? await chainTip(preset.indexerUrl) : undefined;
+    const info = await manager.generate(name, passphrase, network, birthday);
     const wallet = await manager.unlock(name, passphrase);
-    sessionCache.current.set(name, { wallet, addresses: wallet.addresses });
+    sessionCache.current.set(name, {
+      wallet,
+      addresses: wallet.addresses,
+      cardano: await loadCardanoSecret(manager, storage, name, passphrase, wallet.network),
+    });
     newWallets.current.add(name);
     await refresh();
     return info;
-  }, [manager, refresh]);
+  }, [manager, storage, refresh]);
 
   const importWallet = useCallback(async (name: string, mnemonic: string, passphrase: string, network: string) => {
     await manager.import(name, mnemonic, passphrase, network);
     const wallet = await manager.unlock(name, passphrase);
-    sessionCache.current.set(name, { wallet, addresses: wallet.addresses });
+    sessionCache.current.set(name, {
+      wallet,
+      addresses: wallet.addresses,
+      cardano: await loadCardanoSecret(manager, storage, name, passphrase, wallet.network),
+    });
     await refresh();
-  }, [manager, refresh]);
+  }, [manager, storage, refresh]);
 
   const importFromSeed = useCallback(async (name: string, hexSeed: string, passphrase: string, network: string) => {
     await manager.importFromSeed(name, hexSeed, passphrase, network);
     const wallet = await manager.unlock(name, passphrase);
-    sessionCache.current.set(name, { wallet, addresses: wallet.addresses });
+    sessionCache.current.set(name, {
+      wallet,
+      addresses: wallet.addresses,
+      cardano: await loadCardanoSecret(manager, storage, name, passphrase, wallet.network),
+    });
     await refresh();
-  }, [manager, refresh]);
+  }, [manager, storage, refresh]);
 
   const switchWallet = useCallback(async (name: string) => {
     await manager.setActive(name);
@@ -130,9 +199,37 @@ export function useWallet(storage: StorageAdapter) {
     return entry?.wallet.walletKeys ?? null;
   }, [activeWallet]);
 
+  /**
+   * The active wallet's Cardano secret, or null when nothing is unlocked.
+   *
+   * Dropped by lockAll / lockOne / removeWallet on the same beat as the
+   * Midnight keys — a cached mnemonic outliving the key bundle it belongs to
+   * would quietly widen what "locked" means.
+   */
+  const getActiveCardano = useCallback((): CardanoSecret | null => {
+    if (!activeWallet) return null;
+    return sessionCache.current.get(activeWallet.name)?.cardano ?? null;
+  }, [activeWallet]);
+
   const isActiveWalletNew = useCallback((): boolean => {
     return activeWallet ? newWallets.current.has(activeWallet.name) : false;
   }, [activeWallet]);
+
+  /**
+   * The active wallet's birthday for a SPECIFIC network.
+   *
+   * Not `activeWallet.birthday`: `list()` resolves that against the wallet's own
+   * `meta.network`, so on a different network it returns a height belonging to
+   * another chain, or nothing. The sync needs the birthday for the network it is
+   * about to sync, or the pre-seed gate never opens.
+   */
+  const activeWalletBirthdayOn = useCallback(
+    async (networkId: string): Promise<number | undefined> => {
+      if (!activeWallet) return undefined;
+      return manager.birthdayOn(activeWallet.name, networkId);
+    },
+    [activeWallet, manager],
+  );
 
   return {
     wallets,
@@ -141,7 +238,9 @@ export function useWallet(storage: StorageAdapter) {
     isUnlocked,
     getUnlocked,
     getActiveWalletKeys,
+    getActiveCardano,
     isActiveWalletNew,
+    activeWalletBirthdayOn,
     unlock,
     lockAll,
     lockOne,

@@ -6,6 +6,7 @@
 import type { WalletBalances } from '@shieldedtech/moth-browser';
 import { NIGHT_TOKEN_ID } from '@shieldedtech/moth-wallet/types/tokens';
 import { t } from '../i18n';
+import { shortTokenId } from './token-labels';
 import type { NativeAssetLabels } from './token-labels';
 import type { RegistryToken } from '../messaging/protocol';
 
@@ -50,12 +51,12 @@ export function sendableTokens(
     const entry = kind === 'shielded' ? registry[id] : undefined;
     const label = custom ?? entry?.ticker;
     const name = label
-      ? t(kind === 'shielded' ? 'tokens_shieldedTokenWithId' : 'tokens_unshieldedTokenWithId', [shortId(id)])
+      ? t(kind === 'shielded' ? 'tokens_shieldedTokenWithId' : 'tokens_unshieldedTokenWithId', [shortTokenId(id)])
       : t(kind === 'shielded' ? 'tokens_shieldedToken' : 'tokens_unshieldedToken');
     tokens.push({
       id,
       kind,
-      symbol: label ?? shortId(id),
+      symbol: label ?? shortTokenId(id),
       name,
       balance,
       decimals: entry?.decimals ?? 0,
@@ -83,8 +84,4 @@ export function sendableTokens(
   }
 
   return tokens;
-}
-
-function shortId(id: string): string {
-  return `${id.slice(0, 8)}…`;
 }

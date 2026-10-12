@@ -1,0 +1,13 @@
+pragma language_version >= 0.16;
+import CompactStandardLibrary;
+
+// Regression fixture for unshielded input signing (node error 192). Only a
+// circuit calling receiveUnshielded makes the transaction carry unshielded
+// inputs, which are the inputs that need a signature; without one the bug is
+// invisible. The amount is constant so no witness value is disclosed.
+export ledger receipts: Counter;
+
+export circuit takeNight(): [] {
+  receiveUnshielded(nativeToken(), 1000000);
+  receipts.increment(1);
+}

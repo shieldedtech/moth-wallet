@@ -2,6 +2,8 @@ import { FLAVOR, flavored } from '../flavor';
 
 const IDENTITY = flavored(FLAVOR);
 export const WALLET_ID = IDENTITY.walletId;
+/** Key of the CIP-30 provider under window.cardano (flavored like WALLET_ID). */
+export const CARDANO_WALLET_ID = IDENTITY.cardanoId;
 export const WALLET_RDNS = IDENTITY.rdns;
 export const WALLET_NAME = IDENTITY.name;
 /** Version of the @midnight-ntwrk/dapp-connector-api standard implemented. */

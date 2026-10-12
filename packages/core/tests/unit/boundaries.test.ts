@@ -52,10 +52,15 @@ const NODE_BUILTIN_ALLOWLIST = new Set([
   'daemon/server.ts',
   'daemon/wallet-handlers.ts',
   // Writes timing samples to a file for diagnostics.
-  'diagnostics/fs-timing-store.ts',
+  'diagnostics/file-timing-store.ts',
   // The Node-side storage and sync-state backends. Their browser counterparts live
   // in packages/browser and back onto IndexedDB.
   'storage/fs-adapter.ts',
+  // Resolves the on-disk root (MOTH_HOME or ~/.moth) shared by the filesystem
+  // storage adapter and the daemon's socket path. A home directory and an
+  // environment variable are Node concepts with no browser counterpart — the
+  // browser adapter keys IndexedDB instead and never resolves a path.
+  'storage/home.ts',
   'storage/safe-path.ts',
   'sync/node-sync-store.ts',
   // Reads a batch file from disk.

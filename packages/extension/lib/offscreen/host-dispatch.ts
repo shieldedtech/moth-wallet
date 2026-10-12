@@ -16,6 +16,9 @@ import type {
   ProvingProviderCheckPayload,
   ProvingProviderProvePayload,
 } from './messaging';
+// Safe to import for real, unlike `wallet-host`: every Cardano entry point in
+// there imports Lucid dynamically, so this module still loads no WASM.
+import * as cardano from './cardano-host';
 
 type Host = typeof import('./wallet-host');
 type Dispatch = {
@@ -27,12 +30,32 @@ export const hostDispatch: Dispatch = {
   'os/walletList': async (host, d) => host.walletList(d.network),
   'os/walletCreate': (host, d) =>
     host.walletCreate(d.name, d.passphrase, d.network, d.birthday, d.mnemonic, d.signatureKind),
-  'os/walletImport': (host, d) => host.walletImport(d.name, d.mnemonic, d.passphrase, d.network),
+  'os/walletImport': (host, d) => host.walletImport(d.name, {mnemonic: d.mnemonic, seed: d.seed}, d.passphrase, d.network),
   'os/walletRemove': (host, d) => host.walletRemove(d.name, d.network),
   'os/walletSetActive': (host, d) => host.walletSetActive(d.name, d.network),
   'os/walletSetLabel': (host, d) => host.walletSetLabel(d.name, d.label, d.network),
-  'os/walletExportPhrase': (host, d) => host.walletExportPhrase(d.name, d.passphrase, d.network),
+  'os/walletExportPhrase': (host, d) => host.walletExportPhrase(d.name, d.passphrase, d.network, d.as),
   'os/walletSetNetwork': (host, d) => host.walletSetNetwork(d.name, d.fromNetwork, d.network, d.seedHex),
+  'os/cardanoAccountList': (host, d) => host.cardanoAccountList(d.network, d.walletName),
+  'os/cardanoAccountAdd': (host, d) => host.cardanoAccountAdd(d.network, d.walletName, d.label),
+  'os/cardanoAccountImport': (host, d) =>
+    host.cardanoAccountImport(d.network, d.walletName, d.mnemonic, d.passphrase, d.label),
+  'os/cardanoAccountSelect': (host, d) => host.cardanoAccountSelect(d.network, d.walletName, d.id),
+  'os/cardanoAccountRemove': (host, d) => host.cardanoAccountRemove(d.network, d.walletName, d.id),
+  'os/cardanoAccountRename': (host, d) =>
+    host.cardanoAccountRename(d.network, d.walletName, d.id, d.label),
+  'os/cardanoImportedPhrases': (host, d) =>
+    host.cardanoImportedPhrases(d.network, d.walletName, d.passphrase),
+  'os/cardanoResolveReceiver': (host, d) => host.cardanoResolveReceiver(d.input),
+  'os/cardanoReceiverAccounts': (host, d) => host.cardanoReceiverAccounts(d.network),
+  'os/cardanoAddresses': (_host, d) => cardano.cardanoAddresses(d.mnemonic, d.config, d.accountIndex),
+  'os/cardanoStatus': (_host, d) => cardano.cardanoStatus(d.mnemonic, d.config, d.indexerUrl, d.accountIndex),
+  'os/cardanoRegister': (_host, d) => cardano.cardanoRegister(d.mnemonic, d.config, d.receiver, d.accountIndex),
+  'os/cardanoDeregister': (_host, d) => cardano.cardanoDeregister(d.mnemonic, d.config, d.accountIndex),
+  'os/cardanoCip30': (_host, d) =>
+    cardano.cardanoCip30(d.mnemonic, d.config, d.method as never, d.params, d.accountIndex),
+  'os/cardanoSend': (_host, d) => cardano.cardanoSend(d.mnemonic, d.config, d.request, d.accountIndex),
+  'os/cardanoUpdate': (_host, d) => cardano.cardanoUpdate(d.mnemonic, d.config, d.receiver, d.accountIndex),
   'os/walletUnlock': (host, d) => host.walletUnlock(d.name, d.passphrase, d.network),
   // startWalletSync resolves a SyncedWallet, which isn't structured-cloneable —
   // await it and return void (the protocol result type).
@@ -55,7 +78,7 @@ export const hostDispatch: Dispatch = {
   'os/requestStats': (host) => host.requestStats(),
   'os/requestStatsReset': (host) => host.resetRequestStats(),
   'os/dustRebuild': (host, d) => host.dustRebuild(d.seedHex, d.walletName, d.network),
-  'os/transferBuild': (host, d) => host.transferBuild(d.seedHex, d.walletName, d.network, d.requests),
+  'os/transferBuild': (host, d) => host.transferBuild(d.seedHex, d.walletName, d.network, d.requests, d.payFees),
   'os/transferSubmit': (host, d) => host.transferSubmit(d.seedHex, d.walletName, d.network, d.txHex),
   'os/txHistoryGet': (host, d) => host.txHistoryGet(d.seedHex, d.walletName, d.network, d.pageNumber, d.pageSize),
   'os/activityGet': (host, d) => host.activityGet(d.seedHex, d.walletName, d.network),
@@ -83,11 +106,11 @@ export const hostDispatch: Dispatch = {
     return encodeBigintJson(result);
   },
   'os/balanceTransaction': (host, d) =>
-    host.balanceTransaction(d.seedHex, d.walletName, d.network, d.txHex, d.sealed),
-  'os/txSummary': (host, d) => host.txSummary(d.network, d.txHex, d.sealed),
+    host.balanceTransaction(d.seedHex, d.walletName, d.network, d.txHex, d.sealed, d.payFees),
   'os/tokenRegistryResolve': (host, d) => host.tokenRegistryResolve(d.network, d.baseUrl, d.useBuckets, d.colors),
   'os/makeIntent': (host, d) =>
     host.makeIntent(d.seedHex, d.walletName, d.network, d.inputs, d.outputs, d.payFees),
+  'os/txSummary': (host, d) => host.txSummary(d.network, d.txHex, d.sealed),
 };
 
 export const HOST_METHODS = Object.keys(hostDispatch) as HostMethod[];

@@ -9,6 +9,9 @@
 
 import type { RegistryToken } from '../messaging/protocol';
 import { t } from '../i18n';
+import { shortTokenId, tokenDisplayName } from './token-labels';
+
+export { shortTokenId };
 
 export interface ShieldedRowView {
   /** Headline: the user's own name, else the registry ticker, else the short id. */
@@ -17,10 +20,6 @@ export interface ShieldedRowView {
   /** Base-unit exponent for formatTokenBalance. */
   decimals: number;
   level: RegistryToken['level'] | null;
-}
-
-export function shortTokenId(id: string): string {
-  return `${id.slice(0, 8)}…`;
 }
 
 export function shieldedRowView(
@@ -33,7 +32,7 @@ export function shieldedRowView(
   const entry = registry[id];
   if (!entry) {
     return {
-      name: custom ?? short,
+      name: tokenDisplayName(id, tokenNames),
       sub: custom ? t('home_shieldedTokenWithId', [short]) : t('home_shieldedToken'),
       decimals: 0,
       level: null,

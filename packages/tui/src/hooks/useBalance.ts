@@ -68,6 +68,12 @@ export function useBalance(
   onLog?: (msg: string) => void,
   walletName?: string,
   isNewWallet?: boolean,
+  /**
+   * Birthday for the network being synced. Without it the pre-seed gate
+   * (`isNewWallet || birthday`) leaves an existing wallet on the genesis path
+   * however good a reference is in the store — silently, as a slow sync.
+   */
+  getBirthday?: (networkId: string) => Promise<number | undefined>,
 ) {
   const prover = network ? resolveProverConfig(network) : null;
   const proverKey = prover?.type === 'server' ? `server:${prover.url}` : (prover?.type ?? '');
@@ -76,6 +82,12 @@ export function useBalance(
   const unsubRef = useRef<(() => void) | null>(null);
   const onLogRef = useRef(onLog);
   onLogRef.current = onLog;
+
+  // Bumped to force a fresh sync of the SAME wallet on the same network.
+  // Without it there is no dep change to restart on, so a cache clear leaves
+  // the old in-memory wallet running — and it re-persists the state that was
+  // just deleted.
+  const [syncGeneration, setSyncGeneration] = useState(0);
 
   const startSync = useCallback(async () => {
     if (!walletKeys || !network) {
@@ -97,7 +109,7 @@ export function useBalance(
       onLogRef.current?.(`[sync] startWalletSync begin — wallet=${walletName ?? '?'} network=${network.id} indexer=${network.indexerUrl}`);
       const synced = await startWalletSync(walletKeys, network, (msg) => {
         setState(prev => ({ ...prev, syncStatus: msg }));
-      }, walletName, isNewWallet);
+      }, walletName, isNewWallet, await getBirthday?.(network.id));
       onLogRef.current?.('[sync] startWalletSync resolved — facade ready, subscribing');
 
       syncRef.current = synced;
@@ -117,7 +129,7 @@ export function useBalance(
       onLogRef.current?.(`Sync failed: ${msg}`);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [walletKeys, network?.id, network?.nodeUrl, network?.indexerUrl, proverKey, walletName, isNewWallet]);
+  }, [walletKeys, network?.id, network?.nodeUrl, network?.indexerUrl, proverKey, walletName, isNewWallet, getBirthday, syncGeneration]);
 
   useEffect(() => {
     startSync();
@@ -175,5 +187,19 @@ export function useBalance(
     ]);
   }, []);
 
-  return { ...state, refresh, getFacade, stop };
+  /**
+   * Tear the sync down, run `between` with nothing holding the state, then
+   * start fresh.
+   *
+   * The ordering is the whole point for a cache clear: deleting the persisted
+   * state under a live wallet achieves nothing, because the wallet still holds
+   * the bad state in memory and writes it back at its next checkpoint.
+   */
+  const restart = useCallback(async (between?: () => Promise<void>): Promise<void> => {
+    await stop();
+    if (between) await between();
+    setSyncGeneration((n) => n + 1);
+  }, [stop]);
+
+  return { ...state, refresh, getFacade, stop, restart };
 }

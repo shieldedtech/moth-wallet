@@ -75,6 +75,21 @@ export async function balanceUnboundTransaction(facade: WalletFacade, tx: unknow
     : f.balanceUnboundTransaction(tx, keys, options);
 }
 
+/**
+ * An unbound recipe with no balancing transaction, for a dApp transaction that
+ * needs nothing balanced (connector `payFees: false`); finalizing it just binds.
+ * The v9 facade wants the base as a handle stamped with the active version.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function unboundRecipe(facade: WalletFacade, tx: unknown): Promise<any> {
+  if (!isV9()) return {type: 'UNBOUND_TRANSACTION', baseTransaction: tx};
+  return {
+    type: 'UNBOUND_TRANSACTION',
+    protocolVersion: await activeProtocolVersion(facade),
+    baseTransaction: await toFacadeTx(facade, 'Unbound', tx),
+  };
+}
+
 export function estimateTransactionFee(facade: WalletFacade, tx: unknown, dustSecretKey: unknown, options: object) {
   const f = facade as AnyFacade;
   return isV9() ? f.estimateTransactionFee(tx, options) : f.estimateTransactionFee(tx, dustSecretKey, options);

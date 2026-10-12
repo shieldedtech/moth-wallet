@@ -42,14 +42,18 @@ export async function loadContractArtifact(rawPath: string): Promise<ContractArt
     throw err;
   }
 
-  // Strategy 1: managed/ directory with contract/ subdirectory
+  // Strategy 1: managed/ directory with contract/ subdirectory. Only a missing
+  // contract/ falls through; a load failure is reported, since swallowing it
+  // hides the real cause (commonly a compact runtime version mismatch) behind
+  // the "no contract module found" message at the end of this function.
   const contractSubdir = join(artifactPath, 'contract');
+  let contractSubdirExists = false;
   try {
-    const contractStat = await stat(contractSubdir);
-    if (contractStat.isDirectory()) {
-      return await loadFromContractDir(artifactPath, contractSubdir);
-    }
+    contractSubdirExists = (await stat(contractSubdir)).isDirectory();
   } catch { /* no contract/ subdir — try other strategies */ }
+  if (contractSubdirExists) {
+    return await loadFromContractDir(artifactPath, contractSubdir);
+  }
 
   // Strategy 2: The user passed the contract/ directory directly
   const entries = await readdir(artifactPath);

@@ -3,7 +3,7 @@ import { nodePolyfills, type PolyfillOptions } from 'vite-plugin-node-polyfills'
 import wasm from 'vite-plugin-wasm';
 import tailwindcss from '@tailwindcss/vite';
 import { MESSAGES } from './lib/i18n/messages';
-import { flavorOf, flavored } from './lib/flavor';
+import { flavorOf, flavored, flavoredOutDir } from './lib/flavor';
 
 // Side-by-side builds (see lib/flavor.ts): `WXT_MOTH_FLAVOR=gloam yarn build`.
 const FLAVOR = flavorOf(process.env.WXT_MOTH_FLAVOR);
@@ -20,8 +20,11 @@ const NODE_POLYFILLS: PolyfillOptions = {
 
 export default defineConfig({
   modules: ['@wxt-dev/module-react'],
-  // A flavored build gets its own output folder, so it never overwrites the regular one.
-  ...(FLAVOR ? { outDir: `.output-${FLAVOR}` } : {}),
+  // A fixed path outside the repo gives Chrome a stable extension ID, instead
+  // of one that follows the source directory. See README, "Building to a fixed
+  // directory". A flavored build gets its own output folder (suffixed, when a
+  // fixed directory is configured), so it never overwrites the regular one.
+  outDir: flavoredOutDir(process.env.MOTH_EXT_OUT_DIR, FLAVOR),
   zip: {
     name: FLAVOR ? `moth-extension-${FLAVOR}` : 'moth-extension',
     artifactTemplate: '{{name}}-{{packageVersion}}-{{browser}}.zip',
@@ -57,6 +60,10 @@ export default defineConfig({
       // them: it grants header rewriting on hosts already declared below, and
       // no new access.
       'declarativeNetRequestWithHostAccess',
+      // Required by the Paste buttons (recipient field, setup seed phrase),
+      // which read the clipboard. Chrome allows that read from an extension
+      // page undeclared; stricter Chromium builds such as Brave refuse it.
+      'clipboardRead',
       // Chrome-only; Firefox gets sidebar_action from the sidepanel entrypoint.
       ...(browser === 'firefox' ? [] : ['sidePanel', 'offscreen']),
     ],

@@ -34,11 +34,9 @@ export function shouldRepairDustView(
 ): boolean {
   const generation = balances.dustGeneration;
   if (!balances.syncProgress.dustSynced || !generation?.registered) return false;
-  // A DUST spend in flight moves its coin out of availableCoins, so `designated`
-  // (derived from the maxCap of AVAILABLE coins) collapses while registeredNight
-  // stays. That deficit is expected settling, not a stale view — and a fee-only
-  // spend leaves the NIGHT UTXOs untouched, so their old ctime would otherwise
-  // sail straight through the staleness gate below.
+  // A spend in flight is settling by definition, whatever the coin sums say at
+  // this moment — and a fee-only spend leaves the NIGHT UTXOs untouched, so
+  // their old ctime would otherwise sail straight through the staleness gate.
   if (balances.coins?.dust?.pending?.length) return false;
   // No deficit — every registered STAR is backed by a generation record.
   if (generation.registeredNight <= generation.designated) return false;

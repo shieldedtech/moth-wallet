@@ -41,6 +41,10 @@ let opsInFlight = 0;
 const TEARDOWN_DELAY_MS = 10_000;
 let teardownTimer: ReturnType<typeof setTimeout> | null = null;
 
+// Backstop for a document that has gone quiet. Above the whole offscreen round trip,
+// so the graceful path — which saves the final sync state — is the one that decides.
+const STOP_TIMEOUT_MS = 45_000;
+
 // Bumped whenever activity (re)appears — a new port, setup tab, or op. teardown()
 // snapshots it before the slow syncStop and bails out of the close if it changed,
 // so activity returning mid-teardown never gets its document closed underneath it.
@@ -119,10 +123,43 @@ export async function startSync(session: Session, network: NetworkConfig): Promi
   }
 }
 
-/** Stop the current engine and make the same target eligible to start again. */
+/**
+ * Stop the current engine and make the same target eligible to start again.
+ *
+ * A document that never answers is unresponsive rather than slow, so it is closed —
+ * Chrome does that without its cooperation, where a readiness ping only fails again.
+ * A repair rather than teardown()'s exit: the caller starts syncing next.
+ */
 export async function stopSync(): Promise<void> {
+  // Started here but not yet emitted: the engine is still restoring its caches,
+  // and the dust restore is one synchronous WASM call that holds the worker for
+  // minutes on preprod. It cannot answer a stop until that call returns, and it
+  // has nothing to save that is not already on disk, so close it outright —
+  // otherwise a network switch made from the loading screen waits out the full
+  // timeout below.
+  const restoring = currentKey !== null && !sawBalancesSinceStart;
   currentKey = null;
-  if (await offscreen.exists()) await offscreen.syncStop();
+  if (!(await offscreen.exists())) return; // nothing running to stop
+  if (restoring) {
+    await offscreen.close().catch(() => {});
+    return;
+  }
+  let answered = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  await new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, STOP_TIMEOUT_MS);
+    offscreen.syncStop().then(
+      () => {
+        answered = true;
+        resolve();
+      },
+      // A document that cannot be reached at all is handled the same as one that
+      // will not answer: close it and let the next ensure build a fresh one.
+      () => resolve(),
+    );
+  });
+  clearTimeout(timer);
+  if (!answered) await offscreen.close().catch(() => {});
 }
 
 export function beginOp(): void {

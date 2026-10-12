@@ -138,6 +138,106 @@ describe('dustView registration state', () => {
     expect(view.etaText).not.toContain('Waiting');
   });
 
+  // The reported bug: a wallet showing "3,301.04 of 0", "0% generated" and
+  // "tNIGHT not registered yet" on the same card its detail screen labelled
+  // "Registered — generating". Every override of the ETA used to be gated on a
+  // non-zero cap, so a registered wallet whose generation records were missing
+  // kept the one line that was certainly false.
+  describe('registered, holding value, but no generation records', () => {
+    // The reported wallet exactly: 3,301.04 tDUST held (DUST_UNIT is 1e15),
+    // 944 tNIGHT registered, and a cap of zero.
+    //
+    // `generatingNight: 0n` and a registration older than the grace period are
+    // what make it a STALE view rather than a settling one — core reports the
+    // same registered/limit-0 shape for the whole normal gap after registering,
+    // and only the aged, deficit-bearing case is an error worth naming.
+    const REPORTED_DUST = 3_301_040n * 10n ** 12n;
+    const STALE = new Date(Date.now() - 5 * 3_600_000);
+    const missingRecords = () =>
+      dustView(
+        makeBalances({
+          dust: REPORTED_DUST,
+          limit: 0n,
+          night: 944n * 10n ** 6n,
+          registered: true,
+          generatingNight: 0n,
+          newestRegisteredAt: STALE,
+          dustSynced: true,
+        }),
+        labels,
+      );
+
+    it('does not claim the NIGHT is unregistered', () => {
+      const view = missingRecords();
+      expect(view.etaText).not.toContain('not registered');
+      expect(view.unregisteredNight).toBe(false);
+    });
+
+    it('reports the capacity as unknown rather than as zero, and keeps the balance', () => {
+      const view = missingRecords();
+      expect(view.capacityUnknown).toBe(true);
+      expect(view.etaText).toBe('Generation records missing');
+      // The cap is what went missing, not the DUST.
+      expect(view.current).toBe('3,301.04');
+    });
+
+    it('offers the rebuild alongside the message that names the problem', () => {
+      // An error-sounding line with no action is the worst of both.
+      expect(missingRecords().canRebuild).toBe(true);
+    });
+
+    // The same registered/limit-0 shape, inside the window where it is expected:
+    // core reports it for the whole gap between registering and the first dust
+    // coin applying. Calling that "records missing" — with no rebuild offered,
+    // beside a note saying generation starts on its own — is the contradiction
+    // this block exists to remove, relocated.
+    it('calls the same state settling, not missing, inside the grace period', () => {
+      const view = dustView(
+        makeBalances({
+          dust: 0n,
+          limit: 0n,
+          night: 944n * 10n ** 6n,
+          registered: true,
+          generatingNight: 0n,
+          newestRegisteredAt: new Date(Date.now() - 60_000),
+          dustSynced: true,
+        }),
+        labels,
+      );
+      expect(view.capacityUnknown).toBe(true);
+      expect(view.etaText).toBe('Generation records settling');
+      expect(view.canRebuild).toBe(false);
+    });
+
+    it('is not claimed while the dust sub-wallet is still syncing', () => {
+      const view = dustView(
+        makeBalances({ dust: REPORTED_DUST, limit: 0n, night: 944n * 10n ** 6n, registered: true, dustSynced: false }),
+        labels,
+      );
+      expect(view.etaText).toBe('Syncing…');
+    });
+
+    it('is not claimed for an unregistered wallet, which has a different remedy', () => {
+      const view = dustView(
+        makeBalances({ dust: 0n, limit: 0n, night: 944n * 10n ** 6n, registered: false, dustSynced: true }),
+        labels,
+      );
+      expect(view.capacityUnknown).toBe(false);
+      expect(view.etaText).toBe('tNIGHT not registered yet');
+    });
+
+    // Pins the defensive value clause, not a state core can reach: `registered`
+    // is derived from a registered NIGHT UTXO, so it already implies night > 0n.
+    it('holds the defensive guard: registered but holding nothing is not unknown', () => {
+      const view = dustView(
+        makeBalances({ dust: 0n, limit: 0n, night: 0n, registered: true, dustSynced: true }),
+        labels,
+      );
+      expect(view.capacityUnknown).toBe(false);
+      expect(view.etaText).toBe('Waiting for tNIGHT');
+    });
+  });
+
   it('reports an ETA once NIGHT is registered and generating', () => {
     const view = dustView(
       makeBalances({

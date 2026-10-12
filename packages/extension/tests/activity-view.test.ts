@@ -83,7 +83,7 @@ describe('activityRowView', () => {
         timestamp: new Date('2026-07-12T18:34:00'),
       }),
       labels,
-      NOW,
+      { now: NOW },
     );
 
     expect(view.title).toBe('Sent to mn_addr_…c2vx');
@@ -103,7 +103,7 @@ describe('activityRowView', () => {
         timestamp: new Date('2026-07-13T09:58:00'),
       }),
       labels,
-      NOW,
+      { now: NOW },
     );
 
     expect(view.title).toBe('Sending to mn_addr_…c2vx');
@@ -118,7 +118,7 @@ describe('activityRowView', () => {
     const view = activityRowView(
       entry({ kind: 'sent', counterparty: OTHER, outputs: 3, deltas: [night(-150_000_000n)] }),
       labels,
-      NOW,
+      { now: NOW },
     );
 
     expect(view.title).toBe('Sent 3 transfers');
@@ -134,7 +134,7 @@ describe('activityRowView', () => {
         deltas: [night(-10_000_000n), { tokenType: 'a'.repeat(64), kind: 'shielded', amount: -50n }],
       }),
       labels,
-      NOW,
+      { now: NOW },
     );
 
     expect(view.title).toBe('Sent 2 transfers');
@@ -153,7 +153,7 @@ describe('activityRowView', () => {
         ],
       }),
       labels,
-      NOW,
+      { now: NOW },
     );
 
     expect(view.title).toBe('Sent 2 transfers');
@@ -163,7 +163,7 @@ describe('activityRowView', () => {
     const view = activityRowView(
       entry({ kind: 'received', deltas: [night(120_000_000n)] }),
       labels,
-      NOW,
+      { now: NOW },
     );
 
     expect(view.title).toBe('Received tNIGHT');
@@ -181,7 +181,7 @@ describe('activityRowView', () => {
         ],
       }),
       labels,
-      NOW,
+      { now: NOW },
     );
 
     expect(view.title).toBe('Swapped tNIGHT for musd0000…');
@@ -192,7 +192,7 @@ describe('activityRowView', () => {
   });
 
   it('renders a registration entry as DUST with no amount when nothing measurable moved', () => {
-    const view = activityRowView(entry({ kind: 'dust' }), labels, NOW);
+    const view = activityRowView(entry({ kind: 'dust' }), labels, { now: NOW });
 
     expect(view.title).toBe('tDUST registration');
     expect(view.amount).toBeNull();
@@ -203,7 +203,7 @@ describe('activityRowView', () => {
     const view = activityRowView(
       entry({ kind: 'dust', dustDelta: -400_000_000_000_000n }),
       labels,
-      NOW,
+      { now: NOW },
     );
 
     expect(view.title).toBe('Network fee paid');
@@ -220,7 +220,7 @@ describe('activityRowView', () => {
         timestamp: new Date('2026-07-13T09:58:00'),
       }),
       labels,
-      NOW,
+      { now: NOW },
     );
 
     expect(view.sub).toBe('09:58 · Failed');
@@ -232,15 +232,89 @@ describe('activityRowView', () => {
     const monday = activityRowView(
       entry({ timestamp: new Date('2026-07-08T10:00:00'), deltas: [night(500_000_000n)] }),
       labels,
-      NOW,
+      { now: NOW },
     );
     expect(monday.sub).toBe('Wednesday');
 
     const older = activityRowView(
       entry({ timestamp: new Date('2026-06-20T10:00:00'), deltas: [night(500_000_000n)] }),
       labels,
-      NOW,
+      { now: NOW },
     );
     expect(older.sub).toBe('20 Jun');
+  });
+});
+
+describe('activityRowView token names', () => {
+  const ST = '24419f0942ff3630a8f0703e9a2430856b9a50c0e6b5f1422ed152bf6ec558fe';
+  const names = { [ST]: 'stNIGHT' };
+  const shielded = (tokenType: string, amount: bigint) => ({
+    tokenType,
+    kind: 'shielded' as const,
+    amount,
+  });
+  const sentOf = (tokenType: string, amount: bigint) =>
+    entry({ kind: 'sent', counterparty: OTHER, deltas: [shielded(tokenType, amount)] });
+
+  it('uses the user-assigned name instead of the raw token id', () => {
+    const view = activityRowView(sentOf(ST, -2n), labels, { now: NOW, tokenNames: names });
+    expect(view.amount).toContain('stNIGHT');
+    expect(view.amount).not.toContain('24419f09');
+  });
+
+  // Exact lookup, like Home, Send and Approval. Normalising here alone would
+  // have shown a name in the feed for an id the asset list still rendered raw.
+  it('does not match a differently formatted id', () => {
+    const view = activityRowView(sentOf(`0x${ST.toUpperCase()}`, -2n), labels, { now: NOW, tokenNames: names });
+    expect(view.amount).not.toContain('stNIGHT');
+  });
+
+  it('falls back to a truncated id when the token is unnamed', () => {
+    const other = 'abcdef01'.repeat(8);
+    const view = activityRowView(sentOf(other, -1n), labels, { now: NOW, tokenNames: names });
+    expect(view.amount).toContain('abcdef01…');
+  });
+
+  it('leaves NIGHT alone', () => {
+    const view = activityRowView(
+      entry({ kind: 'sent', counterparty: OTHER, deltas: [night(-1_000_000n)] }),
+      labels,
+      { now: NOW, tokenNames: names },
+    );
+    expect(view.amount).toContain(labels.night);
+  });
+
+  // A user-assigned name can impersonate the native asset: name a token
+  // "tNIGHT" and "-2 tNIGHT" is indistinguishable from a real NIGHT send. Every
+  // other screen keeps the id visible beside the name; the feed now does too.
+  it('keeps the token id visible beside a user-assigned name', () => {
+    const view = activityRowView(sentOf(ST, -2n), labels, { now: NOW, tokenNames: names });
+
+    expect(view.amount).toContain('stNIGHT');
+    expect(view.sub).toContain('24419f09…');
+    expect(view.amountTokenId).toBe(ST);
+  });
+
+  it('does not repeat the id when the name already is one', () => {
+    const other = 'abcdef01'.repeat(8);
+    const view = activityRowView(sentOf(other, -1n), labels, { now: NOW, tokenNames: names });
+
+    expect(view.sub).not.toContain('abcdef01…');
+    expect(view.amountTokenId).toBeNull();
+  });
+
+  it('leaves NIGHT without an id handle, since its name is not user-chosen', () => {
+    const view = activityRowView(
+      entry({ kind: 'sent', counterparty: OTHER, deltas: [night(-1_000_000n)] }),
+      labels,
+      { now: NOW, tokenNames: names },
+    );
+
+    expect(view.amountTokenId).toBeNull();
+  });
+
+  it('renders the raw id when no names are supplied at all', () => {
+    const view = activityRowView(sentOf(ST, -2n), labels, { now: NOW });
+    expect(view.amount).toContain('24419f09');
   });
 });

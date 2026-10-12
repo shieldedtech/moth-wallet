@@ -11,7 +11,9 @@ import type { WalletInfo } from '@shieldedtech/moth-browser';
 import { t } from '../../lib/i18n';
 import { sendMessage } from '../../lib/messaging/protocol';
 import { accountLabel } from '../../lib/ui/format';
+import { hasNoRecoveryPhrase } from '../../lib/ui/backup';
 import { Button } from '../ui/button';
+import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import { Card, Separator } from '../ui/card';
 import { DialogShell } from '../ui/dialog';
 import { Input } from '../ui/input';
@@ -146,8 +148,8 @@ export function Accounts({
         <RevealPhraseDialog
           wallet={revealing}
           onClose={() => setRevealing(null)}
-          onReveal={(passphrase) =>
-            sendMessage('walletExportPhrase', { name: revealing.name, passphrase })
+          onReveal={(passphrase, as) =>
+            sendMessage('walletExportPhrase', { name: revealing.name, passphrase, as })
           }
         />
       )}
@@ -231,6 +233,8 @@ function RenameDialog({
 }
 
 export type RevealedSecret = { kind: 'mnemonic' | 'seed'; value: string };
+/** Which artifact to reveal: this account's own backup, or its hex seed. */
+export type RevealAs = 'backup' | 'seed';
 
 /** Revealed-secret body: word chips for a mnemonic, a mono hex block (with an
  *  explanatory note) for hex-imported accounts. 3 columns — the panel dialog
@@ -276,20 +280,34 @@ export function RevealPhraseDialog({
   onClose,
 }: {
   wallet: WalletInfo;
-  onReveal: (passphrase: string) => Promise<RevealedSecret>;
+  onReveal: (passphrase: string, as: RevealAs) => Promise<RevealedSecret>;
   onClose: () => void;
 }) {
   const [passphrase, setPassphrase] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [revealed, setRevealed] = useState<RevealedSecret | null>(null);
+  // Chosen before the password is entered, so only the artifact actually asked
+  // for is ever decrypted. Fetching both on one password entry would be a
+  // smoother toggle and would put a secret on the page that nobody asked to see.
+  //
+  // An account restored from a hex seed has no phrase and never will, so the
+  // phrase option is disabled with the reason rather than accepted and then
+  // quietly answered with the seed. The first version did the latter: both
+  // options returned the seed, which read as the choice being ignored.
+  //
+  // backupKind is absent on accounts created before it was recorded. Unknown is
+  // not treated as 'seed' — the option stays open and, if it turns out there is
+  // no phrase, the revealed view explains that as it did before.
+  const hasNoPhrase = hasNoRecoveryPhrase(wallet);
+  const [as, setAs] = useState<RevealAs>(hasNoPhrase ? 'seed' : 'backup');
   const title = t('accounts_revealTitle', [accountLabel(wallet.name, wallet.label)]);
 
   const reveal = async () => {
     setBusy(true);
     setError('');
     try {
-      setRevealed(await onReveal(passphrase));
+      setRevealed(await onReveal(passphrase, as));
     } catch {
       setError(t('accounts_revealWrongPassword'));
     } finally {
@@ -326,6 +344,29 @@ export function RevealPhraseDialog({
       }
     >
       <div className="flex flex-col gap-2">
+        <Tabs value={as} onValueChange={(v) => { setAs(v as RevealAs); setError(''); }}>
+          <TabsList>
+            <TabsTrigger
+              value="backup"
+              disabled={hasNoPhrase}
+              // Radix renders disabled triggers as unfocusable and greyed; the
+              // title carries the reason for a pointer, the note below it for
+              // everyone else.
+              title={hasNoPhrase ? t('accounts_revealNoPhraseReason') : undefined}
+              className={hasNoPhrase ? 'cursor-not-allowed opacity-40' : undefined}
+            >
+              {t('accounts_revealAsBackup')}
+            </TabsTrigger>
+            <TabsTrigger value="seed">{t('accounts_revealAsSeed')}</TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <p className="m-0 text-[12px] text-muted-foreground">
+          {hasNoPhrase
+            ? t('accounts_revealNoPhraseReason')
+            : as === 'seed'
+              ? t('accounts_revealAsSeedNote')
+              : t('accounts_revealAsBackupNote')}
+        </p>
         <Input
           type="password"
           value={passphrase}

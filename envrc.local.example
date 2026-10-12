@@ -1,0 +1,7 @@
+# Moth Wallet — personal direnv overrides
+# Copy to .envrc.local and modify as needed, then run `direnv allow`.
+# .envrc sources it, and git ignores it.
+
+# Where the extension build writes its output.
+# See README, "Building to a fixed directory".
+# export MOTH_EXT_OUT_DIR="$HOME/.moth-ext-build"

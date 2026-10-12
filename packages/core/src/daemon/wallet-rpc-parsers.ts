@@ -9,13 +9,19 @@
 // INTERNAL_ERROR.
 
 import {DaemonProtocolError} from './protocol.js';
+import {resolveDustReceiver} from '../cardano/receiver.js';
 import type {
   DaemonCallCircuitParams,
+  DaemonCardanoDeregisterParams,
+  DaemonCardanoRegisterParams,
+  DaemonCardanoSendParams,
+  DaemonCardanoUpdateParams,
   DaemonDeployContractParams,
   DaemonDustDeregisterParams,
   DaemonDustRegisterParams,
   DaemonInsertVerifierKeyParams,
   DaemonInsertVerifierKeysBatchParams,
+  DaemonProveTransactionParams,
   DaemonSubmitTransactionParams,
   DaemonTransferTokensParams,
 } from './wallet-rpc-types.js';
@@ -78,6 +84,69 @@ export function parseSubmitTransactionParams(raw: unknown): DaemonSubmitTransact
   const summary = typeof p.summary === 'string' ? p.summary : undefined;
   const details = parseOptionalStringArray(p.details, 'submitTransaction.details');
   return {hex: p.hex, summary, details};
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// proveTransaction
+// ─────────────────────────────────────────────────────────────────────
+
+export const PROVE_TTL_MIN_MINUTES = 1;
+export const PROVE_TTL_MAX_MINUTES = 60;
+export const PROVE_TTL_DEFAULT_MINUTES = 30;
+
+export function parseProveTransactionParams(raw: unknown): DaemonProveTransactionParams {
+  if (!raw || typeof raw !== 'object') {
+    throw new DaemonProtocolError('INVALID_PARAMS', 'proveTransaction params must be an object');
+  }
+  const p = raw as Record<string, unknown>;
+
+  if (p.type !== 'shielded' && p.type !== 'unshielded') {
+    throw new DaemonProtocolError('INVALID_PARAMS', "proveTransaction.type must be 'shielded' or 'unshielded'");
+  }
+
+  if (typeof p.tokenId !== 'string' || !/^[0-9a-fA-F]{64}$/.test(p.tokenId)) {
+    throw new DaemonProtocolError('INVALID_PARAMS', 'proveTransaction.tokenId must be a 64-char hex string');
+  }
+
+  if (typeof p.amount !== 'string' || !/^\d+$/.test(p.amount)) {
+    throw new DaemonProtocolError('INVALID_PARAMS', 'proveTransaction.amount must be a non-negative decimal string');
+  }
+  let amountBig: bigint;
+  try {
+    amountBig = BigInt(p.amount);
+  } catch {
+    throw new DaemonProtocolError('INVALID_PARAMS', 'proveTransaction.amount must be parseable as bigint');
+  }
+  if (amountBig <= 0n) {
+    throw new DaemonProtocolError('INVALID_PARAMS', 'proveTransaction.amount must be greater than zero');
+  }
+
+  if (typeof p.to !== 'string' || p.to.length === 0) {
+    throw new DaemonProtocolError('INVALID_PARAMS', 'proveTransaction.to must be a non-empty bech32m address string');
+  }
+
+  // Garbage is rejected; an out-of-range number is clamped, per the
+  // documented contract on DaemonProveTransactionParams.ttlMinutes.
+  let ttlMinutes: number | undefined;
+  if (p.ttlMinutes !== undefined && p.ttlMinutes !== null) {
+    if (typeof p.ttlMinutes !== 'number' || !Number.isFinite(p.ttlMinutes)) {
+      throw new DaemonProtocolError('INVALID_PARAMS', 'proveTransaction.ttlMinutes must be a finite number');
+    }
+    ttlMinutes = Math.min(
+      PROVE_TTL_MAX_MINUTES,
+      Math.max(PROVE_TTL_MIN_MINUTES, Math.floor(p.ttlMinutes)),
+    );
+  }
+
+  return {
+    type: p.type,
+    tokenId: p.tokenId.toLowerCase(),
+    amount: p.amount,
+    to: p.to,
+    ...(ttlMinutes !== undefined ? {ttlMinutes} : {}),
+    summary: typeof p.summary === 'string' ? p.summary : undefined,
+    details: parseOptionalStringArray(p.details, 'proveTransaction.details'),
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -285,5 +354,98 @@ export function parseInsertVerifierKeysBatchParams(raw: unknown): DaemonInsertVe
     timeoutSec: requirePositiveTimeoutSec(p.timeoutSec, 'insertVerifierKeysBatch.timeoutSec'),
     summary: typeof p.summary === 'string' ? p.summary : undefined,
     details: parseOptionalStringArray(p.details, 'insertVerifierKeysBatch.details'),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// cardanoRegister / cardanoDeregister / cardanoUpdate
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * A DUST receiver, validated by the same rule core applies, so a malformed value
+ * is refused as INVALID_PARAMS before a Cardano session is opened.
+ */
+function parseDustAddressBytes(value: unknown, fieldName: string): string {
+  if (typeof value !== 'string') {
+    throw new DaemonProtocolError('INVALID_PARAMS', `${fieldName} must be a string`);
+  }
+  try {
+    return resolveDustReceiver(value);
+  } catch (err) {
+    throw new DaemonProtocolError('INVALID_PARAMS', `${fieldName}: ${(err as Error).message}`);
+  }
+}
+
+export function parseCardanoRegisterParams(raw: unknown): DaemonCardanoRegisterParams {
+  if (raw === null || raw === undefined) return {};
+  if (typeof raw !== 'object') {
+    throw new DaemonProtocolError('INVALID_PARAMS', 'cardanoRegister params must be an object or omitted');
+  }
+  const p = raw as Record<string, unknown>;
+  return {
+    receiver: p.receiver === undefined ? undefined : parseDustAddressBytes(p.receiver, 'cardanoRegister.receiver'),
+    summary: typeof p.summary === 'string' ? p.summary : undefined,
+    details: parseOptionalStringArray(p.details, 'cardanoRegister.details'),
+  };
+}
+
+export function parseCardanoDeregisterParams(raw: unknown): DaemonCardanoDeregisterParams {
+  if (raw === null || raw === undefined) return {};
+  if (typeof raw !== 'object') {
+    throw new DaemonProtocolError('INVALID_PARAMS', 'cardanoDeregister params must be an object or omitted');
+  }
+  const p = raw as Record<string, unknown>;
+  return {
+    summary: typeof p.summary === 'string' ? p.summary : undefined,
+    details: parseOptionalStringArray(p.details, 'cardanoDeregister.details'),
+  };
+}
+
+export function parseCardanoUpdateParams(raw: unknown): DaemonCardanoUpdateParams {
+  if (!raw || typeof raw !== 'object') {
+    throw new DaemonProtocolError('INVALID_PARAMS', 'cardanoUpdate params must be an object');
+  }
+  const p = raw as Record<string, unknown>;
+  return {
+    receiver: parseDustAddressBytes(p.receiver, 'cardanoUpdate.receiver'),
+    summary: typeof p.summary === 'string' ? p.summary : undefined,
+    details: parseOptionalStringArray(p.details, 'cardanoUpdate.details'),
+  };
+}
+
+/** A non-negative integer as a decimal string, or undefined. */
+function parseAmountString(value: unknown, fieldName: string): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== 'string' || !/^\d+$/.test(value)) {
+    throw new DaemonProtocolError(
+      'INVALID_PARAMS',
+      `${fieldName} must be a non-negative integer as a decimal string`,
+    );
+  }
+  return value;
+}
+
+export function parseCardanoSendParams(raw: unknown): DaemonCardanoSendParams {
+  if (!raw || typeof raw !== 'object') {
+    throw new DaemonProtocolError('INVALID_PARAMS', 'cardanoSend params must be an object');
+  }
+  const p = raw as Record<string, unknown>;
+  if (typeof p.to !== 'string' || p.to.trim() === '') {
+    throw new DaemonProtocolError('INVALID_PARAMS', 'cardanoSend.to must be a Cardano address');
+  }
+  const lovelace = parseAmountString(p.lovelace, 'cardanoSend.lovelace');
+  const cnight = parseAmountString(p.cnight, 'cardanoSend.cnight');
+  if ((lovelace ?? '0') === '0' && (cnight ?? '0') === '0') {
+    throw new DaemonProtocolError(
+      'INVALID_PARAMS',
+      'cardanoSend needs a non-zero lovelace amount, cnight amount, or both',
+    );
+  }
+  return {
+    to: p.to.trim(),
+    ...(lovelace !== undefined ? { lovelace } : {}),
+    ...(cnight !== undefined ? { cnight } : {}),
+    summary: typeof p.summary === 'string' ? p.summary : undefined,
+    details: parseOptionalStringArray(p.details, 'cardanoSend.details'),
   };
 }
