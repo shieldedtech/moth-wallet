@@ -3,10 +3,11 @@ import { nodePolyfills, type PolyfillOptions } from 'vite-plugin-node-polyfills'
 import wasm from 'vite-plugin-wasm';
 import tailwindcss from '@tailwindcss/vite';
 import { MESSAGES } from './lib/i18n/messages';
-import { flavorOf, flavored, flavoredOutDir } from './lib/flavor';
+import { flavorLabelOf, flavorOf, flavored, flavoredOutDir } from './lib/flavor';
 
 // Side-by-side builds (see lib/flavor.ts): `WXT_MOTH_FLAVOR=gloam yarn build`.
 const FLAVOR = flavorOf(process.env.WXT_MOTH_FLAVOR);
+const FLAVOR_LABEL = flavorLabelOf(process.env.WXT_MOTH_FLAVOR_LABEL);
 
 // Core keeps Buffer/process usage (address, proof, contract paths) and the
 // wallet-sdk pulls in stream/util/events transitively. The dedicated wallet
@@ -45,7 +46,7 @@ export default defineConfig({
     },
   },
   manifest: ({ browser }) => ({
-    name: FLAVOR ? flavored(FLAVOR).name : '__MSG_common_extName__',
+    name: FLAVOR ? flavored(FLAVOR, FLAVOR_LABEL).name : '__MSG_common_extName__',
     description: '__MSG_common_extDescription__',
     default_locale: 'en',
     permissions: [
@@ -81,7 +82,10 @@ export default defineConfig({
   }),
   vite: () => ({
     // Bake the flavor into every bundle (lib/flavor.ts reads it).
-    define: { 'import.meta.env.WXT_MOTH_FLAVOR': JSON.stringify(FLAVOR) },
+    define: {
+      'import.meta.env.WXT_MOTH_FLAVOR': JSON.stringify(FLAVOR),
+      'import.meta.env.WXT_MOTH_FLAVOR_LABEL': JSON.stringify(FLAVOR_LABEL ?? ''),
+    },
     plugins: [
       // ledger-v8 ships WASM via the ESM-integration proposal, which emits a
       // top-level await. A Chrome MV3 service worker cannot have TLA in its

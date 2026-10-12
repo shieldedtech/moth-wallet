@@ -16,7 +16,7 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "clean": "rm -rf .output .output-* .wxt",
-    "build:gloam": "WXT_MOTH_FLAVOR=gloam wxt build",
+    "build:gloam": "WXT_MOTH_FLAVOR=gloam WXT_MOTH_FLAVOR_LABEL=Glowworm wxt build",
     "postinstall": "wxt prepare"
   },
   "dependencies": {

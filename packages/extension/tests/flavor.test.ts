@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { flavorOf, flavored, flavoredOutDir } from '../lib/flavor';
+import { flavorLabelOf, flavorOf, flavored, flavoredOutDir } from '../lib/flavor';
 
 describe('build flavor', () => {
   it('unset keeps the regular identity', () => {
@@ -45,3 +45,21 @@ describe('build flavor', () => {
     expect(flavoredOutDir('/tmp/moth-ext/', 'gloam')).toBe('/tmp/moth-ext-gloam');
   });
 });
+
+describe('flavor display label', () => {
+  it('renames only the display name; ids, rdns and events keep the flavor id', () => {
+    const f = flavored('gloam', 'Glowworm');
+    expect(f.name).toBe('Moth Wallet (Glowworm)');
+    expect(f.walletId).toBe('mothGloam');
+    expect(f.cardanoId).toBe('mothGloam');
+    expect(f.rdns).toBe('io.shielded.moth.gloam');
+    expect(f.requestEvent).toBe('__moth_gloam_connector_request__');
+    expect(flavored('gloam').name).toBe('Moth Wallet (Gloam)');
+  });
+  it('validates the label', () => {
+    expect(flavorLabelOf(undefined)).toBeUndefined();
+    expect(flavorLabelOf(' Glowworm ')).toBe('Glowworm');
+    expect(() => flavorLabelOf('<script>')).toThrow(/WXT_MOTH_FLAVOR_LABEL/);
+  });
+});
+

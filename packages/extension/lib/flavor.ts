@@ -13,15 +13,29 @@ export const flavorOf = (raw: string | undefined): string => {
 
 export const FLAVOR = flavorOf(import.meta.env?.WXT_MOTH_FLAVOR as string | undefined);
 
+/**
+ * Optional display label for a flavor (`WXT_MOTH_FLAVOR_LABEL`), for when the product
+ * a flavor serves is renamed but its connector id must stay stable (dApps look up
+ * window.midnight.<id>). Display text only: 1–24 letters, digits, spaces or hyphens.
+ */
+export const flavorLabelOf = (raw: string | undefined): string | undefined => {
+  const l = (raw ?? '').trim();
+  if (l === '') return undefined;
+  if (!/^[A-Za-z0-9][A-Za-z0-9 -]{0,23}$/.test(l)) throw new Error(`invalid WXT_MOTH_FLAVOR_LABEL: ${raw}`);
+  return l;
+};
+
+export const FLAVOR_LABEL = flavorLabelOf(import.meta.env?.WXT_MOTH_FLAVOR_LABEL as string | undefined);
+
 const title = (f: string) => f.charAt(0).toUpperCase() + f.slice(1);
 
-export const flavored = (f: string) => ({
+export const flavored = (f: string, label?: string) => ({
   walletId: f ? `moth${title(f)}` : 'moth',
   /** CIP-30 key under window.cardano. Kept equal to walletId so a flavored build's
    *  Cardano provider sits beside — never on top of — a regular Moth's. */
   cardanoId: f ? `moth${title(f)}` : 'moth',
   rdns: f ? `io.shielded.moth.${f}` : 'io.shielded.moth',
-  name: f ? `Moth Wallet (${title(f)})` : 'Moth Wallet',
+  name: f ? `Moth Wallet (${label ?? title(f)})` : 'Moth Wallet',
   requestEvent: f ? `__moth_${f}_connector_request__` : '__moth_connector_request__',
 });
 

@@ -1,6 +1,6 @@
-import { FLAVOR, flavored } from '../flavor';
+import { FLAVOR, FLAVOR_LABEL, flavored } from '../flavor';
 
-const IDENTITY = flavored(FLAVOR);
+const IDENTITY = flavored(FLAVOR, FLAVOR_LABEL);
 export const WALLET_ID = IDENTITY.walletId;
 /** Key of the CIP-30 provider under window.cardano (flavored like WALLET_ID). */
 export const CARDANO_WALLET_ID = IDENTITY.cardanoId;
