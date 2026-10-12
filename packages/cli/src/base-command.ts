@@ -17,10 +17,14 @@ import {
   daemonSocketPath,
   type DaemonClient,
 } from '@shieldedtech/moth-wallet';
-import { createTimingRecorder, createFileTimingStore, type TimingRecorder } from '@shieldedtech/moth-wallet';
-import { homedir } from 'node:os';
+import { createTimingRecorder, createFileTimingStore, mothHome, type TimingRecorder } from '@shieldedtech/moth-wallet';
 import { join } from 'node:path';
 import { FilesystemStorageAdapter } from '@shieldedtech/moth-wallet';
+
+/** Where the CLI's phase timings are recorded. */
+export function timingsPath(): string {
+  return join(mothHome(), 'timings.json');
+}
 
 /**
  * Why a daemon connect failed. Distinguishes the cases the user needs to
@@ -172,7 +176,7 @@ export abstract class BaseCommand extends Command {
   }
 
   /**
-   * Phase-timings recorder, writing `~/.moth/timings.json`.
+   * Phase-timings recorder, writing `timings.json` under the moth home.
    *
    * Off unless `moth diagnostics timings --on` has been run, so it costs a
    * single file read per command otherwise. The extension has had this since
@@ -181,7 +185,7 @@ export abstract class BaseCommand extends Command {
    */
   protected get timings(): TimingRecorder {
     if (!this._timings) {
-      this._timings = createTimingRecorder(createFileTimingStore(join(homedir(), '.moth', 'timings.json')));
+      this._timings = createTimingRecorder(createFileTimingStore(timingsPath()));
     }
     return this._timings;
   }
