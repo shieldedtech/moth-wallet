@@ -8,7 +8,7 @@
 
 import type { CardanoNetworkConfig } from '@shieldedtech/moth-wallet/cardano/network';
 import type { CardanoSession } from '@shieldedtech/moth-wallet/cardano/session';
-import type { Cip30Result } from './messaging';
+import type { CardanoSigningPreview, Cip30Result } from './messaging';
 
 export interface CardanoAddressesResult {
   cardanoNetwork: string;
@@ -233,4 +233,23 @@ export async function cardanoCip30(
         throw cip30.cip30Error(cip30.CIP30_ERROR.InvalidRequest, `unknown method ${method}`);
     }
   }, accountIndex);
+}
+
+/**
+ * What a CIP-30 signing request would sign, decoded before the approval so the
+ * user is not asked to sign blind. A transaction is read against this account's
+ * own UTXOs; a `signData` payload needs no chain access.
+ */
+export async function cardanoDescribeSigning(
+  mnemonic: string,
+  config: CardanoNetworkConfig,
+  method: 'signTx' | 'signData' | 'submitTx',
+  params: unknown[],
+  accountIndex?: number,
+): Promise<CardanoSigningPreview> {
+  const cip30 = await import('@shieldedtech/moth-wallet/cardano/cip30');
+  if (method === 'signData') return { payload: cip30.describeSignDataPayload(String(params[1] ?? '')) };
+  return openSession(mnemonic, config, async (session) => ({
+    tx: await cip30.describeTx(session, String(params[0] ?? '')),
+  }), accountIndex);
 }

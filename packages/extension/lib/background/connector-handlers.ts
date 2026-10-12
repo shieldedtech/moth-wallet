@@ -710,6 +710,14 @@ async function dispatchCip30(
   const context = await requireCardano(!CIP30_OFFLINE.has(method));
 
   if (CIP30_SIGNING.has(method)) {
+    // Decoded before the prompt: an approval the user cannot read is a blind signature.
+    const preview = await offscreen.cardanoDescribeSigning({
+      mnemonic: context.mnemonic,
+      config: context.config,
+      method: method as 'signTx' | 'signData' | 'submitTx',
+      params,
+      accountIndex: context.accountIndex,
+    });
     const approved = await requestApproval(
       'cardanoSign',
       origin,
@@ -719,6 +727,7 @@ async function dispatchCip30(
         walletName: context.session.walletName,
         accountLabel: context.account.label,
         accountKind: context.account.kind,
+        preview,
       } satisfies CardanoSignApprovalPayload,
       senderTabId,
     );

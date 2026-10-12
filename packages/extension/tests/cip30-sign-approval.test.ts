@@ -5,9 +5,20 @@ import { fakeBrowser } from 'wxt/testing';
 // pin what the approval now names, and that the key it names is the one that signs.
 
 const cardanoCip30 = vi.fn<(data: { accountIndex: number; mnemonic: string }) => Promise<string>>();
+const cardanoDescribeSigning = vi.fn<(data: { method: string; mnemonic: string }) => Promise<unknown>>();
 vi.mock('../lib/background/offscreen-client', () => ({
-  offscreen: { cardanoCip30: (data: { accountIndex: number; mnemonic: string }) => cardanoCip30(data) },
+  offscreen: {
+    cardanoCip30: (data: { accountIndex: number; mnemonic: string }) => cardanoCip30(data),
+    cardanoDescribeSigning: (data: { method: string; mnemonic: string }) => cardanoDescribeSigning(data),
+  },
 }));
+
+const PREVIEW = {
+  tx: {
+    spentAda: '5', foreignInputs: 0, outputs: [], feeAda: '0.17', netAda: '-5.17',
+    certificates: ['stake delegation'], withdrawals: [], mintPolicies: 0, signsWith: ['payment', 'stake'],
+  },
+};
 
 const requestApproval = vi.fn<(kind: string, origin: string, payload: unknown) => Promise<boolean>>();
 vi.mock('../lib/background/approvals', () => ({
@@ -46,6 +57,7 @@ describe('CIP-30 signing approval', () => {
     await grant(ORIGIN, 'preprod');
     requireCardano.mockResolvedValue(CONTEXT);
     cardanoCip30.mockResolvedValue('witness-set');
+    cardanoDescribeSigning.mockResolvedValue(PREVIEW);
   });
 
   it('names the Cardano network, wallet and signing account', async () => {
@@ -57,7 +69,24 @@ describe('CIP-30 signing approval', () => {
       walletName: 'alice',
       accountLabel: 'Savings',
       accountKind: 'imported',
+      preview: PREVIEW,
     });
+  });
+
+  // signTx was approved blind (#205): the transaction is now decoded first, with
+  // the same key that would sign it.
+  it('decodes the request with the signing account before asking', async () => {
+    requestApproval.mockResolvedValue(true);
+    await dispatch(ORIGIN, SIGN_TX, ['84a4…']);
+    expect(cardanoDescribeSigning).toHaveBeenCalledWith(expect.objectContaining({ method: 'signTx', mnemonic: 'imported phrase' }));
+    expect(cardanoDescribeSigning.mock.invocationCallOrder[0]).toBeLessThan(requestApproval.mock.invocationCallOrder[0]!);
+  });
+
+  it('refuses without asking when the transaction cannot be decoded', async () => {
+    cardanoDescribeSigning.mockRejectedValue({ code: -1, info: 'transaction is not valid CBOR' });
+    await expect(dispatch(ORIGIN, SIGN_TX, ['zz'])).rejects.toMatchObject({ code: -1 });
+    expect(requestApproval).not.toHaveBeenCalled();
+    expect(cardanoCip30).not.toHaveBeenCalled();
   });
 
   it('signs with the key resolved for the approval, not one read afterwards', async () => {

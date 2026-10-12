@@ -254,9 +254,10 @@ export async function getCollateral(
  * Sign a transaction, returning only the witness set.
  *
  * CIP-30 returns witnesses rather than a signed transaction so the dApp keeps
- * control of assembly. `partialSign` is accepted and ignored: moth holds one
- * key set and signs with all of it either way, and refusing the flag outright
- * would break dApps that pass it harmlessly.
+ * control of assembly. Lucid adds a witness only for this account's keys that
+ * the transaction uses: inputs and collateral it owns, certificates and
+ * withdrawals for its stake key, native scripts and required signers.
+ * `partialSign` is accepted and ignored; the signature set is the same either way.
  */
 export async function signTx(session: CardanoSession, txCborHex: string): Promise<string> {
   const { CML } = await import('@lucid-evolution/lucid');
@@ -320,4 +321,151 @@ export async function submitTx(session: CardanoSession, txCborHex: string): Prom
       err instanceof Error ? err.message : String(err),
     );
   }
+}
+
+/** What a dApp-supplied transaction does to this wallet, for the signing approval. */
+export interface CardanoTxSummary {
+  /** ADA leaving this wallet through its own inputs. */
+  readonly spentAda: string;
+  /** Inputs not owned by this wallet (the dApp or a counterparty supplies them). */
+  readonly foreignInputs: number;
+  readonly outputs: ReadonlyArray<{
+    readonly address: string;
+    readonly ada: string;
+    /** Distinct native assets carried, beyond ADA. */
+    readonly assets: number;
+    readonly toThisWallet: boolean;
+  }>;
+  readonly feeAda: string;
+  /** This wallet's ADA after minus before; negative means ADA leaves the wallet. */
+  readonly netAda: string;
+  /** Certificate kinds, e.g. "stake delegation". */
+  readonly certificates: readonly string[];
+  readonly withdrawals: ReadonlyArray<{ readonly rewardAddress: string; readonly ada: string; readonly own: boolean }>;
+  /** Policies minting or burning in this transaction. */
+  readonly mintPolicies: number;
+  /** Which of this account's keys a signature would come from. Stake is reported
+   *  whenever a certificate or own withdrawal is present, so it may overstate. */
+  readonly signsWith: ReadonlyArray<'payment' | 'stake'>;
+}
+
+const CERTIFICATE_KINDS = [
+  'stake registration', 'stake deregistration', 'stake delegation', 'pool registration',
+  'pool retirement', 'stake registration', 'stake deregistration', 'vote delegation',
+  'stake and vote delegation', 'stake registration and delegation', 'vote registration and delegation',
+  'stake and vote registration and delegation', 'committee hot key', 'committee resignation',
+  'DRep registration', 'DRep deregistration', 'DRep update',
+] as const;
+
+function lovelaceToAda(lovelace: bigint): string {
+  const sign = lovelace < 0n ? '-' : '';
+  const abs = lovelace < 0n ? -lovelace : lovelace;
+  const frac = (abs % 1_000_000n).toString().padStart(6, '0').replace(/0+$/, '');
+  return `${sign}${abs / 1_000_000n}${frac ? `.${frac}` : ''}`;
+}
+
+/**
+ * Decode a dApp-supplied transaction into what it does to this wallet, so the
+ * signing approval can show it rather than ask the user to sign blind.
+ */
+export async function describeTx(session: CardanoSession, txCborHex: string): Promise<CardanoTxSummary> {
+  const { CML } = await import('@lucid-evolution/lucid');
+  let tx;
+  try {
+    tx = CML.Transaction.from_cbor_hex(txCborHex);
+  } catch {
+    throw cip30Error(CIP30_ERROR.InvalidRequest, 'transaction is not valid CBOR');
+  }
+  const body = tx.body();
+  const own = await session.lucid.wallet().getUtxos();
+  const ownByRef = new Map(own.map((u) => [`${u.txHash}#${u.outputIndex}`, u]));
+  const owns = (input: { transaction_id(): { to_hex(): string }; index(): bigint }) =>
+    ownByRef.get(`${input.transaction_id().to_hex()}#${Number(input.index())}`);
+
+  let spent = 0n;
+  let foreignInputs = 0;
+  const inputs = body.inputs();
+  for (let i = 0; i < inputs.len(); i++) {
+    const utxo = owns(inputs.get(i));
+    if (utxo) spent += utxo.assets.lovelace ?? 0n;
+    else foreignInputs++;
+  }
+  let ownCollateral = false;
+  const collateral = body.collateral_inputs();
+  for (let i = 0; collateral && i < collateral.len(); i++) if (owns(collateral.get(i))) ownCollateral = true;
+
+  const ownAddress = session.addresses.address;
+  let received = 0n;
+  const outputs: Array<CardanoTxSummary['outputs'][number]> = [];
+  const txOutputs = body.outputs();
+  for (let i = 0; i < txOutputs.len(); i++) {
+    const out = txOutputs.get(i);
+    const address = out.address().to_bech32(undefined);
+    const lovelace = out.amount().coin();
+    const multi = out.amount().multi_asset();
+    let assets = 0;
+    const policies = multi.keys();
+    for (let p = 0; p < policies.len(); p++) assets += multi.get_assets(policies.get(p))?.len() ?? 0;
+    const toThisWallet = address === ownAddress;
+    if (toThisWallet) received += lovelace;
+    outputs.push({ address, ada: lovelaceToAda(lovelace), assets, toThisWallet });
+  }
+
+  const certificates: string[] = [];
+  const certs = body.certs();
+  for (let i = 0; certs && i < certs.len(); i++) {
+    certificates.push(CERTIFICATE_KINDS[certs.get(i).kind()] ?? 'certificate');
+  }
+
+  const withdrawals: Array<CardanoTxSummary['withdrawals'][number]> = [];
+  const wd = body.withdrawals();
+  if (wd) {
+    const keys = wd.keys();
+    for (let i = 0; i < keys.len(); i++) {
+      const account = keys.get(i);
+      const rewardAddress = account.to_address().to_bech32(undefined);
+      withdrawals.push({
+        rewardAddress,
+        ada: lovelaceToAda(wd.get(account) ?? 0n),
+        own: rewardAddress === session.addresses.rewardAddress,
+      });
+    }
+  }
+
+  const required = new Set<string>();
+  const signers = body.required_signers();
+  for (let i = 0; signers && i < signers.len(); i++) required.add(signers.get(i).to_hex());
+
+  const signsWith: Array<'payment' | 'stake'> = [];
+  if (spent > 0n || ownCollateral || required.has(session.addresses.paymentKeyHash)) signsWith.push('payment');
+  if (certificates.length > 0 || withdrawals.some((w) => w.own) || required.has(session.addresses.stakeKeyHash)) {
+    signsWith.push('stake');
+  }
+
+  return {
+    spentAda: lovelaceToAda(spent),
+    foreignInputs,
+    outputs,
+    feeAda: lovelaceToAda(body.fee()),
+    netAda: lovelaceToAda(received - spent),
+    certificates,
+    withdrawals,
+    mintPolicies: body.mint()?.policy_count() ?? 0,
+    signsWith,
+  };
+}
+
+/** A CIP-8 payload as the user should see it: text when it is printable UTF-8, else hex. */
+export function describeSignDataPayload(payloadHex: string): { kind: 'text' | 'hex'; value: string } {
+  const hex = payloadHex.replace(/^0x/, '');
+  if (hex.length % 2 === 0 && /^[0-9a-fA-F]*$/.test(hex)) {
+    const bytes = Uint8Array.from(hex.match(/../g) ?? [], (b) => parseInt(b, 16));
+    try {
+      const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+      if (!/[\u0000-\u0008\u000e-\u001f\u007f]/.test(text)) return { kind: 'text', value: text };
+    } catch {
+      // Not UTF-8: shown as hex.
+    }
+  }
+  return { kind: 'hex', value: hex };
 }

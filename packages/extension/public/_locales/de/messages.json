@@ -2100,7 +2100,55 @@
     "message": "$1 (importiert)"
   },
   "approval_cardanoSignWarning": {
-    "message": "Moth kann noch nicht anzeigen, was diese Transaktion tut — die Seite liefert sie bereits kodiert. Bestätige nur, wenn du dieser Seite vertraust."
+    "message": "Moth hat dies aus den Daten der Seite dekodiert. Bestätige nur, wenn jede Zeile deinen Erwartungen entspricht."
+  },
+  "approval_cardanoMessageLabel": {
+    "message": "Nachricht"
+  },
+  "approval_cardanoAda": {
+    "message": "$1 ADA"
+  },
+  "approval_cardanoAdaAssets": {
+    "message": "$1 ADA + $2 Assets"
+  },
+  "approval_cardanoNetChange": {
+    "message": "Nettoänderung dieser Wallet"
+  },
+  "approval_cardanoSpent": {
+    "message": "Aus dieser Wallet ausgegeben"
+  },
+  "approval_cardanoFee": {
+    "message": "Netzwerkgebühr"
+  },
+  "approval_cardanoOutput": {
+    "message": "Ausgabe $1"
+  },
+  "approval_cardanoOutputOwn": {
+    "message": "Ausgabe $1 (diese Wallet)"
+  },
+  "approval_cardanoForeignInputs": {
+    "message": "Eingaben von anderen"
+  },
+  "approval_cardanoCertificates": {
+    "message": "Zertifikate"
+  },
+  "approval_cardanoWithdrawal": {
+    "message": "Reward-Abhebung"
+  },
+  "approval_cardanoMinting": {
+    "message": "Prägen oder Verbrennen (Policies)"
+  },
+  "approval_cardanoSignsWith": {
+    "message": "Signiert mit"
+  },
+  "approval_cardanoSignsNothing": {
+    "message": "Kein Schlüssel dieses Kontos"
+  },
+  "approval_cardanoPaymentKey": {
+    "message": "Zahlungsschlüssel"
+  },
+  "approval_cardanoStakeKey": {
+    "message": "Stake-Schlüssel"
   },
   "cardano_errorNoDustAddress": {
     "message": "Diese Wallet hat im aktuellen Netzwerk keine DUST-Adresse, also gibt es kein Ziel für erzeugtes DUST."

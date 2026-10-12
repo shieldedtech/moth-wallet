@@ -221,6 +221,13 @@ export interface OffscreenProtocol {
     config: CardanoNetworkConfig;
     accountIndex?: number;
   }): { txHash: string; cleared: number };
+  'os/cardanoDescribeSigning'(data: {
+    mnemonic: string;
+    config: CardanoNetworkConfig;
+    method: 'signTx' | 'signData' | 'submitTx';
+    params: unknown[];
+    accountIndex?: number;
+  }): CardanoSigningPreview;
   'os/cardanoCip30'(data: {
     mnemonic: string;
     config: CardanoNetworkConfig;
@@ -434,3 +441,9 @@ export interface OffscreenProtocol {
 
 export const { sendMessage: offscreenSend, onMessage: offscreenOn } =
   defineExtensionMessaging<OffscreenProtocol>();
+
+/** A decoded CIP-30 signing request, shown on the approval. */
+export interface CardanoSigningPreview {
+  readonly tx?: import('@shieldedtech/moth-wallet/cardano/cip30').CardanoTxSummary;
+  readonly payload?: { readonly kind: 'text' | 'hex'; readonly value: string };
+}

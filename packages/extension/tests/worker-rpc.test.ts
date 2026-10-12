@@ -86,6 +86,7 @@ describe('HOST_METHODS', () => {
     'os/cardanoAccountSelect',
     'os/cardanoAddresses',
     'os/cardanoCip30',
+    'os/cardanoDescribeSigning',
     'os/cardanoDeregister',
     'os/cardanoReceiverAccounts',
     'os/cardanoRegister',

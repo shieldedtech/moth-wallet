@@ -2100,7 +2100,55 @@
     "message": "$1 (importada)"
   },
   "approval_cardanoSignWarning": {
-    "message": "Moth aún no puede mostrar qué hace esta transacción: el sitio la envía ya codificada. Apruébala solo si confías en este sitio."
+    "message": "Moth lo decodificó a partir de lo que envió el sitio. Aprueba solo si cada línea es lo que esperas."
+  },
+  "approval_cardanoMessageLabel": {
+    "message": "Mensaje"
+  },
+  "approval_cardanoAda": {
+    "message": "$1 ADA"
+  },
+  "approval_cardanoAdaAssets": {
+    "message": "$1 ADA + $2 activos"
+  },
+  "approval_cardanoNetChange": {
+    "message": "Cambio neto en esta billetera"
+  },
+  "approval_cardanoSpent": {
+    "message": "Gastado desde esta billetera"
+  },
+  "approval_cardanoFee": {
+    "message": "Comisión de red"
+  },
+  "approval_cardanoOutput": {
+    "message": "Salida $1"
+  },
+  "approval_cardanoOutputOwn": {
+    "message": "Salida $1 (esta billetera)"
+  },
+  "approval_cardanoForeignInputs": {
+    "message": "Entradas de otros"
+  },
+  "approval_cardanoCertificates": {
+    "message": "Certificados"
+  },
+  "approval_cardanoWithdrawal": {
+    "message": "Retiro de recompensas"
+  },
+  "approval_cardanoMinting": {
+    "message": "Acuñación o quema (políticas)"
+  },
+  "approval_cardanoSignsWith": {
+    "message": "Firma con"
+  },
+  "approval_cardanoSignsNothing": {
+    "message": "Ninguna clave de esta cuenta"
+  },
+  "approval_cardanoPaymentKey": {
+    "message": "clave de pago"
+  },
+  "approval_cardanoStakeKey": {
+    "message": "clave de staking"
   },
   "cardano_errorNoDustAddress": {
     "message": "Esta cartera no tiene dirección DUST en la red actual, así que el DUST generado no tendría destino."

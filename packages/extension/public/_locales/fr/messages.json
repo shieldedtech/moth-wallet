@@ -2100,7 +2100,55 @@
     "message": "$1 (importé)"
   },
   "approval_cardanoSignWarning": {
-    "message": "Moth ne peut pas encore montrer ce que fait cette transaction : le site la fournit déjà encodée. N'approuvez que si vous faites confiance à ce site."
+    "message": "Moth a décodé ceci à partir des données du site. N’approuvez que si chaque ligne correspond à ce que vous attendez."
+  },
+  "approval_cardanoMessageLabel": {
+    "message": "Message"
+  },
+  "approval_cardanoAda": {
+    "message": "$1 ADA"
+  },
+  "approval_cardanoAdaAssets": {
+    "message": "$1 ADA + $2 actifs"
+  },
+  "approval_cardanoNetChange": {
+    "message": "Variation nette de ce portefeuille"
+  },
+  "approval_cardanoSpent": {
+    "message": "Dépensé depuis ce portefeuille"
+  },
+  "approval_cardanoFee": {
+    "message": "Frais de réseau"
+  },
+  "approval_cardanoOutput": {
+    "message": "Sortie $1"
+  },
+  "approval_cardanoOutputOwn": {
+    "message": "Sortie $1 (ce portefeuille)"
+  },
+  "approval_cardanoForeignInputs": {
+    "message": "Entrées d’autres parties"
+  },
+  "approval_cardanoCertificates": {
+    "message": "Certificats"
+  },
+  "approval_cardanoWithdrawal": {
+    "message": "Retrait de récompenses"
+  },
+  "approval_cardanoMinting": {
+    "message": "Frappe ou destruction (politiques)"
+  },
+  "approval_cardanoSignsWith": {
+    "message": "Signe avec"
+  },
+  "approval_cardanoSignsNothing": {
+    "message": "Aucune clé de ce compte"
+  },
+  "approval_cardanoPaymentKey": {
+    "message": "clé de paiement"
+  },
+  "approval_cardanoStakeKey": {
+    "message": "clé de staking"
   },
   "cardano_errorNoDustAddress": {
     "message": "Ce portefeuille n'a pas d'adresse DUST sur le réseau actuel : le DUST généré n'aurait nulle part où aller."

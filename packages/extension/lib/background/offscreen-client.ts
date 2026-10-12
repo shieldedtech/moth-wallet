@@ -220,6 +220,16 @@ export const offscreen = {
     await ensureOffscreen();
     return offscreenSend('os/cardanoDeregister', data);
   },
+  async cardanoDescribeSigning(data: {
+    mnemonic: string;
+    config: CardanoNetworkConfig;
+    method: 'signTx' | 'signData' | 'submitTx';
+    params: unknown[];
+    accountIndex?: number;
+  }) {
+    await ensureOffscreen();
+    return offscreenSend('os/cardanoDescribeSigning', data);
+  },
   async cardanoCip30(data: {
     mnemonic: string;
     config: CardanoNetworkConfig;

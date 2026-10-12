@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   addressToHex,
   CIP30_ERROR,
+  describeSignDataPayload,
+  describeTx,
   getCollateral,
   getExtensions,
   getNetworkId,
@@ -186,5 +188,71 @@ describe('getCollateral', () => {
   it('defaults to 5 ADA when asked for no particular amount', async () => {
     expect(await getCollateral(sessionWithUtxos([utxo(0, 10_000_000n)]))).toHaveLength(1);
     expect(await getCollateral(sessionWithUtxos([utxo(0, 4_000_000n)]))).toBeNull();
+  });
+});
+
+describe('describeTx', () => {
+  // signTx used to be approved blind (#205). These pin what the approval is told.
+  const OTHER = 'addr_test1qryvgass5dsrf2kxl3vgfz76uhp83kv5lagzcp29tcana68ca5aqa6swlq6llfamln09tal7n5kvt4275ckwedpt4v7q48uhex';
+  const OWN_TX = '7052cbb8aa3236ce3f5535a8d71cee4048f4e071f0e4278f131fc73aa550fa71';
+  const STAKE_HASH = '070c2f801567402df8e4e630ed3819e1c29219d1d918266758e3a063';
+
+  async function build(opts: { foreignInput?: boolean; delegate?: boolean; withdraw?: bigint }) {
+    const { CML } = await import('@lucid-evolution/lucid');
+    const inputs = CML.TransactionInputList.new();
+    inputs.add(CML.TransactionInput.new(CML.TransactionHash.from_hex(OWN_TX), 0n));
+    if (opts.foreignInput) inputs.add(CML.TransactionInput.new(CML.TransactionHash.from_hex('ab'.repeat(32)), 3n));
+    const outputs = CML.TransactionOutputList.new();
+    outputs.add(CML.TransactionOutput.new(CML.Address.from_bech32(OTHER), CML.Value.from_coin(6_000_000n)));
+    outputs.add(CML.TransactionOutput.new(CML.Address.from_bech32(ADDRESS), CML.Value.from_coin(3_830_000n)));
+    const body = CML.TransactionBody.new(inputs, outputs, 170_000n);
+    if (opts.delegate) {
+      const certs = CML.CertificateList.new();
+      const credential = CML.Credential.new_pub_key(CML.Ed25519KeyHash.from_hex(STAKE_HASH));
+      certs.add(CML.Certificate.new_stake_delegation(credential, CML.Ed25519KeyHash.from_hex('11'.repeat(28))));
+      body.set_certs(certs);
+    }
+    if (opts.withdraw !== undefined) {
+      const withdrawals = CML.MapRewardAccountToCoin.new();
+      withdrawals.insert(CML.RewardAddress.from_address(CML.Address.from_bech32(REWARD))!, opts.withdraw);
+      body.set_withdrawals(withdrawals);
+    }
+    return CML.Transaction.new(body, CML.TransactionWitnessSet.new(), true, undefined).to_cbor_hex();
+  }
+
+  const session = () => {
+    const s = sessionWithUtxos([utxo(0, 10_000_000n)]) as unknown as { addresses: Record<string, string> };
+    s.addresses = { ...s.addresses, stakeKeyHash: STAKE_HASH, paymentKeyHash: 'aa'.repeat(28) };
+    return s as unknown as CardanoSession;
+  };
+
+  it('shows what leaves the wallet, where it goes and the fee', async () => {
+    const tx = await describeTx(session(), await build({}));
+    expect(tx).toMatchObject({ spentAda: '10', feeAda: '0.17', netAda: '-6.17', foreignInputs: 0, certificates: [], signsWith: ['payment'] });
+    expect(tx.outputs).toEqual([
+      { address: OTHER, ada: '6', assets: 0, toThisWallet: false },
+      { address: ADDRESS, ada: '3.83', assets: 0, toThisWallet: true },
+    ]);
+  });
+
+  it('flags certificates, withdrawals and inputs that are not the wallet\'s, and the stake key they use', async () => {
+    const tx = await describeTx(session(), await build({ foreignInput: true, delegate: true, withdraw: 2_500_000n }));
+    expect(tx.foreignInputs).toBe(1);
+    expect(tx.certificates).toEqual(['stake delegation']);
+    expect(tx.withdrawals).toEqual([{ rewardAddress: REWARD, ada: '2.5', own: true }]);
+    expect(tx.signsWith).toEqual(['payment', 'stake']);
+  });
+
+  it('refuses CBOR that is not a transaction', async () => {
+    await expect(describeTx(session(), 'zz')).rejects.toMatchObject({ code: CIP30_ERROR.InvalidRequest });
+  });
+});
+
+describe('describeSignDataPayload', () => {
+  it('shows printable UTF-8 as text and anything else as hex', () => {
+    const hex = Buffer.from('Sign in to example.com', 'utf8').toString('hex');
+    expect(describeSignDataPayload(hex)).toEqual({ kind: 'text', value: 'Sign in to example.com' });
+    expect(describeSignDataPayload('00ff10')).toEqual({ kind: 'hex', value: '00ff10' });
+    expect(describeSignDataPayload(Buffer.from('a\u0007b').toString('hex'))).toMatchObject({ kind: 'hex' });
   });
 });
