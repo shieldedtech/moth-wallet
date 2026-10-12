@@ -5,12 +5,14 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { KeyRound } from 'lucide-react';
+import { presentUntyped } from '@shieldedtech/capsule-blueprint';
 import type { AnswersDocument } from '@shieldedtech/capsule-core';
 import { t } from '../../lib/i18n';
 import { sendMessage } from '../../lib/messaging/protocol';
 import type { CapsuleCapabilitiesDTO } from '../../lib/capsule/protocol';
 import { Button } from '../ui/button';
 import { Card, Separator } from '../ui/card';
+import { CapsuleValue, countOf, isInline } from '../moth/capsule-value';
 import { PanelScreen, PanelHeader } from '../moth/panel';
 
 const isDocument = (value: unknown): value is AnswersDocument =>
@@ -19,28 +21,39 @@ const isDocument = (value: unknown): value is AnswersDocument =>
   !Array.isArray(value) &&
   Object.values(value).every((functions) => typeof functions === 'object' && functions !== null && !Array.isArray(functions));
 
-/** A value as the row shows it: strings bare, anything else as compact JSON, long ones cut. */
-function shown(value: unknown): string {
-  const text = typeof value === 'string' ? value : JSON.stringify(value);
-  return text.length > 72 ? `${text.slice(0, 69)}…` : text;
-}
-
-/** One card per interface: its functions and the values each is answered with. */
+/**
+ * One card per interface: its functions and the values each is answered with, laid out as the
+ * capsule screen lays out a field — the value is untyped until a contract asks for it, so it is
+ * presented by its shape (a struct as rows, bytes truncated with a copy button, digits grouped).
+ */
 export function CapabilityCards({ document }: { document: AnswersDocument }) {
   return (
     <>
       {Object.entries(document).map(([interfaceId, functions]) => (
         <Card key={interfaceId} className="p-0">
           <p className="m-0 px-4 pb-1 pt-3 font-mono text-xs text-muted-foreground">{interfaceId}</p>
-          {Object.entries(functions).map(([name, value], index) => (
-            <div key={name}>
-              {index > 0 && <Separator />}
-              <div className="px-4 py-[11px]">
-                <span className="block text-sm font-semibold">{name}</span>
-                <span className="block break-all font-mono text-xs text-muted-foreground">{shown(value)}</span>
+          {Object.entries(functions).map(([name, value], index) => {
+            const presented = presentUntyped(value);
+            const inline = isInline(presented);
+            return (
+              <div key={name}>
+                {index > 0 && <Separator />}
+                <div className="flex flex-col gap-2 px-4 py-[13px]">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="text-sm font-semibold">{name}</span>
+                    <span className="shrink-0 text-right">
+                      {inline ? (
+                        <CapsuleValue value={presented} />
+                      ) : (
+                        <span className="text-[12px] text-muted-foreground">{countOf(presented)}</span>
+                      )}
+                    </span>
+                  </div>
+                  {inline ? null : <CapsuleValue value={presented} />}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </Card>
       ))}
     </>
