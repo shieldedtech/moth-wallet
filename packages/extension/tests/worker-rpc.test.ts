@@ -90,6 +90,7 @@ describe('HOST_METHODS', () => {
     'os/provingProviderProve',
     'os/balanceTransaction',
     'os/makeIntent',
+    'os/tokenRegistryResolve',
   ];
 
   it('covers every request method exactly once', () => {

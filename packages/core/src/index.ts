@@ -146,6 +146,36 @@ export {
 } from './sync/cursor-witness.js';
 export { ensureEmptyRefCache, warmEmptyRefCache, clearEmptyRefCache, refreshEmptyRefCache, preseedReferenceStatus, preSeedNewWallet, type WarmProgress } from './sync/preseed.js';
 
+// Token registry (Gloam) — opt-in display data for held shielded colours
+export {
+  GLOAM_DEVNET_REGISTRY_URL,
+  GLOAM_LAUNCH_DECIMALS,
+  GLOAM_QUOTE_DECIMALS,
+  bucketOf,
+  bucketsFor,
+  canonicalDecimals,
+  createGloamRegistryClient,
+  formatTokenUnits,
+  launchColorOf,
+  launchDomainSeparator,
+  parseRegistryUrl,
+  parseTokenList,
+  quoteDomainSeparator,
+  registryPaths,
+  resolveHeldTokens,
+  shortColor,
+  verifyColor,
+  verifyEntry,
+  type ChainView,
+  type GloamRegistryClient,
+  type GloamTokenEntry,
+  type GloamTokenKind,
+  type GloamTokenList,
+  type RawTokenTypeFn,
+  type RegistryToken,
+  type VerificationLevel,
+} from './registry/gloam-registry.js';
+
 // Contract
 export { loadContractArtifact, type ContractArtifact } from './contract/artifact-loader.js';
 export { loadWitnessProvider, type WitnessProvider } from './contract/witness-loader.js';

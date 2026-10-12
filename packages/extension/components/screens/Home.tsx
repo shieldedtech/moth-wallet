@@ -8,9 +8,11 @@ import { ArrowDown, ArrowUp, Settings as SettingsIcon } from 'lucide-react';
 import { NIGHT_TOKEN_ID } from '@shieldedtech/moth-wallet/types/tokens';
 import type { WalletBalances } from '@shieldedtech/moth-browser';
 import { t } from '../../lib/i18n';
+import { cn } from '../../lib/ui/cn';
 import { formatTokenBalance } from '../../lib/ui/format';
 import { nativeAssetLabelsForNetwork } from '../../lib/ui/token-labels';
-import { useActivity, useTokenNames } from '../../lib/ui/client';
+import { useActivity, useTokenNames, useTokenRegistry } from '../../lib/ui/client';
+import { shieldedRowView } from '../../lib/ui/registry-view';
 import { activityRowView } from '../../lib/ui/activity-view';
 import { Button } from '../ui/button';
 import { Card, Separator } from '../ui/card';
@@ -54,6 +56,7 @@ export function Home({
   const labels = nativeAssetLabelsForNetwork(network);
   const activity = useActivity(balances);
   const { names: tokenNames, rename: renameToken } = useTokenNames();
+  const registry = useTokenRegistry(shieldedTokens.map(([id]) => id));
   const [namingToken, setNamingToken] = useState<string | null>(null);
   const dustSynced = useSyncRegressionGrace(
     balances?.syncProgress.dustSynced ?? false,
@@ -162,18 +165,22 @@ export function Home({
                   {t('home_noShieldedTokens')}
                 </p>
               ) : (
-                shieldedTokens.map(([id, value], index) => (
-                  <div key={id}>
-                    {index > 0 && <Separator />}
-                    <AssetRow
-                      kind="shielded"
-                      name={tokenNames[id] ?? `${id.slice(0, 8)}…`}
-                      sub={tokenNames[id] ? t('home_shieldedTokenWithId', [`${id.slice(0, 8)}…`]) : t('home_shieldedToken')}
-                      amount={formatTokenBalance(value, 0)}
-                      onClick={() => setNamingToken(id)}
-                    />
-                  </div>
-                ))
+                shieldedTokens.map(([id, value], index) => {
+                  const row = shieldedRowView(id, registry, tokenNames);
+                  return (
+                    <div key={id}>
+                      {index > 0 && <Separator />}
+                      <AssetRow
+                        kind="shielded"
+                        name={row.name}
+                        sub={row.sub}
+                        subTone={row.level === 'unverified' ? 'warning' : 'muted'}
+                        amount={formatTokenBalance(value, row.decimals)}
+                        onClick={() => setNamingToken(id)}
+                      />
+                    </div>
+                  );
+                })
               )}
             </Card>
           </div>
@@ -229,12 +236,15 @@ function AssetRow({
   kind,
   name,
   sub,
+  subTone = 'muted',
   amount,
   onClick,
 }: {
   kind: 'night' | 'shielded' | 'unshielded';
   name: string;
   sub: string;
+  /** `warning` flags an unverified token-registry entry. */
+  subTone?: 'muted' | 'warning';
   amount: string;
   /** Makes the row interactive (used to open the token naming dialog). */
   onClick?: () => void;
@@ -244,7 +254,9 @@ function AssetRow({
       <TokenIcon kind={kind} />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-semibold">{name}</span>
-        <span className="block truncate text-[12.5px] text-muted-foreground">{sub}</span>
+        <span className={cn('block truncate text-[12.5px]', subTone === 'warning' ? 'text-warning' : 'text-muted-foreground')}>
+          {sub}
+        </span>
       </span>
       <span className="text-sm font-semibold">{amount}</span>
     </>

@@ -275,6 +275,10 @@ export const offscreen = {
     await ensureOffscreen();
     return offscreenSend('os/txSummary', data);
   },
+  async tokenRegistryResolve(data: { network: NetworkConfig; baseUrl: string; useBuckets: boolean; colors: string[] }) {
+    await ensureOffscreen();
+    return offscreenSend('os/tokenRegistryResolve', data);
+  },
   async balanceTransaction(data: SyncTarget & { txHex: string; sealed: boolean }) {
     await ensureOffscreen();
     return offscreenSend('os/balanceTransaction', data);

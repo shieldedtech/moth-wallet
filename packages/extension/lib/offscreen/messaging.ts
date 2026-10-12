@@ -254,6 +254,16 @@ export interface OffscreenProtocol {
    *  exactly as os/balanceTransaction does. */
   'os/txSummary'(data: { network: NetworkConfig; txHex: string; sealed: boolean }): TxSummaryDTO;
 
+  /** Fetch the Gloam token registry (full list, or held buckets only) and
+   *  verify the entries matching held shielded colours. Runs here because
+   *  colour re-derivation needs the ledger's rawTokenType (WASM). */
+  'os/tokenRegistryResolve'(data: {
+    network: NetworkConfig;
+    baseUrl: string;
+    useBuckets: boolean;
+    colors: string[];
+  }): Record<string, import('@shieldedtech/moth-wallet/registry/gloam-registry').RegistryToken>;
+
   /** Build a swap intent (`makeIntent`); returns the unproven, unbound tx hex. */
   'os/makeIntent'(data: {
     seedHex: string;

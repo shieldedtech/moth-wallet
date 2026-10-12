@@ -59,6 +59,12 @@ import { serializeActivity } from '../messaging/activity-json';
 import { waitForSyncedBalances } from './wait-synced';
 import { dustHealKey } from './dust-heal';
 import { NIGHT_TOKEN_ID } from '@shieldedtech/moth-wallet/types/tokens';
+import {
+  createGloamRegistryClient,
+  resolveHeldTokens,
+  type GloamRegistryClient,
+  type RegistryToken,
+} from '@shieldedtech/moth-wallet/registry/gloam-registry';
 import type { NightCoinRow } from '../messaging/protocol';
 import {
   loadSubmissions,
@@ -789,6 +795,27 @@ export async function txSummary(network: NetworkConfig, txHex: string, sealed: b
   const dto = (entries: typeof summary.spends) =>
     entries.map((entry) => ({ kind: entry.kind, tokenId: entry.tokenId, amount: entry.amount.toString() }));
   return { spends: dto(summary.spends), receives: dto(summary.receives), contractActions: summary.contractActions };
+}
+
+// Gloam token registry. One client per (URL, bucket mode) so its ETag cache
+// survives between calls and an unchanged registry costs a 304. Entries are
+// colour-verified with the active ledger's rawTokenType; chain verification
+// (launch_info from the Gloam contract state) is not wired yet, so nothing is
+// reported as chain-verified here.
+let registryClient: GloamRegistryClient | null = null;
+
+export async function tokenRegistryResolve(
+  network: NetworkConfig,
+  baseUrl: string,
+  useBuckets: boolean,
+  colors: string[],
+): Promise<Record<string, RegistryToken>> {
+  await initSdk((await detectLedgerVersion(network)).version);
+  if (!registryClient || registryClient.baseUrl !== baseUrl.replace(/\/+$/, '') || registryClient.useBuckets !== useBuckets) {
+    registryClient = createGloamRegistryClient({ baseUrl, useBuckets });
+  }
+  const entries = await registryClient.entriesFor(colors);
+  return resolveHeldTokens(entries, colors, (domainSep, contract) => activeLedger().rawTokenType(domainSep, contract));
 }
 
 // Balance a dApp-supplied transaction (connector balance*Transaction). Needs a

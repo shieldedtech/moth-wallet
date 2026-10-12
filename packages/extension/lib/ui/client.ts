@@ -12,6 +12,7 @@ import {
   type SessionStatus,
   type PortEvent,
   type RelayState,
+  type RegistryToken,
 } from '../messaging/protocol';
 import { deserializeActivity } from '../messaging/activity-json';
 import type { AddressBookEntry } from '../background/address-book';
@@ -175,6 +176,45 @@ export function useSelectedProverType(network: string | undefined) {
   }, [refresh]);
 
   return { proverType, refresh };
+}
+
+/** How often the panel re-asks the registry while open. Cheap: the offscreen
+ *  client revalidates with If-None-Match, so an unchanged list is a 304. */
+const TOKEN_REGISTRY_POLL_MS = 60_000;
+
+/**
+ * Registry display data for the held shielded colours (empty when no token
+ * registry is configured). Re-fetched when the set of held colours changes and
+ * polled while mounted. Only the colour set crosses to the background; what
+ * reaches the registry is the full list or whole buckets.
+ */
+export function useTokenRegistry(colors: readonly string[]): Record<string, RegistryToken> {
+  const [tokens, setTokens] = useState<Record<string, RegistryToken>>({});
+  const key = [...colors].sort().join(',');
+
+  useEffect(() => {
+    if (!key) {
+      setTokens({});
+      return;
+    }
+    let cancelled = false;
+    const load = () =>
+      sendMessage('tokenRegistryGet', { colors: key.split(',') })
+        .then((map) => {
+          if (!cancelled) setTokens(map);
+        })
+        .catch(() => {
+          /* transient — token ids still render */
+        });
+    void load();
+    const id = setInterval(() => void load(), TOKEN_REGISTRY_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [key]);
+
+  return tokens;
 }
 
 /**

@@ -16,6 +16,9 @@ import type { AddressBookEntry } from '../background/address-book';
 import type { AddressKind } from '../ui/address';
 import type { TimingEntry } from '../background/timings';
 import type { MeterSnapshot } from '../offscreen/request-meter';
+import type { RegistryToken } from '@shieldedtech/moth-wallet/registry/gloam-registry';
+
+export type { RegistryToken };
 
 /**
  * Registration cannot pay its own fee yet.
@@ -135,6 +138,13 @@ export interface ExtensionSettings {
    *  (e.g. `http://localhost:4000`); null disables name resolution. See
    *  docs/adr/0002. */
   nameResolverUrl: string | null;
+  /** Base URL of a Gloam token registry (e.g. `http://localhost:8790` on the
+   *  local devnet) that supplies tickers, names and decimals for held shielded
+   *  colours; null disables it. Entries are re-derived locally before display. */
+  tokenRegistryUrl: string | null;
+  /** Fetch only the registry buckets (first hex digit) that held colours fall
+   *  in, instead of the full list. Less bandwidth, slightly more revealing. */
+  tokenRegistryBuckets: boolean;
   /**
    * Build this network's pre-seed reference in the background so accounts created
    * afterwards start at chain tip instead of walking the chain (78.6 min of dust
@@ -343,6 +353,11 @@ interface ProtocolMap {
    *  permissions apply there). Never throws for a normal miss — returns a
    *  NameResolution with `error` set. */
   resolveName(data: { name: string }): NameResolution;
+
+  /** Registry display data for these held shielded colours (empty when no
+   *  token registry is configured or it is unreachable). Colours never leave
+   *  the wallet: the registry is asked for its full list or whole buckets. */
+  tokenRegistryGet(data: { colors: string[] }): Record<string, RegistryToken>;
 
   /** User-assigned token display names, keyed by full token id. */
   tokenNamesGet(): Record<string, string>;

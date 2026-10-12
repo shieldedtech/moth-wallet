@@ -13,7 +13,7 @@ import type { WalletBalances, TxStage } from '@shieldedtech/moth-browser';
 import { sendMessage, type SendTokensRequest, type NameResolution, type RelayState } from '../../lib/messaging/protocol';
 import { t } from '../../lib/i18n';
 import { formatAmount, formatDustFee, formatTokenBalance, parseAmount } from '../../lib/ui/format';
-import { useAddressBook, useTokenNames } from '../../lib/ui/client';
+import { useAddressBook, useTokenNames, useTokenRegistry } from '../../lib/ui/client';
 import { sendableTokens, type SendableToken } from '../../lib/ui/token-list';
 import { buildBatch, type BatchView, type LineView, type OutputDraft } from '../../lib/ui/send-batch';
 import { addressPlaceholder, isValidAddress } from '../../lib/ui/address';
@@ -99,7 +99,8 @@ export function SendFlow({
   const labels = nativeAssetLabelsForNetwork(network);
   const { names: tokenNames } = useTokenNames();
   const { entries: book } = useAddressBook();
-  const tokens = sendableTokens(balances, labels, tokenNames);
+  const registry = useTokenRegistry(Object.keys(balances?.shielded ?? {}));
+  const tokens = sendableTokens(balances, labels, tokenNames, registry);
 
   const resolutionForTo = (to: string): NameResolution | 'resolving' | undefined => {
     const name = shieldedNameOf(to);

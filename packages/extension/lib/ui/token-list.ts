@@ -7,6 +7,7 @@ import type { WalletBalances } from '@shieldedtech/moth-browser';
 import { NIGHT_TOKEN_ID } from '@shieldedtech/moth-wallet/types/tokens';
 import { t } from '../i18n';
 import type { NativeAssetLabels } from './token-labels';
+import type { RegistryToken } from '../messaging/protocol';
 
 export interface SendableToken {
   id: string;
@@ -31,26 +32,33 @@ export interface SendableToken {
  * `tokenNames` (user-assigned, tokenId → name) replaces the truncated-id
  * symbol; the truncated id then moves into the kind sub-label so the token
  * stays recognizable.
+ *
+ * `registry` (verified token-registry entries for held shielded colours) gives
+ * a shielded token its ticker and display decimals; the truncated id stays in
+ * the sub-label because tickers are not unique.
  */
 export function sendableTokens(
   balances: WalletBalances | null,
   labels: NativeAssetLabels,
   tokenNames: Record<string, string> = {},
+  registry: Record<string, RegistryToken> = {},
 ): SendableToken[] {
   const tokens: SendableToken[] = [];
 
   const push = (id: string, kind: 'shielded' | 'unshielded', balance: bigint) => {
     const custom = tokenNames[id];
-    const name = custom
+    const entry = kind === 'shielded' ? registry[id] : undefined;
+    const label = custom ?? entry?.ticker;
+    const name = label
       ? t(kind === 'shielded' ? 'tokens_shieldedTokenWithId' : 'tokens_unshieldedTokenWithId', [shortId(id)])
       : t(kind === 'shielded' ? 'tokens_shieldedToken' : 'tokens_unshieldedToken');
     tokens.push({
       id,
       kind,
-      symbol: custom ?? shortId(id),
+      symbol: label ?? shortId(id),
       name,
       balance,
-      decimals: 0,
+      decimals: entry?.decimals ?? 0,
     });
   };
 

@@ -116,7 +116,7 @@ describe('saveNetworkConfig', () => {
       }),
       expect.objectContaining({ id: 'preview' }),
     );
-    expect(await getSettings()).toEqual({ network: 'preview', customEndpoints: null, autoLockMinutes: 15, nameResolverUrl: null, preseedWarming: false, developerMode: false });
+    expect(await getSettings()).toEqual({ network: 'preview', customEndpoints: null, autoLockMinutes: 15, nameResolverUrl: null, tokenRegistryUrl: null, tokenRegistryBuckets: false, preseedWarming: false, developerMode: false });
     expect(await getSession()).toEqual(expect.objectContaining({ network: 'preview', address: 'mn_unshielded_preview' }));
     expect(status).toEqual(expect.objectContaining({ locked: false, network: 'preview', address: 'mn_unshielded_preview' }));
   });
@@ -139,7 +139,7 @@ describe('saveNetworkConfig', () => {
       expect.objectContaining({ walletName: 'alice', network: 'devnet' }),
       expect.objectContaining({ id: 'devnet', indexerUrl: changed.indexerUrl }),
     );
-    expect(await getSettings()).toEqual({ network: 'devnet', customEndpoints: changed, autoLockMinutes: 15, nameResolverUrl: null, preseedWarming: false, developerMode: false });
+    expect(await getSettings()).toEqual({ network: 'devnet', customEndpoints: changed, autoLockMinutes: 15, nameResolverUrl: null, tokenRegistryUrl: null, tokenRegistryBuckets: false, preseedWarming: false, developerMode: false });
   });
 
   it('restarts without clearing sync state when the prover changes', async () => {
@@ -155,7 +155,7 @@ describe('saveNetworkConfig', () => {
       expect.objectContaining({ walletName: 'alice', network: 'devnet' }),
       expect.objectContaining({ id: 'devnet', prover: { type: 'wasm' } }),
     );
-    expect(await getSettings()).toEqual({ network: 'devnet', customEndpoints: changed, autoLockMinutes: 15, nameResolverUrl: null, preseedWarming: false, developerMode: false });
+    expect(await getSettings()).toEqual({ network: 'devnet', customEndpoints: changed, autoLockMinutes: 15, nameResolverUrl: null, tokenRegistryUrl: null, tokenRegistryBuckets: false, preseedWarming: false, developerMode: false });
   });
 
   it('restarts on a node edit without deleting cached sync state', async () => {

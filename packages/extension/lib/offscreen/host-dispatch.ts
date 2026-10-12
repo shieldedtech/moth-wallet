@@ -85,6 +85,7 @@ export const hostDispatch: Dispatch = {
   'os/balanceTransaction': (host, d) =>
     host.balanceTransaction(d.seedHex, d.walletName, d.network, d.txHex, d.sealed),
   'os/txSummary': (host, d) => host.txSummary(d.network, d.txHex, d.sealed),
+  'os/tokenRegistryResolve': (host, d) => host.tokenRegistryResolve(d.network, d.baseUrl, d.useBuckets, d.colors),
   'os/makeIntent': (host, d) =>
     host.makeIntent(d.seedHex, d.walletName, d.network, d.inputs, d.outputs, d.payFees),
 };

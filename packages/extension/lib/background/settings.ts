@@ -11,6 +11,7 @@ import {
   serverProver,
   type NetworkConfig,
 } from '@shieldedtech/moth-wallet/types/network';
+import { parseRegistryUrl } from '@shieldedtech/moth-wallet/registry/gloam-registry';
 import type { ExtensionSettings, NetworkEndpoints, NodeAuthHeader } from '../messaging/protocol';
 
 const SETTINGS_KEY = 'settings';
@@ -27,6 +28,10 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   autoLockMinutes: 15,
   // Send-to-name is opt-in: no resolver configured until the user sets one.
   nameResolverUrl: null,
+  // Token registry is opt-in too: no request leaves the wallet until the user
+  // sets a URL (the local Gloam devnet serves one at http://localhost:8790).
+  tokenRegistryUrl: null,
+  tokenRegistryBuckets: false,
   // Opt-in: warming costs a full chain walk in the background (~71 min on
   // preprod). Never start that without the user asking for it.
   preseedWarming: false,
@@ -103,6 +108,8 @@ export async function getSettings(): Promise<ExtensionSettings> {
     customEndpoints,
     autoLockMinutes: 'autoLockMinutes' in (saved ?? {}) ? parseAutoLock(saved?.autoLockMinutes) : DEFAULT_SETTINGS.autoLockMinutes,
     nameResolverUrl: parseResolverUrl(saved?.nameResolverUrl),
+    tokenRegistryUrl: parseRegistryUrl(saved?.tokenRegistryUrl),
+    tokenRegistryBuckets: saved?.tokenRegistryBuckets === true,
     preseedWarming: saved?.preseedWarming === true,
     developerMode: saved?.developerMode === true,
   };

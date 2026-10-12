@@ -18,6 +18,7 @@ import { endpointOverridesFor, getSettings, updateSettings, getNetworkConfig, pa
 import { resolveName } from './name-resolve';
 import { saveSession, getSession, clearSession, type Session } from './session';
 import { getTokenNames, setTokenName } from './token-names';
+import { tokenRegistryGet } from './token-registry';
 import { getAddressBook, saveAddressEntry, removeAddressEntry } from './address-book';
 import { offscreen } from './offscreen-client';
 import { record as recordTiming, getTimings, clearTimings, setTimingsEnabled, timingsEnabled } from './timings';
@@ -618,6 +619,14 @@ export function registerHandlers(): void {
       endOp();
     }
   });
+
+  onMessage('tokenRegistryGet', ({ data }) =>
+    tokenRegistryGet(data.colors, {
+      getSettings,
+      getNetworkConfig: () => getNetworkConfig(),
+      resolve: (req) => offscreen.tokenRegistryResolve(req),
+    }),
+  );
 
   onMessage('tokenNamesGet', () => getTokenNames());
 

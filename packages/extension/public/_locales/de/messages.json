@@ -680,6 +680,15 @@
   "home_noShieldedTokens": {
     "message": "Noch keine Shielded-Token. Private Guthaben erscheinen hier."
   },
+  "home_registryChainVerified": {
+    "message": "$1 · $2 · On-Chain verifiziert"
+  },
+  "home_registryColourVerified": {
+    "message": "$1 · $2 · Farbe verifiziert"
+  },
+  "home_registryUnverified": {
+    "message": "$1 · Nicht verifizierter Registereintrag"
+  },
   "home_recentActivity": {
     "message": "Letzte Aktivität"
   },
@@ -1117,6 +1126,30 @@
   },
   "settings_nameResolverPlaceholder": {
     "message": "https://resolver.example"
+  },
+  "settings_tokenRegistry": {
+    "message": "Token-Register"
+  },
+  "settings_tokenRegistryDesc": {
+    "message": "Zeigt Ticker und Dezimalstellen für Register-Token in deinem Besitz, geprüft gegen ihren Contract. Lädt immer die ganze Liste, nie einen einzelnen Token. Leer lassen zum Deaktivieren."
+  },
+  "settings_tokenRegistryPlaceholder": {
+    "message": "http://localhost:8790"
+  },
+  "settings_tokenRegistryBuckets": {
+    "message": "Register-Buckets"
+  },
+  "settings_tokenRegistryBucketsDesc": {
+    "message": "Lädt nur die Teile der Liste, in die deine Token fallen. Spart Daten, verrät dem Register aber etwas mehr."
+  },
+  "settings_tokenRegistryBucketsAria": {
+    "message": "Register-Buckets"
+  },
+  "settings_tokenRegistryBucketsOn": {
+    "message": "An"
+  },
+  "settings_tokenRegistryBucketsOff": {
+    "message": "Aus"
   },
   "settings_sectionNetwork": {
     "message": "Netzwerk"

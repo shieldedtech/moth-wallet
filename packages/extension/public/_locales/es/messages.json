@@ -680,6 +680,15 @@
   "home_noShieldedTokens": {
     "message": "Aún no hay tokens shielded. Los saldos privados aparecerán aquí."
   },
+  "home_registryChainVerified": {
+    "message": "$1 · $2 · Verificado en cadena"
+  },
+  "home_registryColourVerified": {
+    "message": "$1 · $2 · Color verificado"
+  },
+  "home_registryUnverified": {
+    "message": "$1 · Entrada de registro no verificada"
+  },
   "home_recentActivity": {
     "message": "Actividad reciente"
   },
@@ -1117,6 +1126,30 @@
   },
   "settings_nameResolverPlaceholder": {
     "message": "https://resolver.example"
+  },
+  "settings_tokenRegistry": {
+    "message": "Registro de tokens"
+  },
+  "settings_tokenRegistryDesc": {
+    "message": "Muestra tickers y decimales de los tokens del registro que tienes, comprobados contra su contrato. Descarga la lista completa, nunca un solo token. Déjalo vacío para desactivarlo."
+  },
+  "settings_tokenRegistryPlaceholder": {
+    "message": "http://localhost:8790"
+  },
+  "settings_tokenRegistryBuckets": {
+    "message": "Grupos del registro"
+  },
+  "settings_tokenRegistryBucketsDesc": {
+    "message": "Descarga solo las partes de la lista donde caen tus tokens. Usa menos datos, pero revela un poco más al registro."
+  },
+  "settings_tokenRegistryBucketsAria": {
+    "message": "Grupos del registro"
+  },
+  "settings_tokenRegistryBucketsOn": {
+    "message": "Activado"
+  },
+  "settings_tokenRegistryBucketsOff": {
+    "message": "Desactivado"
   },
   "settings_sectionNetwork": {
     "message": "Red"

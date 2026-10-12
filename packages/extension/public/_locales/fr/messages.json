@@ -680,6 +680,15 @@
   "home_noShieldedTokens": {
     "message": "Pas encore de jetons shielded. Vos soldes privés apparaîtront ici."
   },
+  "home_registryChainVerified": {
+    "message": "$1 · $2 · Vérifié on-chain"
+  },
+  "home_registryColourVerified": {
+    "message": "$1 · $2 · Couleur vérifiée"
+  },
+  "home_registryUnverified": {
+    "message": "$1 · Entrée de registre non vérifiée"
+  },
   "home_recentActivity": {
     "message": "Activité récente"
   },
@@ -1117,6 +1126,30 @@
   },
   "settings_nameResolverPlaceholder": {
     "message": "https://resolver.example"
+  },
+  "settings_tokenRegistry": {
+    "message": "Registre de tokens"
+  },
+  "settings_tokenRegistryDesc": {
+    "message": "Affiche les tickers et décimales des tokens du registre que vous détenez, vérifiés auprès de leur contrat. Télécharge la liste entière, jamais un seul token. Laissez vide pour désactiver."
+  },
+  "settings_tokenRegistryPlaceholder": {
+    "message": "http://localhost:8790"
+  },
+  "settings_tokenRegistryBuckets": {
+    "message": "Compartiments du registre"
+  },
+  "settings_tokenRegistryBucketsDesc": {
+    "message": "Télécharge uniquement les parties de la liste où tombent vos tokens. Moins de données, mais le registre en apprend un peu plus."
+  },
+  "settings_tokenRegistryBucketsAria": {
+    "message": "Compartiments du registre"
+  },
+  "settings_tokenRegistryBucketsOn": {
+    "message": "Activé"
+  },
+  "settings_tokenRegistryBucketsOff": {
+    "message": "Désactivé"
   },
   "settings_sectionNetwork": {
     "message": "Réseau"

@@ -56,6 +56,7 @@ export function Settings({ onBack, navigate }: { onBack: () => void; navigate: (
   const [bookCount, setBookCount] = useState(0);
   // Draft for the name-resolver URL input; saved (and normalized) on blur.
   const [resolverDraft, setResolverDraft] = useState('');
+  const [registryDraft, setRegistryDraft] = useState('');
   const [appearance, setAppearance] = useState<Appearance>(() => loadAppearance());
   const [copiedDiagnostics, setCopiedDiagnostics] = useState(false);
   // "Clear cache and resync": confirm first, because it discards an hour of
@@ -94,6 +95,7 @@ export function Settings({ onBack, navigate }: { onBack: () => void; navigate: (
     ]);
     setSettings(s);
     setResolverDraft(s.nameResolverUrl ?? '');
+    setRegistryDraft(s.tokenRegistryUrl ?? '');
     setSiteCount(Object.keys(grants).length);
     setBookCount(book.length);
   };
@@ -104,6 +106,18 @@ export function Settings({ onBack, navigate }: { onBack: () => void; navigate: (
     const next = await sendMessage('settingsSet', { nameResolverUrl: resolverDraft.trim() || null });
     setSettings(next);
     setResolverDraft(next.nameResolverUrl ?? '');
+  };
+
+  // Same contract for the token registry URL: an invalid one is stored as null.
+  const saveRegistry = async () => {
+    const next = await sendMessage('settingsSet', { tokenRegistryUrl: registryDraft.trim() || null });
+    setSettings(next);
+    setRegistryDraft(next.tokenRegistryUrl ?? '');
+  };
+
+  const setRegistryBuckets = async (on: boolean) => {
+    setSettings((prev) => (prev ? { ...prev, tokenRegistryBuckets: on } : prev));
+    setSettings(await sendMessage('settingsSet', { tokenRegistryBuckets: on }));
   };
 
   useEffect(() => {
@@ -233,6 +247,43 @@ export function Settings({ onBack, navigate }: { onBack: () => void; navigate: (
             aria-label={t('settings_nameResolver')}
           />
         </div>
+        <div className="flex flex-col gap-1.5 px-4 py-[13px]">
+          <span className="block text-sm font-medium">{t('settings_tokenRegistry')}</span>
+          <span className="block text-[12.5px] text-muted-foreground">{t('settings_tokenRegistryDesc')}</span>
+          <Input
+            type="url"
+            inputMode="url"
+            value={registryDraft}
+            onChange={(e) => setRegistryDraft(e.target.value)}
+            onBlur={() => void saveRegistry()}
+            placeholder={t('settings_tokenRegistryPlaceholder')}
+            aria-label={t('settings_tokenRegistry')}
+          />
+        </div>
+        {settings.tokenRegistryUrl && (
+          <div className="flex items-center justify-between px-4 py-[13px]">
+            <span className="min-w-0 pr-3">
+              <span className="block text-sm font-medium">{t('settings_tokenRegistryBuckets')}</span>
+              <span className="block text-[12.5px] text-muted-foreground">{t('settings_tokenRegistryBucketsDesc')}</span>
+            </span>
+            <span className="relative shrink-0">
+              <select
+                aria-label={t('settings_tokenRegistryBucketsAria')}
+                value={settings.tokenRegistryBuckets ? 'on' : 'off'}
+                onChange={(e) => void setRegistryBuckets(e.target.value === 'on')}
+                className="cursor-pointer appearance-none rounded-full bg-muted py-1.5 pl-3 pr-8 text-[13px] font-semibold text-foreground focus:outline-none focus-visible:ring-[3px] focus-visible:ring-primary/70"
+              >
+                <option value="off">{t('settings_tokenRegistryBucketsOff')}</option>
+                <option value="on">{t('settings_tokenRegistryBucketsOn')}</option>
+              </select>
+              <ChevronDown
+                size={14}
+                strokeWidth={2.5}
+                className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+              />
+            </span>
+          </div>
+        )}
       </Section>
 
       <Section label={t('settings_sectionNetwork')}>
