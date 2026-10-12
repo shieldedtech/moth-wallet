@@ -9,8 +9,13 @@
 // INTERNAL_ERROR.
 
 import {DaemonProtocolError} from './protocol.js';
+import {resolveDustReceiver} from '../cardano/receiver.js';
 import type {
   DaemonCallCircuitParams,
+  DaemonCardanoDeregisterParams,
+  DaemonCardanoRegisterParams,
+  DaemonCardanoSendParams,
+  DaemonCardanoUpdateParams,
   DaemonDeployContractParams,
   DaemonDustDeregisterParams,
   DaemonDustRegisterParams,
@@ -349,5 +354,98 @@ export function parseInsertVerifierKeysBatchParams(raw: unknown): DaemonInsertVe
     timeoutSec: requirePositiveTimeoutSec(p.timeoutSec, 'insertVerifierKeysBatch.timeoutSec'),
     summary: typeof p.summary === 'string' ? p.summary : undefined,
     details: parseOptionalStringArray(p.details, 'insertVerifierKeysBatch.details'),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// cardanoRegister / cardanoDeregister / cardanoUpdate
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * A DUST receiver, validated by the same rule core applies, so a malformed value
+ * is refused as INVALID_PARAMS before a Cardano session is opened.
+ */
+function parseDustAddressBytes(value: unknown, fieldName: string): string {
+  if (typeof value !== 'string') {
+    throw new DaemonProtocolError('INVALID_PARAMS', `${fieldName} must be a string`);
+  }
+  try {
+    return resolveDustReceiver(value);
+  } catch (err) {
+    throw new DaemonProtocolError('INVALID_PARAMS', `${fieldName}: ${(err as Error).message}`);
+  }
+}
+
+export function parseCardanoRegisterParams(raw: unknown): DaemonCardanoRegisterParams {
+  if (raw === null || raw === undefined) return {};
+  if (typeof raw !== 'object') {
+    throw new DaemonProtocolError('INVALID_PARAMS', 'cardanoRegister params must be an object or omitted');
+  }
+  const p = raw as Record<string, unknown>;
+  return {
+    receiver: p.receiver === undefined ? undefined : parseDustAddressBytes(p.receiver, 'cardanoRegister.receiver'),
+    summary: typeof p.summary === 'string' ? p.summary : undefined,
+    details: parseOptionalStringArray(p.details, 'cardanoRegister.details'),
+  };
+}
+
+export function parseCardanoDeregisterParams(raw: unknown): DaemonCardanoDeregisterParams {
+  if (raw === null || raw === undefined) return {};
+  if (typeof raw !== 'object') {
+    throw new DaemonProtocolError('INVALID_PARAMS', 'cardanoDeregister params must be an object or omitted');
+  }
+  const p = raw as Record<string, unknown>;
+  return {
+    summary: typeof p.summary === 'string' ? p.summary : undefined,
+    details: parseOptionalStringArray(p.details, 'cardanoDeregister.details'),
+  };
+}
+
+export function parseCardanoUpdateParams(raw: unknown): DaemonCardanoUpdateParams {
+  if (!raw || typeof raw !== 'object') {
+    throw new DaemonProtocolError('INVALID_PARAMS', 'cardanoUpdate params must be an object');
+  }
+  const p = raw as Record<string, unknown>;
+  return {
+    receiver: parseDustAddressBytes(p.receiver, 'cardanoUpdate.receiver'),
+    summary: typeof p.summary === 'string' ? p.summary : undefined,
+    details: parseOptionalStringArray(p.details, 'cardanoUpdate.details'),
+  };
+}
+
+/** A non-negative integer as a decimal string, or undefined. */
+function parseAmountString(value: unknown, fieldName: string): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== 'string' || !/^\d+$/.test(value)) {
+    throw new DaemonProtocolError(
+      'INVALID_PARAMS',
+      `${fieldName} must be a non-negative integer as a decimal string`,
+    );
+  }
+  return value;
+}
+
+export function parseCardanoSendParams(raw: unknown): DaemonCardanoSendParams {
+  if (!raw || typeof raw !== 'object') {
+    throw new DaemonProtocolError('INVALID_PARAMS', 'cardanoSend params must be an object');
+  }
+  const p = raw as Record<string, unknown>;
+  if (typeof p.to !== 'string' || p.to.trim() === '') {
+    throw new DaemonProtocolError('INVALID_PARAMS', 'cardanoSend.to must be a Cardano address');
+  }
+  const lovelace = parseAmountString(p.lovelace, 'cardanoSend.lovelace');
+  const cnight = parseAmountString(p.cnight, 'cardanoSend.cnight');
+  if ((lovelace ?? '0') === '0' && (cnight ?? '0') === '0') {
+    throw new DaemonProtocolError(
+      'INVALID_PARAMS',
+      'cardanoSend needs a non-zero lovelace amount, cnight amount, or both',
+    );
+  }
+  return {
+    to: p.to.trim(),
+    ...(lovelace !== undefined ? { lovelace } : {}),
+    ...(cnight !== undefined ? { cnight } : {}),
+    summary: typeof p.summary === 'string' ? p.summary : undefined,
+    details: parseOptionalStringArray(p.details, 'cardanoSend.details'),
   };
 }

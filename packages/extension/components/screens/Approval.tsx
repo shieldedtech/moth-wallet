@@ -11,6 +11,8 @@ import { nativeAssetLabelsForNetwork } from '../../lib/ui/token-labels';
 import { txSummaryRows } from '../../lib/ui/tx-summary-view';
 import type { PendingApproval } from '../../lib/background/approvals';
 import type { BalanceApprovalPayload, TransferApprovalPayload } from '../../lib/background/connector-handlers';
+import type { CardanoSignApprovalPayload } from '../../lib/messaging/protocol';
+import type { CardanoTxSummary } from '@shieldedtech/moth-wallet/cardano/cip30';
 import { Button } from '../ui/button';
 import { Badge, Card, Separator } from '../ui/card';
 import { Input } from '../ui/input';
@@ -167,6 +169,39 @@ export function Approval({
           </Card>
           <NoteCard icon={Moon}>
             {t('approval_deriveNote')}
+          </NoteCard>
+        </>
+      ) : approval.kind === 'cardanoSign' ? (
+        <>
+          <SiteChip origin={approval.origin} />
+          <div className="text-center">
+            <h1 className="m-0 font-display text-[26px] font-extrabold leading-tight">
+              {t('approval_cardanoSignTitle')}
+            </h1>
+            <p className="m-0 pt-1.5 text-[13.5px] text-muted-foreground">
+              {t('approval_cardanoSignSubtitle', [host])}
+            </p>
+          </div>
+          <DetailCard rows={cardanoSignRows(approval.payload as Partial<CardanoSignApprovalPayload>)} />
+          {(approval.payload as Partial<CardanoSignApprovalPayload>).preview?.tx && (
+            <DetailCard rows={cardanoTxRows((approval.payload as CardanoSignApprovalPayload).preview.tx!)} />
+          )}
+          {(approval.payload as Partial<CardanoSignApprovalPayload>).preview?.payload && (
+            <Card className="p-4">
+              <span className="text-[12px] font-semibold uppercase tracking-wide text-muted-foreground">
+                {t('approval_cardanoMessageLabel')}
+              </span>
+              <p
+                className={`m-0 mt-1 whitespace-pre-wrap break-all text-[13px] leading-snug ${
+                  (approval.payload as CardanoSignApprovalPayload).preview.payload!.kind === 'hex' ? 'font-mono' : ''
+                }`}
+              >
+                {(approval.payload as CardanoSignApprovalPayload).preview.payload!.value}
+              </p>
+            </Card>
+          )}
+          <NoteCard variant="error" icon={TriangleAlert}>
+            {t('approval_cardanoSignWarning')}
           </NoteCard>
         </>
       ) : approval.kind === 'balance' ? (
@@ -367,4 +402,51 @@ function ApprovalUnlock({ walletName, onUnlocked }: { walletName: string | null;
       </Button>
     </div>
   );
+}
+
+/** Which key, on which network, a CIP-30 request would sign with. */
+export function cardanoSignRows(payload: Partial<CardanoSignApprovalPayload>) {
+  const account = payload.accountLabel
+    ? payload.accountKind === 'imported'
+      ? t('approval_cardanoAccountImported', [payload.accountLabel])
+      : payload.accountLabel
+    : '—';
+  return [
+    { label: t('approval_cardanoMethodLabel'), value: payload.method ?? '—' },
+    { label: t('approval_cardanoNetworkLabel'), value: payload.cardanoNetwork ?? '—' },
+    { label: t('approval_cardanoWalletLabel'), value: payload.walletName ?? '—' },
+    { label: t('approval_cardanoAccountLabel'), value: account },
+  ];
+}
+
+/** What a decoded Cardano transaction does to this wallet, one row per fact. */
+export function cardanoTxRows(tx: CardanoTxSummary) {
+  const ada = (value: string) => t('approval_cardanoAda', [value]);
+  return [
+    { label: t('approval_cardanoNetChange'), value: ada(tx.netAda) },
+    { label: t('approval_cardanoSpent'), value: ada(tx.spentAda) },
+    { label: t('approval_cardanoFee'), value: ada(tx.feeAda) },
+    ...tx.outputs.map((out, index) => ({
+      label: out.toThisWallet ? t('approval_cardanoOutputOwn', [index + 1]) : t('approval_cardanoOutput', [index + 1]),
+      value: out.assets > 0 ? t('approval_cardanoAdaAssets', [out.ada, out.assets]) : ada(out.ada),
+      sub: truncateAddress(out.address),
+    })),
+    ...(tx.foreignInputs > 0 ? [{ label: t('approval_cardanoForeignInputs'), value: String(tx.foreignInputs) }] : []),
+    ...(tx.certificates.length > 0
+      ? [{ label: t('approval_cardanoCertificates'), value: tx.certificates.join(', '), error: true }]
+      : []),
+    ...tx.withdrawals.map((w) => ({
+      label: t('approval_cardanoWithdrawal'),
+      value: ada(w.ada),
+      sub: truncateAddress(w.rewardAddress),
+      error: !w.own,
+    })),
+    ...(tx.mintPolicies > 0 ? [{ label: t('approval_cardanoMinting'), value: String(tx.mintPolicies) }] : []),
+    {
+      label: t('approval_cardanoSignsWith'),
+      value: tx.signsWith.length === 0
+        ? t('approval_cardanoSignsNothing')
+        : tx.signsWith.map((key) => (key === 'stake' ? t('approval_cardanoStakeKey') : t('approval_cardanoPaymentKey'))).join(', '),
+    },
+  ];
 }

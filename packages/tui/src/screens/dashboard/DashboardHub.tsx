@@ -1,5 +1,5 @@
 // Dashboard hub — the single top-level screen. Hosts the state view and all
-// sub-views (send/deploy/mint/contract/keys/dust/network/logs). Letter
+// sub-views (send/deploy/mint/contract/keys/dust/cardano/network/logs). Letter
 // shortcuts switch sub-views; Esc returns to state. Pattern mirrors
 // midnight-wallet-cli's DashboardScreen.
 
@@ -19,6 +19,7 @@ type View =
   | 'contract'
   | 'keys'
   | 'dust'
+  | 'cardano'
   | 'network'
   | 'logs';
 
@@ -35,6 +36,7 @@ const SHORTCUTS: ShortcutDef[] = [
   { key: 'c', view: 'contract', label: 'contract' },
   { key: 'k', view: 'keys',     label: 'keys' },
   { key: 'u', view: 'dust',     label: 'dust' },
+  { key: 'a', view: 'cardano',  label: 'cardano' },
   { key: 'n', view: 'network',  label: 'network' },
   { key: 'l', view: 'logs',     label: 'logs' },
 ];
@@ -61,6 +63,7 @@ interface DashboardHubProps {
   renderContract: (onBack: () => void) => React.ReactNode;
   renderKeys: (onBack: () => void) => React.ReactNode;
   renderDust: (onBack: () => void) => React.ReactNode;
+  renderCardano: (onBack: () => void) => React.ReactNode;
   renderNetwork: (onBack: () => void) => React.ReactNode;
   renderLogs: (onBack: () => void) => React.ReactNode;
 
@@ -92,6 +95,7 @@ export function DashboardHub(props: DashboardHubProps) {
   if (currentView === 'contract') return <>{props.renderContract(onBack)}</>;
   if (currentView === 'keys')     return <>{props.renderKeys(onBack)}</>;
   if (currentView === 'dust')     return <>{props.renderDust(onBack)}</>;
+  if (currentView === 'cardano')  return <>{props.renderCardano(onBack)}</>;
   if (currentView === 'network')  return <>{props.renderNetwork(onBack)}</>;
   if (currentView === 'logs')     return <>{props.renderLogs(onBack)}</>;
 
