@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { initLedger, ledgerFor } from '../../../src/ledger/index.js';
 import {
@@ -13,6 +14,7 @@ import {
   registryPaths,
   resolveHeldTokens,
   shortColor,
+  verifiedName,
   verifyColor,
   verifyEntry,
   type ChainView,
@@ -36,6 +38,12 @@ const COLOR_2 = '20feb108ac88b8070470c4bfc70da39c5c9f2d9084eded1e188de1336d16ea6
 const QUOTE_COLOR = '25af894fbe86fa5d65af67c93b2f3fede7484bb0d1d2faeced5fb96b2422c588';
 
 const hex = (s: string) => Uint8Array.from(s.match(/../g)!.map((b) => parseInt(b, 16)));
+const sha = (s: string) => createHash('sha256').update(s, 'utf8').digest('hex');
+/** A canonical metadata document and its digest, as the registry ships them (R-5). */
+const metaDoc = (name: string) => {
+  const metadataJson = JSON.stringify({ name, schema: 'gloam.metadata/v1', ticker: 'GLOW' });
+  return { metadataJson, metadataDigest: sha(metadataJson) };
+};
 
 let rawTokenType: RawTokenTypeFn;
 
@@ -50,8 +58,10 @@ const launchEntry = (over: Partial<GloamTokenEntry> = {}): GloamTokenEntry => ({
   contract: CONTRACT,
   launch: LAUNCH_1,
   ticker: 'GLOW',
+  // As the registry ships it: the name plus the metadata document it was read from.
   name: 'Glow Worm',
   decimals: 6,
+  ...metaDoc('Glow Worm'),
   ...over,
 });
 
@@ -116,9 +126,21 @@ describe('parseTokenList', () => {
   });
 
   it('strips control and bidi characters from ticker and name', () => {
-    const list = parseTokenList(listBody([launchEntry({ ticker: 'GL‮OW\n', name: 'Glow\u0000 Worm' })]));
+    const list = parseTokenList(listBody([launchEntry({ ticker: 'GL‮OW\n', name: undefined, ...metaDoc('Glow\u0000 Worm') })]));
     expect(list.tokens[0]!.ticker).toBe('GLOW');
     expect(list.tokens[0]!.name).toBe('Glow Worm');
+  });
+
+  it('R-5: takes the name only from metadata that hashes to the digest, never from the name field', () => {
+    const doc = metaDoc('Glow Worm');
+    expect(parseTokenList(listBody([launchEntry({ name: undefined, ...doc })])).tokens[0]!.name).toBe('Glow Worm');
+    // A bare registry name is ignored.
+    expect(parseTokenList(listBody([launchEntry({ name: 'Real Token', metadataJson: undefined, metadataDigest: undefined })])).tokens[0]).not.toHaveProperty('name');
+    // Swapping the name inside the document breaks the hash.
+    const forged = { ...doc, metadataJson: doc.metadataJson.replace('Glow Worm', 'Real Token') };
+    expect(parseTokenList(listBody([launchEntry({ name: 'Real Token', ...forged })])).tokens[0]).not.toHaveProperty('name');
+    expect(verifiedName(doc.metadataJson, doc.metadataDigest)).toBe('Glow Worm');
+    expect(verifiedName('{"schema":"other","name":"x"}', sha('{"schema":"other","name":"x"}'))).toBeUndefined();
   });
 });
 
@@ -184,7 +206,7 @@ describe('verification', () => {
     expect(out[COLOR_1]).toMatchObject({ ticker: 'GLOW', name: 'Glow Worm', decimals: 6, level: 'colour-verified' });
     expect(out['f'.repeat(64)]).toMatchObject({ ticker: 'GLOW', decimals: 0, level: 'unverified' });
     expect(out['f'.repeat(64)]).not.toHaveProperty('name');
-    expect(out[QUOTE_COLOR]).toMatchObject({ ticker: 'sNIGHT', decimals: 0, level: 'colour-verified' });
+    expect(out[QUOTE_COLOR]).toMatchObject({ ticker: 'sNIGHT', name: 'Shielded NIGHT', decimals: 0, level: 'colour-verified' });
   });
 
   it('prefers a verified entry when two claim the same colour', async () => {

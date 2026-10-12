@@ -15,9 +15,14 @@
 // Verification levels:
 //   - `chain-verified`  colour re-derives AND launch_info on chain matches the
 //                       entry's ticker and metadata digest (needs a ChainView).
+//                       The name, read from metadata that hashes to that digest,
+//                       is then as trustworthy as the ticker.
 //   - `colour-verified` colour re-derives from (launch, contract). Proves the
 //                       contract mints this colour; does NOT prove the ticker
-//                       or name, which the registry operator supplies.
+//                       or the digest, which the registry operator supplies.
+//
+// Names are never taken from the registry's `name` field: only from the shipped
+// metadata document (`metadataJson`) after checking it hashes to the digest.
 //   - `unverified`      derivation failed or was not possible.
 //
 // Privacy: there is no per-colour request, on purpose. The client fetches the
@@ -29,7 +34,7 @@
 // so this module can be imported anywhere. Images are never fetched or returned.
 
 import { sha256 } from '@noble/hashes/sha2.js';
-import { hexToBytes } from '@noble/hashes/utils.js';
+import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
 
 export const GLOAM_TOKENLIST_SCHEMA = 'gloam.tokenlist/v1';
 /** Registry of the local Gloam devnet stack. Not a default — the client is opt-in. */
@@ -44,6 +49,8 @@ const QUOTE_DOMAIN_TAG = 'sNIGHT-v1';
 const HEX32 = /^[0-9a-f]{64}$/;
 const MAX_TICKER = 16;
 const MAX_NAME = 64;
+/** Metadata documents are small JSON; anything larger is ignored. */
+const MAX_METADATA = 16_384;
 
 export type GloamTokenKind = 'launch' | 'quote';
 
@@ -58,6 +65,11 @@ export interface GloamTokenEntry {
   /** As claimed by the registry. Display uses {@link canonicalDecimals}. */
   decimals: number;
   metadataDigest?: string;
+  /**
+   * The exact metadata document whose SHA-256 is `metadataDigest`. The name is read
+   * from here (see {@link verifiedName}); the registry's own `name` field is ignored.
+   */
+  metadataJson?: string;
 }
 
 export interface GloamTokenList {
@@ -218,8 +230,10 @@ function parseEntry(raw: unknown): GloamTokenEntry | null {
   if (typeof e.decimals !== 'number' || !Number.isInteger(e.decimals) || e.decimals < 0 || e.decimals > 18) return null;
   const launch = hex(e.launch);
   if (kind === 'launch' && !launch) return null;
-  const name = typeof e.name === 'string' ? cleanText(e.name, MAX_NAME) : '';
   const metadataDigest = hex(e.metadataDigest);
+  const metadataJson = typeof e.metadataJson === 'string' && e.metadataJson.length <= MAX_METADATA ? e.metadataJson : undefined;
+  // The registry's `name` field is an unverifiable copy; the name comes from metadataJson.
+  const name = metadataDigest && metadataJson ? verifiedName(metadataJson, metadataDigest) : undefined;
   return {
     color,
     kind,
@@ -229,7 +243,25 @@ function parseEntry(raw: unknown): GloamTokenEntry | null {
     ...(name ? { name } : {}),
     decimals: e.decimals,
     ...(metadataDigest ? { metadataDigest } : {}),
+    ...(metadataJson && name ? { metadataJson } : {}),
   };
+}
+
+/**
+ * The token name from a metadata document, only if the document's SHA-256 equals
+ * `digestHex`. Combined with a chain check of the digest (ChainView), the name is as
+ * trustworthy as the on-chain ticker; without one, it is bound to the registry's digest.
+ */
+export function verifiedName(metadataJson: string, digestHex: string): string | undefined {
+  const digest = bytesToHex(sha256(new TextEncoder().encode(metadataJson)));
+  if (digest !== digestHex.toLowerCase()) return undefined;
+  try {
+    const m = JSON.parse(metadataJson) as { schema?: unknown; name?: unknown } | null;
+    if (m?.schema !== 'gloam.metadata/v1' || typeof m.name !== 'string') return undefined;
+    return cleanText(m.name, MAX_NAME) || undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Parse a `gloam.tokenlist/v1` document. Throws on a wrong schema; drops malformed entries. */
@@ -332,7 +364,9 @@ export async function resolveHeldTokens(
       color: entry.color,
       kind: entry.kind,
       ticker: entry.ticker,
-      ...(verdict.level !== 'unverified' && entry.name ? { name: entry.name } : {}),
+      // sNIGHT's name is fixed, not registry-supplied; launch names come only from
+      // hash-checked metadata (parseEntry).
+      ...(verdict.level !== 'unverified' && (entry.kind === 'quote' ? { name: 'Shielded NIGHT' } : entry.name ? { name: entry.name } : {})),
       // An unverified entry's kind is the registry's word only, so its amount
       // is shown raw rather than scaled by a decimals figure nobody checked.
       decimals: verdict.level === 'unverified' ? 0 : canonicalDecimals(entry.kind),
