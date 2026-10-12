@@ -309,7 +309,7 @@ describe('connector dispatch', () => {
   });
 
   // The connect screen once said a site could not see balances or history while
-  // these reads were served without a prompt (#203). Gate them behind approval,
+  // these reads were served without a prompt. Gate them behind approval,
   // or keep them listed under what a connected site can do.
   it('serves balances and history without a prompt, as the connect screen says', async () => {
     await connect();
@@ -533,7 +533,7 @@ describe('connector dispatch', () => {
     const res = await dispatch(ORIGIN, 'makeIntent', [inputs, outputs, { intentId: 'random', payFees: true }]);
     expect(res).toEqual({ tx: 'f00d' });
     // The approval carries the inputs as well as the outputs: the inputs are what
-    // the wallet gives up, and an approval of outputs alone hid them (#206).
+    // the wallet gives up, and an approval of outputs alone hid them.
     expect(requestApproval).toHaveBeenCalledWith(
       'transfer',
       ORIGIN,
@@ -657,7 +657,7 @@ describe('connector dispatch', () => {
   });
 
   // Those requests must not reset the user's own clock, or the ceiling that stops
-  // a polling dApp holding the wallet open forever never applies (#204).
+  // a polling dApp holding the wallet open forever never applies.
   it('does not count a dApp request as the user\'s own activity', async () => {
     await connect();
     balancesGet.mockResolvedValue(serializeBalances(sampleBalances()));

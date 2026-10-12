@@ -28,8 +28,8 @@ describe('isAutoLockExpired', () => {
     expect(isAutoLockExpired(NOW - 1 * MIN, 1, NOW)).toBe(true);
   });
 
-  // A polling dApp once kept the wallet unlocked forever (#204). Its requests
-  // still extend the session (#162), but only up to the ceiling.
+  // A polling dApp once kept the wallet unlocked forever. Its requests still
+  // extend the session, but only up to the ceiling.
   it('locks once the user has been away for the ceiling, however busy a dApp is', () => {
     const recent = NOW - 1 * MIN;
     expect(isAutoLockExpired(recent, 15, NOW, NOW - (15 * DAPP_ACTIVITY_CEILING - 1) * MIN)).toBe(false);

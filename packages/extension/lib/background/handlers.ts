@@ -131,6 +131,9 @@ export async function enforceAutoLock(): Promise<void> {
   const lastActivityAt = await getLastActivity();
   const lastUserActivityAt = await getLastUserActivity();
   if (!isAutoLockExpired(lastActivityAt, autoLockMinutes, Date.now(), lastUserActivityAt)) return;
+  // An approval answered during the reads above has resumed its op. Nothing is
+  // awaited between this check and rejecting the rest, so none can slip between.
+  if (hasOpsInFlight()) return;
   rejectPendingApprovals();
   await lockNow();
   broadcastSessionLocked();

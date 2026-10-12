@@ -21,7 +21,7 @@ describe('TransferRows', () => {
   });
 
   // makeIntent's inputs are what the wallet gives up; showing only the outputs
-  // under "You send" hid them (#206).
+  // under "You send" hid them.
   it('lists an intent\'s inputs as what the user sends and its outputs as paid out', () => {
     const html = renderToStaticMarkup(
       <TransferRows

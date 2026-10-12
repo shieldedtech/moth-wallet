@@ -8,7 +8,8 @@
 
 import { browser, type Browser } from 'wxt/browser';
 import { acquireKeepalive, releaseKeepalive } from './keepalive';
-import { beginOp, endOp, hasOpenPorts, broadcastApproval } from './sync-service';
+import { recordActivity } from './auto-lock';
+import { beginOp, endOp, hasOpenPorts, hasOpsInFlight, broadcastApproval } from './sync-service';
 
 export interface PendingApproval {
   id: string;
@@ -58,6 +59,14 @@ export function prepareApprovalPanel(senderTabId?: number): Promise<boolean> {
 
 /** Popup fallback for browsers without sidePanel.open() and requests where
  * Chrome no longer considers the call part of a user gesture. */
+/** Put an approval on screen. Showing it counts as dApp activity, so the user
+ *  gets a full auto-lock window to decide. */
+function surfaceApproval(id: string | null): void {
+  activeApprovalId = id;
+  broadcastApproval(id);
+  if (id !== null) void recordActivity(Date.now(), { byUser: false }).catch(() => {});
+}
+
 async function openApprovalWindow(id: string): Promise<number | undefined> {
   const approvalWindow = await browser.windows.create({
     type: 'popup',
@@ -89,25 +98,29 @@ export async function requestApproval(
     await persistence;
     if (!(await panelOpened)) windowId = await openApprovalWindow(id);
 
+    // Waiting on the user is not work in flight, so auto-lock may lock and reject
+    // this approval. Callers hold an op (dispatch does); without one there is none to release.
+    const heldOp = hasOpsInFlight();
+    // The op resumes inside the resolver: an auto-lock tick sees the open prompt or the resumed op.
+    let decided = false;
     const decision = new Promise<boolean>((resolve) => {
-      resolvers.set(id, { resolve, windowId });
+      resolvers.set(id, {
+        resolve: (approved) => {
+          if (decided) return;
+          decided = true;
+          if (heldOp) beginOp();
+          resolve(approved);
+        },
+        windowId,
+      });
     });
     // A dApp can request several approvals at once (e.g. deriveAppSecret for
     // multiple domains). Surface only when nothing else is mid-decision —
     // preempting would blank the approval the user is looking at and orphan the
     // others. Queued approvals drain FIFO as each resolves (see finally).
-    if (activeApprovalId === null) {
-      activeApprovalId = id;
-      broadcastApproval(id);
-    }
-    // Waiting on the user is not work in flight: auto-lock may lock (and reject
-    // this approval) while it waits, so a dApp cannot hold the wallet open with one.
-    endOp();
-    try {
-      return await decision;
-    } finally {
-      beginOp();
-    }
+    if (activeApprovalId === null) surfaceApproval(id);
+    if (heldOp) endOp();
+    return await decision;
   } finally {
     resolvers.delete(id);
     releaseKeepalive();
@@ -117,9 +130,7 @@ export async function requestApproval(
     // queued approval (FIFO by insertion order) rather than clearing — else
     // concurrent approvals would hang unresolved.
     if (activeApprovalId === id) {
-      const next = (resolvers.keys().next().value as string | undefined) ?? null;
-      activeApprovalId = next;
-      broadcastApproval(next);
+      surfaceApproval((resolvers.keys().next().value as string | undefined) ?? null);
     }
   }
 }
