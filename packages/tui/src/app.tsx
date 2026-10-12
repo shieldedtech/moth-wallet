@@ -15,12 +15,15 @@ import {
   DustRegistrationNotYetError,
   type SendRequest,
 } from '@shieldedtech/moth-wallet';
+import { loadCardanoConfig } from '@shieldedtech/moth-wallet/cardano/config';
+import type { CardanoNetworkConfig } from '@shieldedtech/moth-wallet/cardano/network';
 import { syncedWalletStub } from './utils/synced-wallet-stub.js';
 import { parseNightAmount } from './utils/balance.js';
 import { useStackNavigator } from './navigation/index.js';
 import type { CompletedOnboarding, OnComplete, OnUnlock } from './navigation/index.js';
 import { OnboardingHost, isOnboardingRoute } from './screens/onboarding/index.js';
 import { DashboardHub } from './screens/dashboard/index.js';
+import { Cardano, type CardanoActionResult } from './screens/cardano.js';
 import { ConfirmationModal } from './components/ConfirmationModal.js';
 import { ConfirmationQueue } from '@shieldedtech/moth-wallet';
 import { useDaemonHost } from './hooks/useDaemonHost.js';
@@ -102,6 +105,55 @@ export function App({ networkId: networkIdProp }: AppProps) {
     sync();
     return confirmationQueue.subscribe(sync);
   }, [confirmationQueue]);
+  // Cardano settings for the cNIGHT verbs. Resolved from stored config and the
+  // environment, so `moth config set cardano-network ...` reaches the TUI's
+  // daemon without a restart of anything but this effect. Null until it loads,
+  // and null if it throws — a bad override should cost Cardano, not the TUI.
+  const [cardanoConfig, setCardanoConfig] = useState<CardanoNetworkConfig | null>(null);
+  useEffect(() => {
+    if (!networkConfig) return;
+    let cancelled = false;
+    loadCardanoConfig(storage, networkConfig.id)
+      .then((cfg) => {
+        if (cancelled) return;
+        setCardanoConfig(cfg);
+      })
+      .catch(err => {
+        if (cancelled) return;
+        setCardanoConfig(null);
+        // Expected on devnet/qanet/undeployed: those have no Cardano
+        // counterpart, so this is information, not a fault.
+        logs.info(`Cardano unavailable: ${err instanceof Error ? err.message : String(err)}`);
+      });
+    return () => { cancelled = true; };
+  }, [networkConfig?.id, storage, logs.warn]);
+
+  /**
+   * Persist a Cardano setting to `~/.moth/config/<key>` — the same store the
+   * CLI's `moth config set` writes and `daemon serve` reads, so the three
+   * surfaces cannot end up pointed at different networks or tokens.
+   *
+   * Reloads the resolved config afterwards rather than patching state locally:
+   * `cardanoNetwork` changes what the whole config resolves to, and re-reading
+   * is what keeps the displayed "follows <network>" line honest.
+   */
+  const saveCardanoSetting = useCallback(
+    async (patch: { blockfrostProjectId?: string }) => {
+      const encoder = new TextEncoder();
+      try {
+        if (patch.blockfrostProjectId !== undefined) {
+          await storage.write('config/blockfrost-project-id', encoder.encode(patch.blockfrostProjectId));
+        }
+        if (networkConfig) setCardanoConfig(await loadCardanoConfig(storage, networkConfig.id));
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        // Never log the patch itself — it may carry the project id.
+        logs.error(`Could not save Cardano settings: ${msg}`);
+      }
+    },
+    [storage, networkConfig?.id, logs.error],
+  );
+
   useDaemonHost({
     network: networkConfig,
     walletName: wallet.activeWallet?.name,
@@ -109,6 +161,20 @@ export function App({ networkId: networkIdProp }: AppProps) {
     getFacade: balance.getFacade,
     getWalletKeys: wallet.getActiveWalletKeys,
     queue: confirmationQueue,
+    ...(cardanoConfig
+      ? {
+          cardano: {
+            config: cardanoConfig,
+            resolveAccountKey: async () => {
+              const secret = wallet.getActiveCardano();
+              if (!secret) throw new Error('Unlock a wallet first.');
+              const { resolveActiveCardanoKey } = await import('@shieldedtech/moth-wallet/cardano/accounts');
+              return resolveActiveCardanoKey(storage, wallet.activeWallet?.name ?? '', secret.mnemonic, secret.importedPhrases);
+            },
+            getDustAddress: () => wallet.getActiveCardano()?.dustAddress ?? '',
+          },
+        }
+      : {}),
     daemonVersion: '0.1.0',
     logs: { info: logs.info, warn: logs.warn, error: logs.error },
   });
@@ -484,8 +550,14 @@ export function App({ networkId: networkIdProp }: AppProps) {
               logs.info(`Wallet removed: ${name}`);
             }}
             onClearCache={(name) => {
-              void clearSyncCache(name, network.id).then(() => {
-                logs.info(`Sync cache cleared for ${name} on ${network.id}`);
+              // Stop, clear, restart — in that order. Clearing under a running
+              // sync did nothing: the wallet kept its broken state in memory,
+              // wrote it back, and carried on crash-looping.
+              void balance.restart(async () => {
+                await clearSyncCache(name, network.id);
+                logs.info(`Sync cache cleared for ${name} on ${network.id} — resyncing from scratch`);
+              }).catch((err) => {
+                logs.error(`Clear cache failed: ${err instanceof Error ? err.message : String(err)}`);
               });
             }}
             onCreateNew={() => {
@@ -559,8 +631,183 @@ export function App({ networkId: networkIdProp }: AppProps) {
             }}
             onBack={onBack} />
         )}
+        renderCardano={(onBack) => {
+          // Everything Cardano needs a mnemonic (CIP-1852 derives from BIP-39
+          // entropy) and a Blockfrost project id. Both are checked up front so
+          // the screen names the missing piece instead of failing per action.
+          const secret = wallet.getActiveCardano();
+          const activeWalletName = wallet.activeWallet?.name ?? '';
+          // Split deliberately: the first three mean there is no Cardano account
+          // at all, the last means the account exists but the chain cannot be
+          // read. Only the first three should hide the address.
+          const reason = !cardanoConfig
+            ? 'Cardano configuration could not be loaded — see the logs screen.'
+            : !secret
+              ? 'Unlock a wallet first.'
+              : !secret.mnemonic && secret.importedPhrases.size === 0
+                ? 'This wallet was imported from a raw hex seed, so it has no Cardano address.'
+                : undefined;
+          // The active account is read at the moment of use, so a switch on this
+          // screen, or from the CLI, applies to the next action.
+          const activeKey = async () => {
+            const { resolveActiveCardanoKey } = await import('@shieldedtech/moth-wallet/cardano/accounts');
+            return resolveActiveCardanoKey(storage, activeWalletName, secret!.mnemonic, secret!.importedPhrases);
+          };
+          const chainReason = !reason && cardanoConfig && !cardanoConfig.blockfrostProjectId
+            ? 'No Blockfrost project ID configured. Add one on the Network screen (press n) under Cardano, or set MOTH_BLOCKFROST_PROJECT_ID.'
+            : undefined;
+
+          // Each action opens its own short-lived session rather than holding
+          // one open across the screen: a Lucid session caches wallet UTXOs,
+          // and a stale cache after a submitted transaction is how you build a
+          // second transaction against inputs that are already spent.
+          const run = async (
+            label: string,
+            fn: (session: import('@shieldedtech/moth-wallet/cardano').CardanoSession) => Promise<string>,
+          ): Promise<CardanoActionResult> => {
+            if (!cardanoConfig || !secret || reason) {
+              return { success: false, error: reason ?? 'Cardano unavailable' };
+            }
+            try {
+              const { withCardanoSession } = await import('@shieldedtech/moth-wallet/cardano');
+              const { account, mnemonic, accountIndex } = await activeKey();
+              logs.info(`Cardano ${label} (${account.label}): building transaction`);
+              const txHash = await withCardanoSession(mnemonic, cardanoConfig, fn, accountIndex);
+              logs.info(`Cardano ${label} submitted: ${txHash}`);
+              return { success: true, txHash };
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              logs.error(`Cardano ${label} failed: ${msg}`);
+              return { success: false, error: msg };
+            }
+          };
+
+          return (
+            <Cardano
+              {...(reason ? { unavailableReason: reason } : {})}
+              {...(chainReason ? { chainUnavailableReason: chainReason } : {})}
+              loadAccount={async () => {
+                if (!cardanoConfig || !secret || reason) throw new Error(reason ?? 'Cardano unavailable');
+                // Pure derivation — deliberately not routed through
+                // withCardanoSession, which would demand a Blockfrost key.
+                const { deriveCardanoAddresses } = await import('@shieldedtech/moth-wallet/cardano');
+                const { mnemonic, accountIndex } = await activeKey();
+                const addresses = await deriveCardanoAddresses(mnemonic, cardanoConfig, accountIndex);
+                return {
+                  cardanoNetwork: cardanoConfig.network,
+                  address: addresses.address,
+                  rewardAddress: addresses.rewardAddress,
+                  midnightDustAddress: secret.dustAddress,
+                };
+              }}
+              loadAccounts={async () => {
+                const { listCardanoAccounts } = await import('@shieldedtech/moth-wallet/cardano/accounts');
+                const { accounts, activeId } = await listCardanoAccounts(storage, activeWalletName);
+                return accounts.map((a) => ({ ...a, active: a.id === activeId }));
+              }}
+              onSelectAccount={async (id) => {
+                const { setActiveCardanoAccount } = await import('@shieldedtech/moth-wallet/cardano/accounts');
+                await setActiveCardanoAccount(storage, activeWalletName, id);
+                logs.info(`Cardano account switched`);
+              }}
+              onAddAccount={async () => {
+                // A derived account is an index of the wallet's phrase, so a
+                // hex-seed wallet cannot have one. Refused here rather than at
+                // first use, which would leave a dead account in the list.
+                if (!secret?.mnemonic) {
+                  throw new Error('This wallet has no recovery phrase, so it has no derived Cardano accounts. Import one instead.');
+                }
+                const { addDerivedCardanoAccount } = await import('@shieldedtech/moth-wallet/cardano/accounts');
+                const { account } = await addDerivedCardanoAccount(storage, activeWalletName);
+                logs.info(`Cardano account added: ${account.label} (index ${account.accountIndex})`);
+              }}
+              onImportAccount={async (phrase, passphrase) => {
+                const { importCardanoAccount } = await import('@shieldedtech/moth-wallet/cardano/accounts');
+                const { account } = await importCardanoAccount(storage, activeWalletName, phrase, passphrase);
+                // Usable at once, without re-unlocking: the phrase is in hand here.
+                secret?.importedPhrases.set(account.id, phrase.trim().replace(/\s+/g, ' '));
+                logs.info(`Cardano account imported: ${account.label}`);
+              }}
+              onSend={(to, lovelace, cnight) =>
+                run('send', async (session) => {
+                  const { sendCardanoAssets } = await import('@shieldedtech/moth-wallet/cardano');
+                  return sendCardanoAssets(session, { to, lovelace, cnight }, (stage) =>
+                    logs.info(`Cardano send: ${stage}`),
+                  );
+                })
+              }
+              onRemoveAccount={async (id) => {
+                const { removeCardanoAccount } = await import('@shieldedtech/moth-wallet/cardano/accounts');
+                await removeCardanoAccount(storage, activeWalletName, id);
+                secret?.importedPhrases.delete(id);
+                logs.info('Cardano account removed');
+              }}
+              loadStatus={async () => {
+                if (!cardanoConfig || !secret || reason) throw new Error(reason ?? 'Cardano unavailable');
+                const { withCardanoSession } = await import('@shieldedtech/moth-wallet/cardano');
+                const { readCardanoDustStatus } = await import('@shieldedtech/moth-wallet/cardano');
+                const { mnemonic, accountIndex } = await activeKey();
+                const status = await withCardanoSession(
+                  mnemonic,
+                  cardanoConfig,
+                  (session) => readCardanoDustStatus(session, networkConfig.indexerUrl),
+                  accountIndex,
+                );
+                return {
+                  cardanoNetwork: status.network,
+                  address: status.addresses.address,
+                  rewardAddress: status.addresses.rewardAddress,
+                  lovelace: status.balance.lovelace,
+                  cnight: status.balance.cnight,
+                  cnightUtxos: status.balance.cnightUtxoCount,
+                  registered: status.registered,
+                  registeredDustAddress: status.dustAddress,
+                  registeredToThisWallet: status.dustAddress === secret.dustAddress,
+                  legacyDustAddress: status.legacyDustAddress,
+                  generationRate: status.generation?.generationRate ?? null,
+                  secondsRemaining: status.finality?.secondsRemaining ?? null,
+                };
+              }}
+              onRegister={(receiver) =>
+                run('register', async (session) => {
+                  const { registerForDust } = await import('@shieldedtech/moth-wallet/cardano');
+                  return registerForDust(
+                    session,
+                    receiver ?? secret!.dustAddress,
+                    (stage) => logs.info(`Cardano register: ${stage}`),
+                  );
+                })
+              }
+              onDeregister={() =>
+                run('deregister', async (session) => {
+                  const { deregisterFromDust } = await import('@shieldedtech/moth-wallet/cardano');
+                  const r = await deregisterFromDust(session, (stage) =>
+                    logs.info(`Cardano deregister: ${stage}`),
+                  );
+                  logs.info(`Cardano: cleared ${r.cleared} registration(s)`);
+                  return r.txHash;
+                })
+              }
+              onUpdate={(receiver) =>
+                run('update', async (session) => {
+                  const { updateDustAddress } = await import('@shieldedtech/moth-wallet/cardano');
+                  return updateDustAddress(session, receiver, (stage) => logs.info(`Cardano update: ${stage}`));
+                })
+              }
+              onBack={onBack}
+            />
+          );
+        }}
         renderNetwork={(onBack) => (
           <Network network={network}
+            cardano={{
+              // Null when this Midnight network has no Cardano counterpart —
+              // devnet, qanet, undeployed. The row says so rather than naming
+              // a testnet nothing will read.
+              effectiveNetwork: cardanoConfig?.network ?? null,
+              blockfrostProjectIdSet: Boolean(cardanoConfig?.blockfrostProjectId),
+            }}
+            onSaveCardano={(patch) => { void saveCardanoSetting(patch); }}
             onSwitch={(id) => {
               void connectNetwork(id).then(() => {
                 logs.info(`Switched to network: ${id}`);
