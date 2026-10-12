@@ -6,7 +6,7 @@ import { DEMO_CAPABILITIES } from '../lib/capsule/demo-credential';
 describe('Contract capabilities', () => {
   it('renders the demo credential by interface, function and value', () => {
     const html = renderToStaticMarkup(<CapabilityCards document={DEMO_CAPABILITIES} />);
-    expect(html).toContain('identus:verification/age@1.2.0');
+    expect(html).toContain('authority:credential/age@1.0.0');
     expect(html).toContain('ageCredential');
     expect(html).toContain('&quot;date&quot;:&quot;631152000&quot;');
     expect(html).toContain('15151515');
