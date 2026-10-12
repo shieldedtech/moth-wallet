@@ -8,7 +8,7 @@
 
 import { browser, type Browser } from 'wxt/browser';
 import { acquireKeepalive, releaseKeepalive } from './keepalive';
-import { hasOpenPorts, broadcastApproval } from './sync-service';
+import { beginOp, endOp, hasOpenPorts, broadcastApproval } from './sync-service';
 
 export interface PendingApproval {
   id: string;
@@ -100,7 +100,14 @@ export async function requestApproval(
       activeApprovalId = id;
       broadcastApproval(id);
     }
-    return await decision;
+    // Waiting on the user is not work in flight: auto-lock may lock (and reject
+    // this approval) while it waits, so a dApp cannot hold the wallet open with one.
+    endOp();
+    try {
+      return await decision;
+    } finally {
+      beginOp();
+    }
   } finally {
     resolvers.delete(id);
     releaseKeepalive();
@@ -119,6 +126,11 @@ export async function requestApproval(
 
 export function resolveApproval(id: string, approved: boolean): void {
   resolvers.get(id)?.resolve(approved);
+}
+
+/** Reject every pending approval — used when auto-lock locks the wallet. */
+export function rejectPendingApprovals(): void {
+  for (const [, entry] of resolvers) entry.resolve(false);
 }
 
 /** True while a dApp approval is awaiting a decision. The approval surface may

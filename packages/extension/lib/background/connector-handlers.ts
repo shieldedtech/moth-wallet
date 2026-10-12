@@ -158,6 +158,9 @@ export interface BalanceApprovalPayload {
 /** Display data for a `transfer` approval (makeTransfer / makeIntent). */
 export interface TransferApprovalPayload {
   outputs: Array<{ kind: string; type: string; value: string; recipient: string }>;
+  /** What the wallet contributes to a `makeIntent`; absent for `makeTransfer`,
+   *  where the outputs themselves are what the user sends. */
+  inputs?: Array<{ kind: string; type: string; value: string }>;
   payFees: boolean;
 }
 
@@ -232,9 +235,9 @@ export async function dispatch(
   beginOp();
   try {
     const result = await dispatchMethod(origin, method, params, senderTabId, preparedPanel);
-    // A connected dApp talking to the wallet is the user at work, even with the
-    // panel closed; without this the auto-lock fires between two dApp requests.
-    if (await isAllowed(origin)) await recordActivity(Date.now());
+    // A connected dApp talking to the wallet is usually the user at work, even with
+    // the panel closed, so it extends the session — up to a ceiling (auto-lock.ts).
+    if (await isAllowed(origin)) await recordActivity(Date.now(), { byUser: false });
     return result;
   } finally {
     endOp();
@@ -488,6 +491,7 @@ async function dispatchMethod(
         'transfer',
         origin,
         {
+          inputs: inputs.map((input) => ({ kind: input.kind, type: input.type, value: input.value.toString() })),
           outputs: outputs.map((out) => ({ ...out, value: out.value.toString() })),
           payFees,
         } satisfies TransferApprovalPayload,
@@ -603,8 +607,10 @@ export function registerConnectorHandlers(): void {
     return { approval, locked: !session };
   });
 
-  onMessage('approvalResolve', ({ data }) => {
+  onMessage('approvalResolve', async ({ data }) => {
     resolveApproval(data.id, data.approved);
+    // Deciding an approval is the user at work, and resets the dApp ceiling.
+    if (await getSession()) await recordActivity(Date.now());
   });
 
   onMessage('approvalPending', async () => {

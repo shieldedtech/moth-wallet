@@ -245,14 +245,14 @@
   "approval_canSeeAddresses": {
     "message": "Voir vos adresses"
   },
+  "approval_canSeeBalances": {
+    "message": "Voir vos soldes et votre historique de transactions"
+  },
   "approval_canAskApprove": {
     "message": "Vous demander d'approuver des transactions"
   },
   "approval_cantMoveMoney": {
     "message": "Déplacer des fonds sans votre accord"
-  },
-  "approval_cantSeeBalances": {
-    "message": "Voir vos soldes shielded ou votre historique"
   },
   "approval_connectingAs": {
     "message": "Connexion en tant que"
@@ -335,11 +335,14 @@
   "approval_youSend": {
     "message": "Vous envoyez"
   },
+  "approval_intentPaysOut": {
+    "message": "Versé"
+  },
   "approval_usingLabel": {
     "message": "Via"
   },
   "approval_transferNote": {
-    "message": "Prouvé par une preuve à divulgation nulle, le site ne voit jamais vos soldes."
+    "message": "Prouvé par une preuve à divulgation nulle avant d’être soumis."
   },
   "approval_unlockToContinue": {
     "message": "Déverrouillez pour continuer"

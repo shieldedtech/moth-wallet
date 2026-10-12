@@ -12,6 +12,14 @@ import { browser, type Browser } from 'wxt/browser';
 
 export const AUTO_LOCK_ALARM = 'auto-lock-check';
 const ACTIVITY_KEY = 'session.lastActivityAt';
+const USER_ACTIVITY_KEY = 'session.lastUserActivityAt';
+
+/**
+ * How many auto-lock windows a connected dApp's own requests can keep the wallet
+ * unlocked for without the user touching the panel or resolving an approval.
+ * A dApp in use should not lock mid-session, but polling must not keep it open forever.
+ */
+export const DAPP_ACTIVITY_CEILING = 4;
 
 // One minute is Chrome's practical minimum period and gives coarse-but-fine
 // granularity for a security timeout (worst case ~1 min late).
@@ -27,28 +35,45 @@ export const AUTO_LOCK_OPTIONS: ReadonlyArray<{ value: number | null; label: str
   { value: null, label: 'Never (demo mode)' },
 ];
 
-/** Pure expiry test. Never expires in demo mode or before any activity. */
+/**
+ * Pure expiry test. Never expires in demo mode or before any activity. Expires
+ * once the window passes with no activity at all, or once the user has done
+ * nothing for `DAPP_ACTIVITY_CEILING` windows, however busy a dApp has been.
+ */
 export function isAutoLockExpired(
   lastActivityAt: number | null,
   autoLockMinutes: number | null,
   now: number,
+  lastUserActivityAt: number | null = null,
 ): boolean {
   if (autoLockMinutes === null || autoLockMinutes <= 0) return false;
   if (lastActivityAt === null) return false;
-  return now - lastActivityAt >= autoLockMinutes * 60_000;
+  const windowMs = autoLockMinutes * 60_000;
+  if (now - lastActivityAt >= windowMs) return true;
+  return lastUserActivityAt !== null && now - lastUserActivityAt >= windowMs * DAPP_ACTIVITY_CEILING;
 }
 
 function sessionStore(): Browser.storage.StorageArea {
   return browser.storage.session as Browser.storage.StorageArea;
 }
 
-export async function recordActivity(now: number): Promise<void> {
-  await sessionStore().set({ [ACTIVITY_KEY]: now });
+/** Record activity. A dApp's own requests pass `{ byUser: false }`, so they
+ *  extend the session only up to the ceiling. */
+export async function recordActivity(now: number, { byUser = true }: { byUser?: boolean } = {}): Promise<void> {
+  const entries: Record<string, number> = { [ACTIVITY_KEY]: now };
+  if (byUser) entries[USER_ACTIVITY_KEY] = now;
+  await sessionStore().set(entries);
 }
 
 export async function getLastActivity(): Promise<number | null> {
   const stored = await sessionStore().get(ACTIVITY_KEY);
   const value = stored[ACTIVITY_KEY];
+  return typeof value === 'number' ? value : null;
+}
+
+export async function getLastUserActivity(): Promise<number | null> {
+  const stored = await sessionStore().get(USER_ACTIVITY_KEY);
+  const value = stored[USER_ACTIVITY_KEY];
   return typeof value === 'number' ? value : null;
 }
 

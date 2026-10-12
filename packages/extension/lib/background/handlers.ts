@@ -38,7 +38,7 @@ import {
   beginOp,
   endOp,
   hasOpenPorts,
-  hasWorkInFlight,
+  hasOpsInFlight,
   broadcastSessionLocked,
   getSetupTabIds,
   teardown,
@@ -47,9 +47,11 @@ import {
   armAutoLock,
   clearAutoLock,
   getLastActivity,
+  getLastUserActivity,
   isAutoLockExpired,
   recordActivity,
 } from './auto-lock';
+import { rejectPendingApprovals } from './approvals';
 
 function statusFromSession(session: Session): SessionStatus {
   return {
@@ -108,9 +110,10 @@ export async function lockNow(): Promise<void> {
 
 /**
  * Auto-lock tick, invoked by the alarm. Locks the wallet once the configured
- * inactivity window has elapsed. Skips demo mode and defers whenever a
- * transaction op or pending approval is in flight — locking drops the seed and
- * must never interrupt one; the next tick (≤1 min later) retries.
+ * inactivity window has elapsed. Skips demo mode and defers while a transaction
+ * op is running — locking drops the seed and must never interrupt one; the next
+ * tick (≤1 min later) retries. A pending approval does not defer it: it is
+ * rejected, so a dApp cannot keep the wallet open by leaving one unanswered.
  */
 export async function enforceAutoLock(): Promise<void> {
   const session = await getSession();
@@ -120,9 +123,11 @@ export async function enforceAutoLock(): Promise<void> {
   }
   const { autoLockMinutes } = await getSettings();
   if (autoLockMinutes === null) return; // demo mode — never expires
-  if (hasWorkInFlight()) return; // don't lock mid-operation; wait for the next tick
+  if (hasOpsInFlight()) return; // don't lock mid-operation; wait for the next tick
   const lastActivityAt = await getLastActivity();
-  if (!isAutoLockExpired(lastActivityAt, autoLockMinutes, Date.now())) return;
+  const lastUserActivityAt = await getLastUserActivity();
+  if (!isAutoLockExpired(lastActivityAt, autoLockMinutes, Date.now(), lastUserActivityAt)) return;
+  rejectPendingApprovals();
   await lockNow();
   broadcastSessionLocked();
 }

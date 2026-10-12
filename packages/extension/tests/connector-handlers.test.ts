@@ -53,11 +53,12 @@ vi.mock('../lib/background/sync-service', () => ({
 }));
 
 import { dispatch } from '../lib/background/connector-handlers';
-import { getLastActivity } from '../lib/background/auto-lock';
+import { getLastActivity, getLastUserActivity } from '../lib/background/auto-lock';
 import { grant, isAllowed } from '../lib/background/permissions';
 import { saveSession, type Session } from '../lib/background/session';
 import { updateSettings } from '../lib/background/settings';
 import { serializeBalances } from '../lib/messaging/protocol';
+import { CONNECT_CAN, CONNECT_CANT } from '../components/screens/Approval';
 
 const ORIGIN = 'https://dapp.example';
 
@@ -307,6 +308,22 @@ describe('connector dispatch', () => {
     );
   });
 
+  // The connect screen once said a site could not see balances or history while
+  // these reads were served without a prompt (#203). Gate them behind approval,
+  // or keep them listed under what a connected site can do.
+  it('serves balances and history without a prompt, as the connect screen says', async () => {
+    await connect();
+    requestApproval.mockClear();
+    balancesGet.mockResolvedValue(serializeBalances(sampleBalances()));
+    txHistoryGet.mockResolvedValue([]);
+    await dispatch(ORIGIN, 'getShieldedBalances', []);
+    await dispatch(ORIGIN, 'getUnshieldedBalances', []);
+    await dispatch(ORIGIN, 'getTxHistory', [0, 10]);
+    expect(requestApproval).not.toHaveBeenCalled();
+    expect(CONNECT_CAN).toContain('approval_canSeeBalances');
+    expect(CONNECT_CANT as readonly string[]).not.toContain('approval_canSeeBalances');
+  });
+
   it('rejects getTxHistory with invalid paging as InvalidRequest', async () => {
     await connect();
     await expect(dispatch(ORIGIN, 'getTxHistory', [0, 0])).rejects.toMatchObject({ code: 'InvalidRequest' });
@@ -515,11 +532,13 @@ describe('connector dispatch', () => {
     const outputs = [{ kind: 'shielded', type: 'b'.repeat(64), value: 3n, recipient: 'mn_shield_devnet' }];
     const res = await dispatch(ORIGIN, 'makeIntent', [inputs, outputs, { intentId: 'random', payFees: true }]);
     expect(res).toEqual({ tx: 'f00d' });
-    // Approval shows the outputs (amounts as strings).
+    // The approval carries the inputs as well as the outputs: the inputs are what
+    // the wallet gives up, and an approval of outputs alone hid them (#206).
     expect(requestApproval).toHaveBeenCalledWith(
       'transfer',
       ORIGIN,
       {
+        inputs: [{ kind: 'unshielded', type: 'a'.repeat(64), value: '5' }],
         outputs: [{ kind: 'shielded', type: 'b'.repeat(64), value: '3', recipient: 'mn_shield_devnet' }],
         payFees: true,
       },
@@ -635,6 +654,16 @@ describe('connector dispatch', () => {
     expect(await getLastActivity()).toBeNull();
     await dispatch(ORIGIN, 'getShieldedBalances', []);
     expect(await getLastActivity()).toEqual(expect.any(Number));
+  });
+
+  // Those requests must not reset the user's own clock, or the ceiling that stops
+  // a polling dApp holding the wallet open forever never applies (#204).
+  it('does not count a dApp request as the user\'s own activity', async () => {
+    await connect();
+    balancesGet.mockResolvedValue(serializeBalances(sampleBalances()));
+    await dispatch(ORIGIN, 'getShieldedBalances', []);
+    expect(await getLastActivity()).toEqual(expect.any(Number));
+    expect(await getLastUserActivity()).toBeNull();
   });
 
   it('records no activity for a request that is refused', async () => {

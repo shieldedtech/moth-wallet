@@ -245,14 +245,14 @@
   "approval_canSeeAddresses": {
     "message": "Deine Adressen sehen"
   },
+  "approval_canSeeBalances": {
+    "message": "Deine Guthaben und deinen Transaktionsverlauf sehen"
+  },
   "approval_canAskApprove": {
     "message": "Dich um Genehmigung von Transaktionen bitten"
   },
   "approval_cantMoveMoney": {
     "message": "Geld ohne dein OK bewegen"
-  },
-  "approval_cantSeeBalances": {
-    "message": "Deine Shielded-Guthaben oder deinen Verlauf sehen"
   },
   "approval_connectingAs": {
     "message": "Verbinden als"
@@ -335,11 +335,14 @@
   "approval_youSend": {
     "message": "Du sendest"
   },
+  "approval_intentPaysOut": {
+    "message": "Ausgezahlt"
+  },
   "approval_usingLabel": {
     "message": "Mit"
   },
   "approval_transferNote": {
-    "message": "Durch einen Zero-Knowledge-Beweis belegt, die Seite sieht deine Guthaben nie."
+    "message": "Vor dem Absenden durch einen Zero-Knowledge-Beweis belegt."
   },
   "approval_unlockToContinue": {
     "message": "Zum Fortfahren entsperren"

@@ -3,9 +3,13 @@ import { fakeBrowser } from 'wxt/testing';
 
 const hasOpenPorts = vi.fn(() => false);
 const broadcastApproval = vi.fn();
+const beginOp = vi.fn();
+const endOp = vi.fn();
 vi.mock('../lib/background/sync-service', () => ({
   hasOpenPorts: () => hasOpenPorts(),
   broadcastApproval: (id: string | null) => broadcastApproval(id),
+  beginOp: () => beginOp(),
+  endOp: () => endOp(),
 }));
 
 const acquireKeepalive = vi.fn();
@@ -15,7 +19,7 @@ vi.mock('../lib/background/keepalive', () => ({
   releaseKeepalive: () => releaseKeepalive(),
 }));
 
-import { requestApproval, resolveApproval } from '../lib/background/approvals';
+import { hasPendingApproval, rejectPendingApprovals, requestApproval, resolveApproval } from '../lib/background/approvals';
 
 describe('approval surfaces', () => {
   beforeEach(() => {
@@ -25,6 +29,21 @@ describe('approval surfaces', () => {
     broadcastApproval.mockReset();
     acquireKeepalive.mockReset();
     releaseKeepalive.mockReset();
+    beginOp.mockReset();
+    endOp.mockReset();
+  });
+
+  // A dApp once held the wallet unlocked by leaving an approval unanswered (#204):
+  // waiting on the user no longer counts as work in flight, and auto-lock rejects it.
+  it('does not count as work in flight while waiting, and auto-lock can reject it', async () => {
+    hasOpenPorts.mockReturnValue(true);
+    const decision = requestApproval('connect', 'https://dapp.example', {});
+    await vi.waitFor(() => expect(endOp).toHaveBeenCalledTimes(1));
+    expect(hasPendingApproval()).toBe(true);
+    rejectPendingApprovals();
+    await expect(decision).resolves.toBe(false);
+    expect(beginOp).toHaveBeenCalledTimes(1);
+    expect(hasPendingApproval()).toBe(false);
   });
 
   it('opens a closed side panel before awaiting approval persistence', async () => {
