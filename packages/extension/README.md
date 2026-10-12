@@ -70,6 +70,30 @@ yarn workspace @shieldedtech/moth-extension build:firefox  # .output/firefox-mv2
 yarn workspace @shieldedtech/moth-extension zip            # store-ready zips
 ```
 
+### Side-by-side builds (flavors)
+
+`WXT_MOTH_FLAVOR=<word>` builds a variant that can be installed next to the regular Moth Wallet
+without conflicts. `build:gloam` is a shortcut for the Gloam testing build:
+
+```bash
+yarn workspace @shieldedtech/moth-extension build:gloam    # .output-gloam/chrome-mv3
+```
+
+A flavor changes every identifier the two installs could otherwise share:
+
+| | Regular | `gloam` flavor |
+|---|---|---|
+| Connector slot | `window.midnight.moth` | `window.midnight.mothGloam` |
+| rdns | `io.shielded.moth` | `io.shielded.moth.gloam` |
+| Name (browser and dApp picker) | Moth Wallet | Moth Wallet (Gloam) |
+| Page request event | `__moth_connector_request__` | `__moth_gloam_connector_request__` |
+| Output folder | `.output/` | `.output-gloam/` |
+
+Extension storage, keys and the extension ID are separate per install anyway. Load the flavored
+build with **Load unpacked** from `.output-gloam/chrome-mv3`. dApps that list every
+`window.midnight` entry show both wallets; a dApp that hard-codes `window.midnight.moth` only
+sees the regular one.
+
 ## Create a GitHub release
 
 Merge the reviewed version and extension changes to `main`. The extension CD

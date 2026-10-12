@@ -57,6 +57,7 @@ CLAUDE.md
 
 # WXT (browser extension)
 .output/
+.output-*/
 .wxt/
 
 # design-sync (machine state, regenerated)

@@ -3,6 +3,10 @@ import { nodePolyfills, type PolyfillOptions } from 'vite-plugin-node-polyfills'
 import wasm from 'vite-plugin-wasm';
 import tailwindcss from '@tailwindcss/vite';
 import { MESSAGES } from './lib/i18n/messages';
+import { flavorOf, flavored } from './lib/flavor';
+
+// Side-by-side builds (see lib/flavor.ts): `WXT_MOTH_FLAVOR=gloam yarn build`.
+const FLAVOR = flavorOf(process.env.WXT_MOTH_FLAVOR);
 
 // Core keeps Buffer/process usage (address, proof, contract paths) and the
 // wallet-sdk pulls in stream/util/events transitively. The dedicated wallet
@@ -16,8 +20,10 @@ const NODE_POLYFILLS: PolyfillOptions = {
 
 export default defineConfig({
   modules: ['@wxt-dev/module-react'],
+  // A flavored build gets its own output folder, so it never overwrites the regular one.
+  ...(FLAVOR ? { outDir: `.output-${FLAVOR}` } : {}),
   zip: {
-    name: 'moth-extension',
+    name: FLAVOR ? `moth-extension-${FLAVOR}` : 'moth-extension',
     artifactTemplate: '{{name}}-{{packageVersion}}-{{browser}}.zip',
   },
   // The English `_locales` catalog is generated from the TS source of truth
@@ -36,7 +42,7 @@ export default defineConfig({
     },
   },
   manifest: ({ browser }) => ({
-    name: '__MSG_common_extName__',
+    name: FLAVOR ? flavored(FLAVOR).name : '__MSG_common_extName__',
     description: '__MSG_common_extDescription__',
     default_locale: 'en',
     permissions: [
@@ -67,6 +73,8 @@ export default defineConfig({
     },
   }),
   vite: () => ({
+    // Bake the flavor into every bundle (lib/flavor.ts reads it).
+    define: { 'import.meta.env.WXT_MOTH_FLAVOR': JSON.stringify(FLAVOR) },
     plugins: [
       // ledger-v8 ships WASM via the ESM-integration proposal, which emits a
       // top-level await. A Chrome MV3 service worker cannot have TLA in its

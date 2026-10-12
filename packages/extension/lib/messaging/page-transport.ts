@@ -8,9 +8,10 @@
 // script's message sender, never from page-supplied data.
 
 import type { SerializedConnectorError } from '../connector/errors';
+import { FLAVOR, flavored } from '../flavor';
 
 export const ENVELOPE_MARK = '__moth' as const;
-export const PAGE_REQUEST_EVENT = '__moth_connector_request__';
+export const PAGE_REQUEST_EVENT = flavored(FLAVOR).requestEvent;
 
 export interface PageRequestEnvelope {
   __moth: true;

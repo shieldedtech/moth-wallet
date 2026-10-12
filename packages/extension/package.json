@@ -14,7 +14,8 @@
     "compile": "wxt prepare && tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "clean": "rm -rf .output .wxt",
+    "clean": "rm -rf .output .output-* .wxt",
+    "build:gloam": "WXT_MOTH_FLAVOR=gloam wxt build",
     "postinstall": "wxt prepare"
   },
   "dependencies": {

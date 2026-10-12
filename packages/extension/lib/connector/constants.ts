@@ -1,6 +1,9 @@
-export const WALLET_ID = 'moth';
-export const WALLET_RDNS = 'io.shielded.moth';
-export const WALLET_NAME = 'Moth Wallet';
+import { FLAVOR, flavored } from '../flavor';
+
+const IDENTITY = flavored(FLAVOR);
+export const WALLET_ID = IDENTITY.walletId;
+export const WALLET_RDNS = IDENTITY.rdns;
+export const WALLET_NAME = IDENTITY.name;
 /** Version of the @midnight-ntwrk/dapp-connector-api standard implemented. */
 export const API_VERSION = '4.0.1';
 
