@@ -84,10 +84,20 @@ describe('createKeystoreFor', () => {
 describe('ledger/SDK pairing (the DustParameters regression)', () => {
   beforeEach(() => resetSdkRegistry());
 
+  it('gives the v9 SDK its ledger-v9 (V2) wallet variants, and the v8 SDK its V1 ones', async () => {
+    const sdkV9 = await initSdk('v9');
+    expect('V2Builder' in sdkV9.dustVariant).toBe(true);
+    expect('V2Builder' in sdkV9.shieldedVariant).toBe(true);
+    const sdkV8 = await initSdk('v8');
+    expect('V1Builder' in sdkV8.dustVariant).toBe(true);
+    expect('V1Builder' in sdkV8.shieldedVariant).toBe(true);
+  });
+
   it('accepts a v9 ledger DustParameters through the v9 SDK', async () => {
     const sdkV9 = await initSdk('v9');
     const ledgerV9 = await initLedger('v9');
-    const builder = new sdkV9.dustV1.V1Builder().withDefaults();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const builder = new (sdkV9.dustVariant as any).V2Builder().withDefaults();
     const cfg = {
       networkId: 'devnet',
       costParameters: {nightDustRatio: 1n, generationDecayRate: 1n, dustGracePeriodSeconds: 1n},
@@ -105,7 +115,7 @@ describe('ledger/SDK pairing (the DustParameters regression)', () => {
   it('a v8 SDK rejects v9 DustParameters — the mismatch this seam exists to prevent', async () => {
     const sdkV8 = await initSdk('v8');
     const ledgerV9 = await initLedger('v9');
-    const builder = new sdkV8.dustV1.V1Builder().withDefaults();
+    const builder = new sdkV8.dustVariant.V1Builder().withDefaults();
     const cfg = {
       networkId: 'devnet',
       costParameters: {nightDustRatio: 1n, generationDecayRate: 1n, dustGracePeriodSeconds: 1n},

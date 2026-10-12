@@ -9,6 +9,7 @@ import { requestMeter, type MeterSnapshot } from './request-meter';
 import {
   createMothBrowser,
   initSdk,
+  activeSdkVersion,
   detectLedgerVersion,
   startWalletSync,
   buildTransferTransaction,
@@ -114,14 +115,18 @@ let cachedMoth: { network: string; moth: Moth } | null = null;
 
 // Async because the ledger WASM and the SDK generation the network needs must
 // both be loaded before any core call reaches a seam — deriveWalletKeys builds
-// a keystore, which is SDK-side. initSdk loads the matching ledger too and
-// caches, so this is a no-op after the first call for a given version.
-async function getMoth(network: string): Promise<Moth> {
+// a keystore, which is SDK-side. Only `effective` (the network with the user's
+// endpoint overrides) may choose the ledger; the preset can only fill the gap
+// when nothing is loaded, since it may point at a different chain.
+async function getMoth(network: string, effective?: NetworkConfig): Promise<Moth> {
   if (cachedMoth?.network !== network) {
     cachedMoth = { network, moth: createMothBrowser({ network }) };
   }
-  const {version} = await detectLedgerVersion(cachedMoth.moth.config);
-  await initSdk(version);
+  if (effective) {
+    await initSdk((await detectLedgerVersion(effective)).version);
+  } else if (activeSdkVersion() === undefined) {
+    await initSdk((await detectLedgerVersion(cachedMoth.moth.config)).version);
+  }
   return cachedMoth.moth;
 }
 
@@ -312,7 +317,7 @@ export async function syncEnsure(
   // Wallets created by the extension store the chain tip at creation time as
   // their birthday; it lets the first sync pre-seed at tip instead of
   // scanning from genesis. Imported wallets have none and scan everything.
-  const record = (await (await getMoth(network.id)).wallets.list()).find(
+  const record = (await (await getMoth(network.id, network)).wallets.list()).find(
     (wallet) => wallet.name === walletName,
   );
   const birthday = record?.birthday;
@@ -892,7 +897,7 @@ export async function signData(
   // An ECDSA wallet signs with a different key and publishes a different
   // verifying key, so signing with the default would hand the dApp a signature
   // that verifies against a key the wallet never gave it.
-  const moth = await getMoth(network.id);
+  const moth = await getMoth(network.id, network);
   const record = (await moth.wallets.list()).find((w) => w.name === walletName);
   const signatureKind = record?.signatureKind ?? 'schnorr';
   if (signatureKind === 'ecdsa') await initSdk('v9');

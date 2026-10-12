@@ -79,8 +79,9 @@ export default class MaintenanceInsertVksBatch extends BaseCommand {
 
     const walletName = await this.resolveWalletName(flags);
     const passphrase = await getPassphrase();
-    const wallet = await this.walletManager.unlock(walletName, passphrase);
+    // Resolve the network first: it loads the ledger the unlocked keys are built for.
     const network = await this.getNetworkConfig(flags.network, this.getNetworkOverrides(flags));
+    const wallet = await this.walletManager.unlock(walletName, passphrase);
 
     await this.confirmTransaction({
       'Operation': `Insert ${entries.length} verifier key(s)`,

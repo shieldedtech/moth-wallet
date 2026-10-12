@@ -25,9 +25,11 @@ import {formatDustBalance} from '../wallet/balance-format.js';
 import {ensureEmptyRefCache, preSeedNewWallet} from './preseed.js';
 import {InMemorySyncStateStore, syncStateKey, type SyncStateStore, type WalletPart} from './sync-store.js';
 import {dedupingShieldedBuilder, dedupingDustBuilder} from './sdk-dedup.js';
-import {sdk, createKeystoreFor} from '../sdk/index.js';
+import {sdk, createKeystoreFor, activeSdkVersion} from '../sdk/index.js';
 import type {SignatureKind} from '../wallet/signature-encoding.js';
 import {activeLedgerVersion} from '../ledger/index.js';
+import {WalletError} from '../types/errors.js';
+import {v9ForkSchedule} from './facade-compat.js';
 import {verifyNetworkLedger} from '../ledger/protocol-version.js';
 import {overallSyncProgress, type SubWallet} from './progress.js';
 import {partsToSeed} from './preseed-parts.js';
@@ -430,6 +432,18 @@ function subPct(sub: {applied: number; total: number}, done: boolean): string {
   return sub.total > 0 ? `${Math.round(Math.min(1, sub.applied / sub.total) * 100)}%` : '100%';
 }
 
+// On the v9 SDK every sub-wallet is single-variant, matching the single v9 epoch in facade-compat;
+// the default forking unshielded wallet refuses a fork at version 0.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function unshieldedWalletClass(walletCfg: DefaultConfiguration): any {
+  if (activeSdkVersion() !== 'v9') return sdk().unshielded.UnshieldedWallet(walletCfg);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const unshielded = sdk().unshielded as any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const variant = sdk().unshieldedVariant as any;
+  return unshielded.CustomUnshieldedWallet(walletCfg, new variant.V2Builder().withDefaults());
+}
+
 export async function startWalletSync(
   keys: WalletKeys,
   network: NetworkConfig,
@@ -441,6 +455,15 @@ export async function startWalletSync(
   options?: WalletSyncOptions
 ): Promise<SyncedWallet> {
   installLogSuppression();
+
+  // Keys are ledger objects; ones built before the network's ledger was loaded fail deep inside WASM.
+  if (!(keys.shieldedSecretKeys instanceof activeLedger().ZswapSecretKeys)) {
+    throw new WalletError(
+      'NETWORK_ERROR',
+      `Wallet keys were derived for a different ledger than ${network.id} is using (${activeLedgerVersion() ?? 'none'}). ` +
+        'Load the network before unlocking the wallet.',
+    );
+  }
 
   // Check the ledger before a single block is read. The fork is partial —
   // collapsed Merkle updates are tagged [v1] and decode under both ledgers,
@@ -480,7 +503,12 @@ export async function startWalletSync(
   // Cast confined to the SDK's config intersection: the literal can't satisfy
   // DefaultTransactionHistoryConfiguration structurally, so it's typed as the
   // factory's config type, matching the prior runtime behaviour.
+  // SDK config types are the v8 line's, which has no `forks`; hence typed as absent.
+  const forkSchedule = v9ForkSchedule();
+  const forks: {forks?: never} = forkSchedule ? {forks: forkSchedule as never} : {};
+
   const walletCfg: DefaultConfiguration = {
+    ...forks,
     networkId: network.id,
     indexerClientConnection: {indexerHttpUrl, indexerWsUrl},
     relayURL,
@@ -600,14 +628,14 @@ export async function startWalletSync(
   if (savedUnshielded) {
     try {
       onProgress?.('Restoring unshielded state from cache...');
-      unshieldedWallet = sdk().unshielded.UnshieldedWallet(walletCfg).restore(savedUnshielded);
+      unshieldedWallet = unshieldedWalletClass(walletCfg).restore(savedUnshielded);
     } catch {
       onProgress?.('Unshielded cache corrupted, syncing from genesis...');
       await evictCachedState(store, name, network.id, 'unshielded', keys.signatureKind);
     }
   }
   if (!unshieldedWallet) {
-    unshieldedWallet = sdk().unshielded.UnshieldedWallet(walletCfg).startWithPublicKey(sdk().unshielded.PublicKey.fromKeyStore(keystore));
+    unshieldedWallet = unshieldedWalletClass(walletCfg).startWithPublicKey(sdk().unshielded.PublicKey.fromKeyStore(keystore));
   }
 
   // --- Dust wallet: try restore from cache ---
@@ -615,6 +643,7 @@ export async function startWalletSync(
   // same boundary-event off-by-one in its applyUpdate.
   onProgress?.('Starting dust wallet...');
   const dustCfg = {
+    ...forks,
     networkId: network.id,
     costParameters: DUST_COST_PARAMETERS,
     indexerClientConnection: {indexerHttpUrl, indexerWsUrl},
@@ -649,7 +678,7 @@ export async function startWalletSync(
   const facade = await sdk().facade.WalletFacade.init({
     configuration: walletCfg,
     // The SDK defaults to a proof server. Supply the service explicitly so
-    // WASM mode follows the documented makeWasmProvingService() path.
+    // WASM mode follows the documented WASM proving service path.
     provingService: () => createWalletProvingService(prover),
     // Resolve submissions at 'Submitted' instead of the default 'Finalized' so a
     // send doesn't block its message round-trip on finalization — see
@@ -660,7 +689,13 @@ export async function startWalletSync(
     dust: () => dustWallet!,
   });
 
-  await facade.start(shieldedSecretKeys, dustSecretKey);
+  // The v9 facade starts from per-ledger key objects. Moth's v9 networks were born on ledger v9, so there is no v8 side to read.
+  if (activeSdkVersion() === 'v9') {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (facade.start as any)({v9: {shielded: shieldedSecretKeys, dust: dustSecretKey}});
+  } else {
+    await facade.start(shieldedSecretKeys, dustSecretKey);
+  }
   onProgress?.('Syncing with network...');
 
   // Subscribe to progressive state updates — don't block on full sync.
@@ -759,15 +794,20 @@ export async function startWalletSync(
     });
 
   // Wait briefly for first emission so we have something to return
+  // first() completes on its own; the handle only matters if the timeout fires first,
+  // and the state stream may emit synchronously on subscribe.
   await new Promise<void>((resolve) => {
-    const timeout = setTimeout(resolve, 5_000);
-    const earlyCheck = facade
+    let earlyCheck: Rx.Subscription | undefined;
+    const timeout = setTimeout(() => {
+      earlyCheck?.unsubscribe();
+      resolve();
+    }, 5_000);
+    earlyCheck = facade
       .state()
       .pipe(Rx.first())
       .subscribe((s: FacadeState) => {
         latestBalances = extractBalancesPartial(s);
         clearTimeout(timeout);
-        earlyCheck.unsubscribe();
         resolve();
       });
   });
@@ -927,7 +967,9 @@ function extractBalancesPartial(
   };
 
   try {
-    synced = state.isSynced === true;
+    // A v9 facade can report synced while its wallets straddle versions; it refuses to build until they settle.
+    const phase = (state as {protocol?: {_tag?: string}}).protocol?._tag;
+    synced = state.isSynced === true && (phase === undefined || phase === 'Settled');
   } catch {
     /* */
   }

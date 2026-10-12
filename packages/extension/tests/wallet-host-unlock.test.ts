@@ -17,6 +17,7 @@ vi.mock('@shieldedtech/moth-browser', () => ({
   // getMoth loads the network's SDK generation (and its ledger) before handing
   // back the instance.
   initSdk: vi.fn(async () => undefined),
+  activeSdkVersion: vi.fn(() => undefined),
   // getMoth asks the network which ledger it runs before loading the SDK.
   detectLedgerVersion: vi.fn(async () => ({ version: 'v8', source: 'config' })),
   deriveShieldedPublicKeys: (seedHex: string) => ({
@@ -47,6 +48,7 @@ vi.mock('@shieldedtech/moth-browser', () => ({
   EMPTY_COINS: {},
 }));
 
+import { activeSdkVersion, initSdk } from '@shieldedtech/moth-browser';
 import { walletUnlock } from '../lib/offscreen/wallet-host';
 
 const seedFreeUnlocked = (lock = vi.fn()) => ({
@@ -90,5 +92,19 @@ describe('offscreen walletUnlock (Option A key-holder)', () => {
     await walletUnlock('alice', 'pw', 'devnet');
 
     expect(lock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not switch an already loaded ledger on the strength of the preset', async () => {
+    // Sync loads the ledger from the user's endpoint overrides; a keystore call
+    // that only knows the network name must not reload the preset's ledger over it.
+    vi.mocked(activeSdkVersion).mockReturnValue('v9');
+    vi.mocked(initSdk).mockClear();
+    unlock.mockResolvedValue(seedFreeUnlocked());
+    exportSeedHex.mockResolvedValue('deadbeef');
+
+    await walletUnlock('alice', 'pw', 'devnet');
+
+    expect(initSdk).not.toHaveBeenCalled();
+    vi.mocked(activeSdkVersion).mockReturnValue(undefined);
   });
 });

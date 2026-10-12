@@ -99,16 +99,24 @@ export function createProofProvider(
   };
 }
 
+// The v9 SDK names its proving services per ledger; the v8 SDK keeps the unprefixed names.
+type ProvingFactories = typeof sdk extends () => {proving: infer P} ? P : never;
+function provingFactory<K extends 'makeServerProvingService' | 'makeWasmProvingService'>(name: K): ProvingFactories[K] {
+  const proving = sdk().proving as unknown as Record<string, unknown>;
+  const v9 = name.replace(/^make/, 'makeV9');
+  return (proving[v9] ?? proving[name]) as ProvingFactories[K];
+}
+
 /** Build the wallet facade service. WASM follows the SDK's documented setup. */
 export function createWalletProvingService(config: ProverConfig) {
   if (config.type === 'server') {
-    return sdk().proving.makeServerProvingService({provingServerUrl: new URL(config.url)});
+    return provingFactory('makeServerProvingService')({provingServerUrl: new URL(config.url)});
   }
 
   // This is the SDK-documented path and works in Node, where the package's
   // proof-worker.js is addressable from node_modules.
   if (typeof process !== 'undefined' && process.versions?.node) {
-    return sdk().proving.makeWasmProvingService();
+    return provingFactory('makeWasmProvingService')();
   }
 
   // Browser bundles do not emit the SDK's dependency-internal proof-worker.js.

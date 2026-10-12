@@ -11,6 +11,7 @@ import {
   DustAddress,
 } from '@midnightntwrk/wallet-sdk/address-format';
 import {createKeystoreFor, signSegmentFor} from '../sdk/index.js';
+import * as compat from './facade-compat.js';
 import type {
   WalletFacade,
   UtxoWithMeta,
@@ -162,7 +163,7 @@ async function submitWithRetry(
       // but everything downstream — indexer status queries, tx-history entries
       // (WalletEntry.hash), explorers, and the activity feed's pending-row
       // reconciliation — is keyed by the transaction hash. Return that.
-      await facade.submitTransaction(finalized);
+      await compat.submitTransaction(facade, finalized);
       return finalized.transactionHash();
     } catch (e) {
       if (isAlreadyImported(e)) return finalized.transactionHash();
@@ -192,7 +193,8 @@ export async function buildTransferTransaction(
   const ttl = new Date(Date.now() + 30 * 60_000);
 
   onProgress?.('building');
-  const recipe = await facade.transferTransaction(
+  const recipe = await compat.transferTransaction(
+    facade,
     transfers,
     {shieldedSecretKeys: keys.shieldedSecretKeys, dustSecretKey: keys.dustSecretKey},
     {ttl}
@@ -201,7 +203,7 @@ export async function buildTransferTransaction(
   onProgress?.('proving');
   const signed = await facade.signRecipe(recipe, signSegmentFor(ks) as never);
 
-  return facade.finalizeRecipe(signed);
+  return compat.finalizeRecipe<FinalizedTransaction>(facade, signed);
 }
 
 /**
@@ -219,14 +221,15 @@ export async function estimateTransferFee(
   setNetworkId(networkId);
   const transfers = combinedTransfers(networkId, requests);
   const ttl = new Date(Date.now() + 30 * 60_000);
-  const recipe = await facade.transferTransaction(
+  const recipe = await compat.transferTransaction(
+    facade,
     transfers,
     {shieldedSecretKeys: keys.shieldedSecretKeys, dustSecretKey: keys.dustSecretKey},
     {ttl, payFees: false}
   );
 
   try {
-    return await facade.estimateTransactionFee(recipe.transaction, keys.dustSecretKey, {ttl});
+    return await compat.estimateTransactionFee(facade, recipe.transaction, keys.dustSecretKey, {ttl});
   } finally {
     await facade.revertTransaction(recipe.transaction);
   }
@@ -286,7 +289,8 @@ export async function balanceTransaction(
 
   onProgress?.('building');
   const recipe = sealed
-    ? await facade.balanceFinalizedTransaction(
+    ? await compat.balanceFinalizedTransaction(
+        facade,
         activeLedger().Transaction.deserialize<ledger.SignatureEnabled, ledger.Proof, ledger.Binding>(
           'signature',
           'proof',
@@ -296,7 +300,8 @@ export async function balanceTransaction(
         secretKeys,
         {ttl}
       )
-    : await facade.balanceUnboundTransaction(
+    : await compat.balanceUnboundTransaction(
+        facade,
         activeLedger().Transaction.deserialize<ledger.SignatureEnabled, ledger.Proof, ledger.PreBinding>(
           'signature',
           'proof',
@@ -309,7 +314,7 @@ export async function balanceTransaction(
 
   onProgress?.('proving');
   const signed = await facade.signRecipe(recipe, signSegmentFor(ks) as never);
-  return facade.finalizeRecipe(signed);
+  return compat.finalizeRecipe<FinalizedTransaction>(facade, signed);
 }
 
 /**
@@ -355,13 +360,14 @@ export async function buildSwapIntent(
 
   const ttl = new Date(Date.now() + 30 * 60_000);
   onProgress?.('building');
-  const recipe = await facade.initSwap(
+  const recipe = await compat.initSwap(
+    facade,
     swapInputs,
     swapOutputs,
     {shieldedSecretKeys: keys.shieldedSecretKeys, dustSecretKey: keys.dustSecretKey},
     {ttl, payFees}
   );
-  return recipe.transaction;
+  return compat.toLedgerTx(facade, recipe.transaction);
 }
 
 /**
@@ -561,7 +567,7 @@ async function designateForDustImpl(
   }
 
   onProgress?.('proving');
-  const finalized = await facade.finalizeRecipe(recipe);
+  const finalized = await compat.finalizeRecipe<FinalizedTransaction>(facade, recipe);
 
   onProgress?.('submitting');
   return submitWithRetry(facade, finalized);
@@ -631,13 +637,14 @@ async function dedesignateFromDustImpl(
     signSegmentFor(ks) as never,
   );
 
-  const balancedRecipe = await facade.balanceUnprovenTransaction(
+  const balancedRecipe = await compat.balanceUnprovenTransaction(
+    facade,
     recipe.transaction,
     {shieldedSecretKeys: keys.shieldedSecretKeys, dustSecretKey: keys.dustSecretKey},
     {ttl: new Date(Date.now() + 30 * 60_000)}
   );
 
   onProgress?.('submitting');
-  const finalized = await facade.finalizeRecipe(balancedRecipe);
+  const finalized = await compat.finalizeRecipe<FinalizedTransaction>(facade, balancedRecipe);
   return submitWithRetry(facade, finalized);
 }

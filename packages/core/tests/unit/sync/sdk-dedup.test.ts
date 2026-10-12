@@ -115,6 +115,24 @@ describe('makeDedupingApplyUpdate', () => {
     expect(captured[0]!.updates.map((u) => Number(u.id))).toEqual([10138, 10145]);
   });
 
+  it('forwards the active protocol range that ledger-v9 variants pass after the update', () => {
+    const base = {applyUpdate: vi.fn().mockImplementation((state: FakeState) => [state, {changes: [], protocolVersion: 1}])};
+    const wrapped = makeDedupingApplyUpdate(base, noopUpdateProgress);
+    const range = [2_000_000n, 9_007_199_254_740_991n] as const;
+    wrapped(makeState(4n), {updates: [{id: 5, maxId: 10}]}, range);
+    wrapped(makeState(5n), {updates: [{id: 5, maxId: 10}, {id: 6, maxId: 10}]}, range);
+    wrapped(makeState(0n), {updates: []}, range);
+    expect(base.applyUpdate.mock.calls.map((c) => c[2])).toEqual([range, range, range]);
+  });
+
+  it('passes an update without an event batch (a version signal) straight to the SDK', () => {
+    const base = {applyUpdate: vi.fn().mockReturnValue([{} as FakeState, {changes: [], protocolVersion: 2}])};
+    const wrapped = makeDedupingApplyUpdate(base, noopUpdateProgress);
+    const signal = {_tag: 'VersionSignal', version: 2_001_000n} as unknown as {updates: FakeUpdate[]};
+    wrapped(makeState(7n), signal);
+    expect(base.applyUpdate).toHaveBeenCalledWith(expect.anything(), signal);
+  });
+
   it('passes the empty-batch case straight to the SDK', () => {
     const base = {applyUpdate: vi.fn().mockReturnValue([{} as FakeState, {changes: [], protocolVersion: 0}])};
     const wrapped = makeDedupingApplyUpdate(base, noopUpdateProgress);

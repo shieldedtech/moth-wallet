@@ -55,6 +55,24 @@ describe('detectLedgerVersion', () => {
     expect(got).toEqual({version: 'v8', source: 'config'});
   });
 
+  it('does not let an endpoint override inherit what the preset reported', async () => {
+    const preset = {id: 'undeployed', indexerUrl: 'http://localhost:8088/api/v4/graphql'};
+    const overridden = {id: 'undeployed', indexerUrl: 'http://localhost:8110/api/v4/graphql'};
+    await detectLedgerVersion(preset, {probe: async () => PROTOCOL_VERSION_V8});
+    const got = await detectLedgerVersion(overridden, {probe: async () => 2_001_000});
+    expect(got).toEqual({version: 'v9', source: 'network', observedProtocolVersion: 2_001_000});
+  });
+
+  it('forgets every endpoint of a network on reset', async () => {
+    const a = {id: 'undeployed', indexerUrl: 'http://a/graphql'};
+    const b = {id: 'undeployed', indexerUrl: 'http://b/graphql'};
+    await detectLedgerVersion(a, {probe: async () => PROTOCOL_VERSION_V8});
+    await detectLedgerVersion(b, {probe: async () => PROTOCOL_VERSION_V8});
+    resetLedgerDetectionCache('undeployed');
+    expect((await detectLedgerVersion(a, {probe: async () => PROTOCOL_VERSION_V9})).version).toBe('v9');
+    expect((await detectLedgerVersion(b, {probe: async () => PROTOCOL_VERSION_V9})).version).toBe('v9');
+  });
+
   it('probes a network once and reuses the answer', async () => {
     let calls = 0;
     const probe = async () => {
