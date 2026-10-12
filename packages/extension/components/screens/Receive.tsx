@@ -1,10 +1,16 @@
-// 2f/8f Receive — shielded/unshielded tabs, QR card, copy → toast.
-// No DUST tab: DUST can't be transferred, so it can't be received.
+// 2f/8f Receive — shielded/unshielded/DUST tabs, QR card, copy → toast.
+//
+// The DUST tab is deliberately not a "receive" in the transfer sense: DUST
+// cannot be sent, so nobody can pay you at this address. It is here because it
+// is still the address that answers "where does my DUST go?", and it has to be
+// copyable — registering another wallet's NIGHT, or a Cardano stake key, to
+// generate DUST *to this wallet* takes exactly this value. It had no home in
+// the extension at all, while the TUI showed it on the keys screen.
 
 import { useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { toast } from 'sonner';
-import { Eye, Moon } from 'lucide-react';
+import { Eye, Fuel, Moon } from 'lucide-react';
 import { t } from '../../lib/i18n';
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import { Button } from '../ui/button';
@@ -22,10 +28,10 @@ function displayAddress(address: string): string {
 }
 
 export function Receive({ status, onBack }: { status: SessionStatus; onBack: () => void }) {
-  const [tab, setTab] = useState<'shielded' | 'unshielded'>('unshielded');
+  const [tab, setTab] = useState<'shielded' | 'unshielded' | 'dust'>('unshielded');
 
   const addressFor = (kind: typeof tab): string => {
-    const role = kind === 'shielded' ? 'zswap' : 'nightExternal';
+    const role = kind === 'shielded' ? 'zswap' : kind === 'dust' ? 'dust' : 'nightExternal';
     const encoded = status.addresses?.[role]?.bech32m ?? {};
     return encoded[status.network] ?? Object.values(encoded)[0] ?? '';
   };
@@ -44,6 +50,7 @@ export function Receive({ status, onBack }: { status: SessionStatus; onBack: () 
         <TabsList>
           <TabsTrigger value="unshielded">{t('receive_unshieldedTab')}</TabsTrigger>
           <TabsTrigger value="shielded">{t('receive_shieldedTab')}</TabsTrigger>
+          <TabsTrigger value="dust">{t('receive_dustTab')}</TabsTrigger>
         </TabsList>
       </Tabs>
 
@@ -58,11 +65,15 @@ export function Receive({ status, onBack }: { status: SessionStatus; onBack: () 
                 tab === 'shielded' ? 'bg-primary text-primary-foreground' : 'bg-secondary text-secondary-foreground'
               }`}
             >
-              {tab === 'shielded' ? <Moon size={22} strokeWidth={2} /> : <Eye size={22} strokeWidth={2} />}
+              {tab === 'shielded' ? <Moon size={22} strokeWidth={2} />
+                : tab === 'dust' ? <Fuel size={22} strokeWidth={2} />
+                : <Eye size={22} strokeWidth={2} />}
             </span>
           </div>
           <p className="m-0 font-display text-[15px] font-bold">
-            {t(tab === 'shielded' ? 'receive_shieldedAddressOf' : 'receive_unshieldedAddressOf', [
+            {t(tab === 'shielded' ? 'receive_shieldedAddressOf'
+              : tab === 'dust' ? 'receive_dustAddressOf'
+              : 'receive_unshieldedAddressOf', [
               accountLabel(status.walletName ?? '', status.walletLabel),
             ])}
           </p>
@@ -77,6 +88,10 @@ export function Receive({ status, onBack }: { status: SessionStatus; onBack: () 
 
       {tab === 'shielded' ? (
         <NoteCard icon={Moon}>{t('receive_shieldedNote')}</NoteCard>
+      ) : tab === 'dust' ? (
+        <NoteCard variant="neutral" icon={Fuel}>
+          {t('receive_dustNote')}
+        </NoteCard>
       ) : (
         <NoteCard variant="neutral" icon={Eye}>
           {t('receive_unshieldedNote')}

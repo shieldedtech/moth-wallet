@@ -14,7 +14,7 @@
 useDefault = true
 
 [[allowlists]]
-description = "Unit-test fixtures: a Midnight token type id and the canary string for the no-leak assertion"
+description = "Unit-test fixtures: a Midnight token type id, a Cardano stake key hash, and the canary string for the no-leak assertion"
 regexTarget = "match"
 regexes = [
   # packages/tui/tests/unit/state-view-rows.test.ts - token type id, not a key.
@@ -22,4 +22,8 @@ regexes = [
   # packages/core/tests/unit/contract/args-parser.test.ts - the literal the test
   # asserts is absent from the error message.
   '''sh0uldNotLeak''',
+  # packages/core/tests/unit/cardano/contract.test.ts - a Cardano stake key
+  # HASH (Blake2b-224 of a public key), published in every transaction that
+  # stake key signs. Identifies the key; grants nothing.
+  '''070c2f801567402df8e4e630ed3819e1c29219d1d918266758e3a063''',
 ]

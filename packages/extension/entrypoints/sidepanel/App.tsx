@@ -7,6 +7,7 @@ import { useSession, useWallets, usePanelEvents, useSelectedProverType, useRegis
 import { t } from '../../lib/i18n';
 import { nativeAssetLabelsForNetwork } from '../../lib/ui/token-labels';
 import { accountLabel } from '../../lib/ui/format';
+import { Cardano } from '../../components/screens/Cardano';
 import type { Screen } from '../../components/screens/navigation';
 import { GetStarted, openSetupTab } from '../../components/screens/GetStarted';
 import { SetupInProgress } from '../../components/screens/SetupInProgress';
@@ -209,6 +210,7 @@ export function App() {
           onBack={shared.back}
         />
       )}
+      {screen === 'cardano' && <Cardano network={session.status.network} onBack={shared.back} />}
       {screen === 'accounts' && wallets && (
         <Accounts
           wallets={wallets}
