@@ -928,7 +928,8 @@ export function Cardano({
   return (
     <PanelScreen
       cta={
-        status.registered ? (
+        // A test pairing has no bridge: registration controls would only fail.
+        status.testPairing ? undefined : status.registered ? (
           <>
             <Button variant="secondary" onClick={() => setMode({ kind: 'confirm', action: 'deregister' })}>
               {t('cardano_deregister')}
@@ -960,7 +961,17 @@ export function Cardano({
       {header}
       {accountSwitcher}
 
-      {accountCard(status.cardanoNetwork, status.address, status.rewardAddress)}
+      {accountCard(
+        status.testPairing ? t('cardano_testPairingSuffix', [status.cardanoNetwork]) : status.cardanoNetwork,
+        status.address,
+        status.rewardAddress,
+      )}
+
+      {status.testPairing && (
+        <NoteCard variant="info" icon={Link2}>
+          {t('cardano_testPairingNote', [status.cardanoNetwork])}
+        </NoteCard>
+      )}
 
       {/* The same meter the home screen uses for DUST overall, scoped to what
           this cNIGHT generates. Rendered without onOpen: there is nowhere

@@ -2117,6 +2117,21 @@
   "cardano_settingsNoNetwork": {
     "message": "Aucun réseau Cardano n'est associé à $1."
   },
+  "cardano_settingsTestPairing": {
+    "message": "Cardano network for testing"
+  },
+  "cardano_settingsTestPairingHint": {
+    "message": "This local network has no Cardano bridge. Pair it with a Cardano testnet to test payments and signing, for example a dApp's cNIGHT fee. DUST registration stays off."
+  },
+  "cardano_settingsTestPairingNone": {
+    "message": "None"
+  },
+  "cardano_testPairingSuffix": {
+    "message": "$1 (test pairing)"
+  },
+  "cardano_testPairingNote": {
+    "message": "Test pairing: Cardano $1 with a local Midnight network. You can see balances, send and sign. DUST registration is off, because local networks don't watch Cardano."
+  },
   "cardano_midnightRow": {
     "message": "Sur Midnight"
   },

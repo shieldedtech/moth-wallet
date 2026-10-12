@@ -163,6 +163,13 @@ export const cardano = {
   cardano_settingsBlockfrostLabel: 'Blockfrost project ID',
   cardano_settingsBlockfrostFor: 'Blockfrost project ID for $1',
   cardano_settingsNoNetwork: 'Cardano has no network paired with $1.',
+  cardano_settingsTestPairing: 'Cardano network for testing',
+  cardano_settingsTestPairingHint:
+    "This local network has no Cardano bridge. Pair it with a Cardano testnet to test payments and signing, for example a dApp's cNIGHT fee. DUST registration stays off.",
+  cardano_settingsTestPairingNone: 'None',
+  cardano_testPairingSuffix: '$1 (test pairing)',
+  cardano_testPairingNote:
+    "Test pairing: Cardano $1 with a local Midnight network. You can see balances, send and sign. DUST registration is off, because local networks don't watch Cardano.",
   cardano_settingsBlockfrostHint:
     'Needed to read Cardano and submit cNIGHT transactions. Get one free at blockfrost.io.',
   cardano_settingsBlockfrostStored: 'Stored. Enter a new ID to replace it.',

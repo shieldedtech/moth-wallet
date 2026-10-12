@@ -202,6 +202,13 @@ export interface ExtensionSettings {
   blockfrostUrl: string | null;
   cnightPolicyId: string | null;
   cnightAssetName: string | null;
+  /**
+   * Test pairing per LOCAL Midnight network (undeployed, devnet, qanet): the
+   * Cardano testnet used for reading, sending and signing there. Ignored on
+   * public networks (their pairing is fixed). Never enables DUST registration,
+   * because local networks don't observe Cardano.
+   */
+  cardanoTestPairing: Record<string, 'Preprod' | 'Preview'>;
 }
 
 /**
@@ -481,6 +488,8 @@ interface ProtocolMap {
   /** cNIGHT holdings plus both sides of the DUST designation picture. */
   cardanoStatus(): {
     cardanoNetwork: string;
+    /** A local Midnight network paired with a Cardano testnet for testing: no DUST registration. */
+    testPairing: boolean;
     address: string;
     rewardAddress: string;
     /** Decimal strings — both exceed Number's safe integer range. */

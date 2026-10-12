@@ -12,6 +12,7 @@ import {
   type NetworkConfig,
 } from '@shieldedtech/moth-wallet/types/network';
 import { parseRegistryUrl } from '@shieldedtech/moth-wallet/registry/gloam-registry';
+import { isLocalMidnightNetwork } from '@shieldedtech/moth-wallet/cardano/network';
 import type { ExtensionSettings, NetworkEndpoints, NodeAuthHeader } from '../messaging/protocol';
 
 const SETTINGS_KEY = 'settings';
@@ -44,6 +45,8 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   blockfrostUrl: null,
   cnightPolicyId: null,
   cnightAssetName: null,
+  // No local network is paired with Cardano until the user chooses one.
+  cardanoTestPairing: {},
 };
 
 /** Per-network Blockfrost ids, dropping anything that is not a usable string. */
@@ -53,6 +56,17 @@ function parseProjectIds(value: unknown): Record<string, string> {
   for (const [network, id] of Object.entries(value as Record<string, unknown>)) {
     const trimmed = parseOptionalText(id);
     if (trimmed && ['Mainnet', 'Preprod', 'Preview'].includes(network)) out[network] = trimmed;
+  }
+  return out;
+}
+
+/** Test pairings: only local Midnight networks, only Preprod or Preview. Never Mainnet. */
+export function parseTestPairings(value: unknown): Record<string, 'Preprod' | 'Preview'> {
+  if (!value || typeof value !== 'object') return {};
+  const out: Record<string, 'Preprod' | 'Preview'> = {};
+  for (const [network, cardano] of Object.entries(value as Record<string, unknown>)) {
+    if (!isLocalMidnightNetwork(network)) continue;
+    if (cardano === 'Preprod' || cardano === 'Preview') out[network] = cardano;
   }
   return out;
 }
@@ -145,6 +159,7 @@ export async function getSettings(): Promise<ExtensionSettings> {
       // Distinct from the others: the testnet cNIGHT token has an EMPTY asset
       // name, so '' is a meaningful override and only `undefined` means unset.
       typeof saved?.cnightAssetName === 'string' ? saved.cnightAssetName.trim() : null,
+    cardanoTestPairing: parseTestPairings(saved?.cardanoTestPairing),
   };
 }
 

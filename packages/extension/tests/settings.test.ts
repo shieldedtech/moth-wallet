@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { fakeBrowser } from 'wxt/testing';
 import { DEFAULT_NETWORKS, serverProver } from '@shieldedtech/moth-wallet/types/network';
-import { DEFAULT_SETTINGS, getNetworkConfig, getSettings, updateSettings } from '../lib/background/settings';
+import { DEFAULT_SETTINGS, getNetworkConfig, getSettings, parseTestPairings, updateSettings } from '../lib/background/settings';
 
 describe('extension settings', () => {
   beforeEach(() => fakeBrowser.reset());
@@ -24,7 +24,7 @@ describe('extension settings', () => {
       indexerUrl: customEndpoints.indexerUrl,
       prover: serverProver(customEndpoints.proofServerUrl),
     };
-    expect(await getSettings()).toEqual({ network: 'preview', customEndpoints: migratedEndpoints, autoLockMinutes: 60, nameResolverUrl: null, tokenRegistryUrl: null, tokenRegistryBuckets: false, preseedWarming: false, developerMode: false, blockfrostProjectId: null, blockfrostProjectIds: {}, blockfrostUrl: null, cnightPolicyId: null, cnightAssetName: null });
+    expect(await getSettings()).toEqual({ network: 'preview', customEndpoints: migratedEndpoints, autoLockMinutes: 60, nameResolverUrl: null, tokenRegistryUrl: null, tokenRegistryBuckets: false, preseedWarming: false, developerMode: false, blockfrostProjectId: null, blockfrostProjectIds: {}, blockfrostUrl: null, cnightPolicyId: null, cnightAssetName: null, cardanoTestPairing: {} });
     expect(await getNetworkConfig()).toEqual({ id: 'preview', ...migratedEndpoints });
   });
 
@@ -56,6 +56,14 @@ describe('extension settings', () => {
   // A write used to persist the whole resolved object, so the first one — every
   // unlock saves the account's network — froze the then-current defaults, and a
   // default could never reach an install that had been unlocked once.
+  it('keeps Cardano test pairings only for local networks, only Preprod or Preview', async () => {
+    expect(DEFAULT_SETTINGS.cardanoTestPairing).toEqual({});
+    expect(parseTestPairings({ undeployed: 'Preprod', devnet: 'Preview', qanet: 'Mainnet', preprod: 'Preview', x: 'Preprod' }))
+      .toEqual({ undeployed: 'Preprod', devnet: 'Preview' });
+    await updateSettings({ cardanoTestPairing: { undeployed: 'Preprod' } });
+    expect((await getSettings()).cardanoTestPairing).toEqual({ undeployed: 'Preprod' });
+  });
+
   it('persists only the keys a caller set, leaving untouched defaults live', async () => {
     await updateSettings({ developerMode: true });
 

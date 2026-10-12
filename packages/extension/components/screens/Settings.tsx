@@ -6,7 +6,7 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 import { t, type MessageKey } from '../../lib/i18n';
 import { sendMessage, type ExtensionSettings } from '../../lib/messaging/protocol';
 // Pure pairing lookup — no Lucid, safe in the panel bundle.
-import { cardanoNetworkFor } from '@shieldedtech/moth-wallet/cardano/network';
+import { effectiveCardanoNetwork, isLocalMidnightNetwork } from '@shieldedtech/moth-wallet/cardano/network';
 import {
   loadAppearance,
   saveAppearance,
@@ -122,6 +122,13 @@ export function Settings({ onBack, navigate }: { onBack: () => void; navigate: (
     setBlockfrostDraft('');
   };
 
+  const setTestPairing = async (value: string) => {
+    const next = { ...settings!.cardanoTestPairing };
+    if (value === 'Preprod' || value === 'Preview') next[settings!.network] = value;
+    else delete next[settings!.network];
+    setSettings(await sendMessage('settingsSet', { cardanoTestPairing: next }));
+  };
+
   const saveResolver = async () => {
     const next = await sendMessage('settingsSet', { nameResolverUrl: resolverDraft.trim() || null });
     setSettings(next);
@@ -225,9 +232,12 @@ export function Settings({ onBack, navigate }: { onBack: () => void; navigate: (
     );
   }
 
-  // Derived from the Midnight network, never chosen. Null for devnet/qanet/
-  // undeployed, which have no Cardano counterpart at all.
-  const cardanoNetwork = cardanoNetworkFor(settings.network);
+  // Derived from the Midnight network, never chosen — except on a local network
+  // (devnet/qanet/undeployed), which has no bridge and may name a Cardano testnet
+  // for testing payments and signing. Registration stays off there (core enforces it).
+  const localNetwork = isLocalMidnightNetwork(settings.network);
+  const testPairing = settings.cardanoTestPairing[settings.network] ?? null;
+  const cardanoNetwork = effectiveCardanoNetwork(settings.network, testPairing);
   const storedForNetwork = Boolean(
     (cardanoNetwork && settings.blockfrostProjectIds[cardanoNetwork]) || settings.blockfrostProjectId,
   );
@@ -323,6 +333,31 @@ export function Settings({ onBack, navigate }: { onBack: () => void; navigate: (
             <ChevronRight size={15} className="transition-transform duration-150 group-hover:translate-x-0.5" />
           </span>
         </button>
+        {localNetwork && (
+          <div className="flex items-center justify-between px-4 py-[13px]">
+            <span className="min-w-0 pr-3">
+              <span className="block text-sm font-medium">{t('cardano_settingsTestPairing')}</span>
+              <span className="block text-[12.5px] text-muted-foreground">{t('cardano_settingsTestPairingHint')}</span>
+            </span>
+            <span className="relative shrink-0">
+              <select
+                aria-label={t('cardano_settingsTestPairing')}
+                value={testPairing ?? 'none'}
+                onChange={(e) => void setTestPairing(e.target.value)}
+                className="cursor-pointer appearance-none rounded-full bg-muted py-1.5 pl-3 pr-8 text-[13px] font-semibold text-foreground focus:outline-none focus-visible:ring-[3px] focus-visible:ring-primary/70"
+              >
+                <option value="none">{t('cardano_settingsTestPairingNone')}</option>
+                <option value="Preprod">Preprod</option>
+                <option value="Preview">Preview</option>
+              </select>
+              <ChevronDown
+                size={14}
+                strokeWidth={2.5}
+                className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+              />
+            </span>
+          </div>
+        )}
         <div className="flex flex-col gap-1.5 px-4 py-[13px]">
           <span className="block text-sm font-medium">
             {cardanoNetwork

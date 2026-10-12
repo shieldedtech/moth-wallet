@@ -1,7 +1,9 @@
 import type { StorageAdapter } from '../storage/adapter.js';
 import {
-  cardanoNetworkFor,
+  effectiveCardanoNetwork,
   resolveCardanoNetwork,
+  TEST_PAIRING_NETWORKS,
+  type CardanoNetwork,
   type CardanoNetworkConfig,
   type CardanoNetworkOverrides,
 } from './network.js';
@@ -48,14 +50,21 @@ export async function loadCardanoConfig(
     }
   };
 
-  // No cardano-network override, by design: the pairing is derived from the
-  // Midnight network. See cardanoNetworkFor.
+  // The pairing is derived from the Midnight network (see cardanoNetworkFor).
+  // The one exception: a local Midnight network (undeployed, devnet, qanet) may
+  // name a Cardano testnet for testing payments and signing — flag, env
+  // MOTH_CARDANO_TEST_NETWORK, or stored `cardano-test-network`. It is ignored on
+  // public networks and never enables registration.
+  const testPairing = parseTestPairing(
+    overrides.testPairing ?? process.env.MOTH_CARDANO_TEST_NETWORK ?? (await persisted('cardano-test-network')),
+  );
   // Needed before resolution: the project id is looked up by Cardano network.
   // Null here means this Midnight network has no counterpart, and
   // resolveCardanoNetwork is what reports that.
-  const cardanoNetwork = cardanoNetworkFor(midnightNetworkId) ?? '';
+  const cardanoNetwork = effectiveCardanoNetwork(midnightNetworkId, testPairing) ?? '';
 
   return resolveCardanoNetwork(midnightNetworkId, {
+    testPairing,
     blockfrostUrl:
       overrides.blockfrostUrl
       ?? process.env.MOTH_BLOCKFROST_URL
@@ -73,4 +82,11 @@ export async function loadCardanoConfig(
     cnightPolicyId: overrides.cnightPolicyId ?? (await persisted('cnight-policy-id')),
     cnightAssetName: overrides.cnightAssetName ?? (await persisted('cnight-asset-name')),
   });
+}
+
+/** "Preprod" / "preview" (any case) → the Cardano test network, or null. Mainnet is never accepted. */
+export function parseTestPairing(value: string | null | undefined): CardanoNetwork | null {
+  if (!value) return null;
+  const v = value.trim().toLowerCase();
+  return TEST_PAIRING_NETWORKS.find((n) => n.toLowerCase() === v) ?? null;
 }

@@ -19,6 +19,9 @@ The English catalog (`messages/`) is the source of truth. Shipped locales live i
 - **`network_descStagenet`** (stagenet in the network picker): **AI-assisted draft, NOT
   reviewed by a native speaker.** UI chrome describing a developer network, so low-risk
   under the same rule as the 58 keys above.
+- **`cardano_settingsTestPairing*`, `cardano_testPairing*`** (five keys: pairing a local network
+  with a Cardano testnet): **English in de/es/fr, pending translation.** They explain that DUST
+  registration is off on a test pairing, so they carry consequence meaning; translate with review.
 - **Sensitive copy: intentionally left in English**, pending native-speaker review.
   These carry security / financial / consequence meaning where a mistranslation could
   mislead, so they were NOT machine-drafted. Translate these with care and review:

@@ -3,7 +3,7 @@
 // must not answer that question two different ways.
 
 import { t } from '../i18n';
-import { cardanoNetworkFor, resolveCardanoNetwork } from '@shieldedtech/moth-wallet/cardano/network';
+import { effectiveCardanoNetwork, resolveCardanoNetwork } from '@shieldedtech/moth-wallet/cardano/network';
 import type { CardanoNetworkConfig } from '@shieldedtech/moth-wallet/cardano/network';
 import { getSession, type Session } from './session';
 import { getSettings } from './settings';
@@ -46,15 +46,20 @@ export async function requireCardano(needsBlockfrost: boolean): Promise<CardanoC
     if (!mnemonic) throw new Error(t('cardano_errorNoMnemonic'));
   }
 
-  const cardanoNetworkName = cardanoNetworkFor(session.network) ?? '';
+  // Bridge pairing, or on a local network the user's test pairing (never Mainnet).
+  const testPairing = settings.cardanoTestPairing[session.network] ?? null;
+  const cardanoNetworkName = effectiveCardanoNetwork(session.network, testPairing) ?? '';
   const projectId =
     settings.blockfrostProjectIds[cardanoNetworkName] ?? settings.blockfrostProjectId ?? undefined;
   if (needsBlockfrost && !projectId) throw new Error(t('cardano_errorNoBlockfrostKey'));
 
   // The Cardano network is derived from the Midnight one and cannot be set
   // independently — a mismatched pair registers on a chain the other side
-  // never reads, and says nothing for twelve hours.
+  // never reads, and says nothing for twelve hours. The exception is a local
+  // network's test pairing, which core marks `testPairing` so registration
+  // refuses it.
   const config = resolveCardanoNetwork(session.network, {
+    testPairing,
     ...(settings.blockfrostUrl ? { blockfrostUrl: settings.blockfrostUrl } : {}),
     ...(projectId ? { blockfrostProjectId: projectId } : {}),
     ...(settings.cnightPolicyId ? { cnightPolicyId: settings.cnightPolicyId } : {}),

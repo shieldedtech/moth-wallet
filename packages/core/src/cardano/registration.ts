@@ -15,9 +15,14 @@ import {
   encodeMintRedeemer,
   unitRedeemer,
 } from './datum.js';
-import { cnightUnit } from './network.js';
+import { canRegisterForDust, cnightUnit, TestPairingRegistrationError } from './network.js';
 import type { CardanoSession } from './session.js';
 import { resolveDustReceiver } from './receiver.js';
+
+/** Registration, its update and its removal need a real bridge pair (see canRegisterForDust). */
+function assertBridgePair(session: CardanoSession): void {
+  if (!canRegisterForDust(session.config)) throw new TestPairingRegistrationError(session.config.network);
+}
 
 export { assertDustAddressBytes, dustAddressBytes, resolveDustReceiver } from './receiver.js';
 
@@ -243,6 +248,7 @@ export async function registerForDust(
   dustAddress: string,
   onStage?: StageReporter,
 ): Promise<string> {
+  assertBridgePair(session);
   const dustHex = resolveDustReceiver(dustAddress);
 
   onStage?.('collecting-utxos');
@@ -308,6 +314,7 @@ export async function deregisterFromDust(
   session: CardanoSession,
   onStage?: StageReporter,
 ): Promise<DeregisterResult> {
+  assertBridgePair(session);
   onStage?.('collecting-utxos');
   const registrations = await findRegistrations(session);
   if (registrations.length === 0) throw new NotRegisteredError();
@@ -345,6 +352,7 @@ export async function updateDustAddress(
   newDustAddress: string,
   onStage?: StageReporter,
 ): Promise<string> {
+  assertBridgePair(session);
   const dustHex = resolveDustReceiver(newDustAddress);
 
   onStage?.('collecting-utxos');

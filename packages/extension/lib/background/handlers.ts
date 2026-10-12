@@ -796,6 +796,7 @@ export function registerHandlers(): void {
     const ownDustBytes = await ownDustAddressBytes(session);
     return {
       ...status,
+      testPairing: config.testPairing === true,
       // Resolved here rather than offscreen: the session is what knows which
       // account is unlocked, and a registration pointing at some *other*
       // wallet is still a valid registration — just not one that pays you.

@@ -26,6 +26,12 @@ export interface CardanoNetworkConfig {
   /** cNIGHT asset name, hex-encoded. Empty on the testnet dummy token. */
   readonly cnightAssetName: string;
   readonly explorerUrl: string;
+  /**
+   * True when this Cardano network was chosen for a local Midnight network
+   * (undeployed, devnet, qanet) for testing payments and signing. A test
+   * pairing has no bridge behind it, so DUST registration refuses it.
+   */
+  readonly testPairing?: boolean;
 }
 
 /**
@@ -90,6 +96,53 @@ export function cardanoNetworkFor(midnightNetworkId: string): CardanoNetwork | n
   }
 }
 
+/** Local Midnight networks: no Cardano bridge, so any Cardano pairing is a test pairing. */
+export const LOCAL_MIDNIGHT_NETWORKS: readonly string[] = ['undeployed', 'devnet', 'qanet'];
+
+/** Cardano networks a local Midnight network may be paired with for testing. Never Mainnet. */
+export const TEST_PAIRING_NETWORKS: readonly CardanoNetwork[] = ['Preprod', 'Preview'];
+
+export function isLocalMidnightNetwork(midnightNetworkId: string): boolean {
+  return LOCAL_MIDNIGHT_NETWORKS.includes(midnightNetworkId);
+}
+
+/**
+ * The Cardano network actually used for a Midnight network: the bridge pairing
+ * where one exists (mainnet, preprod, preview — fixed, never overridable), or,
+ * on a local network only, the test pairing the user chose (Preprod or Preview).
+ *
+ * The test pairing exists so a local stack can be exercised against real Cardano
+ * testnet payments (for example a dApp's cNIGHT fee). It carries no bridge, so it
+ * enables reading, sending and signing, and never registration — see
+ * {@link canRegisterForDust}. The bridge pairing keeps the guarantee described
+ * on {@link cardanoNetworkFor}.
+ */
+export function effectiveCardanoNetwork(
+  midnightNetworkId: string,
+  testPairing?: CardanoNetwork | null,
+): CardanoNetwork | null {
+  const bridged = cardanoNetworkFor(midnightNetworkId);
+  if (bridged) return bridged;
+  if (!isLocalMidnightNetwork(midnightNetworkId) || !testPairing) return null;
+  return TEST_PAIRING_NETWORKS.includes(testPairing) ? testPairing : null;
+}
+
+/** DUST registration needs a real bridge pair; a test pairing never qualifies. */
+export function canRegisterForDust(config: CardanoNetworkConfig): boolean {
+  return config.testPairing !== true;
+}
+
+/** Thrown when DUST registration is attempted on a test pairing. */
+export class TestPairingRegistrationError extends Error {
+  constructor(network: CardanoNetwork) {
+    super(
+      `Cardano ${network} is paired with a local Midnight network for testing only. `
+        + 'Local networks do not observe Cardano, so a DUST registration would never take effect.',
+    );
+    this.name = 'TestPairingRegistrationError';
+  }
+}
+
 /** Thrown when a Midnight network has no Cardano counterpart at all. */
 export class CardanoNetworkUnavailableError extends Error {
   constructor(midnightNetworkId: string) {
@@ -102,10 +155,12 @@ export class CardanoNetworkUnavailableError extends Error {
 }
 
 /**
- * Deployment overrides. Note what is absent: the Cardano network itself, which
- * is derived from the Midnight network and must not be selectable.
+ * Deployment overrides. The Cardano network itself is derived from the Midnight
+ * network and is not selectable — except `testPairing`, which applies only to
+ * local Midnight networks and never enables registration.
  */
 export interface CardanoNetworkOverrides {
+  readonly testPairing?: CardanoNetwork | null;
   readonly blockfrostUrl?: string;
   readonly blockfrostProjectId?: string;
   readonly cnightPolicyId?: string;
@@ -129,8 +184,9 @@ export function resolveCardanoNetwork(
   midnightNetworkId: string,
   overrides: CardanoNetworkOverrides = {},
 ): CardanoNetworkConfig {
-  const network = cardanoNetworkFor(midnightNetworkId);
+  const network = effectiveCardanoNetwork(midnightNetworkId, overrides.testPairing);
   if (!network) throw new CardanoNetworkUnavailableError(midnightNetworkId);
+  const testPairing = cardanoNetworkFor(midnightNetworkId) === null;
   const base = DEFAULTS[network];
 
   const blockfrostUrl = overrides.blockfrostUrl ?? base.blockfrostUrl;
@@ -151,6 +207,7 @@ export function resolveCardanoNetwork(
     cnightPolicyId,
     cnightAssetName,
     ...(overrides.blockfrostProjectId ? { blockfrostProjectId: overrides.blockfrostProjectId } : {}),
+    ...(testPairing ? { testPairing: true } : {}),
   };
 }
 
