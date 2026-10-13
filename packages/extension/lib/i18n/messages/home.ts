@@ -18,6 +18,7 @@ export const home = {
   home_noShieldedTokens: 'No shielded tokens yet. Private balances show up here.',
   home_recentActivity: 'Recent activity',
   home_seeAll: 'See all',
+  home_noActivity: 'No activity yet. Your transfers show up here.',
   home_nameTokenAria: 'Name token $1',
   home_nameTokenTitle: 'Name this token',
   home_nameTokenPlaceholder: 'e.g. Loyalty points',

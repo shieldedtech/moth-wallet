@@ -1,7 +1,8 @@
 // Locally-submitted transactions, persisted next to the sync state. A
 // submission reaches on-chain history only once the indexer reports it applied;
 // recording what we submitted bridges that gap: the activity feed shows it as
-// pending immediately, and keeps the recipient visible after it lands (a chain
+// pending immediately, calls it failed once the node or the SDK's pending
+// tracker rules it out, and keeps the recipient visible after it lands (a chain
 // entry alone may not reveal the counterparty). Stored per wallet + network in
 // the same store as the serialized sync state, so it survives session restarts
 // alongside it.
@@ -10,6 +11,13 @@
 
 import { sortActivity, type ActivityEntry } from '@shieldedtech/moth-wallet/sync/activity';
 import type { SyncStateStore } from '@shieldedtech/moth-wallet/sync/sync-store';
+
+export interface SubmissionFailure {
+  /** Epoch ms the verdict was reached. */
+  at: number;
+  /** The node's rejection, when the transaction never entered the pool. */
+  message?: string;
+}
 
 export interface SubmittedTx {
   /** Stable logical identifier returned by the wallet facade. */
@@ -26,14 +34,48 @@ export interface SubmittedTx {
   amount?: string;
   /** Number of transfers in a (possibly batched) send. */
   outputs?: number;
+  /** Set once the transaction is known not to have gone through. */
+  failure?: SubmissionFailure;
+}
+
+/** What the wallet learned about a connector transaction before the dApp asked
+ *  it to submit: the deficits it covered when balancing, or the transfer it
+ *  built. Fees are never part of it. */
+export interface PreparedSubmission {
+  spends: Array<{ kind: 'shielded' | 'unshielded' | 'dust'; tokenId: string; amount: string }>;
+  /** Set when the wallet built the transfer itself (connector makeTransfer). */
+  transfer?: { to?: string; outputs: number };
+}
+
+/**
+ * The record for a connector-submitted transaction. A lone non-DUST spend is
+ * the amount the row shows; a mixed spend has no single figure, and a DUST-only
+ * transaction (a contract call paying just its fee) is a plain send until the
+ * chain entry says what it was. Without preparation only the hash is known.
+ */
+export function connectorSubmission(hash: string, prepared: PreparedSubmission | undefined, now: number): SubmittedTx {
+  const base: SubmittedTx = { hash, transactionHash: hash, submittedAt: now, kind: 'send' };
+  if (!prepared) return base;
+  const tokens = prepared.spends.filter(
+    (spend): spend is typeof spend & { kind: 'shielded' | 'unshielded' } => spend.kind !== 'dust',
+  );
+  const single = tokens.length === 1 ? tokens[0] : undefined;
+  return {
+    ...base,
+    to: prepared.transfer?.to,
+    outputs: prepared.transfer?.outputs,
+    ...(single ? { tokenType: single.tokenId, tokenKind: single.kind, amount: single.amount } : {}),
+  };
 }
 
 /** Newest submissions kept per wallet + network. */
 export const SUBMISSIONS_MAX = 100;
 
-/** A submission unseen on chain for this long is stale (rejected or lost) —
- *  stop showing it as pending and drop it from storage. */
-export const SUBMISSION_PENDING_TTL_MS = 24 * 60 * 60 * 1000;
+/** How long an unconfirmed submission stays pending before the feed calls it
+ *  failed. The ledger accepts no intent deadline beyond an hour, so a
+ *  transaction unseen this long can no longer be included; a chain entry that
+ *  turns up later still wins. */
+export const SUBMISSION_PENDING_TTL_MS = 2 * 60 * 60 * 1000;
 
 export function submissionsKey(networkId: string, walletName: string): string {
   return `activity/${networkId}/${walletName}/submissions.json`;
@@ -75,13 +117,38 @@ export async function recordSubmission(
   ]);
 }
 
-/** Turn a not-yet-applied submission into a provisional activity entry. */
-function toPendingEntry(tx: SubmittedTx): ActivityEntry {
+/**
+ * Mark the submission known by any of `ids` (its hash, its transaction hash or
+ * a logical identifier) as failed. The first verdict sticks. Returns whether a
+ * submission matched.
+ */
+export async function recordSubmissionFailure(
+  store: SyncStateStore,
+  networkId: string,
+  walletName: string,
+  ids: readonly string[],
+  failure: SubmissionFailure,
+): Promise<boolean> {
+  const wanted = new Set(ids);
+  const existing = await loadSubmissions(store, networkId, walletName);
+  let matched = false;
+  const next = existing.map((tx) => {
+    const known = wanted.has(tx.hash) || (tx.transactionHash !== undefined && wanted.has(tx.transactionHash));
+    if (!known) return tx;
+    matched = true;
+    return tx.failure ? tx : { ...tx, failure };
+  });
+  if (matched) await saveSubmissions(store, networkId, walletName, next);
+  return matched;
+}
+
+/** A submission the chain has not reported, as a pending or a failed row. */
+function toLocalEntry(tx: SubmittedTx, failed: boolean): ActivityEntry {
   const hasAmount = tx.amount !== undefined && tx.tokenType !== undefined;
   return {
     hash: tx.hash,
     kind: tx.kind === 'dust' ? 'dust' : 'sent',
-    status: 'SUCCESS',
+    status: failed ? 'FAILURE' : 'SUCCESS',
     timestamp: new Date(tx.submittedAt),
     deltas: hasAmount
       ? [{ tokenType: tx.tokenType!, kind: tx.tokenKind ?? 'unshielded', amount: -BigInt(tx.amount!) }]
@@ -89,27 +156,24 @@ function toPendingEntry(tx: SubmittedTx): ActivityEntry {
     dustDelta: 0n,
     counterparty: tx.to ?? null,
     fees: null,
-    pending: true,
+    pending: !failed,
     outputs: tx.outputs,
   };
 }
 
-export interface MergedActivity {
-  entries: ActivityEntry[];
-  /** Hashes of stale submissions the caller should drop from storage. */
-  prune: string[];
-}
-
 /**
  * Merge on-chain activity with local submissions: enrich applied entries with
- * the recipient and token movement we recorded at send time, surface fresh
- * unapplied submissions as pending rows, and flag stale ones for pruning.
+ * the recipient and token movement we recorded at send time, and surface the
+ * rest as pending rows, or as failed rows once a verdict is in. `synced` says
+ * whether history has reached the chain tip; until it has, a submission's age
+ * proves nothing, so an old one stays pending rather than being called failed.
  */
 export function mergeSubmissions(
   chain: ActivityEntry[],
   submissions: SubmittedTx[],
   now: number,
-): MergedActivity {
+  synced = true,
+): ActivityEntry[] {
   // submitTransaction returns a stable logical identifier, whereas applied
   // history is keyed by the containing chain transaction's hash. A transaction
   // may be merged before it lands, so index both identities when history makes
@@ -122,7 +186,6 @@ export function mergeSubmissions(
     }
   }
   const entries = [...chain];
-  const prune: string[] = [];
 
   for (const tx of submissions) {
     const applied = byIdentity.get(tx.hash)
@@ -135,14 +198,13 @@ export function mergeSubmissions(
       // submissions the recorded submit time is a faithful stand-in.
       if (!applied.timestamp) applied.timestamp = new Date(tx.submittedAt);
       graftSendDelta(applied, tx);
-    } else if (now - tx.submittedAt < SUBMISSION_PENDING_TTL_MS) {
-      entries.push(toPendingEntry(tx));
     } else {
-      prune.push(tx.hash);
+      const stale = synced && now - tx.submittedAt >= SUBMISSION_PENDING_TTL_MS;
+      entries.push(toLocalEntry(tx, tx.failure !== undefined || stale));
     }
   }
 
-  return { entries: sortActivity(entries), prune };
+  return sortActivity(entries);
 }
 
 /**
