@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Moth Mobile Spike</title>
+<style>
+  :root { --bg:#fff; --fg:#111; --muted:#666; --line:#ddd; --accent:#3b5bdb; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#111; --fg:#eee; --muted:#999; --line:#333; --accent:#748ffc; } }
+  body { background:var(--bg); color:var(--fg); font:14px -apple-system, system-ui, sans-serif; margin:0; padding:16px; padding-top:calc(16px + env(safe-area-inset-top)); }
+  h1 { font-size:18px; margin:0 0 8px; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; margin:8px 0; }
+  button { background:var(--accent); color:#fff; border:0; border-radius:8px; padding:10px 14px; font-size:14px; }
+  button:disabled { opacity:.4; }
+  input, select { font-size:14px; padding:8px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); min-width:0; }
+  #addr { font-family:ui-monospace, monospace; font-size:11px; word-break:break-all; color:var(--muted); }
+  #bal { margin:8px 0; }
+  .tok { display:flex; align-items:center; gap:8px; padding:8px 0; border-bottom:1px solid var(--line); }
+  .tok .sw { width:12px; height:12px; border-radius:50%; flex:none; }
+  .tok .name { font-weight:600; font-family:ui-monospace, monospace; }
+  .tok .sub { color:var(--muted); font-size:12px; flex:1; }
+  .tok .amt { font-variant-numeric:tabular-nums; font-size:16px; }
+  .prog { color:var(--muted); font-size:12px; margin-top:6px; }
+  #status { display:flex; align-items:center; gap:10px; padding:10px 12px; margin:8px 0; border:1px solid var(--line); border-radius:8px; font-size:13px; }
+  #status.done { color:var(--muted); }
+  #status.busy::before { content:""; flex:none; width:14px; height:14px; border:2px solid var(--line); border-top-color:var(--accent); border-radius:50%; animation:spin .8s linear infinite; }
+  #status.done::before { content:"●"; color:#2f9e44; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  #log { font-family:ui-monospace, monospace; font-size:11px; white-space:pre-wrap; border-top:1px solid var(--line); margin-top:12px; padding-top:8px; max-height:45vh; overflow:auto; }
+</style>
+</head>
+<body>
+<h1>Moth mobile spike — preprod</h1>
+<div id="status" class="busy">Starting…</div>
+<div id="addr">…</div>
+<div class="row"><button id="sync" disabled>Sync</button><button id="dust" disabled>Register DUST</button><button id="copy" disabled>Copy addresses</button></div>
+<div id="bal"></div>
+<div class="row">
+  <select id="kind"><option value="unshielded" selected>unshielded</option><option value="shielded">shielded</option></select>
+  <input id="amount" placeholder="amount in NIGHT, e.g. 1.5 (other tokens: base units)" inputmode="decimal" style="flex:1">
+</div>
+<div class="row"><input id="to" placeholder="recipient address (blank = self)" style="flex:1"></div>
+<div class="row"><input id="token" placeholder="token id (blank = NIGHT / first shielded)" style="flex:1"></div>
+<div class="row"><button id="send" disabled>Send</button></div>
+<div id="log"></div>
+<script type="module" src="./main.ts"></script>
+</body>
+</html>
