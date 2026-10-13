@@ -3,9 +3,15 @@ import { fakeBrowser } from 'wxt/testing';
 
 const hasOpenPorts = vi.fn(() => false);
 const broadcastApproval = vi.fn();
+const beginOp = vi.fn();
+const endOp = vi.fn();
+const hasOpsInFlight = vi.fn(() => true);
 vi.mock('../lib/background/sync-service', () => ({
+  hasOpsInFlight: () => hasOpsInFlight(),
   hasOpenPorts: () => hasOpenPorts(),
   broadcastApproval: (id: string | null) => broadcastApproval(id),
+  beginOp: () => beginOp(),
+  endOp: () => endOp(),
 }));
 
 const acquireKeepalive = vi.fn();
@@ -15,7 +21,7 @@ vi.mock('../lib/background/keepalive', () => ({
   releaseKeepalive: () => releaseKeepalive(),
 }));
 
-import { requestApproval, resolveApproval } from '../lib/background/approvals';
+import { hasPendingApproval, rejectPendingApprovals, requestApproval, resolveApproval } from '../lib/background/approvals';
 
 describe('approval surfaces', () => {
   beforeEach(() => {
@@ -25,6 +31,46 @@ describe('approval surfaces', () => {
     broadcastApproval.mockReset();
     acquireKeepalive.mockReset();
     releaseKeepalive.mockReset();
+    beginOp.mockReset();
+    endOp.mockReset();
+    hasOpsInFlight.mockReset().mockReturnValue(true);
+  });
+
+  // A dApp once held the wallet unlocked by leaving an approval unanswered:
+  // waiting on the user no longer counts as work in flight, and auto-lock rejects it.
+  it('does not count as work in flight while waiting, and auto-lock can reject it', async () => {
+    hasOpenPorts.mockReturnValue(true);
+    const decision = requestApproval('connect', 'https://dapp.example', {});
+    await vi.waitFor(() => expect(endOp).toHaveBeenCalledTimes(1));
+    expect(hasPendingApproval()).toBe(true);
+    rejectPendingApprovals();
+    await expect(decision).resolves.toBe(false);
+    expect(beginOp).toHaveBeenCalledTimes(1);
+    expect(hasPendingApproval()).toBe(false);
+  });
+
+  it('resumes the op in the same step as the decision', async () => {
+    hasOpenPorts.mockReturnValue(true);
+    vi.spyOn(crypto, 'randomUUID').mockReturnValue('00000000-0000-4000-8000-000000000002');
+    const decision = requestApproval('connect', 'https://dapp.example', {});
+    await vi.waitFor(() => expect(endOp).toHaveBeenCalledTimes(1));
+    resolveApproval('00000000-0000-4000-8000-000000000002', true);
+    expect(beginOp).toHaveBeenCalledTimes(1);
+    await expect(decision).resolves.toBe(true);
+    expect(beginOp).toHaveBeenCalledTimes(1);
+  });
+
+  // endOp clamps at zero, so pairing it with beginOp outside an op would leave
+  // one counted for good and disable auto-lock.
+  it('leaves the op count alone when the caller holds no op', async () => {
+    hasOpenPorts.mockReturnValue(true);
+    hasOpsInFlight.mockReturnValue(false);
+    const decision = requestApproval('connect', 'https://dapp.example', {});
+    await vi.waitFor(() => expect(hasPendingApproval()).toBe(true));
+    rejectPendingApprovals();
+    await expect(decision).resolves.toBe(false);
+    expect(endOp).not.toHaveBeenCalled();
+    expect(beginOp).not.toHaveBeenCalled();
   });
 
   it('opens a closed side panel before awaiting approval persistence', async () => {
