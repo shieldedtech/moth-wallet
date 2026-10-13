@@ -668,7 +668,7 @@ const prover = new ProofClient('http://localhost:6300');
 |---------|------|--------|--------------|
 | devnet | `https://rpc.devnet.midnight.network` | `https://indexer.devnet.midnight.network/api/v4/graphql` | `http://localhost:6300` |
 | preview | `https://rpc.preview.midnight.network` | `https://indexer.preview.midnight.network/api/v4/graphql` | `http://localhost:6300` |
-| preprod | `https://rpc.preprod.midnight.network` | `https://indexer.preprod.midnight.network/api/v4/graphql` | `http://localhost:6300` |
+| preprod | `https://rpc.preprod.midnight.network` | `https://indexer.preprod.shielded.tools/api/v4/graphql` | `http://localhost:6300` |
 | qanet | `https://rpc.qanet.midnight.network` | `https://indexer.qanet.midnight.network/api/v4/graphql` | `http://localhost:6300` |
 | undeployed | `ws://localhost:9944` | `http://localhost:8088/api/v4/graphql` | `http://localhost:6300` |
 
