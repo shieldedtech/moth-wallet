@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds @midnight-ntwrk/ledger-v8 from the midnight-ledger `ledger-8.1.0` tag (the release the
 # npm package was built from) plus one upstream fix, into vendor/ledger-v8 in the same layout as
-# the npm package, for `LEDGER=src ./build.sh`.
+# the npm package, for `LEDGER=src scripts/build-engine.sh`.
 #
 # Why: every published ledger-v8 8.x deserializes wallet state in O(n^2) time. IrLoader cloned
 # a map with one entry per node for every node it loaded; upstream fixed it in bccf2210, which

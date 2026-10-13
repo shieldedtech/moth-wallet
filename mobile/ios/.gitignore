@@ -1,4 +1,5 @@
 target/
 build/
 vendor/
-web/dist/
+engine/dist/
+xcuserdata/
