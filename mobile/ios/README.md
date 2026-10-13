@@ -53,7 +53,7 @@ native prover (proof-server/)     midnight-ledger 8.1.3, in-process, via native/
   - `:6300` is the proof server, vendored from midnight-ledger `ledger-8.1.3` (`proof-server/`; its README lists the changes). It installs no tracing subscriber, because the proof server logs spend keys at debug level.
   - `:8765` serves the engine page. The fixed origin keeps IndexedDB persistent and gives the page a secure context for Web Crypto.
 - **Locking.** The wallet locks when the app goes to the background and when the user taps the lock. Locking stops sync and drops the seed.
-- **Network:** preprod, through `indexer.preprod.shielded.tools`.
+- **Network:** preprod, on moth's default endpoints (indexer `indexer.preprod.shielded.tools`).
 
 ## Build and run
 

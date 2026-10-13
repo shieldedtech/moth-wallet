@@ -105,16 +105,11 @@ function onHostEvent<E extends HostEvent>(event: E, data: HostEventData[E]): voi
 
 const prover = { type: 'server', url: window.MOTH_PROVER_URL ?? 'http://127.0.0.1:6300' } as const;
 
-// The public preprod indexer rate-limits; Shielded's mirror serves the same chain.
-const OVERRIDES: Record<string, Partial<NetworkConfig>> = {
-  preprod: { indexerUrl: 'https://indexer.preprod.shielded.tools/api/v4/graphql' },
-};
-
 function networkConfig(network: string): NetworkConfig {
   const id = canonicalNetworkId(network);
   const base = DEFAULT_NETWORKS[id];
   if (!base) throw new Error(`unknown network: ${network}`);
-  return { id, nodeUrl: base.nodeUrl, indexerUrl: base.indexerUrl, ...OVERRIDES[id], prover } as NetworkConfig;
+  return { id, nodeUrl: base.nodeUrl, indexerUrl: base.indexerUrl, prover } as NetworkConfig;
 }
 
 async function tipHeight(network: string): Promise<number | undefined> {
