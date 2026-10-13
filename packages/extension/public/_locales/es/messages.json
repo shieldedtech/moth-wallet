@@ -245,14 +245,14 @@
   "approval_canSeeAddresses": {
     "message": "Ver tus direcciones"
   },
+  "approval_canSeeBalances": {
+    "message": "Ver tus saldos y tu historial de transacciones"
+  },
   "approval_canAskApprove": {
     "message": "Pedirte que apruebes transacciones"
   },
   "approval_cantMoveMoney": {
     "message": "Mover dinero sin tu permiso"
-  },
-  "approval_cantSeeBalances": {
-    "message": "Ver tus saldos shielded ni tu historial"
   },
   "approval_connectingAs": {
     "message": "Conectando como"
@@ -335,11 +335,14 @@
   "approval_youSend": {
     "message": "Envías"
   },
+  "approval_intentPaysOut": {
+    "message": "Pagado"
+  },
   "approval_usingLabel": {
     "message": "Usando"
   },
   "approval_transferNote": {
-    "message": "Se demuestra con una prueba de conocimiento cero; el sitio nunca ve tus saldos."
+    "message": "Se demuestra con una prueba de conocimiento cero antes de enviarse."
   },
   "approval_unlockToContinue": {
     "message": "Desbloquea para continuar"
