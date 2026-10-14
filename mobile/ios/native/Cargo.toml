@@ -9,6 +9,7 @@ crate-type = ["staticlib", "rlib"]
 [dependencies]
 midnight-proof-server = { path = "../proof-server" }
 actix-web = { version = "^4.13.0", default-features = false, features = ["macros"] }
+tokio = { version = "1.46.1", features = ["sync"] }
 
 [profile.release]
 lto = "thin"

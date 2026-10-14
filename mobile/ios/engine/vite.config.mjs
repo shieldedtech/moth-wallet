@@ -9,9 +9,7 @@ import { nodePolyfills } from 'vite-plugin-node-polyfills';
 const REPO = fileURLToPath(new URL('../../..', import.meta.url));
 // Same polyfills as the extension (packages/extension/wxt.config.ts).
 const NODE_POLYFILLS = { include: ['buffer', 'process', 'stream', 'util', 'events'], globals: { Buffer: true, process: true, global: true } };
-// LEDGER=src swaps the published @midnight-ntwrk/ledger-v8 WASM for one built from source by
-// scripts/build-ledger-wasm.sh. The published 8.x builds deserialize wallet state in O(n^2)
-// time, so restoring the cached DUST state takes about a minute; see README.md.
+// Published ledger-v8 8.x restores DUST state in quadratic time; see README.md.
 const LEDGER_SRC = process.env.LEDGER === 'src';
 const alias = {
   '@shieldedtech/moth-browser': `${REPO}/packages/browser/dist/index.js`,

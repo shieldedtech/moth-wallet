@@ -28,12 +28,35 @@ final class OnboardingTests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Moth"].waitForExistence(timeout: 120), "home screen after unlock")
         XCTAssertTrue(app.staticTexts["Balances"].exists || app.staticTexts["BALANCES"].exists)
 
+        // Registering DUST reaches the prover before anything else; an empty wallet then has
+        // nothing to register, so this message proves the prover answered.
+        app.buttons["Generate DUST from NIGHT"].tap()
+        let register = app.buttons["Register NIGHT for DUST"]
+        XCTAssertTrue(register.waitForEnabled(timeout: 180), "synced")
+        register.tap()
+        let nothing = app.staticTexts["This account has no NIGHT to register."]
+        XCTAssertTrue(nothing.waitForExistence(timeout: 60), "prover reachable, nothing to register")
+        app.alerts.buttons["OK"].tap()
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+
         app.buttons["Receive"].tap()
-        let address = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'mn_addr_preprod1'")).firstMatch
+        let address = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'mn_addr_preview1'")).firstMatch
         XCTAssertTrue(address.waitForExistence(timeout: 10), "unshielded receive address")
         app.buttons["Done"].tap()
 
+        app.tabBars.buttons["Settings"].tap()
+        app.buttons["Show recovery phrase"].tap()
+        XCTAssertTrue(app.navigationBars["Recovery phrase"].waitForExistence(timeout: 30), "phrase shown after Face ID")
+        XCTAssertTrue(app.staticTexts["24"].waitForExistence(timeout: 10), "all 24 words listed")
+        app.buttons["Done"].tap()
+        app.tabBars.buttons["Wallet"].tap()
+
         app.buttons["Lock"].tap()
         XCTAssertTrue(app.staticTexts["Moth is locked"].waitForExistence(timeout: 30), "locked screen")
+
+        // The wallet is stored in the engine's IndexedDB, which must survive a relaunch.
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(app.navigationBars["Moth"].waitForExistence(timeout: 120), "existing wallet unlocked after relaunch")
     }
 }

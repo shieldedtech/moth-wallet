@@ -19,6 +19,22 @@ struct Balances: Decodable, Equatable {
     let dust: String
     let synced: Bool
     let subProgress: SubProgress
+    let dustGeneration: DustGeneration?
+
+    /// DUST capacity and generation (moth core's summarizeDustGeneration).
+    struct DustGeneration: Decodable, Equatable {
+        /// Maximum DUST this account can hold from its generating sources, in SPECK.
+        let limit: String
+        /// NIGHT backing the generating DUST coins, in STAR: own NIGHT, cNIGHT and other accounts' NIGHT pointed here.
+        let designated: String
+        /// This account's own NIGHT registered for DUST, in STAR.
+        let registeredNight: String
+        /// SPECK generated per day.
+        let ratePerDay: String
+        /// When the balance reaches the limit, in Unix seconds.
+        let fillTime: Double?
+        let registered: Bool
+    }
 
     /// Overall sync progress, 0...1, or nil before the totals are known.
     var progress: Double? {
@@ -31,6 +47,8 @@ struct Balances: Decodable, Equatable {
 enum Amount {
     /// NIGHT has 6 decimals (1 NIGHT = 10^6 STAR).
     static let nightDecimals = 6
+    /// ADA has 6 decimals (1 ADA = 10^6 lovelace).
+    static let adaDecimals = 6
     /// DUST has 15 decimals (1 DUST = 10^15 SPECK).
     static let dustDecimals = 15
 

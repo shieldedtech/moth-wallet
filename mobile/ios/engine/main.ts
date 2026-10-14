@@ -1,157 +1,20 @@
-// Moth engine: the bridge between the Swift app and moth's wallet worker.
+// Moth engine: the API the Swift app calls through `window.moth.<fn>(...)`.
 //
-// The wallet itself is the extension's dedicated worker (packages/extension/lib/offscreen/
-// wallet-worker.ts), unmodified: the wallet SDK and ledger WASM run there, off this page's
-// main thread, and answer the same os/* RPC the extension's offscreen document uses.
-//
-// This page adds two things the extension's service worker provides there:
-//   - a session: the decrypted seed stays in this page's memory and never crosses to Swift;
-//   - network configs, with proving pointed at the in-app native prover.
-//
-// Swift calls `window.moth.<fn>(...)` through callAsyncJavaScript and receives events on
-// the `moth` script message handler.
-import WalletWorker from 'moth-ext/offscreen/wallet-worker?worker';
-import {
-  deserializeHostError,
-  type HostEvent,
-  type HostEventData,
-  type HostMethod,
-  type MethodData,
-  type MethodResult,
-  type WorkerToPage,
-} from 'moth-ext/offscreen/worker-rpc';
-import { deserializeBalances } from 'moth-ext/messaging/balances-json';
-// Only dependency-free core modules at runtime: anything that reaches the wallet SDK would load
-// the ledger WASM on this page's main thread, which is what the worker is there to avoid.
-import type { WalletBalances } from '@shieldedtech/moth-browser';
-import { DEFAULT_NETWORKS, canonicalNetworkId, type NetworkConfig } from '@shieldedtech/moth-wallet/types/network';
+// The wallet is moth's extension worker, unmodified (see host.ts); events reach Swift on the
+// `moth` script message handler.
+import { deserializeActivity } from 'moth-ext/messaging/activity-json';
 import { NIGHT_TOKEN_ID } from '@shieldedtech/moth-wallet/types/tokens';
 import { parseNightAmount } from '@shieldedtech/moth-wallet/wallet/night-amount';
+import { resolveCardanoNetwork } from '@shieldedtech/moth-wallet/cardano/network';
+import { LOVELACE_FOR_REGISTRATION } from '@shieldedtech/moth-wallet/cardano/blueprint';
+import { deserializeBalances } from 'moth-ext/messaging/balances-json';
+import { addressOn, call, emit, networkConfig, plainBalances, seedOf, sessionOf, sessions, tipHeight } from './host';
+import { connector } from './connector';
 
 declare global {
   interface Window {
-    MOTH_PROVER_URL?: string;
     moth: typeof api;
-    webkit?: { messageHandlers?: Record<string, { postMessage(v: unknown): void }> };
   }
-}
-
-// --- Swift event channel -----------------------------------------------------
-
-type EngineEvent =
-  | { event: 'balances'; data: PlainBalances }
-  | { event: 'syncMessage'; data: string }
-  | { event: 'txStage'; data: HostEventData['os/eventTxStage'] }
-  | { event: 'relayState'; data: HostEventData['os/eventRelayState'] }
-  | { event: 'workerError'; data: string }
-  | { event: 'ready'; data: null };
-
-function emit(e: EngineEvent): void {
-  window.webkit?.messageHandlers?.moth?.postMessage(e);
-}
-
-// --- Worker RPC (as packages/extension/lib/offscreen/worker-bridge.ts) ---------
-
-let worker: Worker | null = null;
-let nextId = 1;
-const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: unknown) => void }>();
-
-function spawn(): Worker {
-  const w = new WalletWorker({ name: 'moth-wallet-host' });
-  w.onmessage = (event: MessageEvent<WorkerToPage>) => {
-    const msg = event.data;
-    if ('event' in msg) return onHostEvent(msg.event, msg.data);
-    const p = pending.get(msg.id);
-    if (!p) return;
-    pending.delete(msg.id);
-    if (msg.ok) p.resolve(msg.result);
-    else p.reject(deserializeHostError(msg.error));
-  };
-  // A crashed worker (out of memory, most likely) fails everything in flight; the next
-  // call starts a fresh one, which restores from the persisted sync state.
-  w.onerror = (event) => {
-    const error = new Error(`wallet worker failed: ${event.message || 'unknown error'}`);
-    for (const p of pending.values()) p.reject(error);
-    pending.clear();
-    worker = null;
-    emit({ event: 'workerError', data: error.message });
-  };
-  return w;
-}
-
-function call<M extends HostMethod>(method: M, data: MethodData<M>): Promise<Awaited<MethodResult<M>>> {
-  worker ??= spawn();
-  const id = nextId++;
-  return new Promise((resolve, reject) => {
-    pending.set(id, { resolve: resolve as (v: unknown) => void, reject });
-    worker!.postMessage({ id, method, data });
-  });
-}
-
-function onHostEvent<E extends HostEvent>(event: E, data: HostEventData[E]): void {
-  switch (event) {
-    case 'os/eventBalances':
-      return emit({ event: 'balances', data: plainBalances(deserializeBalances(data as string)) });
-    case 'os/eventSyncMessage':
-      return emit({ event: 'syncMessage', data: data as string });
-    case 'os/eventTxStage':
-      return emit({ event: 'txStage', data: data as HostEventData['os/eventTxStage'] });
-    case 'os/eventRelayState':
-      return emit({ event: 'relayState', data: data as HostEventData['os/eventRelayState'] });
-  }
-}
-
-// --- Networks ------------------------------------------------------------------
-
-const prover = { type: 'server', url: window.MOTH_PROVER_URL ?? 'http://127.0.0.1:6300' } as const;
-
-function networkConfig(network: string): NetworkConfig {
-  const id = canonicalNetworkId(network);
-  const base = DEFAULT_NETWORKS[id];
-  if (!base) throw new Error(`unknown network: ${network}`);
-  return { id, nodeUrl: base.nodeUrl, indexerUrl: base.indexerUrl, prover } as NetworkConfig;
-}
-
-async function tipHeight(network: string): Promise<number | undefined> {
-  try {
-    const r = await fetch(networkConfig(network).indexerUrl, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ query: '{ block { height } }' }),
-      signal: AbortSignal.timeout(15_000),
-    });
-    const height = (await r.json())?.data?.block?.height;
-    return typeof height === 'number' ? height : undefined;
-  } catch {
-    // No birthday only costs a longer first sync; it never hides funds.
-    return undefined;
-  }
-}
-
-// --- Session ---------------------------------------------------------------------
-
-// Seeds of unlocked wallets, by name. Cleared by lock(); gone when the page unloads.
-const seeds = new Map<string, string>();
-
-function seedOf(name: string): string {
-  const seed = seeds.get(name);
-  if (!seed) throw new Error(`wallet "${name}" is locked`);
-  return seed;
-}
-
-// --- Plain shapes for Swift (bigints as decimal strings) ---------------------------
-
-interface PlainBalances {
-  shielded: Record<string, string>;
-  unshielded: Record<string, string>;
-  dust: string;
-  synced: boolean;
-  subProgress: WalletBalances['subProgress'];
-}
-
-function plainBalances(b: WalletBalances): PlainBalances {
-  const strings = (r: Record<string, bigint>) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, String(v)]));
-  return { shielded: strings(b.shielded), unshielded: strings(b.unshielded), dust: String(b.dust), synced: b.synced, subProgress: b.subProgress };
 }
 
 interface Transfer {
@@ -162,10 +25,23 @@ interface Transfer {
   to: string;
 }
 
-// --- API called from Swift -----------------------------------------------------------
+const scope = (name: string, network: string) => ({ seedHex: seedOf(name), walletName: name, network: networkConfig(network) });
+
+function cardanoConfig(network: string, blockfrostProjectId?: string) {
+  return resolveCardanoNetwork(network, blockfrostProjectId ? { blockfrostProjectId } : {});
+}
+
+function mnemonicOf(name: string): string {
+  const { mnemonic } = sessionOf(name);
+  if (!mnemonic) throw new Error('This wallet was imported from a seed, so it has no Cardano keys.');
+  return mnemonic;
+}
 
 const api = {
-  list: (network: string) => call('os/walletList', { network }),
+  async list() {
+    const wallets = await call('os/walletList', { network: 'preprod' });
+    return wallets.map((w) => ({ name: w.name, label: w.label ?? null, network: w.network }));
+  },
 
   /** Creates a wallet with a fresh recovery phrase, which is returned once for backup. */
   async create(name: string, passphrase: string, network: string) {
@@ -179,43 +55,125 @@ const api = {
     return { name: info.name };
   },
 
+  setLabel: (name: string, label: string, network: string) => call('os/walletSetLabel', { name, label, network }),
+
+  async remove(name: string, network: string) {
+    sessions.delete(name);
+    await call('os/walletRemove', { name, network });
+  },
+
   async unlock(name: string, passphrase: string, network: string) {
-    const u = await call('os/walletUnlock', { name, passphrase, network });
-    seeds.set(name, u.seedHex);
-    const pick = (e: { bech32m: Record<string, string> }) => e.bech32m[network] ?? Object.values(e.bech32m)[0] ?? '';
+    const unlocked = await call('os/walletUnlock', { name, passphrase, network });
+    const backup = await call('os/walletExportPhrase', { name, passphrase, network, as: 'backup' });
+    sessions.set(name, { unlocked, mnemonic: backup.kind === 'mnemonic' ? backup.value : undefined });
+    return api.addresses(name, network);
+  },
+
+  addresses(name: string, network: string) {
+    const { unlocked } = sessionOf(name);
     return {
-      name: u.name,
-      unshielded: u.address,
-      shielded: pick(u.addresses.zswap),
-      dust: pick(u.addresses.dust),
+      name: unlocked.name,
+      unshielded: addressOn(unlocked.addresses.nightExternal, network),
+      shielded: addressOn(unlocked.addresses.zswap, network),
+      dust: addressOn(unlocked.addresses.dust, network),
       nightTokenId: NIGHT_TOKEN_ID,
     };
   },
 
+  /** The recovery phrase (or hex seed, for seed-imported wallets), decrypted with the keystore passphrase. */
+  exportPhrase: (name: string, passphrase: string, network: string) =>
+    call('os/walletExportPhrase', { name, passphrase, network, as: 'backup' }),
+
   async lock(name: string) {
-    seeds.delete(name);
-    if (seeds.size === 0) await call('os/syncStop', undefined);
+    sessions.delete(name);
+    connector.rejectAll();
+    if (sessions.size === 0) await call('os/syncStop', undefined);
   },
 
-  sync: (name: string, network: string) =>
-    call('os/syncEnsure', { seedHex: seedOf(name), walletName: name, network: networkConfig(network) }),
+  /** Moves a wallet to another network; both networks' sync caches are kept. */
+  async setNetwork(name: string, from: string, to: string) {
+    await call('os/syncStop', undefined);
+    await call('os/walletSetNetwork', { name, fromNetwork: from, network: to, seedHex: seedOf(name) });
+    return api.addresses(name, to);
+  },
+
+  sync: (name: string, network: string) => call('os/syncEnsure', scope(name, network)),
 
   async balances(name: string, network: string) {
-    const json = await call('os/balancesGet', { seedHex: seedOf(name), walletName: name, network: networkConfig(network) });
-    return plainBalances(deserializeBalances(json));
+    return plainBalances(deserializeBalances(await call('os/balancesGet', scope(name, network))));
+  },
+
+  async activity(name: string, network: string) {
+    const entries = deserializeActivity(await call('os/activityGet', scope(name, network)));
+    return entries.map((e) => ({
+      hash: e.hash,
+      kind: e.kind,
+      status: e.status,
+      timestamp: e.timestamp ? e.timestamp.getTime() / 1000 : null,
+      deltas: e.deltas.map((d) => ({ tokenType: d.tokenType, kind: d.kind, amount: String(d.amount) })),
+      dustDelta: String(e.dustDelta),
+      counterparty: e.counterparty,
+      fees: e.fees === null ? null : String(e.fees),
+      pending: e.pending,
+    }));
   },
 
   estimateFee: (name: string, network: string, requests: Transfer[]) =>
-    call('os/estimateTransferFee', { seedHex: seedOf(name), walletName: name, network: networkConfig(network), requests }),
+    call('os/estimateTransferFee', { ...scope(name, network), requests }),
 
-  send: (name: string, network: string, requests: Transfer[]) =>
-    call('os/sendTokens', { seedHex: seedOf(name), walletName: name, network: networkConfig(network), requests }),
+  send: (name: string, network: string, requests: Transfer[]) => call('os/sendTokens', { ...scope(name, network), requests }),
 
-  registerDust: (name: string, network: string) =>
-    call('os/registerDust', { seedHex: seedOf(name), walletName: name, network: networkConfig(network) }),
+  /** `dustAddress` sends the DUST to another account; omitted, it goes to this one. */
+  registerDust: (name: string, network: string, dustAddress?: string) =>
+    call('os/registerDust', { ...scope(name, network), ...(dustAddress ? { dustAddress } : {}) }),
+
+  deregisterDust: (name: string, network: string) => call('os/deregisterDust', scope(name, network)),
+
+  /** Every account's DUST address on `network`, for choosing where DUST goes; works while they are locked. */
+  receiverAccounts: (network: string) => call('os/cardanoReceiverAccounts', { network }),
 
   /** NIGHT typed by the user ("1.5") to STAR, as a decimal string. Throws on bad input. */
   parseNight: (text: string) => String(parseNightAmount(text)),
+
+  // --- Cardano cNIGHT → DUST ---
+
+  /** Lovelace a registration locks at the mapping validator; deregistering returns it. */
+  cardanoRegistrationLovelace: () => String(LOVELACE_FOR_REGISTRATION),
+
+  cardanoAddresses: (name: string, network: string) =>
+    call('os/cardanoAddresses', { mnemonic: mnemonicOf(name), config: cardanoConfig(network) }),
+
+  cardanoStatus: (name: string, network: string, projectId: string) =>
+    call('os/cardanoStatus', {
+      mnemonic: mnemonicOf(name),
+      config: cardanoConfig(network, projectId),
+      indexerUrl: networkConfig(network).indexerUrl,
+    }),
+
+  /** Registers the Cardano stake key's cNIGHT to generate DUST for `receiver`, or this wallet. */
+  cardanoRegister: (name: string, network: string, projectId: string, receiver?: string) =>
+    call('os/cardanoRegister', {
+      mnemonic: mnemonicOf(name),
+      config: cardanoConfig(network, projectId),
+      receiver: receiver || api.addresses(name, network).dust,
+    }),
+
+  /** Points an existing registration's DUST at another DUST address, in one transaction. */
+  cardanoUpdate: (name: string, network: string, projectId: string, receiver: string) =>
+    call('os/cardanoUpdate', { mnemonic: mnemonicOf(name), config: cardanoConfig(network, projectId), receiver }),
+
+  /** Sends ADA and/or cNIGHT (base units, decimal strings) on Cardano. */
+  cardanoSend: (name: string, network: string, projectId: string, to: string, lovelace: string, cnight: string) =>
+    call('os/cardanoSend', {
+      mnemonic: mnemonicOf(name),
+      config: cardanoConfig(network, projectId),
+      request: { to, lovelace, cnight },
+    }),
+
+  cardanoDeregister: (name: string, network: string, projectId: string) =>
+    call('os/cardanoDeregister', { mnemonic: mnemonicOf(name), config: cardanoConfig(network, projectId) }),
+
+  connector,
 };
 
 window.moth = api;

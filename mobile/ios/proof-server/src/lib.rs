@@ -29,30 +29,32 @@ pub mod endpoints;
 pub mod versioned_ir;
 pub mod worker_pool;
 
+/// Registers the endpoints; shared by `server` and hosts that call them in-process.
+pub fn configure(cfg: &mut web::ServiceConfig, pool: Arc<WorkerPool>, fetch_params: bool) {
+    cfg.app_data(Data::new(pool))
+        .service(prove_transaction)
+        .service(prove)
+        .service(check)
+        .service(get_k)
+        .service(version)
+        .service(proof_versions)
+        .service(ready)
+        .route("/", web::get().to(health))
+        .route("/health", web::get().to(health));
+    if fetch_params {
+        cfg.service(fetch_k);
+    }
+}
+
 pub fn server(port: u16, fetch_params: bool, pool: WorkerPool) -> std::io::Result<(Server, u16)> {
     let pool = Arc::new(pool);
     let http_server = HttpServer::new(move || {
-        let app = App::new()
-            .app_data(Data::new(pool.clone()))
-            .service(prove_transaction)
-            .service(prove)
-            .service(check)
-            .service(get_k)
-            .service(version)
-            .service(proof_versions)
-            .service(ready)
-            .route("/", web::get().to(health))
-            .route("/health", web::get().to(health))
+        App::new()
+            .configure(|cfg| configure(cfg, pool.clone(), fetch_params))
             .wrap(Logger::new("%a %r; took %Ts"))
-            .wrap(Cors::permissive());
-        if fetch_params {
-            app.service(fetch_k)
-        } else {
-            app
-        }
+            .wrap(Cors::permissive())
     })
-    // Modified for moth mobile: loopback only (upstream binds 0.0.0.0), so nothing
-    // outside the app process can reach the in-app prover.
+    // Modified for moth mobile: loopback only (upstream binds 0.0.0.0).
     .bind(("127.0.0.1", port))?;
     let port = http_server.addrs()[0].port();
     let srv = http_server.run();

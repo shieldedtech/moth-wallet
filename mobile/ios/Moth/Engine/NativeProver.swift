@@ -1,30 +1,35 @@
 import Foundation
 
-/// The two in-process servers from libmoth_native, both bound to 127.0.0.1:
-///   - the Midnight proof server (vendored ledger-8.1.3), which moth's `server` prover mode calls;
-///   - the engine's static files, on a fixed port so the page's origin, and with it the
-///     wallet's IndexedDB storage, is the same on every launch.
-enum NativeServers {
-    static let proverPort: UInt16 = 6300
-    static let enginePort: UInt16 = 8765
+/// The Midnight proof server (vendored ledger-8.1.3), running in-process.
+///
+/// The wallet SDK's prover client accepts only http(s) URLs, so proofs go to the loopback
+/// server at `url`; moth://engine/prover/ (EngineScheme) reaches the same endpoints with no socket.
+enum NativeProver {
+    static let port: UInt16 = 6300
+    static let url = "http://127.0.0.1:\(port)"
 
-    struct Ports {
-        let prover: Int32
-        let engine: Int32
-    }
-
-    static func start() throws -> Ports {
+    static func start() throws {
         let fm = FileManager.default
-        let resources = Bundle.main.resourceURL!
         // The prover downloads keys and SRS it lacks, so it needs a writable copy of the
         // bundled ones.
         let params = fm.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("zk-params")
         if !fm.fileExists(atPath: params.path) {
-            try fm.copyItem(at: resources.appendingPathComponent("params"), to: params)
+            try fm.copyItem(at: Bundle.main.resourceURL!.appendingPathComponent("params"), to: params)
         }
-        let prover = mn_prover_start(params.path, proverPort, 2)
-        let engine = mn_static_start(resources.appendingPathComponent("engine").path, enginePort)
-        guard prover > 0, engine > 0 else { throw EngineError.serversFailed(prover: prover, engine: engine) }
-        return Ports(prover: prover, engine: engine)
+        guard mn_inproc_start(params.path, 2) == 0, mn_prover_start(params.path, port, 2) > 0 else {
+            throw EngineError.proverFailed
+        }
+    }
+
+    /// One request to the prover; blocks until it answers, so call it off the main thread.
+    static func call(method: String, path: String, body: Data) -> (status: Int, body: Data)? {
+        var out: UnsafeMutablePointer<UInt8>?
+        var length = 0
+        let status = body.withUnsafeBytes { raw in
+            mn_inproc_call(method, path, raw.bindMemory(to: UInt8.self).baseAddress, raw.count, &out, &length)
+        }
+        guard status >= 0, let out else { return nil }
+        defer { mn_free(out, length) }
+        return (Int(status), Data(bytes: out, count: length))
     }
 }
