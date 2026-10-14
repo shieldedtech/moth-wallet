@@ -57,9 +57,11 @@ jobs:
         working-directory: .
         run: yarn install --immutable
 
+      # Only what the app and its tests use: core and moth-browser for the engine, the mock
+      # DApp for the connector test. The extension's own bundle isn't needed.
       - name: Build packages
         working-directory: .
-        run: yarn build
+        run: yarn turbo run build --filter=@shieldedtech/moth-browser... --filter=@shieldedtech/moth-mock-dapp
 
       - name: Install Rust targets
         run: rustup target add aarch64-apple-ios aarch64-apple-ios-sim wasm32-unknown-unknown
