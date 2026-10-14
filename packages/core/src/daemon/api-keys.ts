@@ -22,8 +22,8 @@
 
 import {randomBytes, timingSafeEqual, createHash} from 'node:crypto';
 import {existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync} from 'node:fs';
-import {homedir} from 'node:os';
 import {join, resolve, sep} from 'node:path';
+import {mothHome} from '../storage/home.js';
 
 /**
  * The on-disk id of a key is exactly 8 lowercase hex chars — derived
@@ -70,7 +70,7 @@ export class ApiKeyStore {
   private readonly dir: string;
 
   constructor(opts: {dir?: string} = {}) {
-    this.dir = opts.dir ?? join(homedir(), '.moth', 'api-keys');
+    this.dir = opts.dir ?? join(mothHome(), 'api-keys');
     mkdirSync(this.dir, {recursive: true, mode: 0o700});
   }
 
