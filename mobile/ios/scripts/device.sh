@@ -4,7 +4,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 : "${DEVICE:?set DEVICE to the phone identifier (xcrun devicectl list devices)}"
-BUNDLE_ID=io.shielded.moth
+BUNDLE_ID=bob.shielded.moth
 APP=build/DerivedData/Build/Products/Debug-iphoneos/Moth.app
 case "${1:-}" in
   build)
