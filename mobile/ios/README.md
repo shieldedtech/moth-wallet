@@ -85,6 +85,25 @@ Xcode builds the native library itself (`scripts/build-native.sh`, the "Build mo
 
 **Debugging.** In Debug builds the engine's WebView is inspectable from Safari's Develop menu. The engine page also runs in a desktop browser while Moth is open in the simulator: open `http://127.0.0.1:8765/index.html`, which shares the Mac's loopback.
 
+## TestFlight
+
+`scripts/testflight.sh` archives a Release build and uploads it to App Store Connect:
+
+```sh
+TEAM_ID=… scripts/testflight.sh       # uses the account signed in to Xcode
+TEAM_ID=… ASC_KEY_ID=… ASC_ISSUER_ID=… ASC_KEY_PATH=/path/AuthKey_XXXX.p8 scripts/testflight.sh   # unattended, e.g. CI
+```
+
+Before the first upload:
+
+- The Apple Developer Program team that will own Moth (a paid membership; free personal teams can't use TestFlight) needs an app record in App Store Connect for `bob.shielded.moth`.
+- Sign in to that team in Xcode (Settings → Accounts), or create an App Store Connect API key (Users and Access → Integrations, App Manager role or higher) for unattended runs. Automatic signing creates the distribution certificate and profile during the archive.
+- Each upload needs a new build number; the script uses the UTC time unless `BUILD_NUMBER` is set.
+- App Store Connect asks about encryption export compliance for each build until `ITSAppUsesNonExemptEncryption` is set in `Info.plist`. Moth uses HTTPS, AES and scrypt to protect the keystore, and signatures for transactions; whoever owns the listing should decide the answer.
+- `Moth/PrivacyInfo.xcprivacy` declares the required-reason APIs Moth uses: `UserDefaults` for its own settings, and file timestamps (`stat`) on files in its own container, from the prover and the log.
+
+Internal testers (members of the App Store Connect team) can install a build as soon as it finishes processing. External testers need Beta App Review once per version.
+
 ## DUST restore time
 
 On every launch, moth restores the wallet's cached DUST state with `DustLocalState.deserialize`. With the published `@midnight-ntwrk/ledger-v8` WASM, that one call takes about a minute on preprod. It now runs in the worker, so the UI stays responsive, but sync waits for it.
@@ -107,7 +126,6 @@ The patched build re-serializes the state to identical bytes and has the same ex
 
 ## Known gaps
 
-- **First sync on preprod falls back to genesis.** Against `indexer.preprod.shielded.tools`, moth refuses the bundled pre-seed reference because the indexer has renumbered its shielded events since the reference was cut ("expected fc9acd5a…, found 072d1043…"). It then syncs from genesis, which is correct but slow. The reference needs re-cutting against this indexer, or the default indexer needs to be reachable.
 - **One wallet, one network.** Accounts, network switching, token selection for shielded sends, and activity history are next.
 - **The prover is reached over loopback HTTP.** A product build should let moth take a prover that calls native code directly, with no open port. `ProverConfig` has no such hook today.
 - **Sync runs only while the app is open.** iOS suspends it in the background.
