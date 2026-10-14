@@ -71,7 +71,7 @@ export default class Balance extends BaseCommand {
     const network = await this.getNetworkConfig(flags.network, this.getNetworkOverrides(flags));
 
     process.stderr.write('Syncing wallet…\n');
-    // Same instrument the extension uses, writing ~/.moth/timings.json. Off
+    // Same instrument the extension uses, writing timings.json under the moth home. Off
     // unless enabled, so this costs one file read otherwise. Worth having here
     // in particular: a headless sync gives no other signal about where the time
     // went, and sync is the phase that takes it.

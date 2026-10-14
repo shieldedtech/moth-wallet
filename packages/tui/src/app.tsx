@@ -18,14 +18,13 @@ import {
 import { loadCardanoConfig } from '@shieldedtech/moth-wallet/cardano/config';
 import type { CardanoNetworkConfig } from '@shieldedtech/moth-wallet/cardano/network';
 import { syncedWalletStub } from './utils/synced-wallet-stub.js';
-import { parseNightAmount } from './utils/balance.js';
 import { useStackNavigator } from './navigation/index.js';
 import type { CompletedOnboarding, OnComplete, OnUnlock } from './navigation/index.js';
 import { OnboardingHost, isOnboardingRoute } from './screens/onboarding/index.js';
 import { DashboardHub } from './screens/dashboard/index.js';
 import { Cardano, type CardanoActionResult } from './screens/cardano.js';
 import { ConfirmationModal } from './components/ConfirmationModal.js';
-import { ConfirmationQueue } from '@shieldedtech/moth-wallet';
+import { ConfirmationQueue, parseNightAmount } from '@shieldedtech/moth-wallet';
 import { useDaemonHost } from './hooks/useDaemonHost.js';
 import type { WalletBalances } from '@shieldedtech/moth-wallet';
 import { Send } from './screens/send.js';
