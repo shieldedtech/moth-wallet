@@ -25,7 +25,7 @@ import {createWalletProvingService} from '../proof/provider.js';
 import {NIGHT_TOKEN_ID, formatNight} from '../types/tokens.js';
 import {formatDustBalance} from '../wallet/balance-format.js';
 import {ensureEmptyRefCache, preSeedNewWallet} from './preseed.js';
-import {InMemorySyncStateStore, syncStateKey, type SyncStateStore, type WalletPart} from './sync-store.js';
+import {EMPTY_REF_WALLET, InMemorySyncStateStore, syncStateKey, type SyncStateStore, type WalletPart} from './sync-store.js';
 import {dedupingShieldedBuilder, dedupingDustBuilder} from './sdk-dedup.js';
 import {largestDustCoinFirst} from './dust-coin-selection.js';
 import {spendableDust, summarizeDustGeneration, type DustGeneration} from './dust-generation.js';
@@ -497,7 +497,10 @@ export async function startWalletSync(
     unshielded: await loadCachedState(store, name, network.id, 'unshielded'),
     dust: await loadCachedState(store, name, network.id, 'dust'),
   };
-  const missingParts = partsToSeed(cached);
+  // The reference wallet is what pre-seeding copies from, so it never pre-seeds
+  // itself: buildEmptyRefCache syncs it from here while its own build is the
+  // in-flight reference, and looking one up would await that build forever.
+  const missingParts: SeedablePart[] = name === EMPTY_REF_WALLET ? [] : partsToSeed(cached);
 
   if (missingParts.length > 0) {
     onProgress?.('Pre-seed: looking for a reference...');
