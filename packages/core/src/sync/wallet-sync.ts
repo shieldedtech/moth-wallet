@@ -25,7 +25,7 @@ import {createWalletProvingService} from '../proof/provider.js';
 import {NIGHT_TOKEN_ID, formatNight} from '../types/tokens.js';
 import {formatDustBalance} from '../wallet/balance-format.js';
 import {ensureEmptyRefCache, preSeedNewWallet} from './preseed.js';
-import {InMemorySyncStateStore, syncStateKey, type SyncStateStore, type WalletPart} from './sync-store.js';
+import {EMPTY_REF_WALLET, InMemorySyncStateStore, syncStateKey, type SyncStateStore, type WalletPart} from './sync-store.js';
 import {dedupingShieldedBuilder, dedupingDustBuilder} from './sdk-dedup.js';
 import {largestDustCoinFirst} from './dust-coin-selection.js';
 import {spendableDust, summarizeDustGeneration, type DustGeneration} from './dust-generation.js';
@@ -33,6 +33,7 @@ import {terminatingDustTransacting, type DustFeePass} from './dust-transacting.j
 import {overallSyncProgress, type SubWallet} from './progress.js';
 import {partsToSeed, preSeedPlan, birthdayAdmits, type SeedablePart} from './preseed-parts.js';
 import {dustHistoryBefore} from './dust-history.js';
+import {restorePendingTransactions, serializePendingTransactions} from './pending-transactions.js';
 import {dustAddressForKey} from '../wallet/address.js';
 import {IndexerClient} from '../network/indexer-client.js';
 import type {WalletKeys} from './operations.js';
@@ -496,7 +497,10 @@ export async function startWalletSync(
     unshielded: await loadCachedState(store, name, network.id, 'unshielded'),
     dust: await loadCachedState(store, name, network.id, 'dust'),
   };
-  const missingParts = partsToSeed(cached);
+  // The reference wallet is what pre-seeding copies from, so it never pre-seeds
+  // itself: buildEmptyRefCache syncs it from here while its own build is the
+  // in-flight reference, and looking one up would await that build forever.
+  const missingParts: SeedablePart[] = name === EMPTY_REF_WALLET ? [] : partsToSeed(cached);
 
   if (missingParts.length > 0) {
     onProgress?.('Pre-seed: looking for a reference...');
@@ -650,6 +654,17 @@ export async function startWalletSync(
     unshielded: () => unshieldedWallet!,
     dust: () => dustWallet!,
   });
+
+  // Before start(), so the first status poll already covers them.
+  const savedPending = await loadCachedState(store, name, network.id, 'pending');
+  if (savedPending) {
+    await restorePendingTransactions(
+      savedPending,
+      (bytes) =>
+        ledger.Transaction.deserialize<ledger.SignatureEnabled, ledger.Proof, ledger.Binding>('signature', 'proof', 'binding', bytes),
+      (tx) => facade.pendingTransactionsService.addPendingTransaction(tx)
+    ).catch(() => 0);
+  }
 
   await facade.start(shieldedSecretKeys, dustSecretKey);
   onProgress?.('Syncing with network...');
@@ -845,7 +860,7 @@ async function saveCache(
   networkId: string
 ): Promise<void> {
   try {
-    const [sh, un, du, hi] = await Promise.all([
+    const [sh, un, du, hi, pe] = await Promise.all([
       facade.shielded.state
         .pipe(Rx.first())
         .toPromise()
@@ -859,11 +874,17 @@ async function saveCache(
         .toPromise()
         .then((s) => s?.capabilities?.serialization?.serialize?.(s.state) ?? null),
       history.serialize().catch(() => null),
-    ]).catch(() => [null, null, null, null]);
+      // undefined when unreadable, so a failed read never wipes the saved list.
+      Rx.firstValueFrom(facade.pendingTransactionsService.state())
+        .then((p) => serializePendingTransactions(p, (tx) => tx.serialize()))
+        .catch(() => undefined),
+    ]).catch(() => [null, null, null, null, undefined]);
     if (sh) await saveCachedState(store, walletName, networkId, 'shielded', sh);
     if (un) await saveCachedState(store, walletName, networkId, 'unshielded', un);
     if (du) await saveCachedState(store, walletName, networkId, 'dust', du);
     if (hi) await saveCachedState(store, walletName, networkId, 'history', hi);
+    if (pe) await saveCachedState(store, walletName, networkId, 'pending', pe);
+    else if (pe === null) await evictCachedState(store, walletName, networkId, 'pending');
   } catch {
     /* best effort */
   }
@@ -1166,6 +1187,7 @@ export async function clearSyncCache(walletName: string, networkId: string, stor
   await evictCachedState(resolved, walletName, networkId, 'unshielded');
   await evictCachedState(resolved, walletName, networkId, 'dust');
   await evictCachedState(resolved, walletName, networkId, 'history');
+  await evictCachedState(resolved, walletName, networkId, 'pending');
 }
 
 /**

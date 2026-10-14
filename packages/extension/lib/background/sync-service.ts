@@ -252,10 +252,9 @@ export function hasOpenPorts(): boolean {
   return ports.size > 0;
 }
 
-/** Whether a transaction op or a pending approval is running — the auto-lock
- *  must not lock (drop the seed) underneath one; it waits for the next tick. */
-export function hasWorkInFlight(): boolean {
-  return opsInFlight > 0 || hasPendingApproval();
+/** Whether a transaction op is running, not counting ops waiting on an approval. */
+export function hasOpsInFlight(): boolean {
+  return opsInFlight > 0;
 }
 
 /** Whether a sync the user is watching defers an expired auto-lock right now. Bounded:

@@ -5,6 +5,8 @@ import { browser } from 'wxt/browser';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { t, type MessageKey } from '../../lib/i18n';
 import { sendMessage, type ExtensionSettings } from '../../lib/messaging/protocol';
+// Pure pairing lookup — no Lucid, safe in the panel bundle.
+import { cardanoNetworkFor } from '@shieldedtech/moth-wallet/cardano/network';
 import {
   loadAppearance,
   saveAppearance,
@@ -56,6 +58,10 @@ export function Settings({ onBack, navigate }: { onBack: () => void; navigate: (
   const [bookCount, setBookCount] = useState(0);
   // Draft for the name-resolver URL input; saved (and normalized) on blur.
   const [resolverDraft, setResolverDraft] = useState('');
+  // Write-only, like a password field: settingsGet returns the stored id, but
+  // showing it back invites shoulder-surfing for no benefit — the user does not
+  // need to read it, only to replace it. Empty draft means "leave as is".
+  const [blockfrostDraft, setBlockfrostDraft] = useState('');
   const [appearance, setAppearance] = useState<Appearance>(() => loadAppearance());
   const [copiedDiagnostics, setCopiedDiagnostics] = useState(false);
   // "Clear cache and resync": confirm first, because it discards an hour of
@@ -100,6 +106,20 @@ export function Settings({ onBack, navigate }: { onBack: () => void; navigate: (
 
   // Persist the name-resolver URL; the background normalizes/validates it, so
   // reflect the stored value back (a bad URL is rejected → cleared).
+  const saveBlockfrost = async () => {
+    const value = blockfrostDraft.trim();
+    if (value === '' || !cardanoNetwork) return;
+    // Stored against the Cardano network in force. Blockfrost issues a project
+    // id per network and rejects it on the others, so one shared value meant
+    // switching networks silently carried the wrong credential.
+    setSettings(
+      await sendMessage('settingsSet', {
+        blockfrostProjectIds: { ...settings!.blockfrostProjectIds, [cardanoNetwork]: value },
+      }),
+    );
+    setBlockfrostDraft('');
+  };
+
   const saveResolver = async () => {
     const next = await sendMessage('settingsSet', { nameResolverUrl: resolverDraft.trim() || null });
     setSettings(next);
@@ -191,6 +211,13 @@ export function Settings({ onBack, navigate }: { onBack: () => void; navigate: (
     );
   }
 
+  // Derived from the Midnight network, never chosen. Null for devnet/qanet/
+  // undeployed, which have no Cardano counterpart at all.
+  const cardanoNetwork = cardanoNetworkFor(settings.network);
+  const storedForNetwork = Boolean(
+    (cardanoNetwork && settings.blockfrostProjectIds[cardanoNetwork]) || settings.blockfrostProjectId,
+  );
+
   return (
     <PanelScreen>
       <PanelHeader title={t('settings_title')} onBack={onBack} />
@@ -233,6 +260,41 @@ export function Settings({ onBack, navigate }: { onBack: () => void; navigate: (
             aria-label={t('settings_nameResolver')}
           />
         </div>
+      </Section>
+
+      <Section label={t('cardano_settingsSection')}>
+        <button
+          onClick={() => navigate('cardano')}
+          className="group flex w-full cursor-pointer items-center justify-between rounded-[18px] border-0 bg-transparent px-4 py-[15px] text-left text-sm font-medium transition duration-150 hover:bg-muted"
+        >
+          {t('cardano_title')}
+          <span className="flex items-center gap-1 text-muted-foreground">
+            <ChevronRight size={15} className="transition-transform duration-150 group-hover:translate-x-0.5" />
+          </span>
+        </button>
+        <div className="flex flex-col gap-1.5 px-4 py-[13px]">
+          <span className="block text-sm font-medium">
+            {cardanoNetwork
+              ? t('cardano_settingsBlockfrostFor', [cardanoNetwork])
+              : t('cardano_settingsBlockfrostLabel')}
+          </span>
+          <span className="block text-[12.5px] text-muted-foreground">
+            {!cardanoNetwork
+              ? t('cardano_settingsNoNetwork', [networkLabel(settings.network)])
+              : storedForNetwork
+                ? t('cardano_settingsBlockfrostStored')
+                : t('cardano_settingsBlockfrostHint')}
+          </span>
+          <Input
+            type="password"
+            disabled={!cardanoNetwork}
+            value={blockfrostDraft}
+            onChange={(e) => setBlockfrostDraft(e.target.value)}
+            onBlur={() => void saveBlockfrost()}
+            aria-label={t('cardano_settingsBlockfrostLabel')}
+          />
+        </div>
+
       </Section>
 
       <Section label={t('settings_sectionNetwork')}>

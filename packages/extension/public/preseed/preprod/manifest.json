@@ -1,30 +1,30 @@
 {
   "network": "preprod",
-  "height": 2203416,
+  "height": 2969772,
   "parts": {
     "shielded": {
-      "bytes": 3674,
-      "gzipBytes": 1855
+      "bytes": 3938,
+      "gzipBytes": 1994
     },
     "unshielded": {
       "bytes": 369,
-      "gzipBytes": 279
+      "gzipBytes": 278
     },
     "dust": {
-      "bytes": 10949251,
-      "gzipBytes": 5139554
+      "bytes": 14082026,
+      "gzipBytes": 6545110
     }
   },
   "witnesses": {
     "shielded": {
       "stream": "zswapLedgerEvents",
-      "id": 1449828,
-      "digest": "fc9acd5a4f6ca3a0"
+      "id": 1653890,
+      "digest": "d03723cb3d6e6578"
     },
     "dust": {
       "stream": "dustLedgerEvents",
-      "id": 1449958,
-      "digest": "ffdc476b89fca076"
+      "id": 1654392,
+      "digest": "71fa0efa4ccd39a5"
     }
   }
 }
