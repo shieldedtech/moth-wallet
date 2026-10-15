@@ -1,10 +1,11 @@
 import type { ProverConfig } from '@shieldedtech/moth-wallet/types/network';
+import { t } from '../i18n';
 
 export type ProverType = ProverConfig['type'];
 
 /** User-facing status for the proving backend resolved from Network settings. */
 export function provingMethodStatus(proverType: ProverType | null): string {
-  if (proverType === 'wasm') return 'Using local WASM proving.';
-  if (proverType === 'server') return 'Using the configured proof server.';
-  return 'Loading the proving method…';
+  if (proverType === 'wasm') return t('status_provingLocal');
+  if (proverType === 'server') return t('status_provingServer');
+  return t('status_provingLoading');
 }

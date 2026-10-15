@@ -11,8 +11,8 @@
 
 import {execFile, execFileSync, spawn, type ChildProcess} from 'node:child_process';
 import {existsSync} from 'node:fs';
-import {join, resolve} from 'node:path';
-import {homedir} from 'node:os';
+import {resolve} from 'node:path';
+import {daemonSocketPath} from '@shieldedtech/moth-wallet';
 
 export const DEVNET_URL = process.env.MOTH_DEVNET_URL;
 export const MOTH_BIN = resolve(__dirname, '../../../bin/moth');
@@ -93,7 +93,7 @@ export interface DaemonHandle {
  * report "wallet synced" on stderr.
  */
 export async function startDaemon(walletName: string, network: string): Promise<DaemonHandle> {
-  const socketPath = join(homedir(), '.moth', 'sync', network, `${walletName}.sock`);
+  const socketPath = daemonSocketPath(network, walletName);
   // If a previous test left a stale socket, the new daemon's reap path
   // will handle it — we don't need to pre-unlink.
   const child = spawn(

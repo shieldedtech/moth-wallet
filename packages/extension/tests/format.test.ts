@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   accountLabel,
   formatDust,
+  formatElapsed,
   formatDustFee,
   formatAmount,
   formatNightAmount,
@@ -155,5 +156,18 @@ describe('formatAmount / parseAmount (per-token decimals)', () => {
     expect(parseAmount('5', 6)).toBe(5_000_000n);
     expect(parseAmount('1.5', 6)).toBe(1_500_000n);
     expect(() => parseAmount('1.1234567', 6)).toThrow();
+  });
+});
+
+describe('formatElapsed', () => {
+  it('renders a running m:ss clock without rolling into hours', () => {
+    expect(formatElapsed(0)).toBe('0:00');
+    expect(formatElapsed(7_400)).toBe('0:07');
+    expect(formatElapsed(102_000)).toBe('1:42');
+    expect(formatElapsed(3_790_000)).toBe('63:10');
+  });
+
+  it('never goes negative for a clock read before its start stamp', () => {
+    expect(formatElapsed(-5_000)).toBe('0:00');
   });
 });

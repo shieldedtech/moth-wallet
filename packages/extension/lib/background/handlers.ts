@@ -42,6 +42,7 @@ import {
   beginOp,
   endOp,
   hasOpenPorts,
+  syncDefersAutoLock,
   hasOpsInFlight,
   broadcastSessionLocked,
   getSetupTabIds,
@@ -131,6 +132,9 @@ export async function enforceAutoLock(): Promise<void> {
   const lastActivityAt = await getLastActivity();
   const lastUserActivityAt = await getLastUserActivity();
   if (!isAutoLockExpired(lastActivityAt, autoLockMinutes, Date.now(), lastUserActivityAt)) return;
+  // A watched sync defers the lock without touching the clock, only while it makes
+  // progress and never past the cap (syncHoldsAutoLock); the next tick re-evaluates.
+  if (syncDefersAutoLock()) return;
   // An approval answered during the reads above has resumed its op. Nothing is
   // awaited between this check and rejecting the rest, so none can slip between.
   if (hasOpsInFlight()) return;

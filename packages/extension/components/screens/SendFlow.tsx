@@ -19,7 +19,7 @@ import { buildBatch, type BatchView, type LineView, type OutputDraft } from '../
 import { addressPlaceholder, isValidAddress } from '../../lib/ui/address';
 import { isShieldedName, shieldedNameOf, hasConfusableChars } from '../../lib/ui/name-resolve';
 import { nativeAssetLabelsForNetwork } from '../../lib/ui/token-labels';
-import { provingMethodStatus, type ProverType } from '../../lib/ui/proving-method';
+import type { ProverType } from '../../lib/ui/proving-method';
 import { cn } from '../../lib/ui/cn';
 import type { AddressBookEntry } from '../../lib/background/address-book';
 import { Button } from '../ui/button';
@@ -31,6 +31,7 @@ import { AddressPicker } from '../moth/address-picker';
 import { TokenIcon, truncateAddress } from '../moth/token';
 import { NoteCard } from '../moth/note-card';
 import { StatusHero, StepChecklist, DetailCard, type StepState } from '../moth/status';
+import { ProvingNote, useLatchedStage } from '../moth/proving';
 
 type Step = 'edit' | 'review' | 'pending' | 'success' | 'failure';
 
@@ -67,6 +68,7 @@ export function SendFlow({
   network,
   balances,
   txStage,
+  txStageSince,
   proverType,
   relayState,
   onExit,
@@ -77,6 +79,8 @@ export function SendFlow({
   network: string;
   balances: WalletBalances | null;
   txStage: TxStage | null;
+  /** When `txStage` began (epoch ms) — the pending screen's clock. */
+  txStageSince?: number | null;
   proverType: ProverType | null;
   relayState: RelayState | null;
   onExit: () => void;
@@ -176,7 +180,17 @@ export function SendFlow({
     }
   };
 
-  if (step === 'pending') return <Pending outputs={sent.outputs} dustLabel={labels.dust} txStage={txStage} proverType={proverType} />;
+  if (step === 'pending') {
+    return (
+      <Pending
+        outputs={sent.outputs}
+        dustLabel={labels.dust}
+        txStage={txStage}
+        txStageSince={txStageSince ?? null}
+        proverType={proverType}
+      />
+    );
+  }
   if (step === 'success') {
     return (
       <Success
@@ -791,17 +805,23 @@ export function Pending({
   outputs,
   dustLabel,
   txStage,
+  txStageSince = null,
   proverType,
 }: {
   outputs: OutputSummary[];
   dustLabel: string;
   txStage: TxStage | null;
+  txStageSince?: number | null;
   proverType: ProverType | null;
 }) {
   void dustLabel;
-  const activeIndex = txStage ? STAGE_ORDER.indexOf(txStage) : 0;
+  const stage = useLatchedStage(txStage);
+  const activeIndex = stage ? STAGE_ORDER.indexOf(stage) : 0;
   const stateFor = (index: number): StepState =>
     index < activeIndex ? 'done' : index === activeIndex ? 'active' : 'todo';
+  // "Under a minute" is the proof-server figure; local proving is measured in
+  // minutes, and promising less makes a working wallet look stuck.
+  const local = proverType === 'wasm';
 
   return (
     <PanelScreen>
@@ -810,7 +830,7 @@ export function Pending({
         title={t('send_sending', [outputsLabel(outputs)])}
         sub={
           <>
-            {t('send_pendingSubTime')}
+            {local ? t('status_pendingLocalTime') : t('send_pendingSubTime')}
             <br />
             {t('send_pendingSubClose')}
           </>
@@ -822,7 +842,7 @@ export function Pending({
             { label: t('send_stepBuilt'), state: stateFor(0) },
             {
               label: t('send_stepProving'),
-              sub: provingMethodStatus(proverType),
+              sub: <ProvingNote proverType={proverType} since={txStageSince} active={stage === 'proving'} />,
               state: stateFor(1),
             },
             { label: t('send_stepSubmitting'), state: stateFor(2) },

@@ -16,6 +16,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage --testTimeout=180000",
     "clean": "turbo run clean",
+    "clean:all": "yarn clean && node scripts/clean-all.mjs",
     "changeset": "changeset",
     "version": "changeset version",
     "version-release": "yarn run version && node scripts/release-changelogs.mjs && yarn install --mode=update-lockfile --no-immutable",

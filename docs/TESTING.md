@@ -39,19 +39,26 @@ A clean build is mandatory. The smokes invoke `./packages/cli/bin/moth`, which l
 Deleting `dist/` is **not** enough, and neither is `yarn clean` on its own. Use:
 
 ```bash
-yarn clean && rm -rf .turbo node_modules/.vite && yarn build --force
+yarn clean:all && yarn build --force
 ```
+
+`clean:all` runs every package's `clean` and then removes the caches that
+survive it: the turbo cache (`.turbo` at the root and in each package), the vite
+dependency cache (`node_modules/.vite`), and coverage / Playwright output. It
+deliberately does not build, so it is safe to run before switching branches or
+reinstalling. The `--force` on the build is still needed in case a remote cache
+is ever enabled.
 
 A build that really started from nothing reports `Cached: 0 cached` and leaves `.d.ts` files under `packages/core/dist/`.
 
-Three caches have to go, and no single step clears all of them:
+Three caches have to go, and `yarn clean` on its own clears only the first two:
 
-| cache | location | cleared by `yarn clean`? |
-| --- | --- | --- |
-| compiled output | `packages/*/dist`, and `.output` / `.wxt` for the extension | yes |
-| tsc incremental state | `packages/*/tsconfig.tsbuildinfo` | yes |
-| turbo build cache | `.turbo/cache` at the repo root | **no** |
-| vite dependency cache | `node_modules/.vite` | **no** |
+| cache | location | cleared by `yarn clean`? | cleared by `yarn clean:all`? |
+| --- | --- | --- | --- |
+| compiled output | `packages/*/dist`, and `.output` / `.wxt` for the extension | yes | yes |
+| tsc incremental state | `packages/*/tsconfig.tsbuildinfo` | yes | yes |
+| turbo build cache | `.turbo/cache` at the repo root | **no** | yes |
+| vite dependency cache | `node_modules/.vite` | **no** | yes |
 
 Two traps follow from that split:
 
