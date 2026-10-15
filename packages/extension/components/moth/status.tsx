@@ -43,7 +43,7 @@ export type StepState = 'done' | 'active' | 'todo';
  * (sand ring at 45% opacity), with optional sub lines.
  * @category feedback
  */
-export function StepChecklist({ steps }: { steps: Array<{ label: string; sub?: string; state: StepState }> }) {
+export function StepChecklist({ steps }: { steps: Array<{ label: string; sub?: ReactNode; state: StepState }> }) {
   return (
     <div className="flex flex-col gap-4">
       {steps.map((step) => (

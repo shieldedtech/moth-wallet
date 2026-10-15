@@ -14,6 +14,7 @@ vi.mock('../lib/background/sync-service', () => ({
   beginOp: () => { ops++; },
   endOp: () => { ops = Math.max(0, ops - 1); },
   hasOpsInFlight: () => ops > 0,
+  syncDefersAutoLock: () => false,
   hasOpenPorts: () => true,
   broadcastApproval: vi.fn(),
   broadcastSessionLocked: vi.fn(),
