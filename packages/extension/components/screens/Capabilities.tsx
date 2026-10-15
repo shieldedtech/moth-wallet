@@ -155,10 +155,9 @@ export function Capabilities({ onBack }: { onBack: () => void }) {
             </div>
           )}
           {view && <CapabilityCards document={view.document} />}
-          {view?.isDefault === true && <p className="m-0 text-[13px] text-muted-foreground">{t('capsule_capabilitiesDemoNote')}</p>}
           {view?.isDefault === false && (
             <Button variant="ghost" onClick={() => void apply(null)}>
-              {t('capsule_capabilitiesRestoreDemo')}
+              {t('capsule_capabilitiesClear')}
             </Button>
           )}
           {problem && <p className="m-0 text-[13px] text-destructive">{problem}</p>}

@@ -195,7 +195,9 @@ export type PortEvent =
   /** The session was locked out-of-band (auto-lock); the panel re-reads status. */
   | { kind: 'sessionLocked' }
   /** A capsule transaction settled: the capsule screens re-read the runtime. */
-  | { kind: 'capsuleSettled'; identifier: string; status: string; contracts: string[] };
+  | { kind: 'capsuleSettled'; identifier: string; status: string; contracts: string[] }
+  /** A contract refused a site's call in the wallet, before any proof: the panel tells the user why. */
+  | { kind: 'capsuleRefused'; origin: string; message: string };
 
 export const BALANCES_PORT = 'balances';
 

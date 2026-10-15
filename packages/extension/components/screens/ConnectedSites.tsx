@@ -65,7 +65,10 @@ export function ConnectedSites({ onBack }: { onBack: () => void }) {
                   <span className="flex-1">
                     <span className="block font-mono text-xs">{shortAddress(contract.address)}</span>
                     <span className="block text-xs text-muted-foreground">
-                      {[contract.call ? t('sites_capsuleCall') : undefined, contract.read ? t('sites_capsuleRead') : undefined]
+                      {[
+                        contract.call ? t('sites_capsuleCall') : undefined,
+                        contract.reads.length > 0 ? t('sites_capsuleRead', [contract.reads.join(', ')]) : undefined,
+                      ]
                         .filter(Boolean)
                         .join(' · ')}
                     </span>

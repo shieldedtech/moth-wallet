@@ -62,10 +62,13 @@ export interface CapsuleCapabilitiesDTO {
   isDefault: boolean;
 }
 
-/** A site's standing with the capsule runtime under the unlocked account: each contract with what the site may do. */
+/**
+ * A site's standing with the capsule runtime under the unlocked account: each contract with what the
+ * site may do — call it, and read which of its exported fields and functions (a read grant is per name).
+ */
 export interface CapsuleSiteGrantsDTO {
   origin: string;
-  contracts: Array<{ address: string; call: boolean; read: boolean }>;
+  contracts: Array<{ address: string; call: boolean; reads: string[] }>;
 }
 
 /** One rendered argument as the runtime shows it: the value by its declared type beside the bytes the proof commits to. */
@@ -107,6 +110,16 @@ export interface CapsuleEventDTO {
 }
 
 /** A settlement under an account, from the worker to every open panel: the inspector re-reads on it. */
+/** A contract refused a site's call in the wallet, before any proof: the user's information, never the site's. */
+export interface CapsuleRefusedDTO {
+  walletName: string;
+  networkId: string;
+  /** The site whose call was refused, by its attested origin. */
+  origin: string;
+  /** The contract's own message, as its assertion states it. */
+  message: string;
+}
+
 export interface CapsuleSettledDTO {
   walletName: string;
   networkId: string;

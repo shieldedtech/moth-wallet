@@ -4,5 +4,5 @@ export const sites = {
   sites_emptyBody: 'Sites you connect to will show up here.',
   sites_revoke: 'Revoke',
   sites_capsuleCall: 'may call this contract',
-  sites_capsuleRead: 'may read its private state',
+  sites_capsuleRead: 'may read $1',
 } as const;

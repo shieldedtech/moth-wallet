@@ -84,6 +84,7 @@ function ensureCapsuleExecutor(w: Worker | null): Promise<void> {
         ask: askUser,
         emit: (data) => relayEvent('os/eventCapsule', data),
         settled: (data) => relayEvent('os/eventCapsuleSettled', data),
+        refused: (data) => relayEvent('os/eventCapsuleRefused', data),
       });
       mod.attachExecutor(port);
     }

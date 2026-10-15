@@ -1380,7 +1380,7 @@
     "message": "darf diesen Vertrag aufrufen"
   },
   "sites_capsuleRead": {
-    "message": "darf seinen privaten Zustand lesen"
+    "message": "darf $1 lesen"
   },
   "syncStatus_synced": {
     "message": "Synchronisiert"
@@ -1886,8 +1886,8 @@
   "capsule_capabilitiesEmptyBody": {
     "message": "Ein Vertrag, der die Wallet um einen Nachweis bittet, wird abgewiesen, bis einer installiert ist."
   },
-  "capsule_capabilitiesDemoNote": {
-    "message": "Dies ist der Demo-Nachweis; er gilt, bis dieses Konto eigene Fähigkeiten hat."
+  "capsule_capabilitiesClear": {
+    "message": "Installierte Fähigkeiten entfernen"
   },
   "capsule_capabilitiesEdit": {
     "message": "Als JSON bearbeiten"
@@ -1898,8 +1898,8 @@
   "capsule_capabilitiesCancel": {
     "message": "Abbrechen"
   },
-  "capsule_capabilitiesRestoreDemo": {
-    "message": "Demo-Nachweis wiederherstellen"
+  "capsule_refusedToast": {
+    "message": "Der Vertrag hat den Aufruf von $1 abgelehnt: $2"
   },
   "capsule_capabilitiesError": {
     "message": "Die Fähigkeiten konnten nicht gelesen werden: $1"

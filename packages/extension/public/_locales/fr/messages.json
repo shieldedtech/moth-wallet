@@ -1380,7 +1380,7 @@
     "message": "peut appeler ce contrat"
   },
   "sites_capsuleRead": {
-    "message": "peut lire son état privé"
+    "message": "peut lire $1"
   },
   "syncStatus_synced": {
     "message": "Synchronisé"
@@ -1886,8 +1886,8 @@
   "capsule_capabilitiesEmptyBody": {
     "message": "Un contrat qui demande une attestation au portefeuille sera refusé tant qu'aucune n'est installée."
   },
-  "capsule_capabilitiesDemoNote": {
-    "message": "Ceci est l'attestation de démonstration ; elle sert tant que ce compte n'a pas de capacités propres."
+  "capsule_capabilitiesClear": {
+    "message": "Retirer les capacités installées"
   },
   "capsule_capabilitiesEdit": {
     "message": "Modifier en JSON"
@@ -1898,8 +1898,8 @@
   "capsule_capabilitiesCancel": {
     "message": "Annuler"
   },
-  "capsule_capabilitiesRestoreDemo": {
-    "message": "Restaurer l'attestation de démonstration"
+  "capsule_refusedToast": {
+    "message": "Le contrat a refusé l’appel de $1 : $2"
   },
   "capsule_capabilitiesError": {
     "message": "Impossible de lire les capacités : $1"

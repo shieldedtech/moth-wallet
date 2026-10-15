@@ -26,6 +26,7 @@ import type {
   CapsuleConsentDTO,
   CapsuleEventDTO,
   CapsuleInspectorDTO,
+  CapsuleRefusedDTO,
   CapsuleSettledDTO,
   CapsuleSiteGrantsDTO,
 } from '../capsule/protocol';
@@ -390,6 +391,8 @@ export interface OffscreenProtocol {
   'os/eventCapsule'(data: CapsuleEventDTO): void;
   /** A capsule transaction settled under an account; every open panel hears of it. */
   'os/eventCapsuleSettled'(data: CapsuleSettledDTO): void;
+  /** A contract refused a site's call in the wallet; every open panel shows the user why. */
+  'os/eventCapsuleRefused'(data: CapsuleRefusedDTO): void;
   /** The capsule runtime asks the user; the background shows the approval and answers. */
   'os/capsuleConsent'(data: CapsuleConsentDTO): boolean;
 }

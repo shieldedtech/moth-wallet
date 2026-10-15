@@ -3,10 +3,18 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Toaster, toast } from 'sonner';
-import { useSession, useWallets, usePanelEvents, useSelectedProverType, useRegisterNudge } from '../../lib/ui/client';
+import {
+  useSession,
+  useWallets,
+  usePanelEvents,
+  useSelectedProverType,
+  useRegisterNudge,
+  CAPSULE_REFUSED_EVENT,
+} from '../../lib/ui/client';
 import { t } from '../../lib/i18n';
 import { nativeAssetLabelsForNetwork } from '../../lib/ui/token-labels';
 import { accountLabel } from '../../lib/ui/format';
+import { originHost } from '../../components/moth/dapp';
 import type { Screen } from '../../components/screens/navigation';
 import { GetStarted, openSetupTab } from '../../components/screens/GetStarted';
 import { SetupInProgress } from '../../components/screens/SetupInProgress';
@@ -51,6 +59,17 @@ export function App() {
   // current session stays alive and syncing until this unlock succeeds, so
   // cancelling returns to the still-unlocked current account.
   const [unlockTarget, setUnlockTarget] = useState<string | null>(null);
+
+  // A contract's refusal of a site's call, before any proof: the site is told a code, the user the
+  // contract's own words, here, since the capsule screen may not be the one open.
+  useEffect(() => {
+    const onRefused = (event: Event) => {
+      const { origin, message } = (event as CustomEvent<{ origin: string; message: string }>).detail;
+      toast.error(t('capsule_refusedToast', [originHost(origin), message]), { duration: 8_000 });
+    };
+    window.addEventListener(CAPSULE_REFUSED_EVENT, onRefused);
+    return () => window.removeEventListener(CAPSULE_REFUSED_EVENT, onRefused);
+  }, []);
 
   // New wallets can be created from the setup tab while the panel is open.
   useEffect(() => {

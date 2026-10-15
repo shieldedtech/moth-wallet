@@ -1,11 +1,15 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { Capabilities, CapabilityCards } from '../components/screens/Capabilities';
-import { DEMO_CAPABILITIES } from '../lib/capsule/demo-credential';
 
 describe('Contract capabilities', () => {
-  it('renders the demo credential by interface, function and value, the value as the capsule screen shows a struct', () => {
-    const html = renderToStaticMarkup(<CapabilityCards document={DEMO_CAPABILITIES} />);
+  it('renders an installed credential by interface, function and value, the value as the capsule screen shows a struct', () => {
+    const document = {
+      'authority:credential/age@1.0.0': {
+        ageCredential: { date: '631152000', issuer: '15'.repeat(32), signature: '00'.repeat(64) },
+      },
+    };
+    const html = renderToStaticMarkup(<CapabilityCards document={document} />);
     expect(html).toContain('authority:credential/age@1.0.0');
     expect(html).toContain('ageCredential');
     // A struct is rows, not JSON: the date's digits grouped, the issuer and the signature truncated and copyable whole.

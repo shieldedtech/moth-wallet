@@ -14,6 +14,7 @@ import {
   AccountBook,
   CapsuleRuntime,
   Connector,
+  contractRefusal,
   ExecutableResolver,
   HttpRegistryClient,
   IndexerClient,
@@ -55,12 +56,14 @@ import type {
   CapsuleRenderedArgument,
   CapsuleSiteGrantsDTO,
 } from '../capsule/protocol';
-import { DEMO_CAPABILITIES } from '../capsule/demo-credential';
 import { healthTracked } from './capsule-wallet-port';
 import type { SubmissionSettled, SubmittedTx } from './submissions';
 import type { HostEventData } from './worker-rpc';
 
 type Host = typeof import('./wallet-host');
+
+/** An account with no capabilities of its own: the runtime answers only its own interface, the capsule keys. */
+const NO_CAPABILITIES: AnswersDocument = {};
 
 /** How the worker entry reaches the user and the background: set once, before any request. */
 export interface CapsuleChannel {
@@ -68,11 +71,14 @@ export interface CapsuleChannel {
   emit(event: HostEventData['os/eventCapsule']): void;
   /** A settlement under an account, for the panels; the dApp's sessions hear of it through `emit`. */
   settled(event: HostEventData['os/eventCapsuleSettled']): void;
+  /** A contract's refusal of a site's call, for the panels: the site is told a code, the user the reason. */
+  refused(event: HostEventData['os/eventCapsuleRefused']): void;
 }
 let channel: CapsuleChannel = {
   ask: () => Promise.reject(new Error('the capsule runtime has no consent channel')),
   emit: () => {},
   settled: () => {},
+  refused: () => {},
 };
 export function setCapsuleChannel(next: CapsuleChannel): void {
   channel = next;
@@ -196,11 +202,12 @@ async function openNumbered(seed: Seed, number: number, host: Host): Promise<Ope
     const id = accountIdOf(number);
     const { db, seedBytes, chain, registry, resolver, wallet } = seed;
     const store = await SealedCapsuleStore.open(new IndexedDbCapsuleStore(db), deriveStorageKey(seedBytes, id));
-    // The installed capabilities are the sub-account's document when it has one, else the demo's credential; the
-    // runtime reads whichever is current at each call, and the capsule keys come last so no document can stand in for them.
+    // The installed capabilities are the sub-account's document when it has one, else nothing: a credential is a
+    // contract's argument, handed in by the authority's own app, not an answer the wallet keeps. The runtime reads
+    // whichever is current at each call, and the capsule keys come last so no document can stand in for them.
     const capabilitiesStore = new IndexedDbCapabilitiesStore(db);
     const own = await capabilitiesStore.load(id);
-    const capabilities: Capabilities = { store: capabilitiesStore, current: own ?? DEMO_CAPABILITIES, isDefault: own === undefined };
+    const capabilities: Capabilities = { store: capabilitiesStore, current: own ?? NO_CAPABILITIES, isDefault: own === undefined };
     const keys = capsuleKeysAnswers(seedBytes, id);
     const runtime = await CapsuleRuntime.open({
       accountId: id,
@@ -325,7 +332,14 @@ async function connectorFor(host: Host, call: CapsuleCall): Promise<{ connector:
       grants: account.grants,
       consent: consentFor(account.seed.book),
       settleTimeoutMs: SETTLE_TIMEOUT_MS,
-      onError: (error) => console.warn('[capsule]', error),
+      onError: (error) => {
+        console.warn('[capsule]', error);
+        // The contract's own refusal is the user's to see: the site hears a code, the panel the reason.
+        const message = contractRefusal(error);
+        if (message !== undefined) {
+          channel.refused({ walletName: call.walletName, networkId: call.network.id, origin: call.origin, message });
+        }
+      },
     });
     account.connectors.set(call.origin, connector);
   }
@@ -381,7 +395,7 @@ export async function grants(host: Host, data: CapsuleAccount): Promise<CapsuleS
   const account = await open(host, data);
   return (await originGrants(account.grants, accountIdOf(account.number))).map(({ origin, contracts }) => ({
     origin,
-    contracts: [...contracts],
+    contracts: contracts.map((c) => ({ address: c.address, call: c.call, reads: [...c.reads] })),
   }));
 }
 
@@ -391,7 +405,7 @@ export async function capabilities(host: Host, data: CapsuleAccount): Promise<Ca
   return { document: capabilities.current, isDefault: capabilities.isDefault };
 }
 
-/** Replaces the account's installed capabilities, or restores the demo's with `null`; the next call answers from it. */
+/** Replaces the account's installed capabilities, or removes them with `null`; the next call answers from what is left. */
 export async function setCapabilities(host: Host, data: CapsuleAccount & { document: AnswersDocument | null }): Promise<CapsuleCapabilitiesDTO> {
   const { capabilities, number } = await open(host, data);
   if (data.document !== null && !isAnswersDocument(data.document)) {
@@ -400,7 +414,7 @@ export async function setCapabilities(host: Host, data: CapsuleAccount & { docum
   const id = accountIdOf(number);
   if (data.document === null) {
     await capabilities.store.clear(id);
-    capabilities.current = DEMO_CAPABILITIES;
+    capabilities.current = NO_CAPABILITIES;
     capabilities.isDefault = true;
   } else {
     await capabilities.store.save(id, data.document);
