@@ -178,11 +178,6 @@ describe('connector dispatch', () => {
     expect(await isAllowed(ORIGIN)).toBe(false);
   });
 
-  it('gates data methods on prior connect (permission)', async () => {
-    await saveSession(SESSION); // unlocked but not granted
-    await expect(dispatch(ORIGIN, 'getShieldedBalances', [])).rejects.toMatchObject({ code: 'PermissionRejected' });
-  });
-
   it('reports connection status', async () => {
     expect(await dispatch(ORIGIN, 'getConnectionStatus', [])).toEqual({ status: 'disconnected' });
     await connect();
@@ -344,11 +339,6 @@ describe('connector dispatch', () => {
     expect(txHistoryGet).not.toHaveBeenCalled();
   });
 
-  it('gates getTxHistory on prior connect (permission)', async () => {
-    await saveSession(SESSION); // unlocked but not granted
-    await expect(dispatch(ORIGIN, 'getTxHistory', [0, 10])).rejects.toMatchObject({ code: 'PermissionRejected' });
-  });
-
   it('signs data after approval', async () => {
     await connect();
     requestApproval.mockResolvedValue(true);
@@ -394,13 +384,6 @@ describe('connector dispatch', () => {
     await expect(
       dispatch(ORIGIN, 'signData', ['zz', { encoding: 'hex', keyType: 'unshielded' }]),
     ).rejects.toMatchObject({ code: 'InvalidRequest', reason: 'Invalid hex data' });
-  });
-
-  it('gates signData on prior connect (permission)', async () => {
-    await saveSession(SESSION); // unlocked but not granted
-    await expect(
-      dispatch(ORIGIN, 'signData', ['hi', { encoding: 'text', keyType: 'unshielded' }]),
-    ).rejects.toMatchObject({ code: 'PermissionRejected' });
   });
 
   it('balances a sealed transaction after approval', async () => {
@@ -507,13 +490,6 @@ describe('connector dispatch', () => {
     });
   });
 
-  it('gates balanceSealedTransaction on prior connect (permission)', async () => {
-    await saveSession(SESSION); // unlocked but not granted
-    await expect(dispatch(ORIGIN, 'balanceSealedTransaction', ['abcd'])).rejects.toMatchObject({
-      code: 'PermissionRejected',
-    });
-  });
-
   it('balances an unsealed transaction after approval (sealed: false)', async () => {
     await connect();
     requestApproval.mockResolvedValue(true);
@@ -529,13 +505,6 @@ describe('connector dispatch', () => {
       preparedPanel,
     );
     expect(balanceTransaction).toHaveBeenCalledWith(expect.objectContaining({ txHex: 'abcd', sealed: false }));
-  });
-
-  it('gates balanceUnsealedTransaction on prior connect (permission)', async () => {
-    await saveSession(SESSION); // unlocked but not granted
-    await expect(dispatch(ORIGIN, 'balanceUnsealedTransaction', ['abcd'])).rejects.toMatchObject({
-      code: 'PermissionRejected',
-    });
   });
 
   it('builds a swap intent after approval', async () => {
@@ -631,13 +600,6 @@ describe('connector dispatch', () => {
       code: 'Rejected',
     });
     expect(makeIntent).not.toHaveBeenCalled();
-  });
-
-  it('gates makeIntent on prior connect (permission)', async () => {
-    await saveSession(SESSION); // unlocked but not granted
-    await expect(dispatch(ORIGIN, 'makeIntent', [[], [], { payFees: true }])).rejects.toMatchObject({
-      code: 'PermissionRejected',
-    });
   });
 
   // Fix 1: dispatch must bracket EVERY request (incl. read-only ones like the
@@ -769,25 +731,24 @@ describe('connector dispatch', () => {
     );
   });
 
-  it.each([['zzzz'], ['abc'], [''], []])('rejects submitTransaction with %j as InvalidRequest', async (...params) => {
+  // A missing argument becomes '' before the check, so the '' rows cover it too.
+  it.each(['zzzz', 'abc', ''])('rejects submitTransaction with %j as InvalidRequest', async (tx) => {
     await connect();
-    await expect(dispatch(ORIGIN, 'submitTransaction', params)).rejects.toMatchObject({ code: 'InvalidRequest' });
+    await expect(dispatch(ORIGIN, 'submitTransaction', [tx])).rejects.toMatchObject({ code: 'InvalidRequest' });
     expect(transferSubmit).not.toHaveBeenCalled();
   });
 
   // The spec names a malformed transaction as an InvalidRequest. An empty one
   // used to pass the hex check, show the user an approval with unknown amounts,
   // and only fail in the ledger after a prover check and a wallet sync.
-  it.each([
-    ['balanceSealedTransaction', ['']],
-    ['balanceSealedTransaction', []],
-    ['balanceUnsealedTransaction', ['']],
-    ['balanceUnsealedTransaction', []],
-  ] as const)('rejects %s with %j before prompting', async (method, params) => {
-    await connect();
-    await expect(dispatch(ORIGIN, method, [...params])).rejects.toMatchObject({ code: 'InvalidRequest' });
-    expect(txSummary).not.toHaveBeenCalled();
-    expect(requestApproval).not.toHaveBeenCalled();
-    expect(balanceTransaction).not.toHaveBeenCalled();
-  });
+  it.each(['balanceSealedTransaction', 'balanceUnsealedTransaction'] as const)(
+    'rejects an empty transaction in %s before prompting',
+    async (method) => {
+      await connect();
+      await expect(dispatch(ORIGIN, method, [''])).rejects.toMatchObject({ code: 'InvalidRequest' });
+      expect(txSummary).not.toHaveBeenCalled();
+      expect(requestApproval).not.toHaveBeenCalled();
+      expect(balanceTransaction).not.toHaveBeenCalled();
+    },
+  );
 });

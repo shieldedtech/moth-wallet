@@ -221,14 +221,8 @@ describe('the reason a dApp receives', () => {
     expect(await reasonFor(new WalletError('WALLET_ERROR', 'Invalid hex data'))).toBe('Invalid hex data');
   });
 
-  it('does not let a cause HTTP context into the reason', async () => {
-    const err = new WalletError('network', 'fetch failed', {
-      url: 'https://user:tok@indexer.example/graphql?key=SECRET',
-      status: 502,
-    });
-    expect(await reasonFor(err)).toBe('fetch failed');
-  });
-
+  // On the error itself, not on a plain-object cause: that cause is never walked,
+  // so a test built on one passes whatever the allowlist says.
   it('does not let an HTTP context on the error itself into the reason', async () => {
     const err = new WalletError('network', 'fetch failed');
     Object.assign(err, { url: 'https://user:tok@indexer.example/graphql?key=SECRET', status: 502 });
