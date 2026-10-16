@@ -1,0 +1,86 @@
+# Local Midnight stack for the chain-backed extension E2E tests.
+#
+# Bound to the fixed loopback ports the wallet's `undeployed` preset expects
+# (node 9944, indexer 8088, proof server 6300), so the extension needs no
+# endpoint overrides. Image tags can be overridden per run with NODE_TAG,
+# INDEXER_TAG and PROOF_TAG.
+#
+#   docker compose -f packages/extension/e2e/chain/compose.yml up -d --wait
+#   docker compose -f packages/extension/e2e/chain/compose.yml down -v
+
+name: moth-e2e-chain
+
+services:
+  proof-server:
+    image: 'midnightntwrk/proof-server:${PROOF_TAG:-8.1.3}'
+    cap_drop:
+      - ALL
+    security_opt:
+      - 'no-new-privileges:true'
+    ports:
+      - '127.0.0.1:6300:6300'
+    # No healthcheck: the image is distroless, with no shell or curl to run one.
+
+  indexer:
+    image: 'midnightntwrk/indexer-standalone:${INDEXER_TAG:-4.3.7}'
+    cap_drop:
+      - ALL
+    security_opt:
+      - 'no-new-privileges:true'
+    ports:
+      - '127.0.0.1:8088:8088'
+    environment:
+      RUST_LOG: 'indexer=info,chain_indexer=info,indexer_api=info,wallet_indexer=info,indexer_common=info,info'
+      APP__APPLICATION__NETWORK_ID: 'undeployed'
+      # Container-to-container traffic on the compose network; the node serves no TLS.
+      APP__INFRA__NODE__URL: 'ws://node:9944'
+      APP__INFRA__STORAGE__PASSWORD: 'indexer'
+      APP__INFRA__PUB_SUB__PASSWORD: 'indexer'
+      APP__INFRA__LEDGER_STATE_STORAGE__PASSWORD: 'indexer'
+      # Not a credential: the indexer's documented throwaway test value, used
+      # only inside this disposable container.
+      APP__INFRA__SECRET: '303132333435363738393031323334353637383930313233343536373839303132'
+      APP__INFRA__SPO_NODE__URL: 'ws://node:9944'
+      APP__INFRA__SPO_NODE__BLOCKFROST_ID: 'e2e-test-dummy-id'
+    healthcheck:
+      # The image has neither curl nor wget; the indexer writes this file once running.
+      test: ['CMD-SHELL', 'cat /var/run/indexer-standalone/running']
+      interval: 5s
+      timeout: 5s
+      retries: 36
+      start_period: 60s
+    depends_on:
+      node:
+        condition: service_healthy
+
+  node:
+    image: 'midnightntwrk/midnight-node:${NODE_TAG:-1.0.300}'
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+    security_opt:
+      - 'no-new-privileges:true'
+    ports:
+      - '127.0.0.1:9944:9944'
+    volumes:
+      - node-data:/data
+    healthcheck:
+      test:
+        - 'CMD-SHELL'
+        - >
+          curl -fs -H 'Content-Type: application/json' -d
+          '{"id":1,"jsonrpc":"2.0","method":"chain_getBlockHash","params":[1]}' http://localhost:9944 | grep -q
+          '"result":"0x'
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+    environment:
+      CFG_PRESET: 'dev'
+      SIDECHAIN_BLOCK_BENEFICIARY: '04bcf7ad3be7a5c790460be82a713af570f22e0f801f6659ab8e84a52be6969e'
+
+volumes:
+  node-data:
