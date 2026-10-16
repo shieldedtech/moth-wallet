@@ -59,8 +59,22 @@ import { saveSession, type Session } from '../lib/background/session';
 import { updateSettings } from '../lib/background/settings';
 import { serializeBalances } from '../lib/messaging/protocol';
 import { CONNECT_CAN, CONNECT_CANT } from '../components/screens/Approval';
+import {
+  EXTENSION_METHODS,
+  IMPLEMENTED_METHODS,
+  PROVING_PROVIDER_METHODS,
+  type ConnectorMethod,
+} from '../lib/connector/constants';
 
 const ORIGIN = 'https://dapp.example';
+
+// Every method a page can reach except the two that work before a grant:
+// hintUsage asks for one, and getConnectionStatus reports whether there is one.
+// Derived from the constants so a newly added method is gated by default.
+const UNGATED = new Set<ConnectorMethod>(['hintUsage', 'getConnectionStatus']);
+const GATED_METHODS = [...IMPLEMENTED_METHODS, ...EXTENSION_METHODS, ...PROVING_PROVIDER_METHODS].filter(
+  (method) => !UNGATED.has(method),
+);
 
 const SESSION: Session = {
   walletName: 'alice',
@@ -672,5 +686,108 @@ describe('connector dispatch', () => {
       code: 'PermissionRejected',
     });
     expect(await getLastActivity()).toBeNull();
+  });
+
+  function expectNoWalletWork() {
+    for (const offscreenCall of [
+      balancesGet,
+      transferBuild,
+      transferSubmit,
+      txHistoryGet,
+      signData,
+      balanceTransaction,
+      txSummary,
+      makeIntent,
+      provingProviderCheck,
+      provingProviderProve,
+    ]) {
+      expect(offscreenCall).not.toHaveBeenCalled();
+    }
+    expect(requestApproval).not.toHaveBeenCalled();
+  }
+
+  it.each(GATED_METHODS)('refuses %s from an origin that never connected', async (method) => {
+    await saveSession(SESSION); // unlocked but not granted
+    await expect(dispatch(ORIGIN, method, [])).rejects.toMatchObject({
+      type: 'DAppConnectorAPIError',
+      code: 'PermissionRejected',
+    });
+    expectNoWalletWork();
+  });
+
+  // A grant outlives the session: the origin stays allowed after the wallet
+  // locks, so the lock itself has to stop the request.
+  it.each(GATED_METHODS)('refuses %s from a granted origin while the wallet is locked', async (method) => {
+    await grant(ORIGIN, 'devnet'); // granted, no session
+    await expect(dispatch(ORIGIN, method, [])).rejects.toMatchObject({
+      type: 'DAppConnectorAPIError',
+      code: 'Disconnected',
+    });
+    expectNoWalletWork();
+  });
+
+  it.each([
+    ['connect', ['devnet']],
+    ['hintUsage', [['getShieldedBalances']]],
+  ] as const)('%s from a granted origin while locked asks the user to unlock first', async (method, params) => {
+    await grant(ORIGIN, 'devnet');
+    requestApproval.mockResolvedValue(true); // approved, but the wallet stayed locked
+
+    await expect(dispatch(ORIGIN, method, [...params])).rejects.toMatchObject({ code: 'Disconnected' });
+    expect(requestApproval).toHaveBeenCalledWith('connect', ORIGIN, { networkId: 'devnet' }, undefined, preparedPanel);
+  });
+
+  it('connect from a granted origin succeeds once the approval unlocks the wallet', async () => {
+    await grant(ORIGIN, 'devnet');
+    requestApproval.mockImplementation(async () => {
+      await saveSession(SESSION);
+      return true;
+    });
+
+    await expect(dispatch(ORIGIN, 'connect', ['devnet'])).resolves.toBe(true);
+    expect(requestApproval).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns the unshielded address for the wallet network', async () => {
+    await connect();
+    await expect(dispatch(ORIGIN, 'getUnshieldedAddress', [])).resolves.toEqual({
+      unshieldedAddress: 'mn_unshield_devnet',
+    });
+  });
+
+  it('returns the dust address for the wallet network', async () => {
+    await connect();
+    await expect(dispatch(ORIGIN, 'getDustAddress', [])).resolves.toEqual({ dustAddress: 'mn_dust_devnet' });
+  });
+
+  it('submits a transaction through the offscreen host', async () => {
+    await connect();
+    transferSubmit.mockResolvedValue(undefined);
+    await expect(dispatch(ORIGIN, 'submitTransaction', ['abcd'])).resolves.toBeUndefined();
+    expect(transferSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ txHex: 'abcd', walletName: 'alice', seedHex: SESSION.seedHex }),
+    );
+  });
+
+  it.each([['zzzz'], ['abc'], [''], []])('rejects submitTransaction with %j as InvalidRequest', async (...params) => {
+    await connect();
+    await expect(dispatch(ORIGIN, 'submitTransaction', params)).rejects.toMatchObject({ code: 'InvalidRequest' });
+    expect(transferSubmit).not.toHaveBeenCalled();
+  });
+
+  // The spec names a malformed transaction as an InvalidRequest. An empty one
+  // used to pass the hex check, show the user an approval with unknown amounts,
+  // and only fail in the ledger after a prover check and a wallet sync.
+  it.each([
+    ['balanceSealedTransaction', ['']],
+    ['balanceSealedTransaction', []],
+    ['balanceUnsealedTransaction', ['']],
+    ['balanceUnsealedTransaction', []],
+  ] as const)('rejects %s with %j before prompting', async (method, params) => {
+    await connect();
+    await expect(dispatch(ORIGIN, method, [...params])).rejects.toMatchObject({ code: 'InvalidRequest' });
+    expect(txSummary).not.toHaveBeenCalled();
+    expect(requestApproval).not.toHaveBeenCalled();
+    expect(balanceTransaction).not.toHaveBeenCalled();
   });
 });

@@ -7,7 +7,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing';
-import { describeErrorFields } from '../lib/connector/errors';
+import { connectorError, describeErrorFields } from '../lib/connector/errors';
 
 class WalletError extends Error {
   readonly category: string;
@@ -83,6 +83,40 @@ describe('describeErrorFields', () => {
 
   it('does not walk a plain-object cause', () => {
     expect(describeErrorFields(new Error('x', { cause: { tokenType: 'night' } }))).toBe('');
+  });
+
+  // The cases above hang the dangerous fields on a plain-object cause, which is
+  // never walked anyway. An Error that carries them itself is what actually
+  // reaches the fold, so the allowlist must hold there too.
+  it('forwards only allowlisted fields from an Error that carries others itself', () => {
+    const err = new WalletError('network', 'fetch failed');
+    Object.assign(err, {
+      url: 'https://user:tok@indexer.example/graphql?key=SECRET',
+      status: 502,
+      body: '<html>internal</html>',
+      responseText: 'internal',
+      originalStack: 'Error: boom',
+      tokenType: 'night',
+    });
+    expect(describeErrorFields(err)).toBe('tokenType=night');
+  });
+
+  it('does not forward an HTTP context carried by an Error cause', () => {
+    const cause = new Error('upstream');
+    Object.assign(cause, { url: 'https://user:tok@indexer.example/graphql?key=SECRET', status: 502 });
+    expect(describeErrorFields(new WalletError('network', 'fetch failed', cause))).toBe('');
+  });
+
+  it('caps the total detail across a cause chain', () => {
+    const oversized = (message: string, cause?: Error) => {
+      const err = new Error(message, { cause });
+      Object.assign(err, { tokenType: 'T'.repeat(5_000), amount: 'A'.repeat(5_000) });
+      return err;
+    };
+    const err = oversized('top', oversized('one', oversized('two', oversized('three'))));
+    const out = describeErrorFields(err);
+    expect(out).toHaveLength(513); // 512 characters plus the ellipsis
+    expect(out.endsWith('…')).toBe(true);
   });
 
   it('bounds the depth it will walk', () => {
@@ -193,5 +227,45 @@ describe('the reason a dApp receives', () => {
       status: 502,
     });
     expect(await reasonFor(err)).toBe('fetch failed');
+  });
+
+  it('does not let an HTTP context on the error itself into the reason', async () => {
+    const err = new WalletError('network', 'fetch failed');
+    Object.assign(err, { url: 'https://user:tok@indexer.example/graphql?key=SECRET', status: 502 });
+    expect(await reasonFor(err)).toBe('fetch failed');
+  });
+
+  async function errorFor(err: unknown): Promise<{ code: string; reason: string }> {
+    balanceTransaction.mockRejectedValue(err);
+    const res = (await handlers.get('connectorRequest')!({
+      data: { method: 'balanceSealedTransaction', paramsJson: encodeBigintJson(['00ff']) },
+      sender: { origin: ORIGIN },
+    })) as { ok: boolean; error: { code: string; reason: string } };
+    expect(res.ok).toBe(false);
+    return res.error;
+  }
+
+  // A dApp branches on `code`, so a failure the wallet did not classify must
+  // still arrive as one of the spec's codes.
+  it('reports an unclassified failure as InternalError', async () => {
+    expect(await errorFor(new Error('wasm trap'))).toEqual({ code: 'InternalError', reason: 'wasm trap' });
+  });
+
+  it('keeps the code of a connector error thrown below dispatch', async () => {
+    expect(await errorFor(connectorError('Disconnected', 'Wallet is locked'))).toEqual({
+      code: 'Disconnected',
+      reason: 'Wallet is locked',
+    });
+  });
+
+  it('refuses a request whose origin cannot be determined', async () => {
+    const res = await handlers.get('connectorRequest')!({
+      data: { method: 'getShieldedBalances', paramsJson: encodeBigintJson([]) },
+      sender: {},
+    });
+    expect(res).toEqual({
+      ok: false,
+      error: { code: 'InvalidRequest', reason: 'Could not determine request origin' },
+    });
   });
 });
