@@ -4,7 +4,9 @@
 // refused, so these flows must work before the wallet has synced at all.
 
 import { test, expect, type Page } from '@playwright/test';
+import * as ledger from '@midnight-ntwrk/ledger-v8';
 import { DEFAULT_NETWORKS } from '@shieldedtech/moth-wallet/types/network';
+import { signedMessageBytes } from '@shieldedtech/moth-wallet/wallet/sign-message';
 import {
   API_VERSION,
   EXTENSION_METHODS,
@@ -128,7 +130,14 @@ test('signData returns a signature when signed and Rejected when declined', asyn
   await expect(panel.getByText('offline e2e message')).toBeVisible();
   await panel.getByRole('button', { name: 'Sign' }).click();
   await expect(requestLog(dapp)).toContainText('"signature":');
-  await expect(requestLog(dapp)).toContainText('"verifyingKey":');
+
+  // The signing key also authorizes transactions, so what a dApp gets back must
+  // be a signature over the domain-separated message, never over its raw bytes.
+  const latest = await requestLog(dapp).locator(':scope > *').first().innerText();
+  const signed = JSON.parse(latest.slice(latest.indexOf('{'))) as { signature: string; verifyingKey: string };
+  const raw = new TextEncoder().encode('offline e2e message');
+  expect(ledger.verifySignature(signed.verifyingKey, signedMessageBytes(raw), signed.signature)).toBe(true);
+  expect(ledger.verifySignature(signed.verifyingKey, raw, signed.signature)).toBe(false);
 
   await dapp.getByRole('button', { name: 'Request signature' }).click();
   await panel.getByRole('button', { name: 'Reject' }).click();
