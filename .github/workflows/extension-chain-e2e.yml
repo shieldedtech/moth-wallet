@@ -29,7 +29,7 @@ jobs:
           persist-credentials: false
 
       - name: Start the local chain stack
-        run: docker compose -f packages/extension/e2e/chain/compose.yml up -d --wait
+        run: packages/extension/e2e/chain/stack.sh up -d --wait
 
       - name: Enable Corepack
         run: corepack enable
@@ -58,7 +58,7 @@ jobs:
 
       - name: Stack logs
         if: failure()
-        run: docker compose -f packages/extension/e2e/chain/compose.yml logs --no-color --tail=300
+        run: packages/extension/e2e/chain/stack.sh logs --no-color --tail=300
 
       - name: Upload Playwright traces
         if: failure()

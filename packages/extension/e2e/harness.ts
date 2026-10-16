@@ -13,6 +13,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { chromium, expect, test, type BrowserContext, type Page, type Worker } from '@playwright/test';
 
 export const extensionDir = path.resolve(import.meta.dirname, '..', '.output', 'chrome-mv3');
@@ -30,7 +31,9 @@ declare const chrome: {
 };
 
 export const SEED = 'ab'.repeat(32);
-export const PASSWORD = 'correct-horse-battery-staple-9';
+// The extension's unlock password for a throwaway profile. Generated per run so
+// no credential-shaped literal is committed for the secret scanner to report.
+export const PASSWORD = `e2e-${randomUUID()}`;
 
 export function assertBuilt(): void {
   if (!fs.existsSync(path.join(extensionDir, 'manifest.json'))) {
