@@ -11,16 +11,34 @@ import {
 describe('SyncStatus', () => {
   it('names the network-independent DUST wallet in sync progress', () => {
     const html = renderToStaticMarkup(
-      <SyncStatus view={{ shielded: 100, unshielded: 75, dust: 25 }} defaultOpen />,
+      <SyncStatus view={{ shielded: 100, unshielded: 75, dust: 25, synced: false }} defaultOpen />,
     );
 
     expect(html).toContain('>DUST</span>');
     expect(html).not.toContain('tDUST');
   });
 
+  // Seen on mainnet: 100, 100 and 99 average to 99.67, which rounds to 100.
+  it('does not call itself synced while a row is still short, however the average rounds', () => {
+    const html = renderToStaticMarkup(
+      <SyncStatus view={{ shielded: 100, unshielded: 100, dust: 99, synced: false }} defaultOpen />,
+    );
+
+    expect(html).toContain('aria-label="Syncing, 99%"');
+    expect(html).not.toContain('>Synced</span>');
+  });
+
+  it('follows the wallet verdict, not the rows, for synced', () => {
+    const html = renderToStaticMarkup(
+      <SyncStatus view={{ shielded: 100, unshielded: 100, dust: 100, synced: true }} />,
+    );
+
+    expect(html).toContain('>Synced</span>');
+  });
+
   it('shows an initial sync immediately', () => {
     const html = renderToStaticMarkup(
-      <SyncStatus view={{ shielded: 100, unshielded: 75, dust: 25 }} />,
+      <SyncStatus view={{ shielded: 100, unshielded: 75, dust: 25, synced: false }} />,
     );
 
     expect(html).toContain('aria-label="Syncing, 67%"');
@@ -149,7 +167,7 @@ describe('etaDisplay', () => {
 describe('the ETA on screen', () => {
   it('appears beside the percentage while syncing', () => {
     const html = renderToStaticMarkup(
-      <SyncStatus view={{ shielded: 100, unshielded: 75, dust: 25, etaSeconds: 300 }} defaultOpen />,
+      <SyncStatus view={{ shielded: 100, unshielded: 75, dust: 25, synced: false, etaSeconds: 300 }} defaultOpen />,
     );
 
     expect(html).toContain('~5 min left');
@@ -157,7 +175,7 @@ describe('the ETA on screen', () => {
 
   it('is absent when core cannot estimate one', () => {
     const html = renderToStaticMarkup(
-      <SyncStatus view={{ shielded: 100, unshielded: 75, dust: 25, etaSeconds: null }} defaultOpen />,
+      <SyncStatus view={{ shielded: 100, unshielded: 75, dust: 25, synced: false, etaSeconds: null }} defaultOpen />,
     );
 
     expect(html).not.toContain('left');
@@ -166,7 +184,7 @@ describe('the ETA on screen', () => {
   // An ETA beside a completion state reads as a contradiction.
   it('is absent once synced', () => {
     const html = renderToStaticMarkup(
-      <SyncStatus view={{ shielded: 100, unshielded: 100, dust: 100, etaSeconds: 300 }} defaultOpen />,
+      <SyncStatus view={{ shielded: 100, unshielded: 100, dust: 100, synced: true, etaSeconds: 300 }} defaultOpen />,
     );
 
     expect(html).toContain('>Synced</span>');

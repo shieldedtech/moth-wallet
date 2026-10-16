@@ -9,6 +9,15 @@ export interface SyncStatusView {
   unshielded: number;
   dust: number;
   /**
+   * The wallet's own verdict that every sub-wallet is strictly complete.
+   *
+   * The badge used to call itself synced when the three rows averaged to 100,
+   * and 100, 100 and 99 average to 99.67, which rounds to 100: the top bar
+   * read "Synced" while the DUST panel beneath, which reads this verdict,
+   * still said syncing — and the regression grace then held that "Synced".
+   */
+  synced: boolean;
+  /**
    * Estimated seconds remaining, or null when not yet estimable.
    *
    * Computed in core against the SLOWEST sub-wallet with a baseline correction
@@ -202,8 +211,10 @@ export function SyncStatus({
   const shielded = clamp(view.shielded);
   const unshielded = clamp(view.unshielded);
   const dust = clamp(view.dust);
-  const rawOverall = Math.round((shielded + unshielded + dust) / 3);
-  const rawSynced = rawOverall >= 100;
+  const rawSynced = view.synced;
+  // Never 100% beside a spinner: a wallet short of strictly complete is 99%
+  // at most, however the rows round.
+  const rawOverall = rawSynced ? 100 : Math.min(99, Math.round((shielded + unshielded + dust) / 3));
   // Pass the raw fraction so a rebuild's large drop bypasses the grace instead
   // of being smoothed into a false "Synced · 100%".
   const synced = useSyncRegressionGrace(rawSynced, true, rawOverall / 100);
