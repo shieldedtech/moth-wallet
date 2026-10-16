@@ -5,8 +5,10 @@
 # endpoint overrides. Image tags can be overridden per run with NODE_TAG,
 # INDEXER_TAG and PROOF_TAG.
 #
-#   docker compose -f packages/extension/e2e/chain/compose.yml up -d --wait
-#   docker compose -f packages/extension/e2e/chain/compose.yml down -v
+# Start it through stack.sh, which supplies the indexer's credentials:
+#
+#   packages/extension/e2e/chain/stack.sh up -d --wait
+#   packages/extension/e2e/chain/stack.sh down -v
 
 name: moth-e2e-chain
 
@@ -19,7 +21,11 @@ services:
       - 'no-new-privileges:true'
     ports:
       - '127.0.0.1:6300:6300'
+    # It downloads its proving parameters on start and exits if that fails, which
+    # a transient CDN error can cause; retry rather than leave the stack without one.
+    restart: on-failure:5
     # No healthcheck: the image is distroless, with no shell or curl to run one.
+    # The chain test waits on its /ready endpoint instead.
 
   indexer:
     image: 'midnightntwrk/indexer-standalone:${INDEXER_TAG:-4.3.7}'
@@ -32,14 +38,17 @@ services:
     environment:
       RUST_LOG: 'indexer=info,chain_indexer=info,indexer_api=info,wallet_indexer=info,indexer_common=info,info'
       APP__APPLICATION__NETWORK_ID: 'undeployed'
-      # Container-to-container traffic on the compose network; the node serves no TLS.
+      # Plaintext WebSocket cannot be tightened here: this is container-to-container
+      # traffic on the disposable compose network, and the node image serves no
+      # TLS listener. The same holds for the SPO node URL below.
+      # nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
       APP__INFRA__NODE__URL: 'ws://node:9944'
-      APP__INFRA__STORAGE__PASSWORD: 'indexer'
-      APP__INFRA__PUB_SUB__PASSWORD: 'indexer'
-      APP__INFRA__LEDGER_STATE_STORAGE__PASSWORD: 'indexer'
-      # Not a credential: the indexer's documented throwaway test value, used
-      # only inside this disposable container.
-      APP__INFRA__SECRET: '303132333435363738393031323334353637383930313233343536373839303132'
+      # Generated per run by stack.sh; never committed.
+      APP__INFRA__STORAGE__PASSWORD: '${INDEXER_PASSWORD:?start the stack with stack.sh}'
+      APP__INFRA__PUB_SUB__PASSWORD: '${INDEXER_PASSWORD:?start the stack with stack.sh}'
+      APP__INFRA__LEDGER_STATE_STORAGE__PASSWORD: '${INDEXER_PASSWORD:?start the stack with stack.sh}'
+      APP__INFRA__SECRET: '${INDEXER_SECRET:?start the stack with stack.sh}'
+      # nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
       APP__INFRA__SPO_NODE__URL: 'ws://node:9944'
       APP__INFRA__SPO_NODE__BLOCKFROST_ID: 'e2e-test-dummy-id'
     healthcheck:

@@ -6,11 +6,11 @@
 //
 // Needs the local stack on the `undeployed` preset's ports:
 //
-//   docker compose -f packages/extension/e2e/chain/compose.yml up -d --wait
+//   packages/extension/e2e/chain/stack.sh up -d --wait
 //   MOTH_E2E_CHAIN=1 yarn workspace @shieldedtech/moth-extension test:e2e connector-chain
 
 import { test, expect, type Page } from '@playwright/test';
-import { DEFAULT_NETWORKS } from '@shieldedtech/moth-wallet/types/network';
+import { DEFAULT_NETWORKS, resolveProverConfig } from '@shieldedtech/moth-wallet/types/network';
 import { deriveAllAddressesFromSeed } from '@shieldedtech/moth-wallet/wallet/address';
 import {
   assertBuilt,
@@ -42,7 +42,19 @@ test.beforeAll(async () => {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ query: '{ block { height } }' }),
   }).catch(() => null);
-  if (!ready?.ok) throw new Error(`No indexer at ${INDEXER} — start packages/extension/e2e/chain/compose.yml first.`);
+  if (!ready?.ok) throw new Error(`No indexer at ${INDEXER} — start it with packages/extension/e2e/chain/stack.sh up -d --wait.`);
+
+  // The proof server has no container healthcheck, and it is only listening
+  // once its proving parameters have downloaded, so `up --wait` cannot cover it.
+  const prover = resolveProverConfig(DEFAULT_NETWORKS.undeployed!);
+  if (prover.type !== 'server') throw new Error('The undeployed preset is expected to use a proof server.');
+  await expect
+    .poll(async () => (await fetch(`${prover.url}/ready`).catch(() => null))?.ok ?? false, {
+      message: `Proof server at ${prover.url} never became ready — see \`stack.sh logs proof-server\`.`,
+      timeout: 180_000,
+      intervals: [2_000],
+    })
+    .toBe(true);
 });
 
 test.beforeEach(async () => {
