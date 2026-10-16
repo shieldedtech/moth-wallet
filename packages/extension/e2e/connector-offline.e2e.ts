@@ -6,6 +6,14 @@
 import { test, expect, type Page } from '@playwright/test';
 import { DEFAULT_NETWORKS } from '@shieldedtech/moth-wallet/types/network';
 import {
+  API_VERSION,
+  EXTENSION_METHODS,
+  IMPLEMENTED_METHODS,
+  NOT_IMPLEMENTED_METHODS,
+  WALLET_NAME,
+  WALLET_RDNS,
+} from '../lib/connector/constants';
+import {
   assertBuilt,
   importWallet,
   isUnlocked,
@@ -74,6 +82,27 @@ test('a dApp connects after approval, and the wallet never reaches the network',
   // proxy Chrome bypassed would leave these tests quietly online.
   const indexerHost = new URL(DEFAULT_NETWORKS.preprod!.indexerUrl).hostname;
   await expect.poll(() => proxy.refusedHosts()).toContain(indexerHost);
+});
+
+// The unit tests check the method list against the spec; this checks what a
+// real page receives. The proving-provider RPCs must stay internal: the page
+// reaches them only through the object getProvingProvider returns.
+test('the page gets the announced wallet and exactly the implemented methods', async () => {
+  const { dapp } = await connectApproved();
+  const surface = await dapp.evaluate(async () => {
+    const initial = (window as unknown as { midnight: Record<string, Record<string, unknown>> }).midnight.moth!;
+    // Already granted, so this resolves without a prompt.
+    const api = await (initial.connect as (id: string) => Promise<object>)('preprod');
+    return {
+      announced: { name: initial.name, rdns: initial.rdns, apiVersion: initial.apiVersion },
+      methods: Object.keys(api).sort(),
+    };
+  });
+
+  expect(surface.announced).toEqual({ name: WALLET_NAME, rdns: WALLET_RDNS, apiVersion: API_VERSION });
+  expect(surface.methods).toEqual(
+    [...IMPLEMENTED_METHODS, ...NOT_IMPLEMENTED_METHODS, ...EXTENSION_METHODS].sort(),
+  );
 });
 
 test('a dApp is refused when the user cancels the connection', async () => {
