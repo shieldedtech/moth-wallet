@@ -73,19 +73,6 @@ async function connectApproved(): Promise<{ dapp: Page; panel: Page }> {
   return { dapp, panel };
 }
 
-test('a dApp connects after approval, and the wallet never reaches the network', async () => {
-  const { panel } = await connectApproved();
-
-  await panel.getByRole('button', { name: 'Settings' }).click();
-  await panel.getByRole('button', { name: /^Connected sites/ }).click();
-  await expect(panel.getByText(dappHost())).toBeVisible();
-
-  // The wallet did try to sync, and the proxy turned it away. Without this, a
-  // proxy Chrome bypassed would leave these tests quietly online.
-  const indexerHost = new URL(DEFAULT_NETWORKS.preprod!.indexerUrl).hostname;
-  await expect.poll(() => proxy.refusedHosts()).toContain(indexerHost);
-});
-
 // The unit tests check the method list against the spec; this checks what a
 // real page receives. The proving-provider RPCs must stay internal: the page
 // reaches them only through the object getProvingProvider returns.
@@ -144,15 +131,21 @@ test('signData returns a signature when signed and Rejected when declined', asyn
   await expect(requestLog(dapp)).toContainText('"code": "Rejected"');
 });
 
-test('revoking a site in Connected sites disconnects it', async () => {
+test('an approved site is listed in Connected sites, and revoking it disconnects it', async () => {
   const { dapp, panel } = await connectApproved();
   await panel.getByRole('button', { name: 'Settings' }).click();
   await panel.getByRole('button', { name: /^Connected sites/ }).click();
+  await expect(panel.getByText(dappHost())).toBeVisible();
   await panel.getByRole('button', { name: 'Revoke' }).click();
   await expect(panel.getByText(dappHost())).toBeHidden();
 
   await dapp.getByRole('button', { name: 'Connection status' }).click();
   await expect(requestLog(dapp)).toContainText('"status": "disconnected"');
+
+  // The open panel started a sync, and the proxy turned it away. Without this,
+  // a proxy Chrome bypassed would leave the whole suite quietly online.
+  const indexerHost = new URL(DEFAULT_NETWORKS.preprod!.indexerUrl).hostname;
+  await expect.poll(() => proxy.refusedHosts()).toContain(indexerHost);
 });
 
 // With no user gesture behind the request, Chrome will not open the side
