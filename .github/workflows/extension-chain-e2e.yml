@@ -1,0 +1,69 @@
+name: Extension chain e2e
+
+# The dApp connector round trip against a real local chain: the built extension
+# and mock-dapp build, balance with fees, submit, and the indexer confirms the
+# payment. Nightly rather than per PR — it needs the full node/indexer/prover
+# stack and real proving, which the offline `Extension e2e` job avoids.
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: extension-chain-e2e
+  cancel-in-progress: false
+
+jobs:
+  extension-chain-e2e:
+    name: Extension chain e2e
+    # Pinned image: the browser's system libraries come from the runner image.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Start the local chain stack
+        run: docker compose -f packages/extension/e2e/chain/compose.yml up -d --wait
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: yarn
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      # Full Chromium, never --only-shell: the headless shell cannot load an
+      # unpacked extension.
+      - name: Install Playwright Chromium
+        run: yarn workspace @shieldedtech/moth-extension exec playwright install --with-deps chromium
+
+      - name: Build packages
+        run: yarn build
+
+      - name: Run chain e2e tests
+        env:
+          MOTH_E2E_CHAIN: '1'
+        run: yarn workspace @shieldedtech/moth-extension test:e2e connector-chain
+
+      - name: Stack logs
+        if: failure()
+        run: docker compose -f packages/extension/e2e/chain/compose.yml logs --no-color --tail=300
+
+      - name: Upload Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: extension-chain-e2e-results
+          path: packages/extension/test-results/
+          if-no-files-found: ignore
