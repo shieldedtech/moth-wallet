@@ -1802,6 +1802,12 @@
   "capsule_noArguments": {
     "message": "aucun argument"
   },
+  "capsule_showBytes": {
+    "message": "Afficher les octets auxquels la preuve s’engage"
+  },
+  "capsule_hideBytes": {
+    "message": "Masquer les octets"
+  },
   "capsule_validUntil": {
     "message": "Valide jusqu’à"
   },

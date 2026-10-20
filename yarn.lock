@@ -989,14 +989,14 @@ __metadata:
 
 "@midnight-ntwrk/compact-runtime@file:../capsule-runtime/vendor/compact-runtime-0.20.102.tgz::locator=moth-wallet%40workspace%3A.":
   version: 0.20.102
-  resolution: "@midnight-ntwrk/compact-runtime@file:../capsule-runtime/vendor/compact-runtime-0.20.102.tgz#../capsule-runtime/vendor/compact-runtime-0.20.102.tgz::hash=02e18c&locator=moth-wallet%40workspace%3A."
+  resolution: "@midnight-ntwrk/compact-runtime@file:../capsule-runtime/vendor/compact-runtime-0.20.102.tgz#../capsule-runtime/vendor/compact-runtime-0.20.102.tgz::hash=679aa0&locator=moth-wallet%40workspace%3A."
   dependencies:
     "@midnightntwrk/onchain-runtime-v4": "npm:^4.0.0-rc.3"
     "@noble/curves": "npm:^2.2.0"
     "@noble/hashes": "npm:^2.0.1"
     "@types/object-inspect": "npm:^1.8.1"
     object-inspect: "npm:^1.12.3"
-  checksum: 10c0/0544dec65efebdba681aa0d5ee6f8cbe7169d575dc25ffb1054fe8417086c1bfe133f16fed13bc3e5bcf233161a6b20723cec4a3a4f21b1758f86d69b1bf7b5e
+  checksum: 10c0/a7b5ecc14e1380fa863086e345cb00de41d544b07bf00eea239cb8a2dddcf0ee204b1c54e353cb0bea13766a2a75731a011d4ba1709c1c121caf9984ef657819
   languageName: node
   linkType: hard
 

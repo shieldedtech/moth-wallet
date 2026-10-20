@@ -1802,6 +1802,12 @@
   "capsule_noArguments": {
     "message": "keine Argumente"
   },
+  "capsule_showBytes": {
+    "message": "Die Bytes anzeigen, auf die sich der Beweis festlegt"
+  },
+  "capsule_hideBytes": {
+    "message": "Die Bytes ausblenden"
+  },
   "capsule_validUntil": {
     "message": "Gültig bis"
   },
