@@ -824,6 +824,16 @@ export async function deregisterDust(
   });
 }
 
+// The connector's transaction builders start the sync engine themselves when
+// nothing has yet, and a dApp can connect and ask for a transaction in the same
+// second. A DUST spend made by a part-synced wallet is rejected by the node as
+// InvalidDustSpendProof, so these wait until the wallet reports synced.
+async function connectorWallet(seedHex: string, walletName: string, network: NetworkConfig): Promise<SyncedWallet> {
+  const wallet = await syncEnsure(seedHex, walletName, network);
+  await waitForSyncedBalances(wallet, SYNC_WAIT_MS);
+  return wallet;
+}
+
 export async function transferBuild(
   seedHex: string,
   walletName: string,
@@ -833,7 +843,7 @@ export async function transferBuild(
 ): Promise<{ txHex: string }> {
   return trackOp(async () => {
     await ensureProver(network);
-    const wallet = await syncEnsure(seedHex, walletName, network);
+    const wallet = await connectorWallet(seedHex, walletName, network);
     const finalized = await buildTransferTransaction(
       wallet.facade,
       activeWalletKeys(),
@@ -871,11 +881,7 @@ export async function balanceTransaction(
 ): Promise<{ txHex: string }> {
   return trackOp(async () => {
     await ensureProver(network);
-    const wallet = await syncEnsure(seedHex, walletName, network);
-    // The engine may have started moments ago: a dApp can connect and balance in
-    // the same second. A DUST spend balanced by a part-synced wallet is rejected by
-    // the node as InvalidDustSpendProof.
-    await waitForSyncedBalances(wallet, SYNC_WAIT_MS);
+    const wallet = await connectorWallet(seedHex, walletName, network);
     const finalized = await coreBalanceTransaction(
       wallet.facade,
       activeWalletKeys(),
@@ -901,7 +907,7 @@ export async function makeIntent(
 ): Promise<{ txHex: string }> {
   return trackOp(async () => {
     await ensureProver(network);
-    const wallet = await syncEnsure(seedHex, walletName, network);
+    const wallet = await connectorWallet(seedHex, walletName, network);
     const intent = await buildSwapIntent(
       wallet.facade,
       activeWalletKeys(),
