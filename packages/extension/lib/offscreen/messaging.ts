@@ -74,6 +74,10 @@ export interface TxSummaryDTO {
   receives: TxTokenAmountDTO[];
   /** Contract calls, deploys and maintenance updates in the transaction. */
   contractActions: number;
+  /** `contractActions` by kind, so a deploy is never presented as a call. */
+  contractCalls: number;
+  contractDeploys: number;
+  maintenanceUpdates: number;
 }
 
 /** Contract circuit material supplied by a connected dApp for one proof call. */
