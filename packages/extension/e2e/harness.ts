@@ -140,8 +140,9 @@ export async function launchExtension(proxyUrl: string): Promise<Extension> {
 
 /**
  * Waits for the side panel's header badge to read "Synced". Waiting for the
- * "Syncing, N%" badge to disappear is not enough: that check passes in the
- * moment right after the panel opens, while the wallet is still at 0%.
+ * "Syncing, N%" badge to disappear is not enough: the panel renders no badge
+ * until it has its first balances, so that check passes before the badge has
+ * rendered at all.
  */
 export async function waitForSynced(panel: Page, timeout = 120_000): Promise<void> {
   await expect(panel.getByRole('button', { name: 'Synced', exact: true })).toBeVisible({ timeout });
