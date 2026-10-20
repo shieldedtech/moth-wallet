@@ -139,6 +139,15 @@ export async function launchExtension(proxyUrl: string): Promise<Extension> {
 }
 
 /**
+ * Waits for the side panel's header badge to read "Synced". Waiting for the
+ * "Syncing, N%" badge to disappear is not enough: that check passes in the
+ * moment right after the panel opens, while the wallet is still at 0%.
+ */
+export async function waitForSynced(panel: Page, timeout = 120_000): Promise<void> {
+  await expect(panel.getByRole('button', { name: 'Synced', exact: true })).toBeVisible({ timeout });
+}
+
+/**
  * Restores a hex seed through the setup tab and unlocks it. Defaults to the
  * fixed test seed on Preprod, the setup default.
  */

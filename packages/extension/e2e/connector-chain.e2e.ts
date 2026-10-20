@@ -18,6 +18,7 @@ import {
   launchExtension,
   startMockDapp,
   startRefusingProxy,
+  waitForSynced,
   type Extension,
 } from './harness';
 
@@ -115,8 +116,7 @@ async function indexerOutputs(hash: string): Promise<Array<{ owner: string; valu
 
 test('a dApp transfer is built, balanced with fees, submitted and lands on chain', async () => {
   const panel = await ext.page('sidepanel.html');
-  // The header badge reads "Syncing, N%" until the wallet is caught up.
-  await expect(panel.getByRole('button', { name: /^Syncing, / })).toBeHidden({ timeout: 120_000 });
+  await waitForSynced(panel);
 
   const dapp = await ext.context.newPage();
   await dapp.goto(dappServer.url);
