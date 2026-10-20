@@ -266,6 +266,8 @@ function settlementOf(report: SettlementReport): SubmissionSettled {
 }
 
 const rendered = (argument: RenderedArgument): CapsuleRenderedArgument => ({
+  ...(argument.name === undefined ? {} : { name: argument.name }),
+  presented: argument.presented,
   rendered: argument.rendered,
   bytes: { value: [...argument.bytes.value] },
 });

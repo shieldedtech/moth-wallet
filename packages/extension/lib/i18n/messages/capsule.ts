@@ -21,6 +21,8 @@ export const capsule = {
   capsule_deployLine: 'Deploy $1 (build $2)',
   capsule_atAddress: 'at $1',
   capsule_noArguments: 'no arguments',
+  capsule_showBytes: 'Show the bytes the proof commits to',
+  capsule_hideBytes: 'Hide the bytes',
   capsule_validUntil: 'Valid until',
   capsule_approve: 'Approve',
   capsule_allow: 'Allow',

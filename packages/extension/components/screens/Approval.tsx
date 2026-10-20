@@ -20,6 +20,7 @@ import { SitePair, SiteChip, PermissionList, originHost } from '../moth/dapp';
 import { NoteCard } from '../moth/note-card';
 import { DetailCard } from '../moth/status';
 import { TokenIcon, truncateAddress } from '../moth/token';
+import { CapsuleValue, countOf, isInline } from '../moth/capsule-value';
 
 interface SignDataPayload {
   encoding: string;
@@ -262,10 +263,11 @@ const shortHex = (hex: string) => (hex.length > 18 ? `${hex.slice(0, 10)}…${he
 /**
  * What the capsule runtime asks: a contract to use under an account (the runtime resolved the
  * code itself and checked it against the chain), a private field to read, or a transaction it
- * built — each call and deploy with its arguments by their declared types beside the bytes the
- * proof will commit to. Nothing here came from the site as text.
+ * built — each call and deploy with its arguments under their declared names and by their
+ * declared types, the bytes the proof will commit to a tap away. Nothing here came from the
+ * site as text.
  */
-function CapsuleConsent({ consent, host }: { consent: CapsuleConsentPayload; host: string }) {
+export function CapsuleConsent({ consent, host }: { consent: CapsuleConsentPayload; host: string }) {
   if (consent.kind === 'capsuleConnect') {
     const deploying = consent.contract === undefined;
     return (
@@ -373,20 +375,47 @@ function CapsuleConsent({ consent, host }: { consent: CapsuleConsentPayload; hos
   );
 }
 
-/** Each argument's value by its declared type, and the bytes the proof commits to. */
+/**
+ * Each argument as a row of the capsule screen's idiom: its name (its position when the build
+ * names none), a scalar beside it, a struct or collection as rows beneath it. The bytes the proof
+ * commits to are what the user is actually approving, so they stay one tap away rather than gone.
+ */
 function Arguments({ args }: { args: CapsuleRenderedArgument[] }) {
+  const [bytesShown, setBytesShown] = useState(false);
   if (args.length === 0) {
     return <span className="block font-mono text-xs text-muted-foreground">{t('capsule_noArguments')}</span>;
   }
   return (
-    <span className="block pt-1">
-      {args.map((arg, index) => (
-        <span key={index} className="block break-all font-mono text-xs">
-          {index}: {JSON.stringify(arg.rendered)}{' '}
-          <span className="text-muted-foreground">{arg.bytes.value.join(' ') || '(empty)'}</span>
-        </span>
-      ))}
-    </span>
+    <div className="flex flex-col gap-2 pt-2">
+      {args.map((arg, index) => {
+        const inline = isInline(arg.presented);
+        return (
+          <div key={index} className="flex flex-col gap-1">
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="text-[13px] font-medium">{arg.name ?? `#${index}`}</span>
+              {inline ? (
+                <span className="text-right">
+                  <CapsuleValue value={arg.presented} />
+                </span>
+              ) : (
+                <span className="text-[12px] text-muted-foreground">{countOf(arg.presented)}</span>
+              )}
+            </div>
+            {inline ? null : <CapsuleValue value={arg.presented} />}
+            {bytesShown && (
+              <span className="block break-all font-mono text-[11px] text-muted-foreground">{arg.bytes.value.join(' ') || '(empty)'}</span>
+            )}
+          </div>
+        );
+      })}
+      <button
+        type="button"
+        onClick={() => setBytesShown((shown) => !shown)}
+        className="cursor-pointer self-start border-0 bg-transparent p-0 text-[12px] text-muted-foreground underline"
+      >
+        {bytesShown ? t('capsule_hideBytes') : t('capsule_showBytes')}
+      </button>
+    </div>
   );
 }
 

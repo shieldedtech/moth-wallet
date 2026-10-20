@@ -12,6 +12,7 @@ import type {
   ConnectRequest,
   ConnectResult,
   Json,
+  Presented,
   ReadLocalStateRequest,
   ReadLocalStateResult,
   SubmitResult,
@@ -71,8 +72,14 @@ export interface CapsuleSiteGrantsDTO {
   contracts: Array<{ address: string; call: boolean; reads: string[] }>;
 }
 
-/** One rendered argument as the runtime shows it: the value by its declared type beside the bytes the proof commits to. */
+/**
+ * One argument as the runtime shows it: under its declared name when the build carries one (a
+ * label, never a key), presented by its declared type for the screen, rendered as the JSON the
+ * site wrote, beside the bytes the proof commits to.
+ */
 export interface CapsuleRenderedArgument {
+  name?: string;
+  presented: Presented;
   rendered: Json;
   bytes: { value: string[] };
 }
