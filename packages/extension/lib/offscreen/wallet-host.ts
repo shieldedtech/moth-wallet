@@ -872,6 +872,10 @@ export async function balanceTransaction(
   return trackOp(async () => {
     await ensureProver(network);
     const wallet = await syncEnsure(seedHex, walletName, network);
+    // The engine may have started moments ago: a dApp can connect and balance in
+    // the same second. A DUST spend balanced by a part-synced wallet is rejected by
+    // the node as InvalidDustSpendProof.
+    await waitForSyncedBalances(wallet, SYNC_WAIT_MS);
     const finalized = await coreBalanceTransaction(
       wallet.facade,
       activeWalletKeys(),
