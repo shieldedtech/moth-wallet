@@ -4,11 +4,20 @@
 
 import {describe, expect, it} from 'vitest';
 import {
+  ContractCallPrototype,
+  ContractDeploy,
+  ContractMaintenanceAuthority,
+  ContractOperation,
+  ContractState,
   CostModel,
   Intent,
+  MaintenanceUpdate,
+  ReplaceAuthority,
   Transaction,
   UnshieldedOffer,
+  communicationCommitmentRandomness,
   nativeToken,
+  sampleContractAddress,
   sampleSigningKey,
   signatureVerifyingKey,
   type ProvingProvider,
@@ -20,6 +29,8 @@ import {
   summarizeConnectorTransaction,
   summarizeTransaction,
 } from '../../../src/sync/tx-summary.js';
+
+const NO_CONTRACT_ACTIONS = {contractActions: 0, contractCalls: 0, contractDeploys: 0, maintenanceUpdates: 0};
 
 const OWNER = 'be5eb2579464f606ed883d18831617302f484e6ce3602b0e2725801b653cd19d';
 const OTHER_TOKEN = 'ab'.repeat(32);
@@ -60,7 +71,7 @@ describe('summarizeConnectorTransaction', () => {
     expect(summarizeConnectorTransaction(bytes, false)).toEqual({
       spends: [{kind: 'unshielded', tokenId: nativeToken().raw, amount: 1_000_000n}],
       receives: [],
-      contractActions: 0,
+      ...NO_CONTRACT_ACTIONS,
     });
   });
 
@@ -87,14 +98,14 @@ describe('summarizeConnectorTransaction', () => {
     expect(summarizeConnectorTransaction(bytes, false)).toEqual({
       spends: [],
       receives: [{kind: 'unshielded', tokenId: nativeToken().raw, amount: 2_000_000n}],
-      contractActions: 0,
+      ...NO_CONTRACT_ACTIONS,
     });
   });
 
   it('reports nothing for a transaction that is already balanced', async () => {
     const bytes = await unsealedTx([nightInput(1_000_000n)], [{owner: OWNER, type: nativeToken().raw, value: 1_000_000n}]);
 
-    expect(summarizeConnectorTransaction(bytes, false)).toEqual({spends: [], receives: [], contractActions: 0});
+    expect(summarizeConnectorTransaction(bytes, false)).toEqual({spends: [], receives: [], ...NO_CONTRACT_ACTIONS});
   });
 
   it('decodes with the markers the balancing path uses, so the summary matches what gets balanced', async () => {
@@ -103,5 +114,65 @@ describe('summarizeConnectorTransaction', () => {
     expect(summarizeTransaction(tx).spends).toEqual([{kind: 'unshielded', tokenId: nativeToken().raw, amount: 1n}]);
     // A pre-binding transaction is not a bound one; asking for the wrong stage must fail loudly.
     expect(() => decodeConnectorTransaction(bytes, true)).toThrow();
+  });
+});
+
+describe('contract actions', () => {
+  async function txWithActions(build: (intent: Intent<never, never, never>) => Intent<never, never, never>) {
+    const intent = build(Intent.new(new Date(Date.now() + 60_000)) as Intent<never, never, never>);
+    const unproven = Transaction.fromParts('preprod', undefined, undefined, intent as never);
+    return (await unproven.prove(noProofs, CostModel.initialCostModel())).serialize();
+  }
+
+  it('counts a call as a call, not a deploy', () => {
+    // Summarized unproven: a real call would need its circuit proven to serialize.
+    const empty = {value: [], alignment: []};
+    const call = new ContractCallPrototype(
+      sampleContractAddress(),
+      'mint',
+      new ContractOperation(),
+      undefined,
+      undefined,
+      [],
+      empty,
+      empty,
+      communicationCommitmentRandomness(),
+      'mint'
+    );
+    const intent = Intent.new(new Date(Date.now() + 60_000)).addCall(call);
+    const tx = Transaction.fromParts('preprod', undefined, undefined, intent);
+
+    expect(summarizeTransaction(tx)).toMatchObject({
+      contractActions: 1,
+      contractCalls: 1,
+      contractDeploys: 0,
+      maintenanceUpdates: 0,
+    });
+  });
+
+  it('counts a deploy as a deploy, not a call', async () => {
+    const bytes = await txWithActions((intent) => intent.addDeploy(new ContractDeploy(new ContractState())) as never);
+
+    expect(summarizeConnectorTransaction(bytes, false)).toMatchObject({
+      contractActions: 1,
+      contractCalls: 0,
+      contractDeploys: 1,
+      maintenanceUpdates: 0,
+    });
+  });
+
+  it('counts a maintenance update apart from calls and deploys', async () => {
+    const authority = new ContractMaintenanceAuthority([signatureVerifyingKey(sampleSigningKey())], 1);
+    const update = new MaintenanceUpdate(sampleContractAddress(), [new ReplaceAuthority(authority)], 0n);
+    const bytes = await txWithActions(
+      (intent) => intent.addDeploy(new ContractDeploy(new ContractState())).addMaintenanceUpdate(update) as never
+    );
+
+    expect(summarizeConnectorTransaction(bytes, false)).toMatchObject({
+      contractActions: 2,
+      contractCalls: 0,
+      contractDeploys: 1,
+      maintenanceUpdates: 1,
+    });
   });
 });

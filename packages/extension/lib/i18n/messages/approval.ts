@@ -33,6 +33,8 @@ export const approval = {
   approval_youPay: 'You pay',
   approval_youGetBack: 'You get back',
   approval_contractCallsLabel: 'Contract calls',
+  approval_contractDeploysLabel: 'Contract deploys',
+  approval_maintenanceUpdatesLabel: 'Contract maintenance updates',
   approval_spendsNothing: 'This transaction takes nothing from your wallet apart from the network fee.',
   approval_balanceSubtitleNoFees: '$1 built a transaction and needs your wallet to finalize it. Your wallet will not pay the network fee.',
   approval_notPaidByWallet: 'Not paid by this wallet',

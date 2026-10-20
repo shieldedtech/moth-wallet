@@ -92,6 +92,9 @@ const NIGHT_SPEND = {
   spends: [{ kind: 'unshielded', tokenId: '0'.repeat(64), amount: '1000000' }],
   receives: [],
   contractActions: 0,
+  contractCalls: 0,
+  contractDeploys: 0,
+  maintenanceUpdates: 0,
 };
 
 async function connect() {

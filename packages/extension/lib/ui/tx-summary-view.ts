@@ -8,6 +8,7 @@ import type { TxSummaryDTO, TxTokenAmountDTO } from '../offscreen/messaging';
 import { formatDustFee, formatTokenBalance } from './format';
 import type { NativeAssetLabels } from './token-labels';
 import type { TokenKind } from '../../components/moth/token';
+import { t } from '../i18n';
 
 export interface TxSummaryRow {
   /** Which list the row came from. */
@@ -62,4 +63,19 @@ function parseAmount(value: string): bigint {
 
 function shortId(id: string): string {
   return `${id.slice(0, 8)}…`;
+}
+
+/**
+ * One detail row per kind of contract action the transaction carries, so the
+ * user can tell deploying a contract from calling one. Kinds that are absent
+ * get no row, and so does a prompt without a summary.
+ */
+export function contractActionRows(summary: TxSummaryDTO | null | undefined): Array<{ label: string; value: string }> {
+  if (!summary) return [];
+  const kinds = [
+    [summary.contractDeploys, t('approval_contractDeploysLabel')],
+    [summary.contractCalls, t('approval_contractCallsLabel')],
+    [summary.maintenanceUpdates, t('approval_maintenanceUpdatesLabel')],
+  ] as const;
+  return kinds.filter(([count]) => count > 0).map(([count, label]) => ({ label, value: String(count) }));
 }
