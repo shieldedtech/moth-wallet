@@ -1,138 +1,164 @@
 package io.shielded.moth
 
-import android.app.Activity
 import android.content.Intent
-import android.content.SharedPreferences
-import android.graphics.Typeface
 import android.os.Bundle
-import android.util.Log
-import android.view.ViewGroup.LayoutParams.MATCH_PARENT
-import android.widget.Button
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
-import org.json.JSONObject
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import java.io.File
-import java.security.SecureRandom
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 /**
- * Minimal host for moth's engine: one wallet ("main") on preprod; create, unlock, sync and
- * balances, with the engine's events logged on screen.
- *
- * SPIKE ONLY: the keystore passphrase is kept in SharedPreferences. The iOS app keeps it in
- * the Keychain behind Face ID; the Android equivalent (Keystore + BiometricPrompt) is next.
+ * Moth for Android (spike): Home and Receive, ported from the iOS app, over moth's engine
+ * hosted in a hidden WebView and the in-app native prover.
  */
-class MainActivity : Activity() {
-    private val walletName = "main"
-    private val network = "preprod"
-    private lateinit var prefs: SharedPreferences
-    private lateinit var log: TextView
-    private lateinit var scroll: ScrollView
-    private lateinit var engine: Engine
-    private val clock = SimpleDateFormat("HH:mm:ss", Locale.UK)
+class MainActivity : ComponentActivity() {
+    private lateinit var model: WalletModel
+    private var screen by mutableStateOf("home")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        prefs = getSharedPreferences("moth-spike", MODE_PRIVATE)
-
-        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24, 48, 24, 24) }
-        val buttons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        log = TextView(this).apply { typeface = Typeface.MONOSPACE; textSize = 11f; setTextIsSelectable(true) }
-        scroll = ScrollView(this).apply { addView(log) }
-        root.addView(buttons)
-        root.addView(scroll, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
-        setContentView(root)
+        enableEdgeToEdge()
+        model = WalletModel(this)
 
         val engineDir = Bundled.extract(this, "engine")
         val params = File(filesDir, "zk-params").apply { mkdirs() }
         val proverPort = Native.proverStart(params.path, 6300, 2)
         val enginePort = Native.staticStart(engineDir.path, 8765)
-        append("prover on 127.0.0.1:$proverPort, engine page on 127.0.0.1:$enginePort")
-
-        engine = Engine(this) { event, data -> onEngineEvent(event, data) }
+        model.write("prover on 127.0.0.1:$proverPort, engine page on 127.0.0.1:$enginePort")
+        model.start()
         // Attached but invisible, so the WebView is never paused as off-screen.
-        root.addView(engine.webView, LinearLayout.LayoutParams(1, 1))
+        addContentView(model.engine.webView, android.view.ViewGroup.LayoutParams(1, 1))
 
-        fun button(label: String, onClick: () -> Unit) {
-            buttons.addView(Button(this).apply { text = label; setOnClickListener { onClick() } })
+        setContent {
+            MothTheme {
+                Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    App()
+                }
+            }
         }
-        button("Create") { create() }
-        button("Unlock") { unlock() }
-        button("Sync") { sync() }
-        button("Balances") { balances() }
         handle(intent)
     }
 
-    // Lets adb drive the spike: adb shell am start -n io.shielded.moth/.MainActivity --es action create
+    @Composable
+    private fun App() {
+        when (model.phase) {
+            WalletModel.Phase.NoWallet -> Welcome()
+            else -> when (screen) {
+                "receive" -> {
+                    BackHandler { screen = "home" }
+                    ReceiveScreen(model) { screen = "home" }
+                }
+                "logs" -> {
+                    BackHandler { screen = "home" }
+                    LogsScreen { screen = "home" }
+                }
+                else -> HomeScreen(model, onReceive = { screen = "receive" }, onLogs = { screen = "logs" })
+            }
+        }
+        model.newPhrase?.let { phrase ->
+            AlertDialog(
+                onDismissRequest = {},
+                title = { Text("Recovery phrase") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("Write these words down. They are the only backup of this wallet. Testnet funds only.")
+                        SelectionContainer { Text(phrase, fontFamily = FontFamily.Monospace) }
+                    }
+                },
+                confirmButton = { TextButton(onClick = { model.newPhrase = null }) { Text("I've written it down") } },
+            )
+        }
+        model.error?.let { message ->
+            AlertDialog(
+                onDismissRequest = { model.error = null },
+                title = { Text("Something went wrong") },
+                text = { Text(message) },
+                confirmButton = { TextButton(onClick = { model.error = null }) { Text("OK") } },
+            )
+        }
+    }
+
+    @Composable
+    private fun Welcome() {
+        Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text("Moth", style = MaterialTheme.typography.displaySmall)
+                Text(
+                    "A Midnight wallet. This Android build is a preview on ${model.network}; use testnet funds only.",
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (model.busy) CircularProgressIndicator(Modifier.size(28.dp))
+                else PrimaryButton("Create wallet", Modifier.fillMaxWidth()) { model.create() }
+            }
+        }
+    }
+
+    @OptIn(ExperimentalMaterial3Api::class)
+    @Composable
+    private fun LogsScreen(onBack: () -> Unit) {
+        val state = rememberLazyListState()
+        LaunchedEffect(model.log.size) { if (model.log.isNotEmpty()) state.scrollToItem(model.log.size - 1) }
+        Scaffold(topBar = {
+            TopAppBar(title = { Text("Logs") }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } })
+        }) { padding ->
+            SelectionContainer {
+                LazyColumn(Modifier.fillMaxSize().padding(padding).padding(horizontal = 12.dp), state = state) {
+                    items(model.log) { Text(it, fontFamily = FontFamily.Monospace, fontSize = 11.sp, modifier = Modifier.fillMaxWidth()) }
+                }
+            }
+        }
+    }
+
+    // Lets adb drive the spike, e.g. adb shell am start -n io.shielded.moth/.MainActivity --es screen receive
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handle(intent)
     }
 
     private fun handle(intent: Intent?) {
+        intent?.getStringExtra("screen")?.let { screen = it }
         when (intent?.getStringExtra("action")) {
-            "create" -> create()
-            "unlock" -> unlock()
-            "sync" -> sync()
-            "balances" -> balances()
-            null -> {}
-            else -> append("unknown action")
+            "create" -> model.create()
+            "sync" -> model.sync()
+            "balances" -> model.refreshBalances()
         }
-    }
-
-    private fun onEngineEvent(event: String, data: Any?) {
-        when (event) {
-            "ready" -> {
-                append("engine ready")
-                engine.call("list") { r -> r.onSuccess { append("wallets: $it") }.onFailure { append("list failed: ${it.message}") } }
-            }
-            "balances" -> append("balances: ${summary(data as JSONObject)}")
-            "syncMessage" -> append("sync: $data")
-            "workerError" -> append("WORKER ERROR: $data")
-            else -> append("$event: $data")
-        }
-    }
-
-    private fun summary(b: JSONObject): String =
-        "synced=${b.optBoolean("synced")} unshielded=${b.optJSONObject("unshielded")} shielded=${b.optJSONObject("shielded")} dust=${b.optString("dust")}"
-
-    private fun passphrase(): String =
-        prefs.getString("passphrase", null) ?: ByteArray(32).also { SecureRandom().nextBytes(it) }
-            .joinToString("") { "%02x".format(it) }
-            .also { prefs.edit().putString("passphrase", it).apply() }
-
-    private fun create() {
-        append("creating wallet \"$walletName\" on $network…")
-        engine.call("create", listOf(walletName, passphrase(), network)) { r ->
-            r.onSuccess { append("created: $it\nBACK UP THE PHRASE ABOVE (testnet only).") }.onFailure { append("create failed: ${it.message}") }
-        }
-    }
-
-    private fun unlock() {
-        engine.call("unlock", listOf(walletName, passphrase(), network)) { r ->
-            r.onSuccess { append("unlocked: $it") }.onFailure { append("unlock failed: ${it.message}") }
-        }
-    }
-
-    private fun sync() {
-        append("sync requested")
-        engine.call("sync", listOf(walletName, network)) { r ->
-            r.onSuccess { append("sync started") }.onFailure { append("sync failed: ${it.message}") }
-        }
-    }
-
-    private fun balances() {
-        engine.call("balances", listOf(walletName, network)) { r ->
-            r.onSuccess { append("balances: ${summary(it as JSONObject)}") }.onFailure { append("balances failed: ${it.message}") }
-        }
-    }
-
-    private fun append(line: String) {
-        Log.i("MothSpike", line)
-        log.append("${clock.format(Date())} $line\n")
-        scroll.post { scroll.fullScroll(ScrollView.FOCUS_DOWN) }
     }
 }

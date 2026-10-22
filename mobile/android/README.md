@@ -5,7 +5,7 @@ A minimal Android host for moth's wallet engine: the same engine page as the iOS
 the app. One wallet on preprod; create, unlock, sync and balances, with the engine's events
 logged on screen. Testnet funds only.
 
-Status: a spike to prove the engine and prover layers run on Android. It has no real UI, no
+Status: a spike. It has Home and Receive (ported from the iOS app) but no Send, no
 Keystore vault and no DApp connector. See [mobile/ios/README.md](../ios/README.md) for the
 app this is a twin of.
 
