@@ -1,0 +1,17 @@
+[package]
+name = "moth-android"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# libmoth_android.so: moth-native's in-app proof server and engine file server, exposed to
+# Kotlin through JNI (app/src/main/java/io/shielded/moth/Native.kt).
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+moth-native = { path = "../../ios/native" }
+jni = "0.21"
+
+[profile.release]
+lto = "thin"
