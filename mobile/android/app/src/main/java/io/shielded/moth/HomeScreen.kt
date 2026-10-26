@@ -90,7 +90,13 @@ private fun SyncStatus(model: WalletModel) {
             val text = when (model.phase) {
                 WalletModel.Phase.Starting -> "Starting the wallet engine…"
                 WalletModel.Phase.Unlocking -> "Unlocking…"
-                else -> model.status.ifEmpty { "Syncing…" }
+                // moth's progress line ("syncing 20% (dust) — shielded 100%, …") repeats the bars;
+                // keep only its time estimate.
+                else -> if (model.status.startsWith("syncing")) {
+                    Regex("""\(([^)]*) remaining\)""").find(model.status)?.let { "Syncing · about ${it.groupValues[1]} left" } ?: "Syncing…"
+                } else {
+                    model.status.ifEmpty { "Syncing…" }
+                }
             }
             Text(text, style = MaterialTheme.typography.bodyMedium, maxLines = 2)
             if (b != null && !b.synced) {
