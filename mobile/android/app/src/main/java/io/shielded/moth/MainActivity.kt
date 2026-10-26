@@ -2,7 +2,6 @@ package io.shielded.moth
 
 import android.content.Intent
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -19,6 +18,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -42,19 +42,22 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.fragment.app.FragmentActivity
 import java.io.File
 
 /**
  * Moth for Android (spike): Home and Receive, ported from the iOS app, over moth's engine
  * hosted in a hidden WebView and the in-app native prover.
  */
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
     private lateinit var model: WalletModel
     private var screen by mutableStateOf("home")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // The app-switcher thumbnail would show balances and addresses (iOS shows a privacy cover).
+        if (android.os.Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false)
         model = WalletModel(this)
 
         val engineDir = Bundled.extract(this, "engine")
@@ -80,6 +83,7 @@ class MainActivity : ComponentActivity() {
     private fun App() {
         when (model.phase) {
             WalletModel.Phase.NoWallet -> Welcome()
+            WalletModel.Phase.Locked, WalletModel.Phase.Unlocking -> Locked()
             else -> when (screen) {
                 "receive" -> {
                     BackHandler { screen = "home" }
@@ -131,6 +135,32 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    @Composable
+    private fun Locked() {
+        Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Icon(Icons.Default.Lock, null, Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
+                Text("Moth is locked", style = MaterialTheme.typography.headlineSmall)
+                Text("${model.walletName} · ${model.network}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (model.phase == WalletModel.Phase.Unlocking) CircularProgressIndicator(Modifier.size(28.dp))
+                else PrimaryButton("Unlock", Modifier.fillMaxWidth()) { model.unlock() }
+            }
+        }
+    }
+
+    // As on iOS: leaving the app locks the wallet, so the seed is never left in memory behind
+    // the app switcher; coming back asks for the fingerprint again. Showing the device-PIN
+    // screen also stops this activity, but lock() only acts on an unlocked wallet.
+    override fun onStart() {
+        super.onStart()
+        if (model.phase == WalletModel.Phase.Locked) model.unlock() else model.wantUnlock = true
+    }
+
+    override fun onStop() {
+        super.onStop()
+        model.lock()
+    }
+
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable
     private fun LogsScreen(onBack: () -> Unit) {
@@ -157,6 +187,8 @@ class MainActivity : ComponentActivity() {
         intent?.getStringExtra("screen")?.let { screen = it }
         when (intent?.getStringExtra("action")) {
             "create" -> model.create()
+            "unlock" -> model.unlock()
+            "lock" -> model.lock()
             "sync" -> model.sync()
             "balances" -> model.refreshBalances()
         }

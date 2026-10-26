@@ -12,7 +12,7 @@ android {
 
     defaultConfig {
         applicationId = "io.shielded.moth"
-        minSdk = 29
+        minSdk = 30
         targetSdk = 34
         versionCode = 1
         versionName = "0.0.1"
@@ -42,6 +42,8 @@ dependencies {
     implementation("androidx.compose.material:material-icons-core")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.activity:activity-compose:1.9.3")
+    implementation("androidx.biometric:biometric:1.1.0")
+    implementation("androidx.fragment:fragment-ktx:1.8.5")
     // QR codes for Receive (the iOS app uses CoreImage's generator).
     implementation("com.google.zxing:core:3.5.3")
 }

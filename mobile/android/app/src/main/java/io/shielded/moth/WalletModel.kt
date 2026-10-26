@@ -2,12 +2,12 @@ package io.shielded.moth
 
 import android.content.Context
 import android.util.Log
+import androidx.fragment.app.FragmentActivity
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import org.json.JSONObject
-import java.security.SecureRandom
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -18,11 +18,12 @@ data class Addresses(val unshielded: String, val shielded: String, val dust: Str
  * The app's state, driven by the engine. A cut-down port of iOS `WalletModel`: one wallet
  * ("main") on preprod, unlocked at start and synced while the app runs.
  *
- * SPIKE ONLY: the keystore passphrase is kept in SharedPreferences. The iOS app keeps it in
- * the Keychain behind Face ID; the Android equivalent (Keystore + BiometricPrompt) is next.
+ * The keystore passphrase lives in [Vault] (Android Keystore, fingerprint or device PIN).
+ * The wallet locks when the app leaves the foreground, as on iOS.
  */
-class WalletModel(private val context: Context) {
-    enum class Phase { Starting, NoWallet, Unlocking, Unlocked, Failed }
+class WalletModel(private val activity: FragmentActivity) {
+    private val context: Context = activity
+    enum class Phase { Starting, NoWallet, Locked, Unlocking, Unlocked, Failed }
 
     val walletName = "main"
     val network = "preprod"
@@ -42,7 +43,11 @@ class WalletModel(private val context: Context) {
     var newPhrase by mutableStateOf<String?>(null)
     val log = mutableStateListOf<String>()
 
-    private val prefs = context.getSharedPreferences("moth-spike", Context.MODE_PRIVATE)
+    /** The spike's first builds kept the passphrase here in plain text; [unlock] moves it into the [Vault]. */
+    private val legacy = context.getSharedPreferences("moth-spike", Context.MODE_PRIVATE)
+    private var hasWallet = false
+    /** Unlock as soon as the engine is ready (set when the app comes to the foreground). */
+    var wantUnlock = true
     private val clock = SimpleDateFormat("HH:mm:ss", Locale.UK)
     lateinit var engine: Engine
         private set
@@ -59,7 +64,9 @@ class WalletModel(private val context: Context) {
                     r.onSuccess { list ->
                         val names = (list as? org.json.JSONArray)?.let { a -> (0 until a.length()).map { a.getJSONObject(it).getString("name") } } ?: emptyList()
                         write("wallets: $names")
-                        if (walletName in names && prefs.contains("passphrase")) unlock() else phase = Phase.NoWallet
+                        hasWallet = walletName in names
+                        phase = if (hasWallet) Phase.Locked else Phase.NoWallet
+                        if (hasWallet && wantUnlock) unlock()
                     }.onFailure { fail("list", it) }
                 }
             }
@@ -83,36 +90,75 @@ class WalletModel(private val context: Context) {
     }
 
     fun create() {
-        busy = true
-        val passphrase = ByteArray(32).also { SecureRandom().nextBytes(it) }.joinToString("") { "%02x".format(it) }
-        // Never replace a key: an existing one may be the only way into an older keystore.
-        if (prefs.contains("passphrase")) {
-            error = "A keystore passphrase already exists on this device; not replacing it."
-            busy = false
+        if (legacy.contains("passphrase")) {
+            error = "A wallet key from an earlier build exists on this device; not replacing it."
             return
         }
-        prefs.edit().putString("passphrase", passphrase).apply()
-        engine.call("create", listOf(walletName, passphrase, network)) { r ->
-            busy = false
-            r.onSuccess {
-                newPhrase = (it as JSONObject).getString("mnemonic")
-                write("created wallet $walletName")
-                unlock()
-            }.onFailure { fail("create", it) }
+        busy = true
+        Vault.create(activity, walletName) { r ->
+            r.onSuccess { passphrase ->
+                engine.call("create", listOf(walletName, passphrase, network)) { c ->
+                    busy = false
+                    c.onSuccess {
+                        newPhrase = (it as JSONObject).getString("mnemonic")
+                        hasWallet = true
+                        write("created wallet $walletName")
+                        unlockWith(passphrase)
+                    }.onFailure { fail("create", it) }
+                }
+            }.onFailure { busy = false; if ((it as? VaultException)?.canceled != true) fail("vault", it) }
         }
     }
 
-    private fun unlock() {
+    /** Asks for a fingerprint or the device PIN, then unlocks the wallet. */
+    fun unlock() {
+        if (phase == Phase.Unlocking || phase == Phase.Unlocked) return
         phase = Phase.Unlocking
-        engine.call("unlock", listOf(walletName, prefs.getString("passphrase", ""), network)) { r ->
+        val old = legacy.getString("passphrase", null)
+        when {
+            Vault.exists(context, walletName) -> Vault.passphrase(activity, walletName, "Unlock your Moth wallet") { r ->
+                r.onSuccess { unlockWith(it) }.onFailure { vaultFailed(it) }
+            }
+            old != null -> Vault.adopt(activity, walletName, old) { r ->
+                r.onSuccess {
+                    // Only now that the vault holds it is the plain-text copy removed.
+                    legacy.edit().remove("passphrase").commit()
+                    write("vault: moved the old plain-text passphrase into the Keystore")
+                    unlockWith(it)
+                }.onFailure { vaultFailed(it) }
+            }
+            else -> vaultFailed(VaultException("This wallet's key is missing from this phone. Restore it from its recovery phrase."))
+        }
+    }
+
+    private fun vaultFailed(e: Throwable) {
+        phase = Phase.Locked
+        if ((e as? VaultException)?.canceled == true) write("unlock canceled") else fail("unlock", e)
+    }
+
+    private fun unlockWith(passphrase: String) {
+        phase = Phase.Unlocking
+        engine.call("unlock", listOf(walletName, passphrase, network)) { r ->
             r.onSuccess {
                 val a = it as JSONObject
                 addresses = Addresses(a.getString("unshielded"), a.getString("shielded"), a.getString("dust"), a.getString("nightTokenId"))
                 phase = Phase.Unlocked
                 write("unlocked")
+                status = "Starting sync…"
                 sync()
-            }.onFailure { fail("unlock", it); phase = Phase.Failed }
+            }.onFailure { fail("unlock", it); phase = Phase.Locked }
         }
+    }
+
+    /** Stops sync and drops the seed from the engine; the next use needs the fingerprint again. */
+    fun lock() {
+        if (phase != Phase.Unlocked) return
+        engine.call("lock", listOf(walletName)) { r -> r.onFailure { write("lock failed: ${it.message}") } }
+        balances = null
+        addresses = null
+        status = ""
+        phase = Phase.Locked
+        write("locked")
     }
 
     fun sync() {

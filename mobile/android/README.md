@@ -5,8 +5,8 @@ A minimal Android host for moth's wallet engine: the same engine page as the iOS
 the app. One wallet on preprod; create, unlock, sync and balances, with the engine's events
 logged on screen. Testnet funds only.
 
-Status: a spike. It has Home and Receive (ported from the iOS app) but no Send, no
-Keystore vault and no DApp connector. See [mobile/ios/README.md](../ios/README.md) for the
+Status: a spike. It has Home and Receive (ported from the iOS app) but no Send and no DApp
+connector. See [mobile/ios/README.md](../ios/README.md) for the
 app this is a twin of.
 
 ## How it works
@@ -31,16 +31,21 @@ Differences from iOS:
   the loopback proof server is used instead, which the wallet SDK already supports.
 - **The engine is not modified.** It posts events to `window.webkit.messageHandlers.moth`;
   a document-start script (`Engine.kt`) provides that object, backed by a JavaScript interface.
-- **Keys are not protected yet.** The keystore passphrase sits in SharedPreferences. The
-  Android Keystore and `BiometricPrompt` equivalent of `Vault.swift` is the next step.
+- **Keys** are in `Vault.kt`, the Android port of `Vault.swift`: a per-wallet AES-256-GCM
+  Keystore key (StrongBox when available) that needs a fingerprint or the device PIN for every
+  use. The wallet locks when the app leaves the foreground. There is no biometric-only option
+  yet, and no per-transaction prompt.
 - **No bundled proving keys.** The prover downloads them on first proof.
 
 ## Build and run
 
 Prerequisites:
 
-- `yarn install && yarn build` at the repo root, then `LEDGER=npm mobile/ios/scripts/build-engine.sh`
-  (or `LEDGER=src` with the patched ledger WASM; see the iOS README)
+- `yarn install && yarn build` at the repo root, then `mobile/ios/scripts/build-engine.sh`
+  (patched ledger WASM by default; see "DUST restore time" in the iOS README). Without a local
+  wasm32 clang, build the ledger in Docker: `rust:1.90-bookworm` plus `apt install clang llvm`
+  and wasm-pack, then `LLVM_BIN=/usr/bin scripts/build-ledger-wasm.sh`. ledger-8.1.0 needs
+  Rust 1.89 or later (konst 0.4.3).
 - Rust with the `aarch64-linux-android` target, `cargo install cross`, Docker
 - Android SDK (platform 34, build-tools 34.0.0) and Gradle 8.9+, Java 17+
 - A phone with USB debugging, `adb`
