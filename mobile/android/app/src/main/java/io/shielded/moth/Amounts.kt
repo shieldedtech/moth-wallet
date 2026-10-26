@@ -41,10 +41,17 @@ data class Balances(
                 o?.keys()?.asSequence()?.associateWith { o.getString(it) } ?: emptyMap()
 
             val sub = json.optJSONObject("subProgress")
+            val done = json.optJSONObject("subSynced")
+            // As the extension's syncStatusView: a synced sub-wallet is 100% even when it reports
+            // 0/0 (an unshielded address that has never received anything has no transactions to apply).
             val progress = linkedMapOf("Shielded" to "shielded", "Unshielded" to "unshielded", "DUST" to "dust").mapValues { (_, key) ->
-                sub?.optJSONObject(key)?.let { p ->
-                    val total = p.optDouble("total", 0.0)
-                    if (total > 0) (p.optDouble("applied", 0.0) / total).coerceIn(0.0, 1.0) else null
+                val p = sub?.optJSONObject(key)
+                val total = p?.optDouble("total", 0.0) ?: 0.0
+                when {
+                    done?.optBoolean(key) == true -> 1.0
+                    total > 0 -> (p!!.optDouble("applied", 0.0) / total).coerceIn(0.0, 1.0)
+                    done == null -> null
+                    else -> 0.0
                 }
             }
             val g = json.optJSONObject("dustGeneration")
