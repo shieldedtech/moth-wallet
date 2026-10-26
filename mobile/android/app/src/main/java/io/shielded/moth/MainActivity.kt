@@ -151,13 +151,17 @@ class MainActivity : FragmentActivity() {
     // As on iOS: leaving the app locks the wallet, so the seed is never left in memory behind
     // the app switcher; coming back asks for the fingerprint again. Showing the device-PIN
     // screen also stops this activity, but lock() only acts on an unlocked wallet.
-    override fun onStart() {
-        super.onStart()
-        if (model.phase == WalletModel.Phase.Locked) model.unlock() else model.wantUnlock = true
+    // onResume, not onStart: an app launched behind the lock screen is started but not resumed
+    // until the phone is unlocked.
+    override fun onResume() {
+        super.onResume()
+        model.maybeAutoUnlock()
     }
 
     override fun onStop() {
         super.onStop()
+        // The device-PIN screen also stops this activity mid-unlock; lock() ignores that.
+        if (model.phase == WalletModel.Phase.Unlocked || model.phase == WalletModel.Phase.Locked) model.autoPrompt = true
         model.lock()
     }
 

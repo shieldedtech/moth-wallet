@@ -46,8 +46,13 @@ class WalletModel(private val activity: FragmentActivity) {
     /** The spike's first builds kept the passphrase here in plain text; [unlock] moves it into the [Vault]. */
     private val legacy = context.getSharedPreferences("moth-spike", Context.MODE_PRIVATE)
     private var hasWallet = false
-    /** Unlock as soon as the engine is ready (set when the app comes to the foreground). */
-    var wantUnlock = true
+    /**
+     * Ask for the fingerprint by itself once the app is in front and the phone is unlocked
+     * (as iOS promptOnLockedScreen). Set at launch and whenever the app leaves the foreground;
+     * consumed by one prompt, so cancelling it does not prompt again.
+     */
+    var autoPrompt = true
+    private val keyguard = context.getSystemService(android.app.KeyguardManager::class.java)
     private val clock = SimpleDateFormat("HH:mm:ss", Locale.UK)
     lateinit var engine: Engine
         private set
@@ -66,12 +71,13 @@ class WalletModel(private val activity: FragmentActivity) {
                         write("wallets: $names")
                         hasWallet = walletName in names
                         phase = if (hasWallet) Phase.Locked else Phase.NoWallet
-                        if (hasWallet && wantUnlock) unlock()
+                        maybeAutoUnlock()
                     }.onFailure { fail("list", it) }
                 }
             }
             "balances" -> (data as? JSONObject)?.let { b ->
                 balances = Balances.parse(b)
+                logProgress(balances!!)
                 if (balances?.synced == true) status = "Synced"
             }
             // moth prefixes progress lines with ○/●; the status line doesn't need them.
@@ -110,9 +116,22 @@ class WalletModel(private val activity: FragmentActivity) {
         }
     }
 
+    fun maybeAutoUnlock() {
+        val resumed = activity.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
+        if (autoPrompt && phase == Phase.Locked && resumed && !keyguard.isDeviceLocked) {
+            autoPrompt = false
+            unlock()
+        }
+    }
+
     /** Asks for a fingerprint or the device PIN, then unlocks the wallet. */
     fun unlock() {
         if (phase == Phase.Unlocking || phase == Phase.Unlocked) return
+        // The Keystore key works only while the phone is unlocked (setUnlockedDeviceRequired).
+        if (keyguard.isDeviceLocked) {
+            error = "Unlock your phone first."
+            return
+        }
         phase = Phase.Unlocking
         val old = legacy.getString("passphrase", null)
         when {
@@ -175,6 +194,16 @@ class WalletModel(private val activity: FragmentActivity) {
         engine.call("cardanoAddresses", listOf(walletName, network)) { r ->
             callback(r.mapCatching { (it as JSONObject).getString("address") })
         }
+    }
+
+    private var lastProgressLog = 0L
+
+    /** One progress line a minute in the log, so sync speed can be measured from it. */
+    private fun logProgress(b: Balances) {
+        val now = System.currentTimeMillis()
+        if (b.synced || now - lastProgressLog < 60_000) return
+        lastProgressLog = now
+        write("progress " + b.progress.entries.joinToString(" ") { (k, v) -> "$k=${v?.let { "%.2f%%".format(it * 100) } ?: "?"}" })
     }
 
     private fun fail(what: String, e: Throwable) {

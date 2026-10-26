@@ -93,9 +93,20 @@ private fun SyncStatus(model: WalletModel) {
                 else -> model.status.ifEmpty { "Syncing…" }
             }
             Text(text, style = MaterialTheme.typography.bodyMedium, maxLines = 2)
-            val progress = b?.progress
-            if (b?.synced != true && progress != null) {
-                LinearProgressIndicator(progress = { progress.toFloat() }, Modifier.fillMaxWidth())
+            if (b != null && !b.synced) {
+                b.progress.forEach { (name, p) ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(name, Modifier.width(92.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        LinearProgressIndicator(progress = { (p ?: 0.0).toFloat() }, Modifier.weight(1f))
+                        Text(
+                            p?.let { "${(it * 100).toInt()}%" } ?: "–",
+                            Modifier.width(48.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                        )
+                    }
+                }
             }
         }
     }

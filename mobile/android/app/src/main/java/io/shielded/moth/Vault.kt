@@ -38,9 +38,24 @@ class VaultException(message: String, val canceled: Boolean = false) : Exception
  * phrase with it (scrypt + AES-GCM, in the engine's IndexedDB).
  */
 object Vault {
+    /**
+     * How a wallet's key is bound to the user. Phones differ: some TEEs (seen on a MediaTek
+     * Dimensity 1200 with Trustonic) refuse to begin an operation on a per-use key that also
+     * accepts the device PIN, so [store] falls back down this list and records what worked.
+     */
+    enum class Mode(val perUse: Boolean, val allowPin: Boolean) {
+        /** Fingerprint or device PIN, for every use (iOS `.userPresence`). */
+        PerUseBiometricOrPin(true, true),
+        /** Fingerprint only, for every use (iOS `.biometryCurrentSet`, minus invalidation on re-enrolment). */
+        PerUseBiometric(true, false),
+        /** Fingerprint or device PIN; the key stays usable for [WINDOW_SECONDS] after the prompt. */
+        TimedBiometricOrPin(false, true),
+    }
+
+    private const val WINDOW_SECONDS = 10
+
     private const val PROVIDER = "AndroidKeyStore"
     private const val PREFS = "moth-vault"
-    private const val ALLOWED = BIOMETRIC_STRONG or DEVICE_CREDENTIAL
 
     private fun alias(wallet: String) = "io.shielded.moth.keystore.$wallet"
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -67,24 +82,42 @@ object Vault {
         if (prefs(activity).contains(wallet) || keyStore().containsAlias(alias(wallet))) {
             return callback(Result.failure(VaultException("A key for \"$wallet\" already exists on this device; Moth never replaces one.")))
         }
-        val cipher = try {
-            Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, generateKey(wallet)) }
-        } catch (e: Exception) {
-            keyStore().deleteEntry(alias(wallet))
-            return callback(Result.failure(VaultException("Could not create a Keystore key: ${e.message}")))
+        val seal = { c: Cipher, mode: Mode ->
+            val sealed = c.doFinal(passphrase.toByteArray())
+            val blob = mode.name + ":" + Base64.encodeToString(c.iv, Base64.NO_WRAP) + ":" + Base64.encodeToString(sealed, Base64.NO_WRAP)
+            // commit(), not apply(): the wallet must not be created until the key is on disk.
+            check(prefs(activity).edit().putString(wallet, blob).commit()) { "could not save the encrypted key" }
+            Log.i("MothSpike", "vault: key for $wallet stored, mode $mode")
+            passphrase
         }
-        prompt(activity, title, cipher) { r ->
-            callback(r.mapCatching { c ->
-                val sealed = c.doFinal(passphrase.toByteArray())
-                val blob = Base64.encodeToString(c.iv, Base64.NO_WRAP) + ":" + Base64.encodeToString(sealed, Base64.NO_WRAP)
-                // commit(), not apply(): the wallet must not be created until the key is on disk.
-                check(prefs(activity).edit().putString(wallet, blob).commit()) { "could not save the encrypted key" }
-                passphrase
-            }.onFailure {
-                // A key without its ciphertext is useless, and would block a retry.
-                if (!prefs(activity).contains(wallet)) keyStore().deleteEntry(alias(wallet))
-            })
+        val done = { r: Result<String> ->
+            // A key without its ciphertext is useless, and would block a retry.
+            if (r.isFailure && !prefs(activity).contains(wallet)) keyStore().deleteEntry(alias(wallet))
+            callback(r)
         }
+        for (mode in Mode.entries) {
+            val key = try {
+                generateKey(wallet, mode)
+            } catch (e: Exception) {
+                keyStore().deleteEntry(alias(wallet))
+                return done(Result.failure(VaultException("Could not create a Keystore key: ${e.message}")))
+            }
+            if (!mode.perUse) {
+                // Timed key: authenticate first, then use the key inside the window.
+                return prompt(activity, title, mode, null) { r ->
+                    done(r.mapCatching { seal(Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key) }, mode) })
+                }
+            }
+            val cipher = try {
+                Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key) }
+            } catch (e: android.security.keystore.UserNotAuthenticatedException) {
+                Log.i("MothSpike", "vault: this phone refuses $mode keys (${e.message}); trying the next mode")
+                keyStore().deleteEntry(alias(wallet))
+                continue
+            }
+            return prompt(activity, title, mode, cipher) { r -> done(r.mapCatching { seal(it!!, mode) }) }
+        }
+        done(Result.failure(VaultException("This phone's Keystore supports none of Moth's key modes.")))
     }
 
     /** Reads [wallet]'s passphrase, asking for a fingerprint or the device PIN. */
@@ -94,23 +127,35 @@ object Vault {
         if (blob == null || key == null) {
             return callback(Result.failure(VaultException("This wallet's key is missing from this phone. Restore it from its recovery phrase.")))
         }
-        val (iv, sealed) = blob.split(":").map { Base64.decode(it, Base64.NO_WRAP) }
-        val cipher = try {
-            Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, iv)) }
+        val parts = blob.split(":")
+        // Blobs from before modes were recorded have no mode prefix; they were per-use, PIN allowed.
+        val mode = if (parts.size == 3) Mode.valueOf(parts[0]) else Mode.PerUseBiometricOrPin
+        val (iv, sealed) = parts.takeLast(2).map { Base64.decode(it, Base64.NO_WRAP) }
+        val decrypt = { c: Cipher -> String(c.doFinal(sealed)) }
+        val init = { Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, iv)) } }
+        try {
+            if (mode.perUse) {
+                val cipher = init()
+                prompt(activity, reason, mode, cipher) { r -> callback(r.mapCatching { decrypt(it!!) }) }
+            } else {
+                prompt(activity, reason, mode, null) { r -> callback(r.mapCatching { decrypt(init()) }) }
+            }
         } catch (e: android.security.keystore.KeyPermanentlyInvalidatedException) {
-            return callback(Result.failure(VaultException("This wallet's key was invalidated because the screen lock was removed. Restore it from its recovery phrase.")))
+            callback(Result.failure(VaultException("This wallet's key was invalidated because the screen lock was removed. Restore it from its recovery phrase.")))
         }
-        prompt(activity, reason, cipher) { r -> callback(r.mapCatching { String(it.doFinal(sealed)) }) }
     }
 
-    private fun generateKey(wallet: String): SecretKey {
+    private fun generateKey(wallet: String, mode: Mode): SecretKey {
         fun spec(strongBox: Boolean) = KeyGenParameterSpec.Builder(alias(wallet), KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
             .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
             .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
             .setKeySize(256)
             .setUserAuthenticationRequired(true)
-            // 0 seconds: every use needs its own authentication, bound to this cipher.
-            .setUserAuthenticationParameters(0, KeyProperties.AUTH_BIOMETRIC_STRONG or KeyProperties.AUTH_DEVICE_CREDENTIAL)
+            // 0 seconds: every use needs its own authentication, bound to that operation.
+            .setUserAuthenticationParameters(
+                if (mode.perUse) 0 else WINDOW_SECONDS,
+                if (mode.allowPin) KeyProperties.AUTH_BIOMETRIC_STRONG or KeyProperties.AUTH_DEVICE_CREDENTIAL else KeyProperties.AUTH_BIOMETRIC_STRONG,
+            )
             .setInvalidatedByBiometricEnrollment(false)
             .setUnlockedDeviceRequired(true)
             .setIsStrongBoxBacked(strongBox)
@@ -125,16 +170,19 @@ object Vault {
         }
     }
 
-    private fun prompt(activity: FragmentActivity, title: String, cipher: Cipher, callback: (Result<Cipher>) -> Unit) {
+    private fun prompt(activity: FragmentActivity, title: String, mode: Mode, cipher: Cipher?, callback: (Result<Cipher?>) -> Unit) {
         val info = BiometricPrompt.PromptInfo.Builder()
             .setTitle(title)
             .setSubtitle("Moth")
-            .setAllowedAuthenticators(ALLOWED)
+            .apply {
+                if (mode.allowPin) setAllowedAuthenticators(BIOMETRIC_STRONG or DEVICE_CREDENTIAL)
+                else setAllowedAuthenticators(BIOMETRIC_STRONG).setNegativeButtonText("Cancel")
+            }
             .build()
         val prompt = BiometricPrompt(activity, ContextCompat.getMainExecutor(activity), object : BiometricPrompt.AuthenticationCallback() {
             override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                 val c = result.cryptoObject?.cipher
-                callback(if (c != null) Result.success(c) else Result.failure(VaultException("The Keystore returned no cipher")))
+                callback(if (cipher == null || c != null) Result.success(c) else Result.failure(VaultException("The Keystore returned no cipher")))
             }
 
             override fun onAuthenticationError(code: Int, message: CharSequence) {
@@ -145,6 +193,6 @@ object Vault {
             }
             // onAuthenticationFailed (a fingerprint not recognised) keeps the prompt open; nothing to do.
         })
-        prompt.authenticate(info, BiometricPrompt.CryptoObject(cipher))
+        if (cipher != null) prompt.authenticate(info, BiometricPrompt.CryptoObject(cipher)) else prompt.authenticate(info)
     }
 }

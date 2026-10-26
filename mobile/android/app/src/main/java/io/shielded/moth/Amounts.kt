@@ -13,8 +13,12 @@ data class Balances(
     /** SPECK. */
     val dust: String,
     val synced: Boolean,
-    /** Overall sync progress, 0..1, or null before the totals are known. */
-    val progress: Double?,
+    /**
+     * Sync progress per wallet ("Shielded", "Unshielded", "DUST"), each 0..1, or null before
+     * its total is known. Shown per wallet: one combined figure weights the wallets by block
+     * count, so two finished wallets made the bar look far ahead of a slow DUST sync.
+     */
+    val progress: Map<String, Double?>,
     val dustGeneration: DustGeneration?,
 ) {
     data class DustGeneration(
@@ -37,16 +41,19 @@ data class Balances(
                 o?.keys()?.asSequence()?.associateWith { o.getString(it) } ?: emptyMap()
 
             val sub = json.optJSONObject("subProgress")
-            val parts = listOf("shielded", "unshielded", "dust").mapNotNull { sub?.optJSONObject(it) }
-            val total = parts.sumOf { it.optDouble("total", 0.0) }
-            val applied = parts.sumOf { it.optDouble("applied", 0.0) }
+            val progress = linkedMapOf("Shielded" to "shielded", "Unshielded" to "unshielded", "DUST" to "dust").mapValues { (_, key) ->
+                sub?.optJSONObject(key)?.let { p ->
+                    val total = p.optDouble("total", 0.0)
+                    if (total > 0) (p.optDouble("applied", 0.0) / total).coerceIn(0.0, 1.0) else null
+                }
+            }
             val g = json.optJSONObject("dustGeneration")
             return Balances(
                 shielded = strings(json.optJSONObject("shielded")),
                 unshielded = strings(json.optJSONObject("unshielded")),
                 dust = json.optString("dust", "0"),
                 synced = json.optBoolean("synced"),
-                progress = if (total > 0) applied / total else null,
+                progress = progress,
                 dustGeneration = g?.let {
                     DustGeneration(
                         limit = it.optString("limit", "0"),
