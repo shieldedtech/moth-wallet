@@ -24,7 +24,8 @@ object Bundled {
             assets.open(path).use { input -> dest.outputStream().use { output -> input.copyTo(output) } }
         } else {
             dest.mkdirs()
-            for (child in children) copy(assets, "$path/$child", File(dest, child))
+            // See scripts/bundle-engine.sh: *.gz files are packaged as *.gz.asset.
+            for (child in children) copy(assets, "$path/$child", File(dest, child.removeSuffix(".asset")))
         }
     }
 }
