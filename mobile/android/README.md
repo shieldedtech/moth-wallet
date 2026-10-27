@@ -2,11 +2,12 @@
 
 A minimal Android host for moth's wallet engine: the same engine page as the iOS app
 (`mobile/shared/engine`, unchanged) in a WebView, with the same native Rust prover compiled into
-the app. One wallet on preprod; create, unlock, sync and balances, with the engine's events
-logged on screen. Testnet funds only.
+the app. One wallet on preprod; create or restore, unlock, sync, balances, Send NIGHT and DUST
+registration, with the engine's events logged on screen. Testnet funds only.
 
-Status: a spike. It has Home and Receive (ported from the iOS app) but no Send and no DApp
-connector. See [mobile/ios/README.md](../ios/README.md) for the
+Status: a spike. It has Home, Receive, Send NIGHT and DUST registration and deregistration
+(ported from the iOS app), but no DApp connector. Shielded sends are in the Send screen but
+not tested yet. See [mobile/ios/README.md](../ios/README.md) for the
 app this is a twin of.
 
 ## How it works
@@ -33,9 +34,16 @@ Differences from iOS:
   a document-start script (`Engine.kt`) provides that object, backed by a JavaScript interface.
 - **Keys** are in `Vault.kt`, the Android port of `Vault.swift`: a per-wallet AES-256-GCM
   Keystore key (StrongBox when available) that needs a fingerprint or the device PIN for every
-  use. The wallet locks when the app leaves the foreground. There is no biometric-only option
-  yet, and no per-transaction prompt.
-- **No bundled proving keys.** The prover downloads them on first proof.
+  use. The wallet locks when the app leaves the foreground. Every transaction (send, DUST
+  registration) asks for a fingerprint or the device PIN; on iOS that is an opt-in setting.
+  There is no biometric-only option yet.
+- **No bundled proving keys.** The prover downloads them on first proof. That download needs
+  `Native.initTls` first: the prover's HTTPS client (rustls-platform-verifier) uses Android's
+  certificate verifier and must be given the app context, or the first download panics
+  ("Expect rustls-platform-verifier to be initialized") and sends fail with "Failed to prove
+  transaction". Gradle finds the verifier's Kotlin half (a local Maven repository inside the
+  `rustls-platform-verifier-android` crate) with `cargo metadata`, so `cargo` must be on the
+  PATH for the Gradle build.
 
 ## Build and run
 
@@ -62,6 +70,25 @@ adb logcat -s chromium MothAndroid   # WebView console
 `build-native.sh` pins the `ghcr.io/cross-rs/aarch64-linux-android:main` image: the default
 cross 0.2.5 image ships NDK r21, which cannot link Rust 1.86 Android binaries
 ("cannot find -lunwind").
+
+## Restore and test-build tools
+
+The Welcome screen has "Restore from recovery phrase". Debug builds also have:
+
+- **Start over** (Locked and Logs screens): deletes the wallet, its Keystore key and all app
+  data, and closes the app.
+- **Import sync state synced on a computer**, so a restore skips the scan from genesis. Restore
+  and sync the same phrase with the moth CLI or TUI, stop it, then:
+
+  ```sh
+  scripts/push-sync-state.sh <wallet> [network]   # network defaults to preprod
+  ```
+
+  `MOTH_HOME` (default `~/.moth`) is where the synced state is; `APP_ID` (default
+  `io.shielded.moth`) picks the app, e.g. `APP_ID=io.shielded.moth.fresh` for a build with
+  `-PmothAppSuffix=.fresh`. Then choose Restore in the app and enter the phrase. The app checks
+  the state's address against the phrase, loads it before the first sync and deletes the pushed
+  copy.
 
 ## Measured
 
