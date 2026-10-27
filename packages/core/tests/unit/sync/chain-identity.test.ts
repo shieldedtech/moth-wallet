@@ -9,6 +9,7 @@ import {
   CHAIN_IDENTITY_HEIGHT,
   cacheChainVerdict,
   describeChainVerdict,
+  observeCacheChain,
   readChainIdentity,
   reconcileCacheChain,
   shortHash,
@@ -64,6 +65,37 @@ describe('cacheChainVerdict', () => {
   it('decides nothing when the chain could not be asked', () => {
     expect(cacheChainVerdict(OLD, undefined)).toEqual({kind: 'unknown'});
     expect(cacheChainVerdict(null, undefined)).toEqual({kind: 'unknown'});
+  });
+});
+
+describe('observeCacheChain', () => {
+  let store: InMemorySyncStateStore;
+  const key = chainIdentityKey(NETWORK, WALLET);
+  const observe = (live: string | undefined) => observeCacheChain({store, walletName: WALLET, networkId: NETWORK, live});
+
+  beforeEach(async () => {
+    store = new InMemorySyncStateStore();
+    await store.put(syncStateKey(NETWORK, WALLET, 'dust'), 'dust-state');
+  });
+
+  it('answers replaced and evicts nothing: a running engine cannot drop the state it applies to, its next start can', async () => {
+    await store.put(key, OLD);
+    expect(await observe(NEW)).toEqual({kind: 'replaced', previous: OLD, current: NEW});
+    expect(await store.get(syncStateKey(NETWORK, WALLET, 'dust'))).toBe('dust-state');
+    // The stamp stays the old chain's, so the start that follows finds it and evicts.
+    expect(await store.get(key)).toBe(OLD);
+  });
+
+  it('stamps an unstamped cache, as the start would have', async () => {
+    expect(await observe(NEW)).toEqual({kind: 'stamped', current: NEW});
+    expect(await store.get(key)).toBe(NEW);
+  });
+
+  it('touches nothing on the same chain, or when the chain is unknown', async () => {
+    await store.put(key, OLD);
+    expect(await observe(OLD)).toEqual({kind: 'kept', current: OLD});
+    expect(await observe(undefined)).toEqual({kind: 'unknown'});
+    expect(await store.get(key)).toBe(OLD);
   });
 });
 

@@ -146,9 +146,11 @@ export {
   CHAIN_IDENTITY_HEIGHT,
   cacheChainVerdict,
   describeChainVerdict,
+  observeCacheChain,
   readChainIdentity,
   reconcileCacheChain,
   shortHash,
+  type CacheChainOptions,
   type CacheChainVerdict,
   type ReconcileCacheChainOptions,
 } from './sync/chain-identity.js';

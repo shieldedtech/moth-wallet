@@ -77,6 +77,7 @@ export {
   clearDustSyncCache,
   EMPTY_COINS,
 } from '@shieldedtech/moth-wallet/sync/wallet-sync';
+export { observeCacheChain, readChainIdentity } from '@shieldedtech/moth-wallet/sync/chain-identity';
 export {
   deriveActivity,
   deriveActivityEntry,

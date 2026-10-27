@@ -46,12 +46,30 @@ export function cacheChainVerdict(stored: string | null, live: string | undefine
   return {kind: 'replaced', previous: stored, current: live};
 }
 
-export interface ReconcileCacheChainOptions {
+export interface CacheChainOptions {
   readonly store: SyncStateStore;
   readonly walletName: string;
   readonly networkId: string;
   /** The live chain's identity, or undefined when the indexer could not be asked. */
   readonly live: string | undefined;
+}
+
+/**
+ * Compares the stored chain with the live one and records it: a cache without a stamp gets this
+ * chain's, and nothing is evicted. This is the question a host asks of a running engine — is the
+ * chain under it still the one it started on — therefore it leaves the eviction to the start
+ * (`reconcileCacheChain`): an engine cannot drop the state it is applying events to, but a start
+ * can, so the host's answer to `replaced` is to start the engine again.
+ */
+export async function observeCacheChain(options: CacheChainOptions): Promise<CacheChainVerdict> {
+  const {store, walletName, networkId, live} = options;
+  const key = chainIdentityKey(networkId, walletName);
+  const verdict = cacheChainVerdict(await store.get(key), live);
+  if (verdict.kind === 'stamped') await store.put(key, verdict.current);
+  return verdict;
+}
+
+export interface ReconcileCacheChainOptions extends CacheChainOptions {
   /** Drops everything the old chain left — the caller's, since what that is depends on the host. Runs before the stamp moves. */
   readonly evict: (verdict: CacheChainVerdict & {kind: 'replaced'}) => Promise<void>;
 }
@@ -63,11 +81,11 @@ export interface ReconcileCacheChainOptions {
  * than trusting a half-cleared cache.
  */
 export async function reconcileCacheChain(options: ReconcileCacheChainOptions): Promise<CacheChainVerdict> {
-  const {store, walletName, networkId, live, evict} = options;
-  const key = chainIdentityKey(networkId, walletName);
-  const verdict = cacheChainVerdict(await store.get(key), live);
-  if (verdict.kind === 'replaced') await evict(verdict);
-  if (verdict.kind === 'replaced' || verdict.kind === 'stamped') await store.put(key, verdict.current);
+  const verdict = await observeCacheChain(options);
+  if (verdict.kind === 'replaced') {
+    await options.evict(verdict);
+    await options.store.put(chainIdentityKey(options.networkId, options.walletName), verdict.current);
+  }
   return verdict;
 }
 
