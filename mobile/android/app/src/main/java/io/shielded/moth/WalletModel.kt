@@ -7,10 +7,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+/** One recipient of a send (iOS `Transfer`); [amount] is in base units. */
+data class Transfer(val shielded: Boolean, val tokenId: String, val amount: String, val to: String) {
+    val json get() = JSONObject(mapOf("type" to if (shielded) "shielded" else "unshielded", "tokenId" to tokenId, "amount" to amount, "to" to to))
+}
 
 data class Addresses(val unshielded: String, val shielded: String, val dust: String, val nightTokenId: String)
 
@@ -39,6 +45,8 @@ class WalletModel(private val activity: FragmentActivity) {
     var error by mutableStateOf<String?>(null)
     var busy by mutableStateOf(false)
         private set
+    /** Outcome of a DUST registration or deregistration, shown once. */
+    var notice by mutableStateOf<String?>(null)
     /** Mnemonic shown once after creating a wallet, for backup. */
     var newPhrase by mutableStateOf<String?>(null)
     val log = mutableStateListOf<String>()
@@ -120,6 +128,50 @@ class WalletModel(private val activity: FragmentActivity) {
         }
     }
 
+    /** State pushed from a computer (debug builds), offered on the restore screen. */
+    fun importableState(): StateImport.Found? = StateImport.find(context, network)
+
+    /**
+     * Restores a wallet from its recovery phrase (iOS `WalletModel.restore`). A restored wallet
+     * scans from genesis; with [state], a debug build loads that state instead, once the
+     * phrase is shown to own it.
+     */
+    fun restore(phrase: String, state: StateImport.Found?) {
+        val words = phrase.lowercase().split(Regex("\\s+")).filter { it.isNotEmpty() }.joinToString(" ")
+        busy = true
+        Vault.create(activity, walletName) { r ->
+            r.onSuccess { passphrase ->
+                engine.call("importPhrase", listOf(walletName, words, passphrase, network)) { c ->
+                    busy = false
+                    c.onSuccess {
+                        hasWallet = true
+                        write("restored wallet $walletName" + if (state != null) ", with sync state from a computer" else "")
+                        pendingImport = state
+                        unlockWith(passphrase)
+                    }.onFailure {
+                        Vault.remove(context, walletName)
+                        fail("restore", it)
+                    }
+                }
+            }.onFailure { busy = false; if ((it as? VaultException)?.canceled != true) fail("vault", it) }
+        }
+    }
+
+    private var pendingImport: StateImport.Found? = null
+
+    /**
+     * Test builds only: deletes the wallet, its Keystore key and all app data, so the app opens
+     * on the welcome screen again. Android closes the app.
+     */
+    fun startOver() {
+        if (!BuildConfig.DEBUG) return
+        lock()
+        Vault.remove(context, walletName)
+        legacy.edit().clear().commit()
+        write("starting over")
+        context.getSystemService(android.app.ActivityManager::class.java).clearApplicationUserData()
+    }
+
     fun maybeAutoUnlock() {
         val resumed = activity.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
         if (autoPrompt && phase == Phase.Locked && resumed && !keyguard.isDeviceLocked) {
@@ -168,7 +220,9 @@ class WalletModel(private val activity: FragmentActivity) {
                 phase = Phase.Unlocked
                 write("unlocked")
                 status = "Starting sync…"
-                sync()
+                val state = pendingImport
+                pendingImport = null
+                if (state == null) sync() else importState(state)
             }.onFailure { fail("unlock", it); phase = Phase.Locked }
         }
     }
@@ -182,6 +236,103 @@ class WalletModel(private val activity: FragmentActivity) {
         status = ""
         phase = Phase.Locked
         write("locked")
+    }
+
+    private fun importState(state: StateImport.Found) {
+        // The state holds its wallet's addresses; one from another phrase would show the wrong funds.
+        if (state.unshielded != addresses?.unshielded) {
+            StateImport.discard(context, network)
+            error = "The sync state from the computer belongs to another wallet; syncing from the start instead."
+            write("state import: address mismatch, not loaded")
+            return sync()
+        }
+        status = "Loading sync state…"
+        StateImport.apply(engine, state, walletName, network) { r ->
+            r.onSuccess { write("state import: loaded $it files") }.onFailure { fail("state import", it) }
+            sync()
+        }
+    }
+
+    // Transactions. Unlike iOS, where this is a setting that is off by default, every
+    // transaction asks for the fingerprint or device PIN: the unlocked session alone is not enough.
+
+    /** Converts a NIGHT amount ("1.5") to STAR with the engine's parser. */
+    fun parseNight(text: String, callback: (Result<String>) -> Unit) =
+        engine.call("parseNight", listOf(text.trim())) { r -> callback(r.map { it.toString() }) }
+
+    /** The DUST fee for sending [transfers] in one transaction, in SPECK. */
+    fun estimateFee(transfers: List<Transfer>, callback: (Result<String>) -> Unit) {
+        busy = true
+        engine.call("estimateFee", listOf(walletName, network, JSONArray(transfers.map { it.json }))) { r ->
+            busy = false
+            callback(r.mapCatching { (it as JSONObject).getString("fee") })
+        }
+    }
+
+    /** Sends all [transfers] in one transaction and returns its hash. */
+    fun send(transfers: List<Transfer>, callback: (Result<String>) -> Unit) = authorized("Approve this send", callback) {
+        engine.call("send", listOf(walletName, network, JSONArray(transfers.map { it.json }))) { r ->
+            busy = false
+            r.onSuccess { write("sent $it") }.onFailure { write("send failed: ${it.message}") }
+            callback(r.mapCatching { (it as JSONObject).getString("txHash") })
+        }
+    }
+
+    /** Registers this wallet's NIGHT so it generates DUST for this wallet. */
+    fun registerDust() = authorized("Approve DUST registration", ::reportTx) {
+        engine.call("registerDust", listOf(walletName, network)) { r ->
+            busy = false
+            reportTx(r.mapCatching { describeRegistration(it as JSONObject) })
+        }
+    }
+
+    fun deregisterDust() = authorized("Approve DUST deregistration", ::reportTx) {
+        engine.call("deregisterDust", listOf(walletName, network)) { r ->
+            busy = false
+            reportTx(r.mapCatching {
+                "Deregistration submitted (${(it as JSONObject).getString("txHash").take(12)}…). This NIGHT stops generating DUST once it is on chain."
+            })
+        }
+    }
+
+    /** True while a transaction prompt is up; the device-PIN screen stops the activity, which must not lock. */
+    var authorizing = false
+        private set
+
+    private fun authorized(reason: String, onFail: (Result<String>) -> Unit, work: () -> Unit) {
+        busy = true
+        authorizing = true
+        Vault.confirmPresence(activity, reason) { r ->
+            authorizing = false
+            r.onSuccess { work() }.onFailure {
+                busy = false
+                if ((it as? VaultException)?.canceled != true) onFail(Result.failure(it))
+            }
+        }
+    }
+
+    private fun reportTx(r: Result<String>) {
+        r.onSuccess { write("dust: $it"); notice = it }.onFailure { fail("dust", it) }
+    }
+
+    /** Port of iOS `WalletModel.describe(_:nightHeld:)`. */
+    private fun describeRegistration(r: JSONObject): String {
+        r.optString("txHash").takeIf { it.isNotEmpty() && !r.isNull("txHash") }?.let {
+            return "DUST registration submitted (${it.take(12)}…). DUST starts accruing once it is on chain."
+        }
+        val wait = r.optJSONObject("notYet")
+        if (wait == null) {
+            val held = addresses?.let { balances?.unshielded?.get(it.nightTokenId) }.let { it != null && it != "0" }
+            return if (held) "All of this account's NIGHT is already registered for DUST." else "This account has no NIGHT to register."
+        }
+        val need = Amount.format(wait.getString("feeSpecks"), Amount.DUST_DECIMALS, 6)
+        val have = Amount.format(wait.getString("availableSpecks"), Amount.DUST_DECIMALS, 6)
+        if (wait.isNull("secondsUntilAffordable")) {
+            return "Registering costs $need DUST, more than this NIGHT can ever generate. Hold more NIGHT and try again."
+        }
+        val eta = android.text.format.DateUtils.formatElapsedTime(wait.getDouble("secondsUntilAffordable").toLong())
+        return "Registration pays its own fee from the DUST this NIGHT has generated since it arrived. " +
+            "It needs $need DUST and has $have so far, about $eta (h:mm:ss) to go. Nothing was spent; try again then."
     }
 
     private var syncStartedAt = 0L

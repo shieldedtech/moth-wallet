@@ -43,6 +43,8 @@ class Engine(context: Context, private val onEvent: (event: String, data: Any?) 
         webView.settings.domStorageEnabled = true
         webView.settings.databaseEnabled = true
         webView.addJavascriptInterface(Bridge(), "MothAndroid")
+        // Interfaces only appear on the next page load, so the debug one is added up front.
+        if (BuildConfig.DEBUG) webView.addJavascriptInterface(DebugFiles(), "MothDebugFiles")
         webView.webChromeClient = object : WebChromeClient() {
             override fun onConsoleMessage(m: ConsoleMessage): Boolean {
                 Log.i("MothEngine", "${m.messageLevel()} ${m.sourceId().substringAfterLast('/')}:${m.lineNumber()} ${m.message()}")
@@ -59,9 +61,20 @@ class Engine(context: Context, private val onEvent: (event: String, data: Any?) 
     }
 
     /** Calls `window.moth[function](...args)`; [function] may be dotted. The callback runs on the main thread. */
-    fun call(function: String, args: List<Any?> = emptyList(), callback: (Result<Any?>) -> Unit) {
+    fun call(function: String, args: List<Any?> = emptyList(), callback: (Result<Any?>) -> Unit) = run(
+        """
+            const keys = ${JSONObject.quote(function)}.split('.');
+            let target = window.moth;
+            for (const k of keys.slice(0, -1)) target = target[k];
+            return await target[keys.at(-1)](...${JSONArray(args)});
+        """.trimIndent(),
+        callback,
+    )
+
+    /** Runs [body] as an async function in the engine page and returns its result. */
+    fun run(body: String, callback: (Result<Any?>) -> Unit) {
         if (!ready) {
-            whenReady.add { call(function, args, callback) }
+            whenReady.add { run(body, callback) }
             return
         }
         val id = nextId++
@@ -70,10 +83,9 @@ class Engine(context: Context, private val onEvent: (event: String, data: Any?) 
             (async () => {
               let r;
               try {
-                const keys = ${JSONObject.quote(function)}.split('.');
-                let target = window.moth;
-                for (const k of keys.slice(0, -1)) target = target[k];
-                const v = await target[keys.at(-1)](...${JSONArray(args)});
+                const v = await (async () => {
+                  $body
+                })();
                 r = { ok: true, value: v === undefined ? null : v };
               } catch (e) {
                 r = { ok: false, error: String((e && e.message) || e) };
@@ -82,6 +94,17 @@ class Engine(context: Context, private val onEvent: (event: String, data: Any?) 
             })();
         """.trimIndent()
         webView.evaluateJavascript(script, null)
+    }
+
+    /** Files a debug build offers the page by key; see [StateImport]. Empty unless an import runs. */
+    val debugFiles = java.util.concurrent.ConcurrentHashMap<String, java.io.File>()
+
+    private inner class DebugFiles {
+        @JavascriptInterface
+        fun keys(): String = JSONArray(debugFiles.keys.toList()).toString()
+
+        @JavascriptInterface
+        fun read(key: String): String? = debugFiles[key]?.readText()
     }
 
     private inner class Bridge {

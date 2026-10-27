@@ -25,6 +25,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -52,6 +53,7 @@ import java.io.File
 class MainActivity : FragmentActivity() {
     private lateinit var model: WalletModel
     private var screen by mutableStateOf("home")
+    private var confirmStartOver by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -83,18 +85,25 @@ class MainActivity : FragmentActivity() {
     @Composable
     private fun App() {
         when (model.phase) {
-            WalletModel.Phase.NoWallet -> Welcome()
+            WalletModel.Phase.NoWallet -> if (screen == "restore") {
+                BackHandler { screen = "home" }
+                RestoreScreen(model) { screen = "home" }
+            } else Welcome()
             WalletModel.Phase.Locked, WalletModel.Phase.Unlocking -> Locked()
             else -> when (screen) {
                 "receive" -> {
                     BackHandler { screen = "home" }
                     ReceiveScreen(model) { screen = "home" }
                 }
+                "send" -> {
+                    BackHandler { screen = "home" }
+                    SendScreen(model) { screen = "home" }
+                }
                 "logs" -> {
                     BackHandler { screen = "home" }
                     LogsScreen { screen = "home" }
                 }
-                else -> HomeScreen(model, onReceive = { screen = "receive" }, onLogs = { screen = "logs" })
+                else -> HomeScreen(model, onReceive = { screen = "receive" }, onSend = { screen = "send" }, onLogs = { screen = "logs" })
             }
         }
         model.newPhrase?.let { phrase ->
@@ -108,6 +117,23 @@ class MainActivity : FragmentActivity() {
                     }
                 },
                 confirmButton = { TextButton(onClick = { model.newPhrase = null }) { Text("I've written it down") } },
+            )
+        }
+        if (confirmStartOver) {
+            AlertDialog(
+                onDismissRequest = { confirmStartOver = false },
+                title = { Text("Start over?") },
+                text = { Text("This deletes the wallet, its key and all app data from this phone, and closes Moth. You can only get the wallet back from its recovery phrase.") },
+                confirmButton = { TextButton(onClick = { confirmStartOver = false; model.startOver() }) { Text("Delete and start over", color = MaterialTheme.colorScheme.error) } },
+                dismissButton = { TextButton(onClick = { confirmStartOver = false }) { Text("Cancel") } },
+            )
+        }
+        model.notice?.let { message ->
+            AlertDialog(
+                onDismissRequest = { model.notice = null },
+                title = { Text("DUST") },
+                text = { Text(message) },
+                confirmButton = { TextButton(onClick = { model.notice = null }) { Text("OK") } },
             )
         }
         model.error?.let { message ->
@@ -131,7 +157,10 @@ class MainActivity : FragmentActivity() {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 if (model.busy) CircularProgressIndicator(Modifier.size(28.dp))
-                else PrimaryButton("Create wallet", Modifier.fillMaxWidth()) { model.create() }
+                else {
+                    PrimaryButton("Create wallet", Modifier.fillMaxWidth()) { model.create() }
+                    OutlinedButton(onClick = { screen = "restore" }, Modifier.fillMaxWidth()) { Text("Restore from recovery phrase") }
+                }
             }
         }
     }
@@ -145,6 +174,7 @@ class MainActivity : FragmentActivity() {
                 Text("${model.walletName} · ${model.network}", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (model.phase == WalletModel.Phase.Unlocking) CircularProgressIndicator(Modifier.size(28.dp))
                 else PrimaryButton("Unlock", Modifier.fillMaxWidth()) { model.unlock() }
+                if (BuildConfig.DEBUG) TextButton(onClick = { confirmStartOver = true }) { Text("Start over (test builds)") }
             }
         }
     }
@@ -163,7 +193,7 @@ class MainActivity : FragmentActivity() {
         super.onStop()
         // The device-PIN screen also stops this activity mid-unlock; lock() ignores that.
         if (model.phase == WalletModel.Phase.Unlocked || model.phase == WalletModel.Phase.Locked) model.autoPrompt = true
-        model.lock()
+        if (!model.authorizing) model.lock()
     }
 
     @OptIn(ExperimentalMaterial3Api::class)
@@ -172,7 +202,11 @@ class MainActivity : FragmentActivity() {
         val state = rememberLazyListState()
         LaunchedEffect(model.log.size) { if (model.log.isNotEmpty()) state.scrollToItem(model.log.size - 1) }
         Scaffold(topBar = {
-            TopAppBar(title = { Text("Logs") }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } })
+            TopAppBar(
+                title = { Text("Logs") },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
+                actions = { if (BuildConfig.DEBUG) TextButton(onClick = { confirmStartOver = true }) { Text("Start over") } },
+            )
         }) { padding ->
             SelectionContainer {
                 LazyColumn(Modifier.fillMaxSize().padding(padding).padding(horizontal = 12.dp), state = state) {
@@ -193,6 +227,7 @@ class MainActivity : FragmentActivity() {
         when (intent?.getStringExtra("action")) {
             "create" -> model.create()
             "unlock" -> model.unlock()
+            "restore" -> screen = "restore"
             "lock" -> model.lock()
             "sync" -> model.sync()
             "balances" -> model.refreshBalances()

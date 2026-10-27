@@ -120,6 +120,16 @@ object Vault {
         done(Result.failure(VaultException("This phone's Keystore supports none of Moth's key modes.")))
     }
 
+    /** Asks for a fingerprint or the device PIN before a transaction (iOS `Vault.confirmPresence`). */
+    fun confirmPresence(activity: FragmentActivity, reason: String, callback: (Result<Unit>) -> Unit) =
+        prompt(activity, reason, Mode.TimedBiometricOrPin, null) { r -> callback(r.map {}) }
+
+    /** Deletes [wallet]'s key and ciphertext (iOS `Vault.remove`). */
+    fun remove(context: Context, wallet: String) {
+        prefs(context).edit().remove(wallet).commit()
+        keyStore().deleteEntry(alias(wallet))
+    }
+
     /** Reads [wallet]'s passphrase, asking for a fingerprint or the device PIN. */
     fun passphrase(activity: FragmentActivity, wallet: String, reason: String, callback: (Result<String>) -> Unit) {
         val blob = prefs(activity).getString(wallet, null)
