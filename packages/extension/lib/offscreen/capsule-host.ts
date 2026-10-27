@@ -56,7 +56,7 @@ import type {
   CapsuleRenderedArgument,
   CapsuleSiteGrantsDTO,
 } from '../capsule/protocol';
-import { healthTracked } from './capsule-wallet-port';
+import { healthTracked, liveWalletPort } from './capsule-wallet-port';
 import type { SubmissionSettled, SubmittedTx } from './submissions';
 import type { HostEventData } from './worker-rpc';
 
@@ -162,16 +162,26 @@ function proofServerUrlFor(network: NetworkConfig): string {
   return prover.url;
 }
 
-/** The seed's wallet, clients, database and account book, opened on first use; the sync engine already runs the wallet. */
+/**
+ * The seed's wallet, clients, database and account book, opened on first use. The sync engine is
+ * the host's and runs under the panel too, so the wallet port finds the host's live session at
+ * every use rather than keeping the one running now; nothing opened here needs the wallet synced,
+ * the port waits for that when a transaction is balanced.
+ */
 async function seedOf(host: Host, account: CapsuleAccount): Promise<Seed> {
   const key = `${account.network.id}/${account.walletName}`;
   let pending = seeds.get(key);
   if (pending !== undefined) return pending;
   pending = (async (): Promise<Seed> => {
-    const synced = await host.syncEnsure(account.seedHex, account.walletName, account.network);
-    const sdkWallet = SdkWallet.overFacade(account.seedHex, synced.facade, account.network.id);
-    await sdkWallet.waitUntilSettled(SYNC_WAIT_MS);
-    const wallet = healthTracked(sdkWallet, { network: account.network, walletName: account.walletName });
+    await host.syncEnsure(account.seedHex, account.walletName, account.network);
+    const wallet = healthTracked(
+      liveWalletPort({
+        session: () => host.syncEnsure(account.seedHex, account.walletName, account.network),
+        over: (facade) => SdkWallet.overFacade(account.seedHex, facade, account.network.id),
+        syncWaitMs: SYNC_WAIT_MS,
+      }),
+      { network: account.network, walletName: account.walletName },
+    );
     const chain = new IndexerClient({ url: account.network.indexerUrl });
     const registry = new HttpRegistryClient({ url: registryUrlFor(account.network) });
     const resolver = new ExecutableResolver(registry, requireExecutor(), chain);
