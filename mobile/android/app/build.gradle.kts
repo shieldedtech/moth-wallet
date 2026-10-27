@@ -51,4 +51,5 @@ dependencies {
     implementation("androidx.fragment:fragment-ktx:1.8.5")
     // QR codes for Receive (the iOS app uses CoreImage's generator).
     implementation("com.google.zxing:core:3.5.3")
+    implementation("rustls:rustls-platform-verifier:0.1.1")
 }

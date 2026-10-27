@@ -12,6 +12,9 @@ crate-type = ["cdylib"]
 [dependencies]
 moth-native = { path = "../../shared/native" }
 jni = "0.21"
+# The prover downloads proving keys over HTTPS (reqwest + rustls-platform-verifier), which on
+# Android checks certificates through the system's verifier and must be given the app context.
+rustls-platform-verifier = "0.6"
 
 [profile.release]
 lto = "thin"

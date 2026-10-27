@@ -62,6 +62,7 @@ class MainActivity : FragmentActivity() {
 
         val engineDir = Bundled.extract(this, "engine")
         val params = File(filesDir, "zk-params").apply { mkdirs() }
+        check(Native.initTls(applicationContext)) { "could not set up TLS for the prover" }
         val proverPort = Native.proverStart(params.path, 6300, 2)
         val enginePort = Native.staticStart(engineDir.path, 8765)
         model.write("prover on 127.0.0.1:$proverPort, engine page on 127.0.0.1:$enginePort")

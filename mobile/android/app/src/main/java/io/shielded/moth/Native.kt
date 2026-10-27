@@ -6,6 +6,9 @@ object Native {
         System.loadLibrary("moth_android")
     }
 
+    /** Gives the prover's TLS (rustls-platform-verifier) the app context, for downloading proving keys. Call before [proverStart]. */
+    external fun initTls(context: android.content.Context): Boolean
+
     /** Starts the proof server on 127.0.0.1:[port]. Keys missing from [paramsDir] are downloaded there. Returns the port, or -1. */
     external fun proverStart(paramsDir: String, port: Int, workers: Int): Int
 
