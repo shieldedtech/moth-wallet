@@ -31,7 +31,7 @@ python3 -I -m http.server 5175 --bind 127.0.0.1 --directory MothUITests/Fixtures
 FIXTURES=$!
 
 # Answer Face ID prompts for as long as the tests run. A test picks the answer by writing
-# match, nomatch or off to $CONTROL/faceid (see FaceID in MothUITests); the default is match.
+# match or nomatch to $CONTROL/faceid (see FaceID in MothUITests); the default is match.
 CONTROL=$(mktemp -d)
 export TEST_RUNNER_MOTH_CONTROL=$CONTROL
 ( while true; do
@@ -47,11 +47,21 @@ trap 'kill $MATCHER $SERVER $FIXTURES 2>/dev/null; rm -rf "$CONTROL"' EXIT
 DEST="platform=iOS Simulator,id=$SIM"
 xcodebuild build-for-testing -project Moth.xcodeproj -scheme Moth -configuration Debug -destination "$DEST" -derivedDataPath build/DerivedData
 # Each class starts from a fresh install, so none depends on another's wallet.
-for class in ${TESTS:-OnboardingTests AccountsTests ConnectorTests FeaturesTests SecurityTests FaceIDFailureTests ConnectorRejectTests LifecycleTests IsolationTests}; do
+for class in ${TESTS:-OnboardingTests AccountsTests ConnectorTests FeaturesTests SecurityTests FaceIDFailureTests ConnectorRejectTests LifecycleTests SyncInterruptTests IsolationTests RecoveryPhraseLeakTests}; do
   rm -f "$CONTROL/faceid"
   xcrun simctl uninstall "$SIM" bob.shielded.moth 2>/dev/null || true
   # Keychain items outlive an uninstall, and Moth never reuses a name that has one.
   xcrun simctl keychain "$SIM" reset
+  start=$(date '+%Y-%m-%d %H:%M:%S')
   xcodebuild test-without-building -project Moth.xcodeproj -scheme Moth -configuration Debug -destination "$DEST" \
     -derivedDataPath build/DerivedData -only-testing:"MothUITests/$class"
+  # A test that saved the phrase asks for the logs and the app's files to be searched for it.
+  # XCTest logs the text it types, so its own subsystem is left out.
+  if [ -f "$CONTROL/phrase" ]; then
+    xcrun simctl spawn "$SIM" log show --start "$start" --info --debug --style compact \
+      --predicate 'subsystem != "com.apple.dt.xctest" AND process != "testmanagerd"' > "$CONTROL/syslog"
+    python3 -I scripts/phrase-scan.py "$CONTROL/phrase" "$CONTROL/syslog" \
+      "$(xcrun simctl get_app_container "$SIM" bob.shielded.moth data)" || { rm -f "$CONTROL/phrase" "$CONTROL/syslog"; exit 1; }
+    rm -f "$CONTROL/phrase" "$CONTROL/syslog"
+  fi
 done

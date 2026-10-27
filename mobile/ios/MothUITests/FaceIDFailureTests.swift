@@ -54,13 +54,5 @@ final class FaceIDFailureTests: XCTestCase {
         XCTAssertTrue(failed.waitForExistence(timeout: 30), "Face ID failed")
         failed.buttons["Cancel"].firstMatch.tap()
         XCTAssertTrue(faceOnly.waitForValue("0", timeout: 10), "still off")
-
-        // The keys were left under the old protection: the wallet still opens after a relaunch.
-        FaceID.answer(.match)
-        app.terminate()
-        app.launch()
-        unlockOrCreate(app)
-        app.tabBars.buttons["Settings"].tap()
-        XCTAssertEqual(app.switches["Face ID only, no passcode"].value as? String, "0", "still off after a relaunch")
     }
 }

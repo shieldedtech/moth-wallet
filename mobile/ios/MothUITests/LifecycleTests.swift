@@ -1,6 +1,6 @@
 import XCTest
 
-/// Locking on background and on idle, and surviving a kill in the middle of sync.
+/// Locking on background and on idle.
 final class LifecycleTests: XCTestCase {
     override func setUp() {
         continueAfterFailure = false
@@ -32,19 +32,5 @@ final class LifecycleTests: XCTestCase {
         let started = Date()
         XCTAssertTrue(app.staticTexts["Moth is locked"].waitForExistence(timeout: 150), "auto-locked when idle")
         XCTAssertGreaterThan(Date().timeIntervalSince(started), 50, "not before the minute was up")
-    }
-
-    func testKilledMidSyncRecovers() {
-        let app = XCUIApplication()
-        app.launch()
-        unlockOrCreate(app)
-        // Sync starts on unlock; kill the app while it runs.
-        Thread.sleep(forTimeInterval: 5)
-        app.terminate()
-
-        app.launch()
-        unlockOrCreate(app)
-        app.buttons["Generate DUST from NIGHT"].tap()
-        XCTAssertTrue(app.buttons["Register NIGHT for DUST"].waitForEnabled(timeout: 180), "synced after relaunch")
     }
 }
