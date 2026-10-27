@@ -1827,7 +1827,7 @@
     "message": "Ce compte n’a encore abouti aucun appel de contrat."
   },
   "capsule_setAside": {
-    "message": "$1 capsule(s) d'une autre chaîne (genèse $2…) ont été mises de côté à l'ouverture de ce compte sur la chaîne actuelle."
+    "message": "$1 capsule(s) d'une autre chaîne ($2…) ont été mises de côté à l'ouverture de ce compte sur la chaîne actuelle."
   },
   "capsule_foldedCount": {
     "message": "$1 transaction(s) intégrée(s)"

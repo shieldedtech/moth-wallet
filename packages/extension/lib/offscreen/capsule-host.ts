@@ -505,6 +505,6 @@ export async function list(host: Host, data: CapsuleAccount): Promise<CapsuleIns
     })),
     ...(setAside === undefined
       ? {}
-      : { setAside: { genesis: setAside.genesis, capsules: setAside.capsules, pending: setAside.pending } }),
+      : { setAside: { chain: setAside.chain, capsules: setAside.capsules, pending: setAside.pending } }),
   };
 }

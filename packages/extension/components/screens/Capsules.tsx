@@ -76,7 +76,7 @@ export function Capsules({ onBack }: { onBack: () => void }) {
       {error && <p className="m-0 text-[13px] text-destructive">{t('capsule_inspectorError', [error])}</p>}
       {view?.setAside && (
         <p className="m-0 text-[13px] text-muted-foreground">
-          {t('capsule_setAside', [String(view.setAside.capsules), view.setAside.genesis.slice(0, 12)])}
+          {t('capsule_setAside', [String(view.setAside.capsules), view.setAside.chain.slice(0, 12)])}
         </p>
       )}
       {view && view.capsules.length === 0 && (
