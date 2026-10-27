@@ -1868,9 +1868,6 @@
   "capsule_accountsNumber": {
     "message": "Compte $1"
   },
-  "capsule_inspectorLive": {
-    "message": "Relu quand une transaction est réglée, et toutes les $1 s : l'état public bouge avec les transactions de tous."
-  },
   "capsule_detailJustChanged": {
     "message": "modifié"
   },

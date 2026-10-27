@@ -1868,9 +1868,6 @@
   "capsule_accountsNumber": {
     "message": "Konto $1"
   },
-  "capsule_inspectorLive": {
-    "message": "Wird neu gelesen, wenn eine Transaktion abgeschlossen ist, und alle $1 s: der öffentliche Zustand bewegt sich mit den Transaktionen aller."
-  },
   "capsule_detailJustChanged": {
     "message": "geändert"
   },
