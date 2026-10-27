@@ -1,7 +1,8 @@
 // The capsule runtime's wallet port over moth's synced wallet: `liveWalletPort` finds the session
-// the host runs now at every use, and `healthTracked` counts each submission toward the Dust-ledger
+// the host runs now at every use, `healthTracked` counts each submission toward the Dust-ledger
 // health diagnosis as every fee-paying submission of this wallet is, so a capsule transaction's
-// rejection and a transfer's on the same seed count toward one streak.
+// rejection and a transfer's on the same seed count toward one streak, and `opTracked` counts a
+// transaction's balancing and submission as work in flight, as a transfer's is.
 import { WalletPortError, isWalletPortError, type WalletPort } from '@shieldedtech/capsule-core';
 import { submitWithHealthTracking, type SubmitHealthContext } from '@shieldedtech/moth-browser';
 
@@ -63,5 +64,20 @@ export function healthTracked(wallet: WalletPort, context: SubmitHealthContext):
       submitWithHealthTracking(() => wallet.submit(tx), context).catch((error: unknown) => {
         throw isWalletPortError(error) ? error : new WalletPortError('submission', error);
       }),
+  };
+}
+
+/**
+ * The host holds the sync engine still while transaction work is in flight (a Dust rebuild is
+ * refused under a balancing mid-proof), but it counts only the ops that run through it, and a
+ * capsule transaction is balanced and submitted here, therefore the port reports its own:
+ * `finalize` and `submit`, the two that build on the engine's state; the key reads touch nothing.
+ */
+export function opTracked(wallet: WalletPort, track: <T>(run: () => Promise<T>) => Promise<T>): WalletPort {
+  return {
+    coinPublicKey: () => wallet.coinPublicKey(),
+    encryptionPublicKey: () => wallet.encryptionPublicKey(),
+    finalize: (tx, ttl) => track(() => wallet.finalize(tx, ttl)),
+    submit: (tx) => track(() => wallet.submit(tx)),
   };
 }

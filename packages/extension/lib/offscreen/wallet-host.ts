@@ -427,10 +427,11 @@ let dustRebuildInFlight = false;
 
 // Transaction work in flight (building/proving/balancing/submitting). The
 // rebuild restarts the sync engine, which must NEVER happen underneath one of
-// these — a dApp approval's fee balancing can be mid-proof.
+// these — a dApp approval's fee balancing can be mid-proof. Exported for the
+// capsule host, whose transactions are balanced and submitted outside this file.
 let inFlightOps = 0;
 
-async function trackOp<T>(run: () => Promise<T>): Promise<T> {
+export async function trackOp<T>(run: () => Promise<T>): Promise<T> {
   inFlightOps += 1;
   try {
     return await run();

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { dustSpendHealthTracker } from '@shieldedtech/moth-browser';
 import { WalletPortError, isWalletPortError, type WalletPort } from '@shieldedtech/capsule-core';
-import { healthTracked, liveWalletPort, type SessionWallet } from '../lib/offscreen/capsule-wallet-port';
+import { healthTracked, liveWalletPort, opTracked, type SessionWallet } from '../lib/offscreen/capsule-wallet-port';
 
 // The capsule runtime submits through the same health bookkeeping as a transfer: a capsule
 // transaction's InvalidDustSpendProof rejection advances the wallet's streak, and a success
@@ -152,5 +152,73 @@ describe('the port over the host\'s live session', () => {
       syncWaitMs: 1,
     });
     await expect(unsynced.finalize({} as never, new Date())).rejects.toThrow('did not sync');
+  });
+});
+
+// A capsule transaction is balanced and submitted outside the host's own ops, so the port reports
+// the two steps that build on the engine's state as work in flight; a read of the keys is not work.
+describe('opTracked', () => {
+  it('runs finalize and submit inside the host\'s tracking, and the key reads outside it', async () => {
+    let depth = 0;
+    const seen: number[] = [];
+    const track = async <T,>(run: () => Promise<T>): Promise<T> => {
+      depth += 1;
+      try {
+        return await run();
+      } finally {
+        depth -= 1;
+      }
+    };
+    const port = opTracked(
+      {
+        coinPublicKey: async () => {
+          seen.push(depth);
+          return 'cpk';
+        },
+        encryptionPublicKey: async () => {
+          seen.push(depth);
+          return 'epk';
+        },
+        finalize: async () => {
+          seen.push(depth);
+          return 'finalized' as never;
+        },
+        submit: async () => {
+          seen.push(depth);
+          return 'tx-1';
+        },
+      },
+      track,
+    );
+    expect(await port.coinPublicKey()).toBe('cpk');
+    expect(await port.encryptionPublicKey()).toBe('epk');
+    expect(await port.finalize({} as never, new Date(0))).toBe('finalized');
+    expect(await port.submit({} as never)).toBe('tx-1');
+    expect(seen).toEqual([0, 0, 1, 1]);
+    expect(depth).toBe(0);
+  });
+
+  it('lets go of the tracking when the step fails, so a refused transaction holds nothing in flight', async () => {
+    let depth = 0;
+    const track = async <T,>(run: () => Promise<T>): Promise<T> => {
+      depth += 1;
+      try {
+        return await run();
+      } finally {
+        depth -= 1;
+      }
+    };
+    const port = opTracked(
+      {
+        coinPublicKey: async () => 'cpk',
+        encryptionPublicKey: async () => 'epk',
+        finalize: () => Promise.reject(new Error('not synced')),
+        submit: () => Promise.reject(new Error('refused')),
+      },
+      track,
+    );
+    await expect(port.finalize({} as never, new Date(0))).rejects.toThrow('not synced');
+    await expect(port.submit({} as never)).rejects.toThrow('refused');
+    expect(depth).toBe(0);
   });
 });

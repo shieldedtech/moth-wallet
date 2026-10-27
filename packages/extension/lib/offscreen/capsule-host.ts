@@ -57,7 +57,7 @@ import type {
   CapsuleRenderedArgument,
   CapsuleSiteGrantsDTO,
 } from '../capsule/protocol';
-import { healthTracked, liveWalletPort } from './capsule-wallet-port';
+import { healthTracked, liveWalletPort, opTracked } from './capsule-wallet-port';
 import type { SubmissionSettled, SubmittedTx } from './submissions';
 import type { HostEventData } from './worker-rpc';
 
@@ -178,13 +178,16 @@ async function seedOf(host: Host, account: CapsuleAccount): Promise<Seed> {
   if (pending !== undefined) return pending;
   pending = (async (): Promise<Seed> => {
     await host.syncEnsure(account.seedHex, account.walletName, account.network);
-    const wallet = healthTracked(
-      liveWalletPort({
-        session: () => host.syncEnsure(account.seedHex, account.walletName, account.network),
-        over: (facade) => SdkWallet.overFacade(account.seedHex, facade, account.network.id),
-        syncWaitMs: SYNC_WAIT_MS,
-      }),
-      { network: account.network, walletName: account.walletName },
+    const wallet = opTracked(
+      healthTracked(
+        liveWalletPort({
+          session: () => host.syncEnsure(account.seedHex, account.walletName, account.network),
+          over: (facade) => SdkWallet.overFacade(account.seedHex, facade, account.network.id),
+          syncWaitMs: SYNC_WAIT_MS,
+        }),
+        { network: account.network, walletName: account.walletName },
+      ),
+      host.trackOp,
     );
     const chain = new IndexerClient({ url: account.network.indexerUrl });
     const registry = new HttpRegistryClient({ url: registryUrlFor(account.network) });
