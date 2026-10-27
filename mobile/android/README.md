@@ -1,7 +1,7 @@
 # Moth for Android (spike)
 
 A minimal Android host for moth's wallet engine: the same engine page as the iOS app
-(`mobile/ios/engine`, unchanged) in a WebView, with the same native Rust prover compiled into
+(`mobile/shared/engine`, unchanged) in a WebView, with the same native Rust prover compiled into
 the app. One wallet on preprod; create, unlock, sync and balances, with the engine's events
 logged on screen. Testnet funds only.
 
@@ -15,13 +15,13 @@ app this is a twin of.
 MainActivity (Kotlin)              buttons + log
    │  evaluateJavascript → window.moth.*       ▲ MothAndroid.event(): balances, sync, errors
    ▼                                           │
-engine page (mobile/ios/engine)   served by the in-app static server at http://127.0.0.1:8765
+engine page (mobile/shared/engine) served by the in-app static server at http://127.0.0.1:8765
    │  postMessage os/* RPC
    ▼
 moth wallet worker                packages/extension/lib/offscreen/wallet-worker.ts, unmodified
    │  HTTP to 127.0.0.1:6300
    ▼
-native prover (native/)           moth-native (mobile/ios/native) via JNI; ledger 8.1.3 proof server
+native prover (native/)           moth-native (mobile/shared/native) via JNI; ledger 8.1.3 proof server
 ```
 
 Differences from iOS:
@@ -41,10 +41,10 @@ Differences from iOS:
 
 Prerequisites:
 
-- `yarn install && yarn build` at the repo root, then `mobile/ios/scripts/build-engine.sh`
+- `yarn install && yarn build` at the repo root, then `mobile/shared/scripts/build-engine.sh`
   (patched ledger WASM by default; see "DUST restore time" in the iOS README). Without a local
   wasm32 clang, build the ledger in Docker: `rust:1.90-bookworm` plus `apt install clang llvm`
-  and wasm-pack, then `LLVM_BIN=/usr/bin scripts/build-ledger-wasm.sh`. ledger-8.1.0 needs
+  and wasm-pack, then `LLVM_BIN=/usr/bin mobile/shared/scripts/build-ledger-wasm.sh`. ledger-8.1.0 needs
   Rust 1.89 or later (konst 0.4.3).
 - Rust with the `aarch64-linux-android` target, `cargo install cross`, Docker
 - Android SDK (platform 34, build-tools 34.0.0) and Gradle 8.9+, Java 17+
@@ -53,7 +53,7 @@ Prerequisites:
 ```sh
 cd mobile/android
 scripts/build-native.sh          # native/ → app/src/main/jniLibs/arm64-v8a/libmoth_android.so
-scripts/bundle-engine.sh         # mobile/ios/engine/dist → app/src/main/assets/engine
+scripts/bundle-engine.sh         # mobile/shared/engine/dist → app/src/main/assets/engine
 ANDROID_HOME=~/Android/Sdk gradle assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb logcat -s chromium MothAndroid   # WebView console

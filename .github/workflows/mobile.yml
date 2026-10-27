@@ -45,8 +45,8 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
-      # The Android app reuses the iOS engine page, the native prover and the ledger WASM
-      # build, so those paths are shared, like the packages the engine is built from.
+      # Both apps are built from mobile/shared (engine page, native prover, ledger WASM build)
+      # and the packages the engine is built from, so a change there builds both.
       # A manual run, or a push whose base commit is unknown, builds both.
       - name: Classify changed files
         id: filter
@@ -62,10 +62,7 @@ jobs:
             while IFS= read -r f; do
               case "$f" in
                 mobile/android/*) android=true ;;
-                mobile/ios/engine/* | mobile/ios/native/* | mobile/ios/proof-server/* | \
-                mobile/ios/scripts/build-engine.sh | mobile/ios/scripts/build-ledger-wasm.sh | \
-                mobile/ios/scripts/ledger-irloader-rc.patch | \
-                packages/core/* | packages/browser/* | packages/extension/lib/* | \
+                mobile/shared/* | packages/core/*| packages/browser/* | packages/extension/lib/* | \
                 packages/extension/public/preseed/* | .github/workflows/mobile.yml)
                   ios=true android=true ;;
                 mobile/ios/*) ios=true ;;
@@ -119,8 +116,8 @@ jobs:
         id: ledger-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: mobile/ios/vendor/ledger-v8
-          key: ledger-v8-${{ hashFiles('mobile/ios/scripts/build-ledger-wasm.sh', 'mobile/ios/scripts/ledger-irloader-rc.patch', 'yarn.lock') }}
+          path: mobile/shared/vendor/ledger-v8
+          key: ledger-v8-${{ hashFiles('mobile/shared/scripts/build-ledger-wasm.sh', 'mobile/shared/scripts/ledger-irloader-rc.patch', 'yarn.lock') }}
 
       # Apple's clang cannot target wasm32, which the ledger's C dependencies need.
       - name: Install ledger toolchain
@@ -129,21 +126,21 @@ jobs:
 
       - name: Build patched ledger WASM
         if: steps.ledger-cache.outputs.cache-hit != 'true'
-        run: scripts/build-ledger-wasm.sh
+        run: ../shared/scripts/build-ledger-wasm.sh
 
       - name: Save patched ledger WASM
         if: steps.ledger-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: mobile/ios/vendor/ledger-v8
+          path: mobile/shared/vendor/ledger-v8
           key: ${{ steps.ledger-cache.outputs.cache-primary-key }}
 
       # The cached build has no node_modules link; the generated glue imports through it.
       - name: Link ledger dependencies
-        run: ln -sfn "$GITHUB_WORKSPACE/node_modules" vendor/node_modules
+        run: ln -sfn "$GITHUB_WORKSPACE/node_modules" ../shared/vendor/node_modules
 
       - name: Build engine
-        run: scripts/build-engine.sh
+        run: ../shared/scripts/build-engine.sh
 
       - name: Build for simulator
         run: >-
@@ -201,8 +198,8 @@ jobs:
         id: ledger-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: mobile/ios/vendor/ledger-v8
-          key: ledger-v8-linux-${{ hashFiles('mobile/ios/scripts/build-ledger-wasm.sh', 'mobile/ios/scripts/ledger-irloader-rc.patch', 'yarn.lock') }}
+          path: mobile/shared/vendor/ledger-v8
+          key: ledger-v8-linux-${{ hashFiles('mobile/shared/scripts/build-ledger-wasm.sh', 'mobile/shared/scripts/ledger-irloader-rc.patch', 'yarn.lock') }}
 
       - name: Install ledger toolchain
         if: steps.ledger-cache.outputs.cache-hit != 'true'
@@ -215,21 +212,21 @@ jobs:
         if: steps.ledger-cache.outputs.cache-hit != 'true'
         env:
           LLVM_BIN: /usr/bin
-        run: ../ios/scripts/build-ledger-wasm.sh
+        run: ../shared/scripts/build-ledger-wasm.sh
 
       - name: Save patched ledger WASM
         if: steps.ledger-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: mobile/ios/vendor/ledger-v8
+          path: mobile/shared/vendor/ledger-v8
           key: ${{ steps.ledger-cache.outputs.cache-primary-key }}
 
       # The cached build has no node_modules link; the generated glue imports through it.
       - name: Link ledger dependencies
-        run: ln -sfn "$GITHUB_WORKSPACE/node_modules" ../ios/vendor/node_modules
+        run: ln -sfn "$GITHUB_WORKSPACE/node_modules" ../shared/vendor/node_modules
 
       - name: Build engine
-        run: ../ios/scripts/build-engine.sh
+        run: ../shared/scripts/build-engine.sh
 
       - name: Bundle engine
         run: scripts/bundle-engine.sh

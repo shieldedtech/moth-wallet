@@ -1,4 +1,4 @@
-//! JNI entry points for Moth on Android, over moth-native's C ABI (mobile/ios/native).
+//! JNI entry points for Moth on Android, over moth-native's C ABI (mobile/shared/native).
 //! Each function maps to an `external fun` on `io.shielded.moth.Native`.
 use jni::JNIEnv;
 use jni::objects::{JClass, JString};

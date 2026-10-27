@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Builds the engine page (engine/dist): moth's wallet worker plus the Swift bridge, with the
+# Builds the engine page (engine/dist): moth's wallet worker plus the native-app bridge, with the
 # pre-seed snapshots the extension bundles. Run after `yarn install && yarn build` at the
 # repo root, and again whenever moth's packages change.
 #
 # The ledger WASM is built from source with the DUST-restore fix (scripts/build-ledger-wasm.sh,
-# see README.md); LEDGER=npm uses the published package instead.
+# see mobile/ios/README.md); LEDGER=npm uses the published package instead.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 REPO=$(cd ../.. && pwd)

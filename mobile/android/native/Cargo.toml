@@ -10,7 +10,7 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-moth-native = { path = "../../ios/native" }
+moth-native = { path = "../../shared/native" }
 jni = "0.21"
 
 [profile.release]
