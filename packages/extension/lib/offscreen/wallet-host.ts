@@ -57,6 +57,7 @@ import { serializeBalances } from '../messaging/balances-json';
 import { serializeActivity } from '../messaging/activity-json';
 import { waitForSyncedBalances } from './wait-synced';
 import { dustHealKey } from './dust-heal';
+import { takeChainRecheck } from './chain-recheck';
 import { logDustFeeEstimate, logDustFeePass } from './dust-fee-log';
 import { NIGHT_TOKEN_ID } from '@shieldedtech/moth-wallet/types/tokens';
 import type { NightCoinRow } from '../messaging/protocol';
@@ -440,21 +441,14 @@ export async function trackOp<T>(run: () => Promise<T>): Promise<T> {
   }
 }
 
-// The chain behind an indexer changes only across the indexer's restart, so ten seconds between
-// two looks at its identity is soon enough, and one bounded query per ten seconds of use is cheap.
-const CHAIN_RECHECK_MS = 10_000;
-
 // The engine compares the chain's identity with the cache's stamp at its start (core,
 // sync/chain-identity.ts), but a chain replaced under a running engine is resumed on from the old
 // cursor and nothing in the SDK's state says so, therefore the host asks again before handing the
-// session out. Unlike the Dust rebuild, this restart is not held off by an op in flight: an engine
-// on a replaced chain can serve no op correctly, so one mid-proof is failed now rather than at
-// submission. The check runs once per window however many ops arrive, since the window closes
-// before the first caller's query answers.
+// session out (the window is chain-recheck.ts's, shared with the capsule host). Unlike the Dust
+// rebuild, this restart is not held off by an op in flight: an engine on a replaced chain can serve
+// no op correctly, so one mid-proof is failed now rather than at submission.
 async function chainReplacedUnder(session: NonNullable<typeof current>): Promise<boolean> {
-  const now = Date.now();
-  if (now - session.chainCheckedAt < CHAIN_RECHECK_MS) return false;
-  session.chainCheckedAt = now;
+  if (!takeChainRecheck(session)) return false;
   const verdict = await observeCacheChain({
     store: session.store,
     walletName: session.walletName,

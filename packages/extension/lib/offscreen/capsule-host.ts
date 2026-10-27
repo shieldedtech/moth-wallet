@@ -58,6 +58,7 @@ import type {
   CapsuleSiteGrantsDTO,
 } from '../capsule/protocol';
 import { healthTracked, liveWalletPort, opTracked } from './capsule-wallet-port';
+import { takeChainRecheck, type ChainChecked } from './chain-recheck';
 import type { SubmissionSettled, SubmittedTx } from './submissions';
 import type { HostEventData } from './worker-rpc';
 
@@ -121,7 +122,7 @@ interface Capabilities {
  * registry clients, its own database — the MIP's account numbers repeat from seed to seed, so no two
  * seeds share one — and the book of its sub-accounts, one of which is current.
  */
-interface Seed {
+interface Seed extends ChainChecked {
   account: CapsuleAccount;
   wallet: WalletPort;
   chain: IndexerClient;
@@ -197,7 +198,7 @@ async function seedOf(host: Host, account: CapsuleAccount): Promise<Seed> {
     // The storage keys and the capsule keys' answers are derived from these bytes per sub-account; the hex is kept nowhere else.
     const seedBytes = masterSeedBytes(account.seedHex);
     const book = await AccountBook.open(new IndexedDbAccountBookStore(db), DEFAULT_SUB_ACCOUNT_LABEL);
-    return { account, wallet, chain, registry, resolver, db, seedBytes, book };
+    return { account, wallet, chain, registry, resolver, db, seedBytes, book, chainCheckedAt: Date.now() };
   })();
   seeds.set(key, pending);
   pending.catch(() => seeds.delete(key));
@@ -207,7 +208,32 @@ async function seedOf(host: Host, account: CapsuleAccount): Promise<Seed> {
 /** The runtime for the seed's current sub-account, opened on first use; a switch opens the other one and leaves this one be. */
 async function open(host: Host, account: CapsuleAccount): Promise<Opened> {
   const seed = await seedOf(host, account);
+  await dropOpenedOnAnotherChain(seed);
   return openNumbered(seed, seed.book.current().number, host);
+}
+
+/**
+ * The runtime compares the chain with its capsules' when it opens, but a chain replaced under an
+ * opened account (a local network reset with the panel open) keeps serving the old chain's capsules
+ * until the worker restarts, therefore the host looks at the chain before handing a cached account
+ * out — once per window, one bounded query — and drops every account of the seed opened on another
+ * chain: the next open sets their capsules aside and says so, and the sites' sessions under them
+ * lapse and reconnect, as they do when the sub-account is switched. A chain that cannot be asked
+ * changes nothing, as at open.
+ */
+async function dropOpenedOnAnotherChain(seed: Seed): Promise<void> {
+  if (!takeChainRecheck(seed)) return;
+  const live = await seed.chain.identity().then((block) => block.hash, () => undefined);
+  if (live === undefined) return;
+  const prefix = `${seed.account.network.id}/${seed.account.walletName}/`;
+  for (const [key, pending] of opened) {
+    if (!key.startsWith(prefix)) continue;
+    const account = await pending.catch(() => undefined);
+    if (account !== undefined && account.runtime.chainIdentity !== live) {
+      opened.delete(key);
+      for (const unwatch of account.watching.values()) unwatch();
+    }
+  }
 }
 
 async function openNumbered(seed: Seed, number: number, host: Host): Promise<Opened> {
