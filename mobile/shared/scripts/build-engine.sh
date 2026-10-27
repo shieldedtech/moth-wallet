@@ -17,7 +17,9 @@ if [ "$LEDGER" = src ] && [ ! -f vendor/ledger-v8/midnight_ledger_wasm.js ]; the
 fi
 
 (cd engine && node "$REPO/node_modules/typescript/bin/tsc" -p tsconfig.json)
-(cd engine && node "$REPO/node_modules/vite/bin/vite.js" build --config vite.config.mjs --configLoader native --logLevel error)
+# The bundle peaks above 2 GB of heap, Node's default on smaller machines such as the 7 GB
+# macOS CI runner, so set the limit rather than depend on the machine's memory.
+(cd engine && node --max-old-space-size=4096 "$REPO/node_modules/vite/bin/vite.js" build --config vite.config.mjs --configLoader native --logLevel error)
 # The DApp-page script is a single classic script, injected by Swift as a WKUserScript.
 "$REPO/node_modules/.bin/esbuild" engine/inject.ts --bundle --format=iife --target=es2022 --minify \
   --alias:moth-ext="$REPO/packages/extension/lib" --outfile=engine/dist/inject.js --log-level=warning
