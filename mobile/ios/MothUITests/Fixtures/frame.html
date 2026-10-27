@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Child frame</title>
+  </head>
+  <body>
+    <script>
+      (async () => {
+        const injected = typeof window.midnight?.moth;
+        const handler = window.webkit?.messageHandlers?.mothConnector;
+        let reply = 'no handler';
+        if (handler) {
+          try {
+            reply = await handler.postMessage({ method: 'connect', paramsJson: '["preview"]' });
+          } catch (error) {
+            reply = `threw ${String(error)}`;
+          }
+        }
+        parent.postMessage(`injected=${injected} reply=${reply}`, location.origin);
+      })();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Isolation probe</title>
+  </head>
+  <body>
+    <h1>Isolation probe</h1>
+    <p id="frame">frame: waiting</p>
+    <p id="prover">prover: not run</p>
+    <p id="engine">engine: not run</p>
+    <p id="ready">ready: not run</p>
+    <p id="post">post: not run</p>
+    <button id="probe" type="button">Probe</button>
+    <!-- A same-origin child frame. Moth's script is main-frame only, so the frame talks to the
+         reply handler directly, as a hostile embedded page could. -->
+    <iframe src="frame.html" title="child" width="300" height="60"></iframe>
+    <script>
+      window.addEventListener('message', (event) => {
+        if (event.origin === location.origin) document.getElementById('frame').textContent = `frame: ${event.data}`;
+      });
+
+      async function probe(url, init) {
+        try {
+          const response = await fetch(url, init);
+          return `readable ${response.status} ${(await response.text()).slice(0, 60)}`;
+        } catch (error) {
+          return `blocked ${String(error).slice(0, 60)}`;
+        }
+      }
+
+      document.getElementById('probe').addEventListener('click', async () => {
+        document.getElementById('prover').textContent = `prover: ${await probe('http://127.0.0.1:6300/version')}`;
+        document.getElementById('engine').textContent = `engine: ${await probe('moth://engine/index.html')}`;
+        // The prover's queue state, and whether a page can make it run a request.
+        document.getElementById('ready').textContent = `ready: ${await probe('http://127.0.0.1:6300/ready')}`;
+        document.getElementById('post').textContent =
+          `post: ${await probe('http://127.0.0.1:6300/check', { method: 'POST', body: new Uint8Array(16) })}`;
+      });
+    </script>
+  </body>
+</html>
