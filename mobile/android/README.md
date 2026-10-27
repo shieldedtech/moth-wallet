@@ -91,6 +91,34 @@ The Welcome screen has "Restore from recovery phrase". Debug builds also have:
   the state's address against the phrase, loads it before the first sync and deletes the pushed
   copy.
 
+## UI tests
+
+`app/src/androidTest` holds Compose UI tests ported from `mobile/ios/MothUITests`; so far
+`OnboardingTests` (create, back up, unlock, sync, DUST registration on an empty wallet, Receive,
+lock, relaunch). `scripts/ui-test.sh` runs them like the iOS script: a fresh install of a
+separate app ID (`-PmothAppSuffix=.uitest`, so a real wallet is never touched), with every
+fingerprint prompt answered by `adb emu finger touch 1`. It uses emulators only, never a phone.
+
+```sh
+scripts/build-native.sh && scripts/bundle-engine.sh
+ANDROID_HOME=~/Android/Sdk scripts/ui-test.sh      # TESTS=..., AVD=..., GRADLE=...
+```
+
+One-time emulator setup: set a screen lock PIN (`adb -e shell locksettings set-pin 1111`),
+then Settings → Security → Fingerprint, and answer each "touch the sensor" step with
+`adb -e emu finger touch 1`.
+
+The emulator must run arm64 code, because the native prover is built only for `arm64-v8a`:
+
+- **arm64 system image**: runs only on an arm64 host (an Apple-silicon Mac).
+- **x86_64 image, API 30 or later, Google APIs**: these images translate ARM app code, so the
+  arm64-only APK installs on an x86_64 Linux or Intel host. Not tried with this prover; expect
+  it to be slow.
+- **x86_64 build of the native library** (not done yet): `cross build --target
+  x86_64-linux-android` with the `ghcr.io/cross-rs/x86_64-linux-android:main` image, copied to
+  `jniLibs/x86_64`, plus `x86_64` in `abiFilters` for test builds. Native speed on a KVM
+  emulator, so it is the route for CI on the Linux runners the Android build job uses.
+
 ## Measured
 
 `mobile/proving-bench` on a OnePlus CPH2399 (MediaTek Dimensity 1200, 8 cores, 12 GB,
