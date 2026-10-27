@@ -17,6 +17,11 @@ android {
         versionCode = 1
         versionName = "0.0.1"
         ndk { abiFilters += "arm64-v8a" }
+        // -PmothAppSuffix=.fresh installs a second copy with its own storage and Keystore,
+        // e.g. to time a new wallet without touching an existing one.
+        val suffix = (project.findProperty("mothAppSuffix") as String?).orEmpty()
+        applicationIdSuffix = suffix
+        manifestPlaceholders["appLabel"] = if (suffix.isEmpty()) "Moth" else "Moth (${suffix.trimStart('.')})"
     }
 
     compileOptions {

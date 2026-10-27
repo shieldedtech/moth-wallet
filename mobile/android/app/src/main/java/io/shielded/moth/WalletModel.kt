@@ -78,6 +78,10 @@ class WalletModel(private val activity: FragmentActivity) {
             "balances" -> (data as? JSONObject)?.let { b ->
                 balances = Balances.parse(b)
                 logProgress(balances!!)
+                if (balances!!.synced && syncStartedAt > 0) {
+                    write("synced in %.1f s since sync start".format((System.currentTimeMillis() - syncStartedAt) / 1000.0))
+                    syncStartedAt = 0
+                }
                 if (balances?.synced == true) status = "Synced"
             }
             // moth prefixes progress lines with ○/●; the status line doesn't need them.
@@ -180,7 +184,10 @@ class WalletModel(private val activity: FragmentActivity) {
         write("locked")
     }
 
+    private var syncStartedAt = 0L
+
     fun sync() {
+        syncStartedAt = System.currentTimeMillis()
         engine.call("sync", listOf(walletName, network)) { r -> r.onFailure { fail("sync", it) } }
     }
 
