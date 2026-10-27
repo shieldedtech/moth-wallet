@@ -27,6 +27,8 @@ const SESSION_LOCKED_EVENT = 'moth:sessionLocked';
 export const CAPSULE_SETTLED_EVENT = 'moth:capsuleSettled';
 /** A contract refused a site's call in the wallet; `detail` is `{ origin, message }`, for the panel to show. */
 export const CAPSULE_REFUSED_EVENT = 'moth:capsuleRefused';
+/** The wallet failed a site's approved transaction; `detail` is `{ origin, failure }`, for the panel to show. */
+export const CAPSULE_FAILED_EVENT = 'moth:capsuleFailed';
 
 /**
  * Re-runs `read` when a capsule transaction settles and, while mounted, every `everyMs` — the
@@ -360,6 +362,7 @@ export function usePanelEvents(): PanelEvents {
         else if (event.kind === 'sessionLocked') window.dispatchEvent(new Event(SESSION_LOCKED_EVENT));
         else if (event.kind === 'capsuleSettled') window.dispatchEvent(new CustomEvent(CAPSULE_SETTLED_EVENT, { detail: event }));
         else if (event.kind === 'capsuleRefused') window.dispatchEvent(new CustomEvent(CAPSULE_REFUSED_EVENT, { detail: event }));
+        else if (event.kind === 'capsuleFailed') window.dispatchEvent(new CustomEvent(CAPSULE_FAILED_EVENT, { detail: event }));
       });
       // Fires only when the other end dies (SW terminated, extension reload) —
       // our own disconnect() in the cleanup below doesn't raise it locally.

@@ -332,6 +332,9 @@ export function registerSyncEvents(): void {
   offscreenOn('os/eventCapsuleRefused', ({ data }) => {
     broadcast({ kind: 'capsuleRefused', origin: data.origin, message: data.message });
   });
+  offscreenOn('os/eventCapsuleFailed', ({ data }) => {
+    broadcast({ kind: 'capsuleFailed', origin: data.origin, failure: data.failure });
+  });
   offscreenOn('os/eventRelayState', ({ data }) => {
     // Cached like the balances snapshot: the panel mounts long after the relay
     // first failed, and a state that only arrives on change would leave it

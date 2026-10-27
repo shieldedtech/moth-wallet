@@ -15,6 +15,7 @@ import {
   CapsuleRuntime,
   Connector,
   contractRefusal,
+  walletFailure,
   ExecutableResolver,
   HttpRegistryClient,
   IndexerClient,
@@ -73,12 +74,15 @@ export interface CapsuleChannel {
   settled(event: HostEventData['os/eventCapsuleSettled']): void;
   /** A contract's refusal of a site's call, for the panels: the site is told a code, the user the reason. */
   refused(event: HostEventData['os/eventCapsuleRefused']): void;
+  /** The wallet's own failure of a site's transaction, for the panels: the site is told nothing in particular, the user which. */
+  failed(event: HostEventData['os/eventCapsuleFailed']): void;
 }
 let channel: CapsuleChannel = {
   ask: () => Promise.reject(new Error('the capsule runtime has no consent channel')),
   emit: () => {},
   settled: () => {},
   refused: () => {},
+  failed: () => {},
 };
 export function setCapsuleChannel(next: CapsuleChannel): void {
   channel = next;
@@ -346,10 +350,15 @@ async function connectorFor(host: Host, call: CapsuleCall): Promise<{ connector:
       settleTimeoutMs: SETTLE_TIMEOUT_MS,
       onError: (error) => {
         console.warn('[capsule]', error);
-        // The contract's own refusal is the user's to see: the site hears a code, the panel the reason.
+        // A contract's refusal and the wallet's own failures are the user's to see: the site hears
+        // a code, the panel the reason.
         const message = contractRefusal(error);
         if (message !== undefined) {
           channel.refused({ walletName: call.walletName, networkId: call.network.id, origin: call.origin, message });
+        }
+        const failure = walletFailure(error);
+        if (failure !== undefined) {
+          channel.failed({ walletName: call.walletName, networkId: call.network.id, origin: call.origin, failure });
         }
       },
     });

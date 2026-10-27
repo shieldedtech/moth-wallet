@@ -127,6 +127,21 @@ export interface CapsuleRefusedDTO {
   message: string;
 }
 
+/** The wallet's own failures of a site's transaction, as the runtime's `WalletFailure` names them. */
+export type CapsuleWalletFailure = 'notSynced' | 'insufficientFunds' | 'submission';
+
+/**
+ * The wallet failed a site's transaction after the user approved it — not synced in time, too
+ * little for the fee, or the chain did not accept what was built: the user's information, never the site's.
+ */
+export interface CapsuleFailedDTO {
+  walletName: string;
+  networkId: string;
+  /** The site whose transaction it was, by its attested origin. */
+  origin: string;
+  failure: CapsuleWalletFailure;
+}
+
 export interface CapsuleSettledDTO {
   walletName: string;
   networkId: string;

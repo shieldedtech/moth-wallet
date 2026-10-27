@@ -2,7 +2,7 @@
 // the host runs now at every use, and `healthTracked` counts each submission toward the Dust-ledger
 // health diagnosis as every fee-paying submission of this wallet is, so a capsule transaction's
 // rejection and a transfer's on the same seed count toward one streak.
-import type { WalletPort } from '@shieldedtech/capsule-core';
+import { WalletPortError, isWalletPortError, type WalletPort } from '@shieldedtech/capsule-core';
 import { submitWithHealthTracking, type SubmitHealthContext } from '@shieldedtech/moth-browser';
 
 /** What the port needs of a host's sync session: the facade it runs on, which names the session. */
@@ -57,6 +57,11 @@ export function healthTracked(wallet: WalletPort, context: SubmitHealthContext):
     coinPublicKey: () => wallet.coinPublicKey(),
     encryptionPublicKey: () => wallet.encryptionPublicKey(),
     finalize: (tx, ttl) => wallet.finalize(tx, ttl),
-    submit: (tx) => submitWithHealthTracking(() => wallet.submit(tx), context),
+    // The diagnosis may replace the port's error with its own (a wedged Dust ledger), which is still
+    // the chain refusing what was built; the runtime hears a submission failure either way.
+    submit: (tx) =>
+      submitWithHealthTracking(() => wallet.submit(tx), context).catch((error: unknown) => {
+        throw isWalletPortError(error) ? error : new WalletPortError('submission', error);
+      }),
   };
 }

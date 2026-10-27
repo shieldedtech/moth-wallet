@@ -92,6 +92,11 @@ export const capsule = {
   capsule_capabilitiesCancel: 'Cancel',
   capsule_capabilitiesClear: 'Remove the installed capabilities',
   capsule_refusedToast: 'The contract refused $1’s call: $2',
+  capsule_failedNotSyncedToast:
+    'The wallet was still syncing, so $1’s transaction was not built. Once the sync has finished, press again on the site.',
+  capsule_failedInsufficientFundsToast: 'This account does not hold enough DUST to pay the fee of $1’s transaction.',
+  capsule_failedSubmissionToast:
+    'The network did not accept the transaction built for $1. Press again on the site; if it keeps failing, the wallet’s view of the chain may be stale: Settings → Network → Clear cache and resync.',
   capsule_capabilitiesError: 'Could not read the capabilities: $1',
   capsule_capabilitiesInvalid: 'Not an answers document: an object of interface ids, each an object of function names to values.',
 } as const;

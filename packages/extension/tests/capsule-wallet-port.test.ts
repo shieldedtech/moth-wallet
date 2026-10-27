@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { dustSpendHealthTracker } from '@shieldedtech/moth-browser';
-import type { WalletPort } from '@shieldedtech/capsule-core';
+import { WalletPortError, isWalletPortError, type WalletPort } from '@shieldedtech/capsule-core';
 import { healthTracked, liveWalletPort, type SessionWallet } from '../lib/offscreen/capsule-wallet-port';
 
 // The capsule runtime submits through the same health bookkeeping as a transfer: a capsule
@@ -20,16 +20,42 @@ describe('the capsule runtime\'s wallet port', () => {
   it('counts a rejection toward the seed\'s streak and clears it on a success', async () => {
     const tracker = dustSpendHealthTracker(network.id, 'capsule-port-test');
     tracker.recordSuccess();
-    const rejected = healthTracked(
-      portOver(() => Promise.reject(new Error('Transaction submission error', { cause: new Error('1010: Invalid Transaction: Custom error: 170') }))),
-      context,
+    // The port names the chain's refusal; the diagnosis reads the chain's words through it.
+    const refusal = new WalletPortError(
+      'submission',
+      new Error('Transaction submission error', { cause: new Error('1010: Invalid Transaction: Custom error: 170') }),
     );
-    await expect(rejected.submit({} as never)).rejects.toThrow();
+    const rejected = healthTracked(portOver(() => Promise.reject(refusal)), context);
+    const thrown = await rejected.submit({} as never).catch((error: unknown) => error);
+    expect(thrown).toBe(refusal);
     expect(tracker.consecutiveRejections).toBe(1);
 
     const accepted = healthTracked(portOver(() => Promise.resolve('tx-1')), context);
     expect(await accepted.submit({} as never)).toBe('tx-1');
     expect(tracker.consecutiveRejections).toBe(0);
+  });
+
+  it('reports what the diagnosis throws in its place as the wallet\'s submission failure', async () => {
+    // Three refusals with the wedge's signature while the chain advances: the diagnosis replaces
+    // the port's error with its own verdict, which the runtime must still hear as a submission failure.
+    const tracker = dustSpendHealthTracker(network.id, 'capsule-port-wedge');
+    tracker.recordSuccess();
+    let height = 10;
+    const wedgeContext = { network, walletName: 'capsule-port-wedge', probeBlock: () => Promise.resolve({ height: height++ }) };
+    const refusing = healthTracked(
+      portOver(() =>
+        Promise.reject(
+          new WalletPortError('submission', new Error('Transaction submission error', { cause: new Error('1010: Invalid Transaction: Custom error: 170') })),
+        ),
+      ),
+      wedgeContext,
+    );
+    let last: unknown;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      last = await refusing.submit({} as never).catch((error: unknown) => error);
+    }
+    expect(isWalletPortError(last) && last.failure).toBe('submission');
+    expect((last as Error).cause).toHaveProperty('name', 'DustLedgerWedgedError');
   });
 
   it('passes the keys and the finalize step through untouched', async () => {

@@ -1907,6 +1907,15 @@
   "capsule_refusedToast": {
     "message": "Der Vertrag hat den Aufruf von $1 abgelehnt: $2"
   },
+  "capsule_failedNotSyncedToast": {
+    "message": "The wallet was still syncing, so $1’s transaction was not built. Once the sync has finished, press again on the site."
+  },
+  "capsule_failedInsufficientFundsToast": {
+    "message": "This account does not hold enough DUST to pay the fee of $1’s transaction."
+  },
+  "capsule_failedSubmissionToast": {
+    "message": "The network did not accept the transaction built for $1. Press again on the site; if it keeps failing, the wallet’s view of the chain may be stale: Settings → Network → Clear cache and resync."
+  },
   "capsule_capabilitiesError": {
     "message": "Die Fähigkeiten konnten nicht gelesen werden: $1"
   },

@@ -31,6 +31,8 @@ The English catalog (`messages/`) is the source of truth. Shipped locales live i
     — DUST register/deregister consequences
   - `dust_receiverHint`, `dust_receiverInvalid`, `dust_addressLabel` — where funds go / address validity
   - `addressBook_detected`, `addressBook_notMidnight`, `addressBook_autoRecognized` — address validity
+  - `capsule_failedNotSyncedToast`, `capsule_failedInsufficientFundsToast`, `capsule_failedSubmissionToast`
+    — why a contract transaction failed in the wallet, and the recovery to take
 
 - **Verbatim by design** (correct as English in every locale — do NOT translate):
   protocol terms *Shielded* / *Unshielded* / *WASM* / *NIGHT* / *DUST*, `mn_…` address

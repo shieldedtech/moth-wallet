@@ -9,9 +9,12 @@ import {
   usePanelEvents,
   useSelectedProverType,
   useRegisterNudge,
+  CAPSULE_FAILED_EVENT,
   CAPSULE_REFUSED_EVENT,
 } from '../../lib/ui/client';
 import { t } from '../../lib/i18n';
+import type { CapsuleWalletFailure } from '../../lib/capsule/protocol';
+import { CAPSULE_FAILURE_TOASTS } from '../../lib/ui/capsule-failure';
 import { nativeAssetLabelsForNetwork } from '../../lib/ui/token-labels';
 import { accountLabel } from '../../lib/ui/format';
 import { originHost } from '../../components/moth/dapp';
@@ -60,15 +63,24 @@ export function App() {
   // cancelling returns to the still-unlocked current account.
   const [unlockTarget, setUnlockTarget] = useState<string | null>(null);
 
-  // A contract's refusal of a site's call, before any proof: the site is told a code, the user the
-  // contract's own words, here, since the capsule screen may not be the one open.
+  // A contract's refusal of a site's call, before any proof, and the wallet's own failures of an
+  // approved one: the site is told a code, the user the reason, here, since the capsule screen may
+  // not be the one open.
   useEffect(() => {
     const onRefused = (event: Event) => {
       const { origin, message } = (event as CustomEvent<{ origin: string; message: string }>).detail;
       toast.error(t('capsule_refusedToast', [originHost(origin), message]), { duration: 8_000 });
     };
+    const onFailed = (event: Event) => {
+      const { origin, failure } = (event as CustomEvent<{ origin: string; failure: CapsuleWalletFailure }>).detail;
+      toast.error(t(CAPSULE_FAILURE_TOASTS[failure], [originHost(origin)]), { duration: 12_000 });
+    };
     window.addEventListener(CAPSULE_REFUSED_EVENT, onRefused);
-    return () => window.removeEventListener(CAPSULE_REFUSED_EVENT, onRefused);
+    window.addEventListener(CAPSULE_FAILED_EVENT, onFailed);
+    return () => {
+      window.removeEventListener(CAPSULE_REFUSED_EVENT, onRefused);
+      window.removeEventListener(CAPSULE_FAILED_EVENT, onFailed);
+    };
   }, []);
 
   // New wallets can be created from the setup tab while the panel is open.

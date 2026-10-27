@@ -13,6 +13,7 @@ import type {
   CapsuleEventDTO,
   CapsuleInspectorDTO,
   CapsuleSiteGrantsDTO,
+  CapsuleWalletFailure,
 } from '../capsule/protocol';
 import type { OriginGrant } from '../background/permissions';
 import type { AddressBookEntry } from '../background/address-book';
@@ -197,7 +198,9 @@ export type PortEvent =
   /** A capsule transaction settled: the capsule screens re-read the runtime. */
   | { kind: 'capsuleSettled'; identifier: string; status: string; contracts: string[] }
   /** A contract refused a site's call in the wallet, before any proof: the panel tells the user why. */
-  | { kind: 'capsuleRefused'; origin: string; message: string };
+  | { kind: 'capsuleRefused'; origin: string; message: string }
+  /** The wallet failed a site's approved transaction: the panel tells the user which way. */
+  | { kind: 'capsuleFailed'; origin: string; failure: CapsuleWalletFailure };
 
 export const BALANCES_PORT = 'balances';
 
