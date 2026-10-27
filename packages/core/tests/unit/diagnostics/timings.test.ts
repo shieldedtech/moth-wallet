@@ -2,6 +2,7 @@ import {describe, expect, it} from 'vitest';
 import {
   createTimingRecorder,
   createMemoryTimingStore,
+  type TimingEntry,
   type TimingStore,
 } from '../../../src/diagnostics/timings.js';
 
@@ -120,5 +121,66 @@ describe('createTimingRecorder', () => {
       await expect(recorder.setEnabled(true)).rejects.toThrow('storage unavailable');
       await expect(recorder.clear()).rejects.toThrow('storage unavailable');
     });
+  });
+});
+
+/**
+ * A store like `chrome.storage.local`: every operation is answered in order, one
+ * round trip later. The recorder's read-modify-write is what the latency exposes.
+ */
+function fifoStore(latencyMs: number): TimingStore & {readonly value: TimingEntry[]} {
+  let value: TimingEntry[] = [];
+  let queue: Promise<unknown> = Promise.resolve();
+  const op = <T,>(run: () => T): Promise<T> => {
+    const next = queue.then(() => new Promise<T>((resolve) => setTimeout(() => resolve(run()), latencyMs)));
+    queue = next.catch(() => {});
+    return next;
+  };
+  return {
+    get value() {
+      return value;
+    },
+    isEnabled: () => op(() => true),
+    setEnabled: () => op(() => {}),
+    read: () => op(() => value.slice()),
+    write: (entries) => op(() => {
+      value = entries;
+    }),
+    clear: () => op(() => {
+      value = [];
+    }),
+  };
+}
+
+describe('createTimingRecorder over a store that answers one round trip later', () => {
+  it('keeps a record that another follows a millisecond later — the fast phases are the ones worth measuring', async () => {
+    const store = fifoStore(1);
+    const recorder = createTimingRecorder(store);
+    const first = recorder.record('sync', 'The chain at … is the one the cached state was synced on');
+    await new Promise((resolve) => setTimeout(resolve, 1));
+    const second = recorder.record('sync', 'Restoring transaction history from cache...');
+    await Promise.all([first, second]);
+    expect(store.value.map((entry) => entry.label)).toEqual([
+      'The chain at … is the one the cached state was synced on',
+      'Restoring transaction history from cache...',
+    ]);
+  });
+
+  it('keeps records issued back to back, in the order they were issued', async () => {
+    const store = fifoStore(1);
+    const recorder = createTimingRecorder(store);
+    await Promise.all([recorder.record('sync', 'A'), recorder.record('sync', 'B'), recorder.record('sync', 'C')]);
+    expect(store.value.map((entry) => entry.label)).toEqual(['A', 'B', 'C']);
+  });
+
+  it('stamps each record when it is called, not when its turn in the queue comes', async () => {
+    let t = 1_000;
+    const store = fifoStore(5);
+    const recorder = createTimingRecorder(store, {now: () => t});
+    const first = recorder.record('sync', 'A');
+    t = 1_002;
+    const second = recorder.record('sync', 'B');
+    await Promise.all([first, second]);
+    expect(store.value.map((entry) => [entry.at, entry.deltaMs])).toEqual([[1_000, 0], [1_002, 2]]);
   });
 });

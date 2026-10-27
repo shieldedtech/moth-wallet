@@ -102,23 +102,35 @@ export function createTimingRecorder(
     await record('marker', on ? 'timings: enabled' : 'timings: disabled');
   };
 
-  async function record(
+  // Each record is a read-modify-write of the whole history, and the phases
+  // worth measuring are the fast ones, therefore two records a millisecond apart
+  // were the rule, not the exception — and the second's read ran before the
+  // first's write, so the first was overwritten and gone. Records are serialized
+  // here: one read-modify-write completes before the next begins, and the stamp
+  // is still taken when the record is called, so the queue costs no accuracy.
+  let chain: Promise<void> = Promise.resolve();
+
+  function record(
     source: TimingSource,
     label: string,
     detail?: TimingEntry['detail'],
   ): Promise<void> {
-    try {
-      if (!(await isEnabled())) return;
-      const entries = await store.read();
-      const at = now();
-      // First entry of a run has no predecessor, so its delta is 0 rather than
-      // the time since the epoch.
-      const previous = entries.length > 0 ? entries[entries.length - 1]!.at : at;
-      entries.push({at, deltaMs: at - previous, label, source, ...(detail ? {detail} : {})});
-      await store.write(entries.slice(-maxEntries));
-    } catch {
-      /* never let instrumentation break the path it measures */
-    }
+    const at = now();
+    const next = chain.then(async () => {
+      try {
+        if (!(await isEnabled())) return;
+        const entries = await store.read();
+        // First entry of a run has no predecessor, so its delta is 0 rather than
+        // the time since the epoch.
+        const previous = entries.length > 0 ? entries[entries.length - 1]!.at : at;
+        entries.push({at, deltaMs: at - previous, label, source, ...(detail ? {detail} : {})});
+        await store.write(entries.slice(-maxEntries));
+      } catch {
+        /* never let instrumentation break the path it measures */
+      }
+    });
+    chain = next;
+    return next;
   }
 
   return {
