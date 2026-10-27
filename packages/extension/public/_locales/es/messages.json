@@ -1880,6 +1880,12 @@
   "capsule_inspectorError": {
     "message": "No se pudieron leer las cápsulas: $1"
   },
+  "capsule_unreadTitle": {
+    "message": "Código del contrato no encontrado"
+  },
+  "capsule_unreadLine": {
+    "message": "La cápsula está intacta, pero su estado no se puede mostrar: $1"
+  },
   "capsule_capabilitiesTitle": {
     "message": "Capacidades de contratos"
   },

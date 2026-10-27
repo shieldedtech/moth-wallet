@@ -1880,6 +1880,12 @@
   "capsule_inspectorError": {
     "message": "Die Kapseln konnten nicht gelesen werden: $1"
   },
+  "capsule_unreadTitle": {
+    "message": "Vertragscode nicht gefunden"
+  },
+  "capsule_unreadLine": {
+    "message": "Die Kapsel ist intakt, aber ihr Zustand kann nicht angezeigt werden: $1"
+  },
   "capsule_capabilitiesTitle": {
     "message": "Vertragsfähigkeiten"
   },

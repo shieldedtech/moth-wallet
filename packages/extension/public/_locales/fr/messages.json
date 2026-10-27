@@ -1880,6 +1880,12 @@
   "capsule_inspectorError": {
     "message": "Impossible de lire les capsules : $1"
   },
+  "capsule_unreadTitle": {
+    "message": "Code du contrat introuvable"
+  },
+  "capsule_unreadLine": {
+    "message": "La capsule est intacte, mais son état ne peut pas être affiché : $1"
+  },
   "capsule_capabilitiesTitle": {
     "message": "Capacités de contrats"
   },

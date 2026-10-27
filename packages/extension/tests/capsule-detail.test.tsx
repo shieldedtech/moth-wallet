@@ -1,13 +1,14 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import type { CapsuleView } from '@shieldedtech/capsule-core';
+import type { CapsuleStateView } from '@shieldedtech/capsule-core';
 import { CapsuleDetail } from '../components/screens/CapsuleDetail';
 
 const BALLOT = '3a40dae49620d0214eee18574de8b9b44772cb602ace3093d13339da171a3ae4';
 const REGISTRY = 'c04d6a072f01b8d8d736c0a31ca32a59b3061fe8dfa2607002533435fa7b70aa';
 const block = { height: 12320, hash: 'ab', protocolVersion: 17_000_000, timestamp: Date.UTC(2026, 9, 9, 19, 18, 24) };
 
-const view: CapsuleView = {
+const view: CapsuleStateView = {
+  read: true,
   address: BALLOT,
   bundle: 'Ballot',
   fingerprint: '9a7bd2c1e1f0a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5',

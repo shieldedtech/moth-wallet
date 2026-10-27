@@ -47,6 +47,8 @@ export const capsule = {
   capsule_detailJustChanged: 'changed',
   capsule_inspectorLocked: 'Unlock the wallet to see its capsules.',
   capsule_inspectorError: 'Could not read the capsules: $1',
+  capsule_unreadTitle: 'Contract code not found',
+  capsule_unreadLine: 'The capsule is intact, but its state cannot be shown: $1',
   capsule_inFlightCount: '$1 in flight',
   capsule_detailTitle: '$1 capsule',
   capsule_detailBlockLine: 'Public state as of block $1 ($2)',

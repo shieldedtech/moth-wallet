@@ -7,7 +7,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { presentField, showFieldSignature, showSignature, type Json } from '@shieldedtech/capsule-blueprint';
-import { changedFields, type CapsuleView, type FieldChange } from '@shieldedtech/capsule-host-browser';
+import { changedFields, type CapsuleStateView, type FieldChange } from '@shieldedtech/capsule-host-browser';
 import { t } from '../../lib/i18n';
 import { Card, Separator } from '../ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
@@ -35,7 +35,7 @@ function Fields({
   values,
   empty,
 }: {
-  fields: CapsuleView['abi']['localStateSignatures']['fields'];
+  fields: CapsuleStateView['abi']['localStateSignatures']['fields'];
   values: Readonly<Record<string, Json>>;
   empty: string;
 }) {
@@ -118,7 +118,7 @@ function Section({ title, note }: { title: string; note?: string }) {
   );
 }
 
-export function CapsuleDetail({ capsule, onBack }: { capsule: CapsuleView; onBack: () => void }) {
+export function CapsuleDetail({ capsule, onBack }: { capsule: CapsuleStateView; onBack: () => void }) {
   const { abi } = capsule;
   const interfaceRows: Array<{ key: string; kind: string; line: string; note?: string }> = [
     ...Object.entries(abi.circuitSignatures).map(([name, signature]) => ({

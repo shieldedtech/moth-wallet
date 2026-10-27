@@ -9,6 +9,7 @@ import { Box, ChevronRight } from 'lucide-react';
 import { t } from '../../lib/i18n';
 import { sendMessage } from '../../lib/messaging/protocol';
 import { useCapsuleLiveness } from '../../lib/ui/client';
+import type { CapsuleStateView } from '@shieldedtech/capsule-host-browser';
 import type { CapsuleAccountsDTO, CapsuleInspectorDTO } from '../../lib/capsule/protocol';
 import { SubAccounts, type SubAccountChange } from '../moth/sub-accounts';
 import { Button } from '../ui/button';
@@ -56,7 +57,7 @@ export function Capsules({ onBack }: { onBack: () => void }) {
   useCapsuleLiveness(reread);
 
   // The opened capsule is read from the latest view, so a refresh behind it shows through.
-  const detail = opened === null ? undefined : view?.capsules.find((capsule) => capsule.address === opened);
+  const detail = opened === null ? undefined : view?.capsules.find((capsule): capsule is CapsuleStateView => capsule.read && capsule.address === opened);
   if (detail !== undefined) {
     // Keyed by address, so the marks of what moved never carry from one capsule to another.
     return <CapsuleDetail key={detail.address} capsule={detail} onBack={() => setOpened(null)} />;
@@ -93,21 +94,34 @@ export function Capsules({ onBack }: { onBack: () => void }) {
           {view.capsules.map((capsule, index) => (
             <div key={capsule.address}>
               {index > 0 && <Separator />}
-              <button
-                type="button"
-                onClick={() => setOpened(capsule.address)}
-                className="flex w-full cursor-pointer items-center gap-3 px-4 py-[13px] text-left hover:bg-muted/50"
-              >
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="block text-sm font-semibold">{capsule.bundle}</span>
+              {capsule.read ? (
+                <button
+                  type="button"
+                  onClick={() => setOpened(capsule.address)}
+                  className="flex w-full cursor-pointer items-center gap-3 px-4 py-[13px] text-left hover:bg-muted/50"
+                >
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="block text-sm font-semibold">{capsule.bundle}</span>
+                    <span className="block font-mono text-xs text-muted-foreground">{short(capsule.address)}</span>
+                    <span className="block text-xs text-muted-foreground">
+                      {t('capsule_buildLabel')} {short(capsule.fingerprint)} · {t('capsule_foldedCount', [capsule.folded])}
+                      {capsule.inFlight.length > 0 && ` · ${t('capsule_inFlightCount', [capsule.inFlight.length])}`}
+                    </span>
+                  </span>
+                  <ChevronRight size={16} className="shrink-0 text-muted-foreground" />
+                </button>
+              ) : (
+                // The contract's code could not be resolved, so there is no state to open; the capsule itself is intact and listed.
+                <div className="flex w-full flex-col gap-0.5 px-4 py-[13px] text-left">
+                  <span className="block text-sm font-semibold">{t('capsule_unreadTitle')}</span>
                   <span className="block font-mono text-xs text-muted-foreground">{short(capsule.address)}</span>
                   <span className="block text-xs text-muted-foreground">
                     {t('capsule_buildLabel')} {short(capsule.fingerprint)} · {t('capsule_foldedCount', [capsule.folded])}
                     {capsule.inFlight.length > 0 && ` · ${t('capsule_inFlightCount', [capsule.inFlight.length])}`}
                   </span>
-                </span>
-                <ChevronRight size={16} className="shrink-0 text-muted-foreground" />
-              </button>
+                  <span className="block text-xs text-destructive">{t('capsule_unreadLine', [capsule.unread.message])}</span>
+                </div>
+              )}
             </div>
           ))}
         </Card>
