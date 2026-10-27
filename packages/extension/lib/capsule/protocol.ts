@@ -167,8 +167,6 @@ export interface CapsuleInspectorDTO {
   account: { number: number; label: string };
   capsules: CapsuleView[];
   pending: Array<{ identifier: string; calls: Array<{ address: string; circuit: string }>; submittedAt: string; ttl: string }>;
-  /** Capsules folded on another chain (a reset network), set aside when the account opened on this one; `chain` names the old one as its snapshot did. */
-  setAside?: { chain: string; capsules: number; pending: number };
 }
 
 /** A capsule refusal as it crosses to the page: the blueprint's code, reason and path, nothing else. */

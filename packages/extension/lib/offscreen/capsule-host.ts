@@ -519,7 +519,6 @@ export async function setAccounts(
 
 export async function list(host: Host, data: CapsuleAccount): Promise<CapsuleInspectorDTO> {
   const account = await open(host, data);
-  const setAside = account.runtime.setAside;
   return {
     account: { number: account.number, label: labelOf(account.seed.book, accountIdOf(account.number)) },
     capsules: await capsuleViews(account.runtime),
@@ -529,8 +528,5 @@ export async function list(host: Host, data: CapsuleAccount): Promise<CapsuleIns
       submittedAt: tx.submittedAt.toISOString(),
       ttl: tx.ttl.toISOString(),
     })),
-    ...(setAside === undefined
-      ? {}
-      : { setAside: { chain: setAside.chain, capsules: setAside.capsules, pending: setAside.pending } }),
   };
 }
