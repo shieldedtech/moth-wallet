@@ -327,11 +327,13 @@ export async function syncEnsure(
   // wrapper won't recognise the connection and will pass it straight through.
   setRelayUrl(network.nodeUrl.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:'));
 
+  const store = new IdbSyncStateStore();
+
   // Put the packaged reference in place before startWalletSync looks for one.
   // Only writes when the store has none, so a locally built reference — always
   // at least as fresh — is never overwritten. A network without a bundled
   // reference is a no-op and syncs the slow way.
-  await installBundledReference(network.id, new IdbSyncStateStore());
+  await installBundledReference(network.id, store);
 
   // Wallets created by the extension store the chain tip at creation time as
   // their birthday; it lets the first sync pre-seed at tip instead of
@@ -351,8 +353,14 @@ export async function syncEnsure(
     false,
     birthday,
     {
-      syncStore: new IdbSyncStateStore(),
+      syncStore: store,
       onDustFeePass: logDustFeePass,
+      // The engine found another chain behind the indexer and dropped the cache it wrote on the
+      // old one; the notes this document keeps beside that cache describe the old chain too.
+      onChainReplaced: async () => {
+        await store.delete(submissionsKey(network.id, walletName)).catch(() => {});
+        await store.delete(dustHealKey(network.id, walletName)).catch(() => {});
+      },
       ...(ON_MAIN_THREAD ? { batchUpdates: MAIN_THREAD_BATCH } : {}),
     },
   );

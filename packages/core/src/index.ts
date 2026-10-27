@@ -142,6 +142,13 @@ export {
   type ReferenceManifest,
 } from './sync/preseed-portable.js';
 export { chainTip } from './sync/chain-tip.js';
+export {
+  cacheChainVerdict,
+  readChainGenesis,
+  reconcileCacheChain,
+  type CacheChainVerdict,
+  type ReconcileCacheChainOptions,
+} from './sync/chain-identity.js';
 export { ensureEmptyRefCache, warmEmptyRefCache, clearEmptyRefCache, refreshEmptyRefCache, preseedReferenceStatus, preSeedNewWallet, type WarmProgress } from './sync/preseed.js';
 
 // Contract

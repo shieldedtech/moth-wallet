@@ -53,6 +53,15 @@ export function cursorWitnessKey(networkId: string, walletName: string, part: Wa
   return `witness/${networkId}/${walletName}/${part}.json`;
 }
 
+/**
+ * Where the chain a wallet's cache was synced on is recorded, as its genesis block hash. The
+ * cached parts are chain state, therefore they are kept only for the chain that wrote them;
+ * see sync/chain-identity.ts.
+ */
+export function chainIdentityKey(networkId: string, walletName: string): string {
+  return `sync/${networkId}/${walletName}/chain.txt`;
+}
+
 export function emptyRefMnemonicKey(networkId: string): string {
   return `empty-ref/${networkId}/mnemonic.txt`;
 }

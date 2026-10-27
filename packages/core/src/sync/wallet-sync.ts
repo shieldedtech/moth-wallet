@@ -20,8 +20,9 @@ import {resolveProverConfig, type NetworkConfig} from '../types/network.js';
 import {createWalletProvingService} from '../proof/provider.js';
 import {NIGHT_TOKEN_ID, formatNight} from '../types/tokens.js';
 import {formatDustBalance} from '../wallet/balance-format.js';
-import {ensureEmptyRefCache, preSeedNewWallet} from './preseed.js';
-import {InMemorySyncStateStore, syncStateKey, type SyncStateStore, type WalletPart} from './sync-store.js';
+import {clearEmptyRefCache, ensureEmptyRefCache, preSeedNewWallet} from './preseed.js';
+import {readChainGenesis, reconcileCacheChain, shortHash, type CacheChainVerdict} from './chain-identity.js';
+import {InMemorySyncStateStore, chainIdentityKey, syncStateKey, type SyncStateStore, type WalletPart} from './sync-store.js';
 import {initialDustParameters} from './ledger-routing.js';
 import {spendableDust, summarizeDustGeneration, type DustGeneration} from './dust-generation.js';
 import {TerminatingDustWallet, type DustFeePass} from './dust-transacting.js';
@@ -398,6 +399,13 @@ export interface WalletSyncOptions {
    * otherwise observable only on chain.
    */
   onDustFeePass?: (pass: DustFeePass) => void;
+  /**
+   * Called when the chain behind the indexer is not the one the cached state was synced on,
+   * after that state and the network's pre-seed reference have been evicted: for a host to
+   * drop what it keeps beside the cache (the extension's pending-submission notes, its
+   * Dust-heal stamp), which the store's own layout does not reach.
+   */
+  onChainReplaced?: (verdict: CacheChainVerdict & {kind: 'replaced'}) => Promise<void> | void;
 }
 
 /** Bound on the SDK's own teardown. A healthy stop takes tens of milliseconds, so
@@ -447,6 +455,24 @@ export async function startWalletSync(
   const indexerWsUrl = toWsUrl(indexerHttpUrl) + '/ws';
   const relayURL = new URL(toWsUrl(network.nodeUrl));
   const prover = resolveProverConfig(network);
+
+  // The cache is chain state, therefore it is restored only for the chain that wrote it: a local
+  // network brought back from genesis has new coins and new event ids, and the old ones would be
+  // spent and applied as if they were still the chain's (sync/chain-identity.ts).
+  await reconcileCacheChain({
+    store,
+    walletName: name,
+    networkId: network.id,
+    live: await readChainGenesis(indexerHttpUrl),
+    evict: async (verdict) => {
+      onProgress?.(
+        `The chain at ${indexerHttpUrl} restarted from genesis (${shortHash(verdict.previous)} → ${shortHash(verdict.current)}): cached state discarded, syncing from the start`
+      );
+      await clearSyncCache(name, network.id, store);
+      await clearEmptyRefCache(network.id, store);
+      await options?.onChainReplaced?.(verdict);
+    },
+  });
 
   // Transaction history follows the same cache lifecycle as the sub-wallet
   // states below: restore from the store so history survives restarts, sync
@@ -1146,6 +1172,12 @@ export async function clearSyncCache(walletName: string, networkId: string, stor
   await evictCachedState(resolved, walletName, networkId, 'unshielded');
   await evictCachedState(resolved, walletName, networkId, 'dust');
   await evictCachedState(resolved, walletName, networkId, 'history');
+  // The chain stamp names the chain the parts above were synced on, so it goes with them.
+  try {
+    await resolved.delete(chainIdentityKey(networkId, walletName));
+  } catch {
+    /* ignore */
+  }
 }
 
 /**
