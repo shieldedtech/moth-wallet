@@ -100,7 +100,7 @@ separate app ID (`-PmothAppSuffix=.uitest`, so a real wallet is never touched), 
 fingerprint prompt answered by `adb emu finger touch 1`. It uses emulators only, never a phone.
 
 ```sh
-scripts/build-native.sh && scripts/bundle-engine.sh
+ABIS="arm64-v8a x86_64" scripts/build-native.sh && scripts/bundle-engine.sh
 ANDROID_HOME=~/Android/Sdk scripts/ui-test.sh      # TESTS=..., AVD=..., GRADLE=...
 ```
 
@@ -108,16 +108,17 @@ One-time emulator setup: set a screen lock PIN (`adb -e shell locksettings set-p
 then Settings → Security → Fingerprint, and answer each "touch the sensor" step with
 `adb -e emu finger touch 1`.
 
-The emulator must run arm64 code, because the native prover is built only for `arm64-v8a`:
+The native library must match the emulator's ABI. On an x86_64 Linux or Intel host, use an
+x86_64 system image and build the library for it as well; the prover compiles for x86_64
+unchanged:
 
-- **arm64 system image**: runs only on an arm64 host (an Apple-silicon Mac).
-- **x86_64 image, API 30 or later, Google APIs**: these images translate ARM app code, so the
-  arm64-only APK installs on an x86_64 Linux or Intel host. Not tried with this prover; expect
-  it to be slow.
-- **x86_64 build of the native library** (not done yet): `cross build --target
-  x86_64-linux-android` with the `ghcr.io/cross-rs/x86_64-linux-android:main` image, copied to
-  `jniLibs/x86_64`, plus `x86_64` in `abiFilters` for test builds. Native speed on a KVM
-  emulator, so it is the route for CI on the Linux runners the Android build job uses.
+```sh
+ABIS="arm64-v8a x86_64" scripts/build-native.sh   # jniLibs/arm64-v8a and jniLibs/x86_64
+```
+
+`ui-test.sh` packages only the emulator's ABI (`-PmothAbis=x86_64`); phone builds stay
+arm64-only. This is also the route for CI on the Linux runners the Android build job uses. An
+arm64 system image runs only on an arm64 host (an Apple-silicon Mac).
 
 ## Measured
 

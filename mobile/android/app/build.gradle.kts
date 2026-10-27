@@ -16,7 +16,9 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "0.0.1"
-        ndk { abiFilters += "arm64-v8a" }
+        // -PmothAbis=arm64-v8a,x86_64 also packages the x86_64 library, for emulators (UI tests).
+        val abis = (project.findProperty("mothAbis") as String?)?.split(",") ?: listOf("arm64-v8a")
+        ndk { abiFilters += abis }
         // -PmothAppSuffix=.fresh installs a second copy with its own storage and Keystore,
         // e.g. to time a new wallet without touching an existing one.
         val suffix = (project.findProperty("mothAppSuffix") as String?).orEmpty()

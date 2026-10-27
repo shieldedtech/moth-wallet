@@ -8,9 +8,9 @@
 #   TESTS=OnboardingTests scripts/ui-test.sh
 #
 # Only emulators are used: a phone's fingerprint cannot be faked, and a phone may hold a real
-# wallet. The emulator must be able to run arm64 code (the native prover is built only for
-# arm64-v8a), have a screen lock PIN and fingerprint 1 enrolled; see the
-# README's "UI tests". Build the native library and engine bundle first (README "Build and run").
+# wallet. The emulator needs a screen lock PIN and fingerprint 1 enrolled; see the README's
+# "UI tests". Build the engine bundle and the native library for the emulator's ABI first
+# (ABIS="arm64-v8a x86_64" scripts/build-native.sh).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 SDK=${ANDROID_HOME:-$HOME/Android/Sdk}
@@ -18,7 +18,6 @@ export ANDROID_HOME=$SDK PATH="$SDK/platform-tools:$SDK/emulator:$HOME/.cargo/bi
 APP_ID=io.shielded.moth.uitest
 GRADLE=${GRADLE:-gradle}
 
-[ -f app/src/main/jniLibs/arm64-v8a/libmoth_android.so ] || { echo "error: run scripts/build-native.sh first" >&2; exit 1; }
 [ -f app/src/main/assets/engine/index.html ] || { echo "error: run scripts/bundle-engine.sh first" >&2; exit 1; }
 
 serial=$(adb devices | awk '$1 ~ /^emulator-/ && $2 == "device" { print $1; exit }')
@@ -32,11 +31,9 @@ export ANDROID_SERIAL=$serial
 adb wait-for-device
 until [ "$(adb shell getprop sys.boot_completed | tr -d '\r')" = 1 ]; do sleep 2; done
 
-abis=$(adb shell getprop ro.product.cpu.abilist | tr -d '\r')
-case ",$abis," in
-  *,arm64-v8a,*) ;;
-  *) echo "error: $serial runs $abis; the app needs arm64-v8a (an arm64 image, or an x86_64 image with ARM translation)" >&2; exit 1 ;;
-esac
+# Package the native library for the emulator's own ABI, so the prover runs at full speed.
+abi=$(adb shell getprop ro.product.cpu.abi | tr -d '\r')
+[ -f "app/src/main/jniLibs/$abi/libmoth_android.so" ] || { echo "error: no native library for $abi; run ABIS=$abi scripts/build-native.sh" >&2; exit 1; }
 
 # The Keystore key works only while the screen is unlocked; keep it on once it is.
 adb shell svc power stayon true
@@ -55,6 +52,6 @@ trap 'kill $RESPONDER 2>/dev/null; pkill -P $RESPONDER 2>/dev/null || true' EXIT
 # also deletes the app's Keystore keys.
 for class in ${TESTS:-OnboardingTests}; do
   adb uninstall "$APP_ID" >/dev/null 2>&1 || true
-  "$GRADLE" -q connectedDebugAndroidTest -PmothAppSuffix=.uitest \
+  "$GRADLE" -q connectedDebugAndroidTest -PmothAppSuffix=.uitest -PmothAbis="$abi" \
     -Pandroid.testInstrumentationRunnerArguments.class="io.shielded.moth.$class"
 done
