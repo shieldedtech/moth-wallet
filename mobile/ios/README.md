@@ -79,6 +79,16 @@ DEVICE=<udid> scripts/device.sh install
 DEVICE=<udid> scripts/device.sh launch   # the phone must be unlocked
 ```
 
+A checkout that built the fixed ledger before the shared code moved to `mobile/shared` still
+has it in `mobile/ios/vendor/`, which git ignores. Move it, or `build-engine.sh` rebuilds it
+(and needs the wasm toolchain above):
+
+```sh
+cd mobile/ios
+mkdir -p ../shared/vendor && mv vendor/ledger-v8 ../shared/vendor/
+ln -sfn "$(cd ../.. && pwd)/node_modules" ../shared/vendor/node_modules
+```
+
 Xcode builds the native library itself (`scripts/build-native.sh`, the "Build moth-native" phase), then copies the engine and proving keys into the app (`scripts/bundle-resources.sh`). Get the phone's UDID from `xcrun devicectl list devices`.
 
 **Proving keys.** The wallet circuits' keys and the SRS up to 2^17 are bundled from `~/.cache/midnight/zk-params` (override with `MIDNIGHT_PP`). If they aren't there, the in-app prover downloads them on first use.

@@ -53,7 +53,8 @@ Prerequisites:
   (patched ledger WASM by default; see "DUST restore time" in the iOS README). Without a local
   wasm32 clang, build the ledger in Docker: `rust:1.90-bookworm` plus `apt install clang llvm`
   and wasm-pack, then `LLVM_BIN=/usr/bin mobile/shared/scripts/build-ledger-wasm.sh`. ledger-8.1.0 needs
-  Rust 1.89 or later (konst 0.4.3).
+  Rust 1.89 or later (konst 0.4.3). A ledger built before the move to `mobile/shared` is still
+  in `mobile/ios/vendor/`; move it as the iOS README shows rather than rebuilding it.
 - Rust with the `aarch64-linux-android` target, `cargo install cross`, Docker
 - Android SDK (platform 34, build-tools 34.0.0) and Gradle 8.9+, Java 17+
 - A phone with USB debugging, `adb`
