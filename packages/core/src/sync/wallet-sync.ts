@@ -21,7 +21,7 @@ import {createWalletProvingService} from '../proof/provider.js';
 import {NIGHT_TOKEN_ID, formatNight} from '../types/tokens.js';
 import {formatDustBalance} from '../wallet/balance-format.js';
 import {clearEmptyRefCache, ensureEmptyRefCache, preSeedNewWallet} from './preseed.js';
-import {readChainGenesis, reconcileCacheChain, shortHash, type CacheChainVerdict} from './chain-identity.js';
+import {describeChainVerdict, readChainIdentity, reconcileCacheChain, type CacheChainVerdict} from './chain-identity.js';
 import {InMemorySyncStateStore, chainIdentityKey, syncStateKey, type SyncStateStore, type WalletPart} from './sync-store.js';
 import {initialDustParameters} from './ledger-routing.js';
 import {spendableDust, summarizeDustGeneration, type DustGeneration} from './dust-generation.js';
@@ -458,21 +458,20 @@ export async function startWalletSync(
 
   // The cache is chain state, therefore it is restored only for the chain that wrote it: a local
   // network brought back from genesis has new coins and new event ids, and the old ones would be
-  // spent and applied as if they were still the chain's (sync/chain-identity.ts).
-  await reconcileCacheChain({
+  // spent and applied as if they were still the chain's (sync/chain-identity.ts). Every verdict
+  // is said, not only the eviction, so a run is diagnosed from the sync log alone.
+  const chainVerdict = await reconcileCacheChain({
     store,
     walletName: name,
     networkId: network.id,
-    live: await readChainGenesis(indexerHttpUrl),
+    live: await readChainIdentity(indexerHttpUrl),
     evict: async (verdict) => {
-      onProgress?.(
-        `The chain at ${indexerHttpUrl} restarted from genesis (${shortHash(verdict.previous)} → ${shortHash(verdict.current)}): cached state discarded, syncing from the start`
-      );
       await clearSyncCache(name, network.id, store);
       await clearEmptyRefCache(network.id, store);
       await options?.onChainReplaced?.(verdict);
     },
   });
+  onProgress?.(describeChainVerdict(chainVerdict, indexerHttpUrl));
 
   // Transaction history follows the same cache lifecycle as the sub-wallet
   // states below: restore from the store so history survives restarts, sync

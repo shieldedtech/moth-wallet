@@ -143,9 +143,12 @@ export {
 } from './sync/preseed-portable.js';
 export { chainTip } from './sync/chain-tip.js';
 export {
+  CHAIN_IDENTITY_HEIGHT,
   cacheChainVerdict,
-  readChainGenesis,
+  describeChainVerdict,
+  readChainIdentity,
   reconcileCacheChain,
+  shortHash,
   type CacheChainVerdict,
   type ReconcileCacheChainOptions,
 } from './sync/chain-identity.js';

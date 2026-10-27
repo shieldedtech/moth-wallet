@@ -54,7 +54,7 @@ export function cursorWitnessKey(networkId: string, walletName: string, part: Wa
 }
 
 /**
- * Where the chain a wallet's cache was synced on is recorded, as its genesis block hash. The
+ * Where the chain a wallet's cache was synced on is recorded, as the hash of its block 1. The
  * cached parts are chain state, therefore they are kept only for the chain that wrote them;
  * see sync/chain-identity.ts.
  */
