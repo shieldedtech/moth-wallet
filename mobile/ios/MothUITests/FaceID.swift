@@ -2,11 +2,11 @@ import XCTest
 
 /// Chooses how scripts/ui-test.sh answers the simulator's Face ID prompts from now on.
 ///
-/// The script polls a control file every 2 seconds and sends a matching face, a non-matching
-/// face, or nothing. The default, and the state at the start of every class, is a match.
+/// The script polls a control file every 2 seconds and sends a matching or a non-matching face.
+/// The default, and the state at the start of every class, is a match.
 enum FaceID {
     enum Answer: String {
-        case match, nomatch, off
+        case match, nomatch
     }
 
     static func answer(_ answer: Answer) {

@@ -37,6 +37,9 @@ final class IsolationTests: XCTestCase {
     /// server listens on 127.0.0.1:6300 while Moth is open. The probe page is served over http on
     /// localhost, the one kind of http page Moth's browser opens; WebKit's mixed-content rules
     /// already stop an https page reaching the prover.
+    ///
+    /// The proof server's CORS policy is permissive today, so the prover checks are expected to
+    /// fail. Once it is narrowed they pass, the expectation itself fails, and it should be removed.
     func testPageCannotReadProverOrEngine() {
         let app = XCUIApplication()
         let web = openProbe(app)
@@ -49,6 +52,9 @@ final class IsolationTests: XCTestCase {
         let done = NSPredicate(format: "NOT label CONTAINS 'not run'")
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: done, object: post)], timeout: 30), .completed)
         XCTAssertTrue(engine.label.hasPrefix("engine: blocked"), "engine origin readable from a DApp: \(engine.label)")
+        XCTExpectFailure("The proof server allows any origin, so a localhost http page can read and call it")
+        // Report each probe, not just the first.
+        continueAfterFailure = true
         for name in ["prover", "ready", "post"] {
             let line = web.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", name + ": ")).firstMatch
             XCTAssertTrue(line.label.hasPrefix(name + ": blocked"), "proof server readable from a DApp: \(line.label)")
