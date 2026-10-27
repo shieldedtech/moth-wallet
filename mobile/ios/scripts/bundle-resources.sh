@@ -17,7 +17,9 @@ mkdir -p "$DEST/params"
 if [ -d "$PP/zswap/9" ] && [ -d "$PP/dust/9" ]; then
   mkdir -p "$DEST/params/zswap" "$DEST/params/dust"
   rsync -a "$PP/zswap/9" "$DEST/params/zswap/" && rsync -a "$PP/dust/9" "$DEST/params/dust/"
-  for k in 10 11 12 13 14 15 16 17; do [ -f "$PP/bls_midnight_2p$k" ] && cp "$PP/bls_midnight_2p$k" "$DEST/params/"; done
+  for k in 10 11 12 13 14 15 16 17; do
+    if [ -f "$PP/bls_midnight_2p$k" ]; then cp "$PP/bls_midnight_2p$k" "$DEST/params/"; fi
+  done
 else
   echo "warning: no zk params at $PP; Moth will download them on first proof"
 fi
