@@ -101,15 +101,15 @@ fingerprint prompt answered by `adb emu finger touch 1`. It uses emulators only,
 
 ```sh
 ABIS="arm64-v8a x86_64" scripts/build-native.sh && scripts/bundle-engine.sh
-export ANDROID_HOME=~/Android/Sdk
-ANDROID_SERIAL=$(scripts/emulator-setup.sh | tail -1) scripts/ui-test.sh   # TESTS=..., GRADLE=...
+ANDROID_HOME=~/Android/Sdk scripts/ui-test.sh   # TESTS=..., AVD=..., PORT=..., WINDOW=1, GRADLE=...
 ```
 
-`scripts/emulator-setup.sh` does what the iOS script does with `simctl`: it creates the AVD
-once (`system-images;android-36;google_apis;x86_64`, with an 8 GB data partition, since
-avdmanager's 800 MB fills up), boots it without a window (`WINDOW=1` shows one), sets the
-screen lock PIN `1111` and enrols fingerprint 1 through Settings. CI runs the same two
-commands in the Android job (`.github/workflows/mobile.yml`).
+Like the iOS script with `simctl`, `ui-test.sh` first runs `scripts/emulator-setup.sh`. It
+creates the AVD once (`system-images;android-36;google_apis;x86_64`, with an 8 GB data
+partition, since avdmanager's 800 MB fills up), boots it without a window (`WINDOW=1` shows
+one), sets the screen lock PIN `1111` and enrols fingerprint 1 through Settings. CI runs the
+same script in the Android job (`.github/workflows/mobile.yml`). Pass
+`ANDROID_SERIAL=emulator-…` to use an emulator that is already running and set up.
 
 Tested on 2026-10-28: the API 36 image (WebView 133) and the API 34 image (WebView 113, which
 needs the engine's polyfills) pass `OnboardingTests`. The API 37 image crash-loops on this

@@ -267,8 +267,8 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      # Boots an API 36 x86_64 emulator with a PIN and fingerprint, then runs the UI tests on
+      # Sets up an API 36 x86_64 emulator with a PIN and fingerprint, then runs the tests on
       # it. Like the iOS tests, they sync a fresh wallet on preprod, so they need the public
       # indexer to be up.
       - name: UI tests
-        run: ANDROID_SERIAL=$(scripts/emulator-setup.sh | tail -1) scripts/ui-test.sh
+        run: scripts/ui-test.sh

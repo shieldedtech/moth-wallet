@@ -3,13 +3,14 @@
 # (io.shielded.moth.uitest), answering each fingerprint prompt the tests ask about with
 # `adb emu finger touch`. Needs network access (the test syncs on preprod).
 #
-#   scripts/ui-test.sh                      # the emulator in ANDROID_SERIAL, else the first one
-#   ANDROID_SERIAL=$(scripts/emulator-setup.sh | tail -1) scripts/ui-test.sh
+#   scripts/ui-test.sh                      # sets up and boots the emulator (AVD, PORT, WINDOW)
+#   ANDROID_SERIAL=emulator-5556 scripts/ui-test.sh   # a running emulator, already set up
 #   TESTS=OnboardingTests scripts/ui-test.sh
 #
 # Only emulators are used: a phone's fingerprint cannot be faked, and a phone may hold a real
-# wallet. The emulator needs a screen lock PIN and fingerprint 1 enrolled, which
-# scripts/emulator-setup.sh arranges. Build the engine bundle and the native library for the emulator's ABI first
+# wallet. Without ANDROID_SERIAL, scripts/emulator-setup.sh creates and boots one with the screen
+# lock PIN and fingerprint the tests need, as the iOS script does with simctl. Build the engine
+# bundle and the native library for the emulator's ABI first
 # (ABIS="arm64-v8a x86_64" scripts/build-native.sh).
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -22,10 +23,10 @@ GRADLE=${GRADLE:-gradle}
 
 case "${ANDROID_SERIAL:-}" in
   emulator-*) serial=$ANDROID_SERIAL ;;
-  "") serial=$(adb devices | awk '$1 ~ /^emulator-/ && $2 == "device" { print $1; exit }') ;;
+  # A plain assignment, so a setup failure stops this script (set -e, pipefail).
+  "") serial=$(scripts/emulator-setup.sh | tail -1) ;;
   *) echo "error: ANDROID_SERIAL=$ANDROID_SERIAL is not an emulator" >&2; exit 1 ;;
 esac
-[ -n "$serial" ] || { echo "error: no emulator running; run scripts/emulator-setup.sh" >&2; exit 1; }
 # Gradle's connected tests and every adb call below use this device only.
 export ANDROID_SERIAL=$serial
 adb wait-for-device
