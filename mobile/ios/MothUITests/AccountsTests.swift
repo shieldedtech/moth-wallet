@@ -26,7 +26,12 @@ final class AccountsTests: XCTestCase {
 
         // Rename the active account from its options menu; the wallet header follows.
         app.tabBars.buttons["Settings"].tap()
-        app.buttons["Main options"].tap()
+        // XCUITest computes no hit point for a Menu inside a Form row (it reports the button as
+        // not hittable although it is on screen), so tap the centre of its frame instead.
+        let options = app.buttons["Main options"]
+        XCTAssertTrue(options.waitForExistence(timeout: 10), "account options menu")
+        options.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(app.buttons["Rename"].waitForExistence(timeout: 5), "options menu opened")
         app.buttons["Rename"].tap()
         let name = app.alerts.textFields.firstMatch
         XCTAssertTrue(name.waitForExistence(timeout: 5))
