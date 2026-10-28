@@ -11,6 +11,11 @@ final class ConnectorTests: XCTestCase {
         app.launch()
         unlockOrCreate(app)
 
+        // Switch only once the first sync is done, as AccountsTests does by the time it switches.
+        // While the sync runs, its progress redraws Settings many times a second, and in CI the
+        // network menu then closed on the tap without selecting preprod.
+        XCTAssertTrue(app.staticTexts["Synced"].waitForExistence(timeout: 300), "first sync on preview done")
+
         // The mock DApp requests preprod, and new wallets start on preview.
         app.tabBars.buttons["Settings"].tap()
         reveal(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Network'")).firstMatch, in: app).tap()
