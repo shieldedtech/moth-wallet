@@ -76,18 +76,24 @@ wait_until 600 "boot completed" booted
 # boot_completed comes before every system service is up.
 wait_until 300 "system services up" adb shell locksettings get-disabled
 
-# The Keystore key works only while the screen is unlocked; keep it on and unlocked.
+# The Keystore key works only while the screen is unlocked; keep it on and unlocked. On a slow
+# runner the lock screen can come up again after the PIN is set, so unlock before each step.
 adb shell svc power stayon true
-adb shell input keyevent KEYCODE_WAKEUP
+unlock() {
+  adb shell input keyevent KEYCODE_WAKEUP
+  adb shell dumpsys window | grep "isKeyguardShowing=true" >/dev/null || return 0
+  log "unlocking the screen"
+  adb shell wm dismiss-keyguard
+  sleep 2
+  adb shell input text "$PIN"
+  adb shell input keyevent KEYCODE_ENTER
+  sleep 2
+}
 if ! adb shell locksettings verify --old "$PIN" >/dev/null 2>&1; then
   adb shell locksettings set-pin "$PIN" >/dev/null
   log "screen lock PIN set"
-elif adb shell dumpsys window | grep "isKeyguardShowing=true" >/dev/null; then
-  adb shell wm dismiss-keyguard
-  sleep 1
-  adb shell input text "$PIN"
-  adb shell input keyevent KEYCODE_ENTER
 fi
+unlock
 
 # Settings' enrolment screens, driven by their text; the sensor is the emulator's. Each step
 # waits for its screen, which can take a while after a cold boot.
@@ -110,6 +116,7 @@ tap() {
   adb shell input tap $(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 ))
 }
 enrol() {
+  unlock
   # A clean start: a failed attempt can leave Settings mid-enrolment, and am start would resume it.
   adb shell am force-stop com.android.settings
   adb shell am start -a android.settings.FINGERPRINT_ENROLL >/dev/null
@@ -140,6 +147,7 @@ if ! enrolled; then
   screen | grep -o 'text="[^"]\+"' | head -5 >&2
   fail "fingerprint enrolment failed"
 fi
+unlock
 log "ready: $ANDROID_SERIAL"
 
 echo "$ANDROID_SERIAL"
