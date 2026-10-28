@@ -2,6 +2,7 @@
 //
 // The wallet is moth's extension worker, unmodified (see host.ts); events reach Swift on the
 // `moth` script message handler.
+import './polyfills';
 import { deserializeActivity } from 'moth-ext/messaging/activity-json';
 import { NIGHT_TOKEN_ID } from '@shieldedtech/moth-wallet/types/tokens';
 import { parseNightAmount } from '@shieldedtech/moth-wallet/wallet/night-amount';

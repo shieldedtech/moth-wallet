@@ -1,6 +1,6 @@
 // The engine's link to moth's wallet worker, plus the state the extension's service worker
 // keeps there: unlocked sessions and network configs.
-import WalletWorker from 'moth-ext/offscreen/wallet-worker?worker';
+import WalletWorker from './worker?worker';
 import {
   deserializeHostError,
   type HostEvent,

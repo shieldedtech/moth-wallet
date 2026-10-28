@@ -15,5 +15,5 @@
       "@shieldedtech/moth-browser": ["../../../packages/browser/dist/index.d.ts"]
     }
   },
-  "include": ["main.ts", "inject.ts", "../../../packages/extension/.wxt/wxt.d.ts"]
+  "include": ["main.ts", "worker.ts", "inject.ts", "../../../packages/extension/.wxt/wxt.d.ts"]
 }
