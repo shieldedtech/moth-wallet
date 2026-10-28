@@ -111,7 +111,8 @@ fun SendScreen(model: WalletModel, onBack: () -> Unit) {
                     Modifier.fillMaxWidth(),
                     enabled = ready && !model.busy,
                 ) {
-                    transfers { t ->
+                    // A second tap can arrive before the disabled button is drawn.
+                    if (!model.busy) transfers { t ->
                         if (fee == null) model.estimateFee(t) { r -> r.onSuccess { fee = it }.onFailure { model.error = it.message } }
                         else model.send(t) { r -> r.onSuccess { sentHash = it }.onFailure { model.error = it.message } }
                     }

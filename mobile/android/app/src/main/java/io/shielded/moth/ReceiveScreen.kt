@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.PersistableBundle
+import android.os.SystemClock
 import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -138,8 +139,17 @@ fun QrCode(text: String, modifier: Modifier = Modifier) {
     }
 }
 
-/** Port of iOS `Clipboard`: marks the copy sensitive and clears it after two minutes if it is still ours. */
+/**
+ * Port of iOS `Clipboard`: marks the copy sensitive and clears it after two minutes if it is still ours.
+ *
+ * Only the focused app can read the clipboard (Android 10+), and the copy is usually pasted in
+ * another app, so a clear that falls due in the background waits until Moth has focus again.
+ */
 object Clipboard {
+    private const val CLEAR_AFTER_MS = 120_000L
+    /** The address last copied and when to clear it, until it is cleared or replaced. */
+    private var pending: Pair<String, Long>? = null
+
     fun copy(context: Context, text: String) {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         val clip = ClipData.newPlainText("Moth address", text)
@@ -149,9 +159,18 @@ object Clipboard {
         clipboard.setPrimaryClip(clip)
         // Android 13+ shows its own copy confirmation.
         if (Build.VERSION.SDK_INT < 33) Toast.makeText(context, "Address copied", Toast.LENGTH_SHORT).show()
-        Handler(Looper.getMainLooper()).postDelayed({
-            val current = clipboard.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.text?.toString()
-            if (current == text) clipboard.clearPrimaryClip()
-        }, 120_000)
+        pending = text to SystemClock.elapsedRealtime() + CLEAR_AFTER_MS
+        val app = context.applicationContext
+        Handler(Looper.getMainLooper()).postDelayed({ clearIfDue(app) }, CLEAR_AFTER_MS)
+    }
+
+    /** Clears a due copy if it is still ours. Unreadable (Moth not focused): keeps it for the next call. */
+    fun clearIfDue(context: Context) {
+        val (text, due) = pending ?: return
+        if (SystemClock.elapsedRealtime() < due) return
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val current = clipboard.primaryClip ?: return
+        if (current.itemCount > 0 && current.getItemAt(0).text?.toString() == text) clipboard.clearPrimaryClip()
+        pending = null
     }
 }

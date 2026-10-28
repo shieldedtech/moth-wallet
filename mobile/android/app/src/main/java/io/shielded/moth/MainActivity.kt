@@ -62,17 +62,6 @@ class MainActivity : FragmentActivity() {
         if (android.os.Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false)
         model = WalletModel(this)
 
-        val engineDir = Bundled.extract(this, "engine")
-        val params = File(filesDir, "zk-params").apply { mkdirs() }
-        check(Native.initTls(applicationContext)) { "could not set up TLS for the prover" }
-        val proverPort = Native.proverStart(params.path, 6300, 2)
-        val enginePort = Native.staticStart(engineDir.path, 8765)
-        model.write("prover on 127.0.0.1:$proverPort, engine page on 127.0.0.1:$enginePort")
-        model.start()
-        lifecycle.addObserver(autoUnlock)
-        // Attached but invisible, so the WebView is never paused as off-screen.
-        addContentView(model.engine.webView, android.view.ViewGroup.LayoutParams(1, 1))
-
         setContent {
             MothTheme {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -80,12 +69,33 @@ class MainActivity : FragmentActivity() {
                 }
             }
         }
+        Servers.start(this)
+            .onSuccess { model.write("prover on 127.0.0.1:${Servers.PROVER_PORT}, engine page on 127.0.0.1:${Servers.ENGINE_PORT}") }
+            .onFailure { return model.startFailed(it) }
+        model.start()
+        lifecycle.addObserver(autoUnlock)
+        // Attached but invisible, so the WebView is never paused as off-screen.
+        addContentView(model.engine.webView, android.view.ViewGroup.LayoutParams(1, 1))
         handle(intent)
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        // The activity can be created again in this process (back on Android 11, a locale
+        // change); its new engine page must not share the wallet's IndexedDB with this one.
+        model.close()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        // Only the focused app can read the clipboard, so a due clear may have waited for this.
+        if (hasFocus) Clipboard.clearIfDue(this)
     }
 
     @Composable
     private fun App() {
         when (model.phase) {
+            WalletModel.Phase.Failed -> Stopped()
             WalletModel.Phase.NoWallet -> if (screen == "restore") {
                 BackHandler { screen = "home" }
                 RestoreScreen(model) { screen = "home" }
@@ -180,6 +190,17 @@ class MainActivity : FragmentActivity() {
         }
     }
 
+    /** Moth could not start safely; nothing else is offered. */
+    @Composable
+    private fun Stopped() {
+        Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text("Moth stopped", style = MaterialTheme.typography.headlineSmall)
+                Text(model.startError ?: "", textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+
     // As on iOS: leaving the app locks the wallet, so the seed is never left in memory behind
     // the app switcher; coming back asks for the fingerprint again. Showing the device-PIN
     // screen also stops this activity, but lock() only acts on an unlocked wallet.
@@ -224,6 +245,7 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun handle(intent: Intent?) {
+        if (model.phase == WalletModel.Phase.Failed) return
         intent?.getStringExtra("screen")?.let { screen = it }
         when (intent?.getStringExtra("action")) {
             "create" -> model.create()
@@ -234,4 +256,30 @@ class MainActivity : FragmentActivity() {
             "balances" -> model.refreshBalances()
         }
     }
+}
+
+/**
+ * The loopback prover and engine-page servers, started once per process: an activity created
+ * again in the same process must not start them twice.
+ *
+ * Loopback ports are shared by every app on the phone, so another app could hold one first.
+ * The engine page's origin and the prover URL are fixed, so Moth then stops rather than load
+ * that app's page (which would be handed the vault passphrase) or send it proving requests.
+ */
+private object Servers {
+    const val PROVER_PORT = 6300
+    const val ENGINE_PORT = 8765
+    // A failure is kept too: the prover sets the process environment, which is safe only once.
+    private var started: Result<Unit>? = null
+
+    fun start(context: android.content.Context): Result<Unit> = started ?: runCatching {
+        val engineDir = Bundled.extract(context, "engine")
+        val params = File(context.filesDir, "zk-params").apply { mkdirs() }
+        check(Native.initTls(context.applicationContext)) { "Could not set up TLS for the prover." }
+        check(Native.proverStart(params.path, PROVER_PORT, 2) == PROVER_PORT) { taken(PROVER_PORT) }
+        check(Native.staticStart(engineDir.path, ENGINE_PORT) == ENGINE_PORT) { taken(ENGINE_PORT) }
+    }.also { started = it }
+
+    private fun taken(port: Int) =
+        "Another app is using port $port on this phone, which Moth needs, so Moth stopped before that app could reach your wallet. Restart the phone and open Moth again; if this keeps happening, remove apps you do not trust."
 }

@@ -37,7 +37,8 @@ class Engine(context: Context, private val onEvent: (event: String, data: Any?) 
         private set
 
     init {
-        WebView.setWebContentsDebuggingEnabled(true)
+        // The page holds the unlocked seed; only test builds may be inspected over adb.
+        WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
         @SuppressLint("SetJavaScriptEnabled")
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true

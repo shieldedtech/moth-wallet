@@ -65,8 +65,37 @@ class WalletModel(private val activity: FragmentActivity) {
     lateinit var engine: Engine
         private set
 
+    /** Why Moth could not start; shown instead of the wallet. */
+    var startError by mutableStateOf<String?>(null)
+        private set
+
     fun start() {
         engine = Engine(context) { event, data -> onEvent(event, data) }
+    }
+
+    fun startFailed(e: Throwable) {
+        write("start failed: ${e.message}")
+        startError = e.message
+        phase = Phase.Failed
+    }
+
+    /** Locks the wallet and destroys the engine page, when the activity is destroyed. */
+    fun close() {
+        if (!::engine.isInitialized) return
+        lock()
+        (engine.webView.parent as? android.view.ViewGroup)?.removeView(engine.webView)
+        engine.webView.destroy()
+    }
+
+    /** Whether the app is in the foreground; onStop locks only a wallet that is fully unlocked. */
+    private val visible get() = activity.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)
+
+    /** Locks a wallet that came unlocked, or stayed unlocked, while the app was in the background. */
+    private fun lockIfHidden() {
+        if (visible || phase != Phase.Unlocked) return
+        write("app left the foreground meanwhile")
+        autoPrompt = true
+        lock()
     }
 
     private fun onEvent(event: String, data: Any?) {
@@ -122,7 +151,11 @@ class WalletModel(private val activity: FragmentActivity) {
                         hasWallet = true
                         write("created wallet $walletName")
                         unlockWith(passphrase)
-                    }.onFailure { fail("create", it) }
+                    }.onFailure {
+                        // As in restore: a key with no wallet would block every later create.
+                        Vault.remove(context, walletName)
+                        fail("create", it)
+                    }
                 }
             }.onFailure { busy = false; if ((it as? VaultException)?.canceled != true) fail("vault", it) }
         }
@@ -219,6 +252,8 @@ class WalletModel(private val activity: FragmentActivity) {
                 addresses = Addresses(a.getString("unshielded"), a.getString("shielded"), a.getString("dust"), a.getString("nightTokenId"))
                 phase = Phase.Unlocked
                 write("unlocked")
+                // onStop ran while this was Unlocking, so it could not lock then.
+                if (!visible) return@onSuccess lockIfHidden()
                 status = "Starting sync…"
                 val state = pendingImport
                 pendingImport = null
@@ -257,8 +292,14 @@ class WalletModel(private val activity: FragmentActivity) {
     // transaction asks for the fingerprint or device PIN: the unlocked session alone is not enough.
 
     /** Converts a NIGHT amount ("1.5") to STAR with the engine's parser. */
-    fun parseNight(text: String, callback: (Result<String>) -> Unit) =
-        engine.call("parseNight", listOf(text.trim())) { r -> callback(r.map { it.toString() }) }
+    fun parseNight(text: String, callback: (Result<String>) -> Unit) {
+        // Busy from the first tap, so a second one cannot start another send meanwhile.
+        busy = true
+        engine.call("parseNight", listOf(text.trim())) { r ->
+            busy = false
+            callback(r.map { it.toString() })
+        }
+    }
 
     /** The DUST fee for sending [transfers] in one transaction, in SPECK. */
     fun estimateFee(transfers: List<Transfer>, callback: (Result<String>) -> Unit) {
@@ -272,7 +313,7 @@ class WalletModel(private val activity: FragmentActivity) {
     /** Sends all [transfers] in one transaction and returns its hash. */
     fun send(transfers: List<Transfer>, callback: (Result<String>) -> Unit) = authorized("Approve this send", callback) {
         engine.call("send", listOf(walletName, network, JSONArray(transfers.map { it.json }))) { r ->
-            busy = false
+            txDone()
             r.onSuccess { write("sent $it") }.onFailure { write("send failed: ${it.message}") }
             callback(r.mapCatching { (it as JSONObject).getString("txHash") })
         }
@@ -281,14 +322,14 @@ class WalletModel(private val activity: FragmentActivity) {
     /** Registers this wallet's NIGHT so it generates DUST for this wallet. */
     fun registerDust() = authorized("Approve DUST registration", ::reportTx) {
         engine.call("registerDust", listOf(walletName, network)) { r ->
-            busy = false
+            txDone()
             reportTx(r.mapCatching { describeRegistration(it as JSONObject) })
         }
     }
 
     fun deregisterDust() = authorized("Approve DUST deregistration", ::reportTx) {
         engine.call("deregisterDust", listOf(walletName, network)) { r ->
-            busy = false
+            txDone()
             reportTx(r.mapCatching {
                 "Deregistration submitted (${(it as JSONObject).getString("txHash").take(12)}…). This NIGHT stops generating DUST once it is on chain."
             })
@@ -305,10 +346,16 @@ class WalletModel(private val activity: FragmentActivity) {
         Vault.confirmPresence(activity, reason) { r ->
             authorizing = false
             r.onSuccess { work() }.onFailure {
-                busy = false
+                txDone()
                 if ((it as? VaultException)?.canceled != true) onFail(Result.failure(it))
             }
         }
+    }
+
+    /** Ends a transaction. onStop skips locking while [authorizing], so lock now if the app left meanwhile. */
+    private fun txDone() {
+        busy = false
+        lockIfHidden()
     }
 
     private fun reportTx(r: Result<String>) {

@@ -110,8 +110,10 @@ object Vault {
             }
             val cipher = try {
                 Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key) }
-            } catch (e: android.security.keystore.UserNotAuthenticatedException) {
-                Log.i("MothSpike", "vault: this phone refuses $mode keys (${e.message}); trying the next mode")
+            } catch (e: Exception) {
+                // TEEs refuse in different ways: UserNotAuthenticatedException, other
+                // InvalidKeyExceptions, ProviderException, KeyStoreException.
+                Log.i("MothSpike", "vault: this phone refuses $mode keys (${e.javaClass.simpleName}: ${e.message}); trying the next mode")
                 keyStore().deleteEntry(alias(wallet))
                 continue
             }
@@ -132,27 +134,37 @@ object Vault {
 
     /** Reads [wallet]'s passphrase, asking for a fingerprint or the device PIN. */
     fun passphrase(activity: FragmentActivity, wallet: String, reason: String, callback: (Result<String>) -> Unit) {
-        val blob = prefs(activity).getString(wallet, null)
-        val key = keyStore().getKey(alias(wallet), null) as? SecretKey
-        if (blob == null || key == null) {
-            return callback(Result.failure(VaultException("This wallet's key is missing from this phone. Restore it from its recovery phrase.")))
-        }
-        val parts = blob.split(":")
-        // Blobs from before modes were recorded have no mode prefix; they were per-use, PIN allowed.
-        val mode = if (parts.size == 3) Mode.valueOf(parts[0]) else Mode.PerUseBiometricOrPin
-        val (iv, sealed) = parts.takeLast(2).map { Base64.decode(it, Base64.NO_WRAP) }
-        val decrypt = { c: Cipher -> String(c.doFinal(sealed)) }
-        val init = { Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, iv)) } }
+        // Every failure, here or after the prompt (a timed key is only used then), reaches the
+        // callback as a VaultException; none may escape and crash the app.
+        val done = { r: Result<String> -> callback(r.exceptionOrNull()?.let { Result.failure(explain(it)) } ?: r) }
         try {
+            val blob = prefs(activity).getString(wallet, null)
+            val key = keyStore().getKey(alias(wallet), null) as? SecretKey
+            if (blob == null || key == null) {
+                return done(Result.failure(VaultException("This wallet's key is missing from this phone. Restore it from its recovery phrase.")))
+            }
+            val parts = blob.split(":")
+            // Blobs from before modes were recorded have no mode prefix; they were per-use, PIN allowed.
+            val mode = if (parts.size == 3) Mode.valueOf(parts[0]) else Mode.PerUseBiometricOrPin
+            val (iv, sealed) = parts.takeLast(2).map { Base64.decode(it, Base64.NO_WRAP) }
+            val decrypt = { c: Cipher -> String(c.doFinal(sealed)) }
+            val init = { Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, iv)) } }
             if (mode.perUse) {
                 val cipher = init()
-                prompt(activity, reason, mode, cipher) { r -> callback(r.mapCatching { decrypt(it!!) }) }
+                prompt(activity, reason, mode, cipher) { r -> done(r.mapCatching { decrypt(it!!) }) }
             } else {
-                prompt(activity, reason, mode, null) { r -> callback(r.mapCatching { decrypt(init()) }) }
+                prompt(activity, reason, mode, null) { r -> done(r.mapCatching { decrypt(init()) }) }
             }
-        } catch (e: android.security.keystore.KeyPermanentlyInvalidatedException) {
-            callback(Result.failure(VaultException("This wallet's key was invalidated because the screen lock was removed. Restore it from its recovery phrase.")))
+        } catch (e: Exception) {
+            done(Result.failure(e))
         }
+    }
+
+    private fun explain(e: Throwable): VaultException = when (e) {
+        is VaultException -> e
+        is android.security.keystore.KeyPermanentlyInvalidatedException ->
+            VaultException("This wallet's key was invalidated because the screen lock was removed. Restore it from its recovery phrase.")
+        else -> VaultException("Could not use this wallet's key: ${e.message ?: e.javaClass.simpleName}")
     }
 
     private fun generateKey(wallet: String, mode: Mode): SecretKey {
