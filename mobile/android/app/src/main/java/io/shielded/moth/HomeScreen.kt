@@ -61,8 +61,11 @@ fun HomeScreen(model: WalletModel, onReceive: () -> Unit, onSend: () -> Unit, on
             item { SectionHeader("${model.walletName} · ${model.network}") }
             item { Card(Modifier.fillMaxWidth()) { SyncStatus(model) } }
 
-            item { SectionHeader("Balances") }
-            item { Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(vertical = 4.dp)) { BalanceRows(model) } } }
+            // Unshielded first, NIGHT at the top; then shielded, each token by its short id.
+            for (shielded in listOf(false, true)) {
+                item { SectionHeader(if (shielded) "Shielded balances" else "Unshielded balances") }
+                item { Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(vertical = 4.dp)) { BalanceRows(model, shielded) } } }
+            }
 
             model.balances?.let { b ->
                 item { SectionHeader("DUST") }
@@ -145,32 +148,28 @@ private fun SyncStatus(model: WalletModel) {
 }
 
 @Composable
-private fun BalanceRows(model: WalletModel) {
+private fun BalanceRows(model: WalletModel, shielded: Boolean) {
     val b = model.balances
-    val night = model.addresses?.nightTokenId
-    if (b == null || night == null) {
-        Text("Waiting for the first sync update…", Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+    val addresses = model.addresses
+    val rows = if (b != null && addresses != null) holdings(b, addresses.nightTokenId, shielded) else null
+    if (rows.isNullOrEmpty()) {
+        val text = if (rows == null) "Waiting for the first sync update…" else "None"
+        Text(text, Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
         return
     }
-    val nightAmount = { base: String? -> Amount.format(base ?: "0", Amount.NIGHT_DECIMALS, 6) }
-    BalanceRow("NIGHT", "unshielded", nightAmount(b.unshielded[night]))
-    b.unshielded.keys.filter { it != night }.sorted().forEach { id ->
-        HorizontalDivider()
-        BalanceRow(tokenLabel(id), "unshielded token", b.unshielded[id] ?: "0")
-    }
-    b.shielded.keys.sorted().forEach { id ->
-        HorizontalDivider()
-        if (id == night) BalanceRow("NIGHT", "shielded", nightAmount(b.shielded[id]))
-        else BalanceRow(tokenLabel(id), "shielded", b.shielded[id] ?: "0")
+    rows.forEachIndexed { i, h ->
+        if (i > 0) HorizontalDivider()
+        // Tokens other than NIGHT have no registry, so no decimals: their amount is in base units.
+        BalanceRow(h.name, if (h.decimals > 0) null else "base units", h.formatted)
     }
 }
 
 @Composable
-private fun BalanceRow(name: String, detail: String, amount: String) {
+private fun BalanceRow(name: String, detail: String?, amount: String) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            detail?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
         Text(amount, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodyLarge)
     }

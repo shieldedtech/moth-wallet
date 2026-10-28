@@ -291,16 +291,6 @@ class WalletModel(private val activity: FragmentActivity) {
     // Transactions. Unlike iOS, where this is a setting that is off by default, every
     // transaction asks for the fingerprint or device PIN: the unlocked session alone is not enough.
 
-    /** Converts a NIGHT amount ("1.5") to STAR with the engine's parser. */
-    fun parseNight(text: String, callback: (Result<String>) -> Unit) {
-        // Busy from the first tap, so a second one cannot start another send meanwhile.
-        busy = true
-        engine.call("parseNight", listOf(text.trim())) { r ->
-            busy = false
-            callback(r.map { it.toString() })
-        }
-    }
-
     /** The DUST fee for sending [transfers] in one transaction, in SPECK. */
     fun estimateFee(transfers: List<Transfer>, callback: (Result<String>) -> Unit) {
         busy = true

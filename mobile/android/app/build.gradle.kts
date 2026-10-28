@@ -60,6 +60,7 @@ dependencies {
     implementation("com.google.zxing:core:3.5.3")
     implementation("rustls:rustls-platform-verifier:0.1.1")
 
+    testImplementation("junit:junit:4.13.2")
     androidTestImplementation(platform("androidx.compose:compose-bom:2024.10.01"))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     androidTestImplementation("androidx.test:runner:1.6.2")

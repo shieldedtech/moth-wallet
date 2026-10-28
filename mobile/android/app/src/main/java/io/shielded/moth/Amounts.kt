@@ -96,6 +96,17 @@ object Amount {
         return if (places > 0) "$grouped.$fraction" else grouped
     }
 
+    /**
+     * Parses a typed amount with at most [decimals] decimals ("1.5", ".5", "2") into base units,
+     * or null if it is not a positive amount of that precision.
+     */
+    fun parse(text: String, decimals: Int): BigInteger? {
+        val m = Regex("""(\d*)(?:\.(\d*))?""").matchEntire(text.trim()) ?: return null
+        val (whole, fraction) = m.destructured
+        if (whole.isEmpty() && fraction.isEmpty() || fraction.length > decimals) return null
+        return BigInteger(whole.ifEmpty { "0" } + fraction.padEnd(decimals, '0')).takeIf { it.signum() > 0 }
+    }
+
     /** a - b for base-unit strings, or null if either is not a number. */
     fun minus(a: String, b: String): BigInteger? =
         runCatching { BigInteger(a) - BigInteger(b) }.getOrNull()
@@ -103,3 +114,21 @@ object Amount {
 
 /** Tokens other than NIGHT have no registry yet, so they are shown by a short id. */
 fun tokenLabel(id: String) = "${id.take(8)}…"
+
+/** A token this account holds of one kind, with its amount in base units. */
+data class Holding(val id: String, val name: String, val decimals: Int, val amount: String) {
+    val formatted get() = if (decimals > 0) Amount.format(amount, decimals, 6) else amount
+}
+
+/**
+ * The tokens held of one kind, NIGHT first, then by id. NIGHT is unshielded only: a shielded
+ * token can have the same all-zero id, and it is not NIGHT, so it is shown by its id.
+ */
+fun holdings(b: Balances, nightTokenId: String?, shielded: Boolean): List<Holding> {
+    val held = (if (shielded) b.shielded else b.unshielded).filterValues { it != "0" }
+    fun isNight(id: String) = !shielded && id == nightTokenId
+    return held.keys.sortedWith(compareBy({ !isNight(it) }, { it })).map { id ->
+        if (isNight(id)) Holding(id, "NIGHT", Amount.NIGHT_DECIMALS, held.getValue(id))
+        else Holding(id, tokenLabel(id), 0, held.getValue(id))
+    }
+}

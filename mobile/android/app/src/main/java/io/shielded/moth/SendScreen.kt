@@ -12,6 +12,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -34,9 +38,11 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 
 /**
- * Send NIGHT to one recipient: a cut-down port of the iOS `SendView` (HomeView.swift), without
- * other tokens, several recipients, contacts or Cardano. The first tap shows the fee; the
- * second asks for the fingerprint and sends.
+ * Send one token to one recipient: a cut-down port of the iOS `SendView` (HomeView.swift),
+ * without several recipients, contacts or Cardano. After choosing unshielded or shielded, the
+ * user picks one of the tokens held of that kind (NIGHT first), and the amount is checked
+ * against what is available. The first tap shows the fee; the second asks for the fingerprint
+ * and sends.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -44,17 +50,23 @@ fun SendScreen(model: WalletModel, onBack: () -> Unit) {
     var shielded by remember { mutableStateOf(false) }
     var to by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
+    var tokenId by remember { mutableStateOf<String?>(null) }
     var fee by remember { mutableStateOf<String?>(null) }
     var sentHash by remember { mutableStateOf<String?>(null) }
-    val night = model.addresses?.nightTokenId
     val b = model.balances
-    val held = night?.let { (if (shielded) b?.shielded else b?.unshielded)?.get(it) } ?: "0"
     val synced = b?.synced == true
-    val ready = night != null && to.isNotBlank() && amount.isNotBlank() && synced && sentHash == null
-
-    fun transfers(callback: (List<Transfer>) -> Unit) = model.parseNight(amount) { r ->
-        r.onSuccess { star -> callback(listOf(Transfer(shielded, night!!, star, to.trim()))) }.onFailure { model.error = it.message }
+    val options = b?.let { holdings(it, model.addresses?.nightTokenId, shielded) } ?: emptyList()
+    val token = options.firstOrNull { it.id == tokenId } ?: options.firstOrNull()
+    val base = token?.let { Amount.parse(amount, it.decimals) }
+    val tooMuch = base != null && base > token.amount.toBigInteger()
+    val amountError = when {
+        amount.isBlank() || token == null -> null
+        base == null && token.decimals > 0 -> "Enter a positive amount with at most ${token.decimals} decimals."
+        base == null -> "Enter a whole, positive number of base units."
+        tooMuch -> "More than the ${token.formatted} available."
+        else -> null
     }
+    val ready = token != null && base != null && !tooMuch && to.isNotBlank() && synced && sentHash == null
 
     Scaffold(topBar = {
         TopAppBar(title = { Text("Send") }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } })
@@ -68,13 +80,17 @@ fun SendScreen(model: WalletModel, onBack: () -> Unit) {
                 listOf(false to "Unshielded", true to "Shielded").forEachIndexed { i, (value, label) ->
                     SegmentedButton(
                         selected = shielded == value,
-                        onClick = { shielded = value; fee = null },
+                        onClick = { shielded = value; tokenId = null; amount = ""; fee = null },
                         shape = SegmentedButtonDefaults.itemShape(i, 2),
                         enabled = sentHash == null,
                     ) { Text(label) }
                 }
             }
-            Footnote("Available: ${Amount.format(held, Amount.NIGHT_DECIMALS, 6)} NIGHT")
+            if (options.isEmpty()) {
+                Footnote(if (b == null) "Waiting for the first sync update…" else "No ${if (shielded) "shielded" else "unshielded"} tokens held.")
+            } else {
+                TokenPicker(options, token, enabled = sentHash == null) { tokenId = it.id; amount = ""; fee = null }
+            }
             OutlinedTextField(
                 value = to,
                 onValueChange = { to = it; fee = null },
@@ -87,11 +103,13 @@ fun SendScreen(model: WalletModel, onBack: () -> Unit) {
             OutlinedTextField(
                 value = amount,
                 onValueChange = { amount = it; fee = null },
-                label = { Text("Amount in NIGHT") },
+                label = { Text(if (token != null && token.decimals > 0) "Amount in ${token.name}" else "Amount in base units") },
                 modifier = Modifier.fillMaxWidth(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                keyboardOptions = KeyboardOptions(keyboardType = if (token != null && token.decimals > 0) KeyboardType.Decimal else KeyboardType.Number),
                 singleLine = true,
-                enabled = sentHash == null,
+                isError = amountError != null,
+                supportingText = amountError?.let { { Text(it) } },
+                enabled = sentHash == null && token != null,
             )
             fee?.let { Footnote("Fee: ${Amount.format(it, Amount.DUST_DECIMALS, 6)} DUST") }
             if (model.busy && model.status.isNotEmpty()) Footnote(model.status)
@@ -112,11 +130,38 @@ fun SendScreen(model: WalletModel, onBack: () -> Unit) {
                     enabled = ready && !model.busy,
                 ) {
                     // A second tap can arrive before the disabled button is drawn.
-                    if (!model.busy) transfers { t ->
+                    if (!model.busy) {
+                        val t = listOf(Transfer(shielded, token!!.id, base!!.toString(), to.trim()))
                         if (fee == null) model.estimateFee(t) { r -> r.onSuccess { fee = it }.onFailure { model.error = it.message } }
                         else model.send(t) { r -> r.onSuccess { sentHash = it }.onFailure { model.error = it.message } }
                     }
                 }
+            }
+        }
+    }
+}
+
+/** The tokens held of the chosen kind, each with the amount available. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TokenPicker(options: List<Holding>, selected: Holding?, enabled: Boolean, onSelect: (Holding) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(expanded = open, onExpandedChange = { open = enabled && it }) {
+        OutlinedTextField(
+            value = selected?.let { "${it.name} · ${it.formatted} available" } ?: "",
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Token") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = open) },
+            modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
+            enabled = enabled,
+        )
+        ExposedDropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            options.forEach { h ->
+                DropdownMenuItem(
+                    text = { Text("${h.name} · ${h.formatted}${if (h.decimals > 0) "" else " base units"}") },
+                    onClick = { onSelect(h); open = false },
+                )
             }
         }
     }
