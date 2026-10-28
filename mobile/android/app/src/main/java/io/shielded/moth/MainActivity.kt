@@ -69,6 +69,7 @@ class MainActivity : FragmentActivity() {
         val enginePort = Native.staticStart(engineDir.path, 8765)
         model.write("prover on 127.0.0.1:$proverPort, engine page on 127.0.0.1:$enginePort")
         model.start()
+        lifecycle.addObserver(autoUnlock)
         // Attached but invisible, so the WebView is never paused as off-screen.
         addContentView(model.engine.webView, android.view.ViewGroup.LayoutParams(1, 1))
 
@@ -182,11 +183,11 @@ class MainActivity : FragmentActivity() {
     // As on iOS: leaving the app locks the wallet, so the seed is never left in memory behind
     // the app switcher; coming back asks for the fingerprint again. Showing the device-PIN
     // screen also stops this activity, but lock() only acts on an unlocked wallet.
-    // onResume, not onStart: an app launched behind the lock screen is started but not resumed
-    // until the phone is unlocked.
-    override fun onResume() {
-        super.onResume()
-        model.maybeAutoUnlock()
+    // On resume, not start: an app launched behind the lock screen is started but not resumed
+    // until the phone is unlocked. An ON_RESUME observer rather than onResume(), because the
+    // lifecycle only reports RESUMED (which maybeAutoUnlock checks) after onResume() returns.
+    private val autoUnlock = androidx.lifecycle.LifecycleEventObserver { _, event ->
+        if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) model.maybeAutoUnlock()
     }
 
     override fun onStop() {

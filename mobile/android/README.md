@@ -104,9 +104,15 @@ ABIS="arm64-v8a x86_64" scripts/build-native.sh && scripts/bundle-engine.sh
 ANDROID_HOME=~/Android/Sdk scripts/ui-test.sh      # TESTS=..., AVD=..., GRADLE=...
 ```
 
-One-time emulator setup: set a screen lock PIN (`adb -e shell locksettings set-pin 1111`),
-then Settings → Security → Fingerprint, and answer each "touch the sensor" step with
-`adb -e emu finger touch 1`.
+One-time emulator setup: create an AVD from `system-images;android-36;google_apis;x86_64`
+and raise its `disk.dataPartition.size` (in `~/.android/avd/<name>.avd/config.ini`) to `8G`;
+avdmanager's 800 MB fills up. Boot it, set a screen lock PIN
+(`adb -e shell locksettings set-pin 1111`), then Settings → Security → Fingerprint, and answer
+each "touch the sensor" step with `adb -e emu finger touch 1`.
+
+Tested on 2026-10-28: the API 36 image (WebView 133) and the API 34 image (WebView 113, which
+needs the engine's polyfills) pass `OnboardingTests`. The API 37 image crash-loops on this
+host (SurfaceFlinger aborts in RegionSampling, with host or software GPU).
 
 The native library must match the emulator's ABI. On an x86_64 Linux or Intel host, use an
 x86_64 system image and build the library for it as well; the prover compiles for x86_64
