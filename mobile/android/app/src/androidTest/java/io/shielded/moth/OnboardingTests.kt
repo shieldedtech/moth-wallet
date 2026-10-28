@@ -53,7 +53,7 @@ class OnboardingTests {
 
         // Home is also shown while the engine starts, so only an enabled Receive proves the unlock.
         scrollTo(hasText("Receive") and isEnabled(), 120_000, "home screen after unlock")
-        waitFor(hasText("BALANCES"), 5_000, "balances")
+        waitFor(hasText("UNSHIELDED BALANCES"), 5_000, "balances")
 
         // Registering DUST reaches the prover before anything else; an empty wallet then has
         // nothing to register, so this message proves the prover answered.
