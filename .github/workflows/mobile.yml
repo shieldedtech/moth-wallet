@@ -156,6 +156,16 @@ jobs:
       - name: UI tests
         run: scripts/ui-test.sh
 
+      # One .xcresult bundle per class, with the failure screenshots and logs.
+      - name: Upload UI test results
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: ios-ui-test-results
+          path: mobile/ios/build/TestResults
+          retention-days: 7
+          if-no-files-found: ignore
+
   android:
     name: Android build and UI test
     needs: changes
@@ -272,3 +282,13 @@ jobs:
       # indexer to be up.
       - name: UI tests
         run: scripts/ui-test.sh
+
+      # Screenshot and Gradle reports per failed class, logcat and the emulator log.
+      - name: Upload UI test results
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: android-ui-test-results
+          path: mobile/android/build/ui-test-results
+          retention-days: 7
+          if-no-files-found: ignore

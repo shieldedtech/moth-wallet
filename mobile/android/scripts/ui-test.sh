@@ -19,6 +19,26 @@ export ANDROID_HOME=$SDK PATH="$SDK/platform-tools:$SDK/emulator:$HOME/.cargo/bi
 APP_ID=io.shielded.moth.uitest
 GRADLE=${GRADLE:-gradle}
 
+# Diagnostics for a failed run, which CI uploads: a screenshot per failed test, Gradle's test
+# reports per failed class, and for the run the full logcat and the emulator's own log.
+RESULTS=build/ui-test-results
+rm -rf "$RESULTS"
+mkdir -p "$RESULTS"
+# emulator-setup.sh writes its emulator's output here.
+EMULATOR_LOG=${TMPDIR:-/tmp}/emulator-${AVD:-moth-ui}.log
+# Best effort: the emulator may be gone, and a missing piece must not hide the test failure.
+collect_class() {
+  local dir=$RESULTS/$1
+  mkdir -p "$dir"
+  cp -r app/build/reports/androidTests/connected "$dir/reports" 2>/dev/null || true
+  cp -r app/build/outputs/androidTest-results "$dir/androidTest-results" 2>/dev/null || true
+}
+collect_run() {
+  timeout 60 adb logcat -d -v time > "$RESULTS/logcat.txt" 2>/dev/null || true
+  [ ! -f "$EMULATOR_LOG" ] || cp "$EMULATOR_LOG" "$RESULTS/"
+  echo "ui-test: diagnostics in mobile/android/$RESULTS" >&2
+}
+
 [ -f app/src/main/assets/engine/index.html ] || { echo "error: run scripts/bundle-engine.sh first" >&2; exit 1; }
 
 case "${ANDROID_SERIAL:-}" in
@@ -48,17 +68,29 @@ adb logcat -c
     line=${line%$'\r'}
     case $line in
       *"): fingerprint") adb emu finger touch 1 >/dev/null ;;
+      # A failed test holds its screen for a moment (HoldScreenOnFailure); capture it.
+      *"): screenshot "*)
+        echo "$line" >&2
+        test=${line##*screenshot }
+        adb exec-out screencap -p > "$RESULTS/${test//[^A-Za-z0-9_.-]/_}.png" 2>/dev/null || true ;;
       *) echo "$line" >&2 ;;
     esac
   done ) &
 RESPONDER=$!
-trap 'kill $RESPONDER 2>/dev/null; pkill -P $RESPONDER 2>/dev/null || true' EXIT
+# Its children first: once the subshell is gone they are no longer found by parent.
+trap 'pkill -P $RESPONDER 2>/dev/null; kill $RESPONDER 2>/dev/null || true' EXIT
 
 # Each class starts from a fresh install, so none depends on another's wallet; uninstalling
-# also deletes the app's Keystore keys.
+# also deletes the app's Keystore keys. A failing class does not stop the others, so one flaky
+# test does not hide the rest; the script fails at the end.
+failed=()
 for class in ${TESTS:-OnboardingTests}; do
   echo "ui-test: $class on $serial ($abi), starting $(date -u +%H:%M:%S) UTC" >&2
   adb uninstall "$APP_ID" >/dev/null 2>&1 || true
-  "$GRADLE" -q connectedDebugAndroidTest -PmothAppSuffix=.uitest -PmothAbis="$abi" \
-    -Pandroid.testInstrumentationRunnerArguments.class="io.shielded.moth.$class"
+  if ! "$GRADLE" -q connectedDebugAndroidTest -PmothAppSuffix=.uitest -PmothAbis="$abi" \
+    -Pandroid.testInstrumentationRunnerArguments.class="io.shielded.moth.$class"; then
+    failed+=("$class")
+    collect_class "$class"
+  fi
 done
+[ ${#failed[@]} -eq 0 ] || { collect_run; echo "error: failed: ${failed[*]}" >&2; exit 1; }

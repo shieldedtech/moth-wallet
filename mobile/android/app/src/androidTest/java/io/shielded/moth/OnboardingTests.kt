@@ -34,8 +34,11 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class OnboardingTests {
-    @get:Rule
+    @get:Rule(order = 0)
     val compose = createEmptyComposeRule()
+
+    @get:Rule(order = 1)
+    val holdScreen = HoldScreenOnFailure()
 
     private val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
 

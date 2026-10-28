@@ -33,11 +33,19 @@ trap 'kill $MATCHER $SERVER 2>/dev/null' EXIT
 
 DEST="platform=iOS Simulator,id=$SIM"
 xcodebuild build-for-testing -project Moth.xcodeproj -scheme Moth -configuration Debug -destination "$DEST" -derivedDataPath build/DerivedData
-# Each class starts from a fresh install, so none depends on another's wallet.
+# One result bundle per class (screenshots, logs), which CI uploads when a test fails.
+RESULTS=build/TestResults
+rm -rf "$RESULTS"
+mkdir -p "$RESULTS"
+# Each class starts from a fresh install, so none depends on another's wallet. A failing class
+# does not stop the others, so one flaky test does not hide the rest; the script fails at the end.
+failed=()
 for class in ${TESTS:-OnboardingTests AccountsTests ConnectorTests FeaturesTests SecurityTests}; do
   xcrun simctl uninstall "$SIM" bob.shielded.moth 2>/dev/null || true
   # Keychain items outlive an uninstall, and Moth never reuses a name that has one.
   xcrun simctl keychain "$SIM" reset
   xcodebuild test-without-building -project Moth.xcodeproj -scheme Moth -configuration Debug -destination "$DEST" \
-    -derivedDataPath build/DerivedData -only-testing:"MothUITests/$class"
+    -derivedDataPath build/DerivedData -only-testing:"MothUITests/$class" \
+    -resultBundlePath "$RESULTS/$class.xcresult" || failed+=("$class")
 done
+[ ${#failed[@]} -eq 0 ] || { echo "error: failed: ${failed[*]}; results in mobile/ios/$RESULTS" >&2; exit 1; }
