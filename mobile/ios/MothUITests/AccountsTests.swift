@@ -28,9 +28,7 @@ final class AccountsTests: XCTestCase {
         app.tabBars.buttons["Settings"].tap()
         // XCUITest computes no hit point for a Menu inside a Form row (it reports the button as
         // not hittable although it is on screen), so tap the centre of its frame instead.
-        let options = app.buttons["Main options"]
-        XCTAssertTrue(options.waitForExistence(timeout: 10), "account options menu")
-        options.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        app.buttons["Main options"].tapCentre()
         XCTAssertTrue(app.buttons["Rename"].waitForExistence(timeout: 5), "options menu opened")
         app.buttons["Rename"].tap()
         let name = app.alerts.textFields.firstMatch
@@ -44,7 +42,7 @@ final class AccountsTests: XCTestCase {
 
         app.tabBars.buttons["Settings"].tap()
         reveal(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Network'")).firstMatch, in: app).tap()
-        app.buttons["preprod"].tap()
+        app.buttons["preprod"].tapCentre()
         app.tabBars.buttons["Wallet"].tap()
         XCTAssertTrue(header(app, "· preprod").waitForExistence(timeout: 60), "account moved to preprod")
     }

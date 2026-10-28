@@ -14,11 +14,7 @@ final class ConnectorTests: XCTestCase {
         // The mock DApp requests preprod, and new wallets start on preview.
         app.tabBars.buttons["Settings"].tap()
         reveal(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Network'")).firstMatch, in: app).tap()
-        // Tapped as soon as the menu opens, the item can have no hit point yet ("Activation point
-        // invalid"), so wait for it and tap the centre of its frame, as AccountsTests does.
-        let preprod = app.buttons["preprod"]
-        XCTAssertTrue(preprod.waitForExistence(timeout: 10), "network menu")
-        preprod.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        app.buttons["preprod"].tapCentre()
         app.tabBars.buttons["Wallet"].tap()
         // The header is a List section header, which iOS shows in capitals ("MAIN · PREPROD").
         let onPreprod = app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] '· preprod'")).firstMatch
@@ -79,6 +75,21 @@ func reveal(_ element: XCUIElement, in app: XCUIApplication, up: Bool = true) ->
 }
 
 extension XCUIElement {
+    /// Taps a control XCUITest finds but cannot always hit: a menu item while its menu is still
+    /// opening has no frame yet ({inf, inf}), and a menu in a Form row can report no hit point.
+    /// Waits for a real frame, lets the menu settle, then taps the centre of the frame.
+    func tapCentre(timeout: TimeInterval = 10) {
+        let placed = NSPredicate { object, _ in
+            guard let element = object as? XCUIElement, element.exists else { return false }
+            let f = element.frame
+            return f.minX.isFinite && f.minY.isFinite && f.width > 0 && f.height > 0
+        }
+        let found = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: placed, object: self)], timeout: timeout) == .completed
+        XCTAssertTrue(found, "\(self) never got a frame to tap")
+        Thread.sleep(forTimeInterval: 0.5)
+        coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+    }
+
     func waitForEnabled(timeout: TimeInterval) -> Bool {
         let predicate = NSPredicate(format: "exists == true AND enabled == true")
         return XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: predicate, object: self)], timeout: timeout) == .completed
