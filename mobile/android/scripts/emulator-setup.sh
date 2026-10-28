@@ -57,6 +57,10 @@ if ! emulator -list-avds 2>/dev/null | grep -x "$AVD" >/dev/null; then
   # avdmanager's 800 MB data partition fills up during the first boot.
   sed -i '/^disk.dataPartition.size/d' "$dir/config.ini"
   echo "disk.dataPartition.size=8G" >> "$dir/config.ini"
+  # avdmanager and the emulator can disagree on where AVDs live (on GitHub's runners avdmanager
+  # does not use ~/.android/avd), so point the emulator at the directory avdmanager used.
+  export ANDROID_AVD_HOME=${dir%/*}
+  log "AVD in $ANDROID_AVD_HOME"
 fi
 
 if ! adb devices | grep "^$ANDROID_SERIAL\s*device" >/dev/null; then
