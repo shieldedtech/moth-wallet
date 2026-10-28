@@ -16,20 +16,44 @@ PIN=1111
 # API 36 (WebView 133) is the newest image that runs here; API 37 crash-loops (README "UI tests").
 IMAGE="system-images;android-36;google_apis;x86_64"
 export ANDROID_SERIAL=emulator-$PORT
+EMULATOR_LOG=${TMPDIR:-/tmp}/emulator-$AVD.log
+START=$SECONDS
+
+# Progress on stderr, so CI shows how far setup got; stdout carries only the serial.
+log() { echo "emulator-setup [$(( SECONDS - START ))s] $*" >&2; }
+fail() {
+  log "error: $*"
+  [ ! -f "$EMULATOR_LOG" ] || { echo "--- end of $EMULATOR_LOG" >&2; tail -40 "$EMULATOR_LOG" >&2; }
+  exit 1
+}
+# Runs "$@" every 2 s until it succeeds; gives up after $1 seconds, or as soon as an emulator
+# this script started has exited.
+wait_until() {
+  local limit=$1 what=$2
+  shift 2
+  local end=$(( SECONDS + limit ))
+  until "$@" >/dev/null 2>&1; do
+    [ -z "${EMULATOR_PID:-}" ] || kill -0 "$EMULATOR_PID" 2>/dev/null || fail "the emulator exited while waiting for $what"
+    [ $SECONDS -lt $end ] || fail "no $what after ${limit}s"
+    sleep 2
+  done
+  log "$what"
+}
 
 if ! emulator -list-avds 2>/dev/null | grep -x "$AVD" >/dev/null; then
+  log "installing the emulator and $IMAGE"
   # sdkmanager can exit 0 without installing, so check for the image; its log explains why.
   log=${TMPDIR:-/tmp}/sdkmanager.log
   # yes ends on SIGPIPE when sdkmanager exits, which pipefail would report as a failure.
   { yes 2>/dev/null || true; } | sdkmanager --install emulator "$IMAGE" > "$log" 2>&1 || true
   if [ ! -f "$SDK/${IMAGE//;//}/system.img" ] || [ ! -x "$SDK/emulator/emulator" ]; then
     tail -30 "$log" >&2
-    echo "error: sdkmanager did not install emulator and $IMAGE into $SDK" >&2
-    exit 1
+    fail "sdkmanager did not install emulator and $IMAGE into $SDK"
   fi
+  log "creating AVD $AVD"
   echo no | avdmanager create avd -n "$AVD" -k "$IMAGE" -d pixel_6 >&2
   dir=$(avdmanager list avd 2>/dev/null | awk -v n="$AVD" '$1 == "Name:" { f = ($2 == n) } f && $1 == "Path:" { print $2; exit }')
-  [ -f "$dir/config.ini" ] || { echo "error: avdmanager did not create $AVD" >&2; exit 1; }
+  [ -f "$dir/config.ini" ] || fail "avdmanager did not create $AVD"
   # avdmanager's 800 MB data partition fills up during the first boot.
   sed -i '/^disk.dataPartition.size/d' "$dir/config.ini"
   echo "disk.dataPartition.size=8G" >> "$dir/config.ini"
@@ -38,18 +62,22 @@ fi
 if ! adb devices | grep "^$ANDROID_SERIAL\s*device" >/dev/null; then
   flags=(-avd "$AVD" -port "$PORT" -no-boot-anim -no-snapshot -no-audio)
   [ -n "${WINDOW:-}" ] || flags+=(-no-window -gpu swiftshader_indirect)
-  emulator "${flags[@]}" > "${TMPDIR:-/tmp}/emulator-$AVD.log" 2>&1 &
+  log "starting $AVD on port $PORT"
+  emulator "${flags[@]}" > "$EMULATOR_LOG" 2>&1 &
+  EMULATOR_PID=$!
 fi
-adb wait-for-device
-until [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ]; do sleep 2; done
+booted() { [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ]; }
+wait_until 300 "$ANDROID_SERIAL online" adb shell true
+wait_until 600 "boot completed" booted
 # boot_completed comes before every system service is up.
-until adb shell locksettings get-disabled >/dev/null 2>&1; do sleep 2; done
+wait_until 300 "system services up" adb shell locksettings get-disabled
 
 # The Keystore key works only while the screen is unlocked; keep it on and unlocked.
 adb shell svc power stayon true
 adb shell input keyevent KEYCODE_WAKEUP
 if ! adb shell locksettings verify --old "$PIN" >/dev/null 2>&1; then
   adb shell locksettings set-pin "$PIN" >/dev/null
+  log "screen lock PIN set"
 elif adb shell dumpsys window | grep "isKeyguardShowing=true" >/dev/null; then
   adb shell wm dismiss-keyguard
   sleep 1
@@ -98,14 +126,16 @@ enrol() {
   adb shell input keyevent KEYCODE_HOME
   enrolled
 }
-for _ in 1 2; do
+for attempt in 1 2; do
   enrolled && break
+  log "enrolling a fingerprint (attempt $attempt)"
   enrol || adb shell input keyevent KEYCODE_HOME
 done
 if ! enrolled; then
-  echo "error: fingerprint enrolment failed; the screen shows:" >&2
+  log "the screen shows:"
   screen | grep -o 'text="[^"]\+"' | head -5 >&2
-  exit 1
+  fail "fingerprint enrolment failed"
 fi
+log "ready: $ANDROID_SERIAL"
 
 echo "$ANDROID_SERIAL"

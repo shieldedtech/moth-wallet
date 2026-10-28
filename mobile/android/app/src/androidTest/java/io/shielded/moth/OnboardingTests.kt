@@ -89,6 +89,7 @@ class OnboardingTests {
 
     /** Waits for the system fingerprint prompt titled [title] and has the runner touch the sensor until it closes. */
     private fun approve(title: String) {
+        Log.i("MothUITest", "waiting for: fingerprint prompt \"$title\"")
         check(device.wait(Until.hasObject(By.text(title)), 60_000)) { "no fingerprint prompt \"$title\"" }
         val end = System.currentTimeMillis() + 60_000
         while (device.hasObject(By.text(title))) {
@@ -101,14 +102,18 @@ class OnboardingTests {
         }
     }
 
-    private fun waitFor(matcher: SemanticsMatcher, timeoutMs: Long, what: String) =
+    private fun waitFor(matcher: SemanticsMatcher, timeoutMs: Long, what: String) {
+        Log.i("MothUITest", "waiting for: $what")
         compose.waitUntil(what, timeoutMs) { compose.onAllNodes(matcher).fetchSemanticsNodes().isNotEmpty() }
+    }
 
     /** As [waitFor], for items of Home's lazy list, which exist only once scrolled into view. */
-    private fun scrollTo(matcher: SemanticsMatcher, timeoutMs: Long, what: String) =
+    private fun scrollTo(matcher: SemanticsMatcher, timeoutMs: Long, what: String) {
+        Log.i("MothUITest", "waiting for: $what")
         compose.waitUntil(what, timeoutMs) {
             runCatching { compose.onNode(hasScrollToNodeAction()).performScrollToNode(matcher) }.isSuccess
         }
+    }
 
     private fun textStartsWith(prefix: String) = SemanticsMatcher("text starts with $prefix") { node ->
         node.config.getOrElse(SemanticsProperties.Text) { emptyList() }.any { it.text.startsWith(prefix) }

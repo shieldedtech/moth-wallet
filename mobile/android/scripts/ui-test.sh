@@ -41,10 +41,15 @@ adb shell svc power stayon true
 adb shell input keyevent KEYCODE_WAKEUP
 echo "using $serial; if its screen is locked, unlock it now (PIN)" >&2
 
-# The tests log "fingerprint" while a prompt they expect is open; touch the sensor for each.
+# The app's and the tests' log lines go to stderr as they come, so CI shows the progress. The
+# tests log "fingerprint" while a prompt they expect is open; touch the sensor for each.
 adb logcat -c
-( adb logcat -v raw -s MothUITest:I | while read -r line; do
-    [ "${line%$'\r'}" = fingerprint ] && adb emu finger touch 1 >/dev/null
+( adb logcat -v time -s MothSpike:I MothUITest:I TestRunner:I | while read -r line; do
+    line=${line%$'\r'}
+    case $line in
+      *"): fingerprint") adb emu finger touch 1 >/dev/null ;;
+      *) echo "$line" >&2 ;;
+    esac
   done ) &
 RESPONDER=$!
 trap 'kill $RESPONDER 2>/dev/null; pkill -P $RESPONDER 2>/dev/null || true' EXIT
@@ -52,6 +57,7 @@ trap 'kill $RESPONDER 2>/dev/null; pkill -P $RESPONDER 2>/dev/null || true' EXIT
 # Each class starts from a fresh install, so none depends on another's wallet; uninstalling
 # also deletes the app's Keystore keys.
 for class in ${TESTS:-OnboardingTests}; do
+  echo "ui-test: $class on $serial ($abi), starting $(date -u +%H:%M:%S) UTC" >&2
   adb uninstall "$APP_ID" >/dev/null 2>&1 || true
   "$GRADLE" -q connectedDebugAndroidTest -PmothAppSuffix=.uitest -PmothAbis="$abi" \
     -Pandroid.testInstrumentationRunnerArguments.class="io.shielded.moth.$class"
