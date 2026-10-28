@@ -101,14 +101,15 @@ fingerprint prompt answered by `adb emu finger touch 1`. It uses emulators only,
 
 ```sh
 ABIS="arm64-v8a x86_64" scripts/build-native.sh && scripts/bundle-engine.sh
-ANDROID_HOME=~/Android/Sdk scripts/ui-test.sh      # TESTS=..., AVD=..., GRADLE=...
+export ANDROID_HOME=~/Android/Sdk
+ANDROID_SERIAL=$(scripts/emulator-setup.sh | tail -1) scripts/ui-test.sh   # TESTS=..., GRADLE=...
 ```
 
-One-time emulator setup: create an AVD from `system-images;android-36;google_apis;x86_64`
-and raise its `disk.dataPartition.size` (in `~/.android/avd/<name>.avd/config.ini`) to `8G`;
-avdmanager's 800 MB fills up. Boot it, set a screen lock PIN
-(`adb -e shell locksettings set-pin 1111`), then Settings → Security → Fingerprint, and answer
-each "touch the sensor" step with `adb -e emu finger touch 1`.
+`scripts/emulator-setup.sh` does what the iOS script does with `simctl`: it creates the AVD
+once (`system-images;android-36;google_apis;x86_64`, with an 8 GB data partition, since
+avdmanager's 800 MB fills up), boots it without a window (`WINDOW=1` shows one), sets the
+screen lock PIN `1111` and enrols fingerprint 1 through Settings. CI runs the same two
+commands in the Android job (`.github/workflows/mobile.yml`).
 
 Tested on 2026-10-28: the API 36 image (WebView 133) and the API 34 image (WebView 113, which
 needs the engine's polyfills) pass `OnboardingTests`. The API 37 image crash-loops on this
@@ -123,7 +124,7 @@ ABIS="arm64-v8a x86_64" scripts/build-native.sh   # jniLibs/arm64-v8a and jniLib
 ```
 
 `ui-test.sh` packages only the emulator's ABI (`-PmothAbis=x86_64`); phone builds stay
-arm64-only. This is also the route for CI on the Linux runners the Android build job uses. An
+arm64-only. This is how CI runs them, on the Linux runners of the Android job. An
 arm64 system image runs only on an arm64 host (an Apple-silicon Mac).
 
 ## Measured

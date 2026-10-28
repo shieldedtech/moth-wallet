@@ -157,11 +157,11 @@ jobs:
         run: scripts/ui-test.sh
 
   android:
-    name: Android build
+    name: Android build and UI test
     needs: changes
     if: needs.changes.outputs.android == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 90
     defaults:
       run:
         working-directory: mobile/android
@@ -191,7 +191,7 @@ jobs:
         run: yarn turbo run build --filter=@shieldedtech/moth-browser...
 
       - name: Install Rust targets
-        run: rustup target add aarch64-linux-android wasm32-unknown-unknown
+        run: rustup target add aarch64-linux-android x86_64-linux-android wasm32-unknown-unknown
 
       # The iOS job caches the same build, but caches don't cross from macOS to Linux.
       - name: Restore patched ledger WASM
@@ -235,7 +235,10 @@ jobs:
       - name: Install cross
         run: cargo install cross --locked --version 0.2.5
 
+      # arm64-v8a for phones, x86_64 for the emulator the UI tests run on.
       - name: Build native library
+        env:
+          ABIS: arm64-v8a x86_64
         run: scripts/build-native.sh
 
       # AGP 8.7 needs JDK 17+, and the app targets JVM 17. setup-java sets JAVA_HOME, so the
@@ -254,3 +257,18 @@ jobs:
 
       - name: Build APK
         run: gradle assembleDebug
+
+      # The emulator needs hardware virtualisation, which the Linux runners have but do not
+      # expose to the runner user by default.
+      - name: Enable KVM
+        working-directory: .
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      # Boots an API 36 x86_64 emulator with a PIN and fingerprint, then runs the UI tests on
+      # it. Like the iOS tests, they sync a fresh wallet on preprod, so they need the public
+      # indexer to be up.
+      - name: UI tests
+        run: ANDROID_SERIAL=$(scripts/emulator-setup.sh | tail -1) scripts/ui-test.sh

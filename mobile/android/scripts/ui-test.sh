@@ -3,13 +3,13 @@
 # (io.shielded.moth.uitest), answering each fingerprint prompt the tests ask about with
 # `adb emu finger touch`. Needs network access (the test syncs on preprod).
 #
-#   scripts/ui-test.sh                      # the running emulator, else boots $AVD
-#   AVD=moth-api34 scripts/ui-test.sh
+#   scripts/ui-test.sh                      # the emulator in ANDROID_SERIAL, else the first one
+#   ANDROID_SERIAL=$(scripts/emulator-setup.sh | tail -1) scripts/ui-test.sh
 #   TESTS=OnboardingTests scripts/ui-test.sh
 #
 # Only emulators are used: a phone's fingerprint cannot be faked, and a phone may hold a real
-# wallet. The emulator needs a screen lock PIN and fingerprint 1 enrolled; see the README's
-# "UI tests". Build the engine bundle and the native library for the emulator's ABI first
+# wallet. The emulator needs a screen lock PIN and fingerprint 1 enrolled, which
+# scripts/emulator-setup.sh arranges. Build the engine bundle and the native library for the emulator's ABI first
 # (ABIS="arm64-v8a x86_64" scripts/build-native.sh).
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -20,12 +20,12 @@ GRADLE=${GRADLE:-gradle}
 
 [ -f app/src/main/assets/engine/index.html ] || { echo "error: run scripts/bundle-engine.sh first" >&2; exit 1; }
 
-serial=$(adb devices | awk '$1 ~ /^emulator-/ && $2 == "device" { print $1; exit }')
-if [ -z "$serial" ]; then
-  [ -n "${AVD:-}" ] || { echo "error: no emulator running; start one or set AVD (emulator -list-avds)" >&2; exit 1; }
-  emulator -avd "$AVD" -no-snapshot-save -no-boot-anim >/dev/null 2>&1 &
-  until serial=$(adb devices | awk '$1 ~ /^emulator-/ && $2 == "device" { print $1; exit }') && [ -n "$serial" ]; do sleep 2; done
-fi
+case "${ANDROID_SERIAL:-}" in
+  emulator-*) serial=$ANDROID_SERIAL ;;
+  "") serial=$(adb devices | awk '$1 ~ /^emulator-/ && $2 == "device" { print $1; exit }') ;;
+  *) echo "error: ANDROID_SERIAL=$ANDROID_SERIAL is not an emulator" >&2; exit 1 ;;
+esac
+[ -n "$serial" ] || { echo "error: no emulator running; run scripts/emulator-setup.sh" >&2; exit 1; }
 # Gradle's connected tests and every adb call below use this device only.
 export ANDROID_SERIAL=$serial
 adb wait-for-device
