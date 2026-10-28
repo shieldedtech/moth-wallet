@@ -22,9 +22,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -71,21 +68,16 @@ fun SendScreen(model: WalletModel, onBack: () -> Unit) {
     Scaffold(topBar = {
         TopAppBar(title = { Text("Send") }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } })
     }) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding)) {
+        // The same tabs as Receive.
+        MothTabs(listOf("Unshielded", "Shielded"), if (shielded) 1 else 0, enabled = sentHash == null) {
+            shielded = it == 1; tokenId = null; amount = ""; fee = null
+        }
         Column(
-            Modifier.fillMaxSize().padding(padding).padding(16.dp).verticalScroll(rememberScrollState()),
+            Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             if (!synced) Footnote("Waiting for Midnight to finish syncing.")
-            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                listOf(false to "Unshielded", true to "Shielded").forEachIndexed { i, (value, label) ->
-                    SegmentedButton(
-                        selected = shielded == value,
-                        onClick = { shielded = value; tokenId = null; amount = ""; fee = null },
-                        shape = SegmentedButtonDefaults.itemShape(i, 2),
-                        enabled = sentHash == null,
-                    ) { Text(label) }
-                }
-            }
             if (options.isEmpty()) {
                 Footnote(if (b == null) "Waiting for the first sync update…" else "No ${if (shielded) "shielded" else "unshielded"} tokens held.")
             } else {
@@ -137,6 +129,7 @@ fun SendScreen(model: WalletModel, onBack: () -> Unit) {
                     }
                 }
             }
+        }
         }
     }
 }

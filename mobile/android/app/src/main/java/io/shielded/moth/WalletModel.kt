@@ -296,6 +296,7 @@ class WalletModel(private val activity: FragmentActivity) {
         busy = true
         engine.call("estimateFee", listOf(walletName, network, JSONArray(transfers.map { it.json }))) { r ->
             busy = false
+            r.onFailure { write("fee estimate failed: ${it.message}") }
             callback(r.mapCatching { (it as JSONObject).getString("fee") })
         }
     }

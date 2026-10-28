@@ -24,7 +24,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -74,9 +73,9 @@ fun HomeScreen(model: WalletModel, onReceive: () -> Unit, onSend: () -> Unit, on
                     // As iOS DustView: registering pays its own fee from DUST the NIGHT has already accrued.
                     val canAct = b.synced && !model.busy
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        OutlinedButton(onClick = { model.registerDust() }, Modifier.weight(1f), enabled = canAct) { Text("Register NIGHT") }
+                        SecondaryButton("Register NIGHT", Modifier.weight(1f), enabled = canAct) { model.registerDust() }
                         if (b.dustGeneration?.registered == true) {
-                            OutlinedButton(onClick = { confirmDeregister = true }, Modifier.weight(1f), enabled = canAct) { Text("Stop DUST") }
+                            SecondaryButton("Stop DUST", Modifier.weight(1f), enabled = canAct) { confirmDeregister = true }
                         }
                     }
                 }

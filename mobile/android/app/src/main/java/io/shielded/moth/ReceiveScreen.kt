@@ -30,8 +30,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -87,14 +85,7 @@ fun ReceiveScreen(model: WalletModel, onBack: () -> Unit) {
         },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
-        // Full width, and labels without Tab's 16 dp side padding, so "Unshielded" fits on a phone.
-        TabRow(selectedTabIndex = kinds.indexOfFirst { it.first == kind }, Modifier.fillMaxWidth()) {
-            kinds.forEach { (id, label) ->
-                Tab(selected = kind == id, onClick = { kind = id }) {
-                    Text(label, Modifier.padding(vertical = 14.dp), maxLines = 1, style = MaterialTheme.typography.labelLarge)
-                }
-            }
-        }
+        MothTabs(kinds.map { it.second }, kinds.indexOfFirst { it.first == kind }) { kind = kinds[it].first }
         Column(
             Modifier.fillMaxSize().padding(horizontal = 24.dp).padding(top = 20.dp).verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,

@@ -25,7 +25,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -170,7 +169,7 @@ class MainActivity : FragmentActivity() {
                 if (model.busy) CircularProgressIndicator(Modifier.size(28.dp))
                 else {
                     PrimaryButton("Create wallet", Modifier.fillMaxWidth()) { model.create() }
-                    OutlinedButton(onClick = { screen = "restore" }, Modifier.fillMaxWidth()) { Text("Restore from recovery phrase") }
+                    SecondaryButton("Restore from recovery phrase", Modifier.fillMaxWidth()) { screen = "restore" }
                 }
             }
         }
