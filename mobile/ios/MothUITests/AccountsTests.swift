@@ -46,9 +46,10 @@ final class AccountsTests: XCTestCase {
         reveal(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Network'")).firstMatch, in: app).tap()
         app.buttons["preprod"].tap()
         app.tabBars.buttons["Wallet"].tap()
-        XCTAssertTrue(header(app, "preprod").waitForExistence(timeout: 60), "account moved to preprod")
+        XCTAssertTrue(header(app, "· preprod").waitForExistence(timeout: 60), "account moved to preprod")
     }
 
+    /// The wallet header is a List section header, which iOS shows in capitals, so match any case.
     private func header(_ app: XCUIApplication, _ text: String) -> XCUIElement {
         app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", text)).firstMatch
     }

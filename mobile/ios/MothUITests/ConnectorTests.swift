@@ -16,7 +16,8 @@ final class ConnectorTests: XCTestCase {
         reveal(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Network'")).firstMatch, in: app).tap()
         app.buttons["preprod"].tap()
         app.tabBars.buttons["Wallet"].tap()
-        let onPreprod = app.staticTexts.matching(NSPredicate(format: "label CONTAINS '· preprod'")).firstMatch
+        // The header is a List section header, which iOS shows in capitals ("MAIN · PREPROD").
+        let onPreprod = app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] '· preprod'")).firstMatch
         XCTAssertTrue(onPreprod.waitForExistence(timeout: 60), "account moved to preprod")
 
         app.tabBars.buttons["Browser"].tap()
