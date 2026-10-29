@@ -18,7 +18,12 @@ pub extern "C" fn mn_prover_start(params_dir: *const c_char, port: u16, workers:
             // request bodies (which contain spend keys) at debug level.
             actix_web::rt::System::new().block_on(async move {
                 let pool = midnight_proof_server::worker_pool::WorkerPool::new(workers as usize, 4, 600.0);
-                match midnight_proof_server::server(port, false, pool) {
+                // Only the engine page may call the prover. `MOTH_PROVER_DEV_ORIGIN` adds one
+                // more for the desktop harness (examples/run.rs); the app never sets it.
+                let dev_origin = std::env::var("MOTH_PROVER_DEV_ORIGIN").ok();
+                let mut origins = vec![midnight_proof_server::ENGINE_ORIGIN];
+                origins.extend(dev_origin.as_deref());
+                match midnight_proof_server::server(port, false, pool, &origins) {
                     Ok((srv, bound)) => {
                         let _ = tx.send(bound as i32);
                         let _ = srv.await;
