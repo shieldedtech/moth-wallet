@@ -19,11 +19,7 @@ final class ConnectorTests: XCTestCase {
         // The mock DApp requests preprod, and new wallets start on preview.
         app.tabBars.buttons["Settings"].tap()
         reveal(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Network'")).firstMatch, in: app).tap()
-        // Tapped as soon as the menu opens, the item can have no hit point yet ("Activation point
-        // invalid"), so wait for it and tap the centre of its frame, as AccountsTests does.
-        let preprod = app.buttons["preprod"]
-        XCTAssertTrue(preprod.waitForExistence(timeout: 10), "network menu")
-        preprod.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        app.buttons["preprod"].tap()
         app.tabBars.buttons["Wallet"].tap()
         // The header is a List section header, which iOS shows in capitals ("MAIN · PREPROD").
         let onPreprod = app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] '· preprod'")).firstMatch
