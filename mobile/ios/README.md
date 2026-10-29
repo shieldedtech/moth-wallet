@@ -1,12 +1,12 @@
 # Moth for iOS
 
-Moth's iPhone app. A SwiftUI app runs moth's wallet engine, unchanged, in a hidden WKWebView. Zero-knowledge proofs are made on the phone by the native Rust prover. It's preprod-only for now: use testnet funds only.
+Moth's iPhone app. A SwiftUI app runs moth's wallet engine, unchanged, in a hidden WKWebView. Zero-knowledge proofs are made on the phone by the native Rust prover. It runs on Midnight's testnets only (preview by default, preprod selectable): use testnet funds only.
 
 The engine page, the native prover and the ledger WASM build live in [`mobile/shared`](../shared), which the [Android app](../android/README.md) uses too. Paths below are relative to `mobile/ios`.
 
 ## What works
 
-Verified in the iOS simulator against preprod by the UI test (`scripts/ui-test.sh`):
+Verified in the iOS simulator by the UI tests (`scripts/ui-test.sh`):
 
 - create a wallet
 - show its recovery phrase once for backup
@@ -51,11 +51,11 @@ native prover (../shared)         midnight-ledger 8.1.3 (proof-server/), in-proc
   - with `WhenPasscodeSetThisDeviceOnly`, so it is never synced or backed up.
 
   Moth's keystore encrypts the recovery phrase with that passphrase (scrypt + AES-GCM, in the engine's IndexedDB). The recovery phrase is the only backup.
-- **Native services.** `../shared/native/` runs two servers in the app's own process, both bound to `127.0.0.1`:
-  - `:6300` is the proof server, vendored from midnight-ledger `ledger-8.1.3` (`../shared/proof-server/`; its README lists the changes). It installs no tracing subscriber, because the proof server logs spend keys at debug level.
-  - `:8765` serves the engine page. The fixed origin keeps IndexedDB persistent and gives the page a secure context for Web Crypto.
+- **Native services.** The engine page has no port: `EngineScheme` serves it from the app bundle at `moth://engine/`, a fixed origin that keeps IndexedDB persistent (see `docs/architecture.md`). `../shared/native/` runs one server in the app's own process, the proof server on `127.0.0.1:6300`, vendored from midnight-ledger `ledger-8.1.3` (`../shared/proof-server/`; its README lists the changes):
+  - It installs no tracing subscriber, because the proof server logs spend keys at debug level.
+  - It answers only the `moth://engine` origin. A request from any other page (for example an http page on localhost open in the DApp browser) is refused with 400 before it reaches a handler.
 - **Locking.** The wallet locks when the app goes to the background and when the user taps the lock. Locking stops sync and drops the seed.
-- **Network:** preprod, on moth's default endpoints (indexer `indexer.preprod.shielded.tools`).
+- **Network:** preview (the default for new wallets) or preprod, on moth's default endpoints for each (`mothNetworks` in `Moth/Wallet/WalletModel.swift`).
 
 ## Build and run
 
@@ -95,7 +95,13 @@ Xcode builds the native library itself (`scripts/build-native.sh`, the "Build mo
 
 **Pre-seed.** The engine bundles the extension's `packages/extension/public/preseed`. Set `PRESEED_DIR` to use a newer `moth preseed export`.
 
-**Debugging.** In Debug builds the engine's WebView is inspectable from Safari's Develop menu. The engine page also runs in a desktop browser while Moth is open in the simulator: open `http://127.0.0.1:8765/index.html`, which shares the Mac's loopback.
+**Debugging.** In Debug builds the engine's WebView is inspectable from Safari's Develop menu. To run the engine page in a desktop browser instead, start the desktop harness, which serves `../shared/engine/dist` on `http://127.0.0.1:8765` next to a prover that accepts that origin, then open `http://127.0.0.1:8765/index.html`:
+
+```sh
+cd ../shared/native && cargo run --example run -- ~/.cache/midnight/zk-params ../engine/dist
+```
+
+Don't run it while Moth is open in the simulator: both bind `127.0.0.1:6300` on the Mac's loopback.
 
 ## TestFlight
 

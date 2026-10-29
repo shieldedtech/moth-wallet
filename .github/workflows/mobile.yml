@@ -80,6 +80,10 @@ jobs:
     # Pinned image: the Xcode and simulator runtimes come from it.
     runs-on: macos-15
     timeout-minutes: 60
+    # The image defaults to Xcode 16.4 but ui-test.sh picks its newest simulator, iOS 26.2;
+    # Xcode 16.4's XCTest can't hit-test iOS 26 menus, so use the Xcode that matches it.
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
     defaults:
       run:
         working-directory: mobile/ios

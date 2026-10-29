@@ -55,6 +55,15 @@ struct Args {
         env = "MIDNIGHT_PROOF_SERVER_NO_FETCH_PARAMS"
     )]
     no_fetch_params: bool,
+    /// Browser origins allowed to call the server (repeatable). Requests from any other
+    /// `Origin` are refused; requests with none are served.
+    #[arg(
+        long = "allow-origin",
+        default_values_t = [midnight_proof_server::ENGINE_ORIGIN.to_string()],
+        env = "MIDNIGHT_PROOF_SERVER_ALLOW_ORIGINS",
+        value_delimiter = ','
+    )]
+    allow_origins: Vec<String>,
 }
 
 #[actix_web::main]
@@ -91,7 +100,8 @@ async fn main() -> std::io::Result<()> {
         keys.into_iter().collect::<Result<Vec<_>, _>>()?;
     }
     let pool = WorkerPool::new(args.num_workers, args.job_capacity, args.job_timeout);
-    server(args.port, !args.no_fetch_params, pool)
+    let allow_origins: Vec<&str> = args.allow_origins.iter().map(String::as_str).collect();
+    server(args.port, !args.no_fetch_params, pool, &allow_origins)
         .unwrap()
         .0
         .await
