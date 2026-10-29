@@ -56,9 +56,11 @@ const APPROVAL_METHODS = new Set<ConnectorMethod>([
 // unlocked wallet instead of starting parallel offscreen sync requests.
 const pendingBalanceSnapshots = new Map<string, Promise<WalletBalances>>();
 
+// Rejects an empty transaction here, before it can reach an approval prompt or
+// start a wallet sync, rather than letting the ledger fail on it later.
 function assertTxHex(hex: string): string {
-  if (!/^[0-9a-fA-F]*$/.test(hex) || hex.length % 2 !== 0) {
-    throw connectorError('InvalidRequest', 'Transaction must be a hex string');
+  if (!/^[0-9a-fA-F]+$/.test(hex) || hex.length % 2 !== 0) {
+    throw connectorError('InvalidRequest', 'Transaction must be a non-empty hex string');
   }
   return hex;
 }
