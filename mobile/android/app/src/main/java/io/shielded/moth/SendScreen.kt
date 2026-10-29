@@ -54,6 +54,15 @@ fun SendScreen(model: WalletModel, onBack: () -> Unit) {
     val synced = b?.synced == true
     val options = b?.let { holdings(it, model.addresses?.nightTokenId, shielded) } ?: emptyList()
     val token = options.firstOrNull { it.id == tokenId } ?: options.firstOrNull()
+    // The amount and fee belong to one token. The list can change under the user (the token is
+    // spent to zero, NIGHT arrives with a sync), making another token the default; clear them
+    // then, rather than send the same number of a different token.
+    var enteredFor by remember { mutableStateOf<String?>(null) }
+    if (token?.id != enteredFor) {
+        enteredFor = token?.id
+        amount = ""
+        fee = null
+    }
     val base = token?.let { Amount.parse(amount, it.decimals) }
     val tooMuch = base != null && base > token.amount.toBigInteger()
     val amountError = when {

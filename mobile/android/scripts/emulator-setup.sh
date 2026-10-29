@@ -55,8 +55,9 @@ if ! emulator -list-avds 2>/dev/null | grep -x "$AVD" >/dev/null; then
   dir=$(avdmanager list avd 2>/dev/null | awk -v n="$AVD" '$1 == "Name:" { f = ($2 == n) } f && $1 == "Path:" { print $2; exit }')
   [ -f "$dir/config.ini" ] || fail "avdmanager did not create $AVD"
   # avdmanager's 800 MB data partition fills up during the first boot.
-  sed -i '/^disk.dataPartition.size/d' "$dir/config.ini"
-  echo "disk.dataPartition.size=8G" >> "$dir/config.ini"
+  # grep and mv, not sed -i, whose syntax differs between GNU and BSD (macOS) sed.
+  { grep -v '^disk.dataPartition.size' "$dir/config.ini" || true; echo "disk.dataPartition.size=8G"; } > "$dir/config.ini.new"
+  mv "$dir/config.ini.new" "$dir/config.ini"
   # avdmanager and the emulator can disagree on where AVDs live (on GitHub's runners avdmanager
   # does not use ~/.android/avd), so point the emulator at the directory avdmanager used.
   export ANDROID_AVD_HOME=${dir%/*}
