@@ -8,7 +8,7 @@ import { sendMessage } from '../../lib/messaging/protocol';
 import { useTokenNames } from '../../lib/ui/client';
 import { accountLabel } from '../../lib/ui/format';
 import { nativeAssetLabelsForNetwork } from '../../lib/ui/token-labels';
-import { txSummaryRows } from '../../lib/ui/tx-summary-view';
+import { contractActionRows, txSummaryRows } from '../../lib/ui/tx-summary-view';
 import type { PendingApproval } from '../../lib/background/approvals';
 import type { BalanceApprovalPayload, TransferApprovalPayload } from '../../lib/background/connector-handlers';
 import type { CardanoSignApprovalPayload } from '../../lib/messaging/protocol';
@@ -228,14 +228,7 @@ export function Approval({
                 label: t('approval_networkFeeLabel'),
                 value: feeValue((approval.payload as BalanceApprovalPayload).payFees, labels.dust),
               },
-              ...((approval.payload as BalanceApprovalPayload).summary?.contractActions
-                ? [
-                    {
-                      label: t('approval_contractCallsLabel'),
-                      value: String((approval.payload as BalanceApprovalPayload).summary?.contractActions),
-                    },
-                  ]
-                : []),
+              ...contractActionRows((approval.payload as BalanceApprovalPayload).summary),
             ]}
           />
           <NoteCard icon={TriangleAlert}>
