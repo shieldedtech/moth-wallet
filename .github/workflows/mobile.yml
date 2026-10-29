@@ -93,7 +93,10 @@ jobs:
       - name: Link ledger dependencies
         run: ln -sfn "$GITHUB_WORKSPACE/node_modules" vendor/node_modules
 
+      # The vite build peaks near 4 GB; on this 7 GB runner Node's default heap stops at ~2 GB.
       - name: Build engine
+        env:
+          NODE_OPTIONS: --max-old-space-size=5120
         run: scripts/build-engine.sh
 
       - name: Build for simulator
