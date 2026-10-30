@@ -1,0 +1,118 @@
+name: Mobile
+
+# Builds Moth for iOS against this commit's packages and runs its UI tests, so a change to
+# core or the extension worker that breaks the app fails here rather than on a phone.
+on:
+  pull_request:
+    paths:
+      - mobile/**
+      - packages/core/**
+      - packages/browser/**
+      - packages/extension/lib/**
+      - packages/extension/public/preseed/**
+      - .github/workflows/mobile.yml
+  push:
+    branches: [main]
+    paths:
+      - mobile/**
+      - packages/core/**
+      - packages/browser/**
+      - packages/extension/lib/**
+      - packages/extension/public/preseed/**
+      - .github/workflows/mobile.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ios:
+    name: iOS build and UI test
+    # Pinned image: the Xcode and simulator runtimes come from it.
+    runs-on: macos-15
+    timeout-minutes: 60
+    # The image defaults to Xcode 16.4 but ui-test.sh picks its newest simulator, iOS 26.2;
+    # Xcode 16.4's XCTest can't hit-test iOS 26 menus, so use the Xcode that matches it.
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+    defaults:
+      run:
+        working-directory: mobile/ios
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Enable Corepack
+        working-directory: .
+        run: corepack enable
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: yarn
+
+      - name: Install dependencies
+        working-directory: .
+        run: yarn install --immutable
+
+      # Only what the app and its tests use: core and moth-browser for the engine, the mock
+      # DApp for the connector test. The extension's own bundle isn't needed.
+      - name: Build packages
+        working-directory: .
+        run: yarn turbo run build --filter=@shieldedtech/moth-browser... --filter=@shieldedtech/moth-mock-dapp
+
+      - name: Install Rust targets
+        run: rustup target add aarch64-apple-ios aarch64-apple-ios-sim wasm32-unknown-unknown
+
+      - name: Restore patched ledger WASM
+        id: ledger-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: mobile/ios/vendor/ledger-v8
+          key: ledger-v8-${{ hashFiles('mobile/ios/scripts/build-ledger-wasm.sh', 'mobile/ios/scripts/ledger-irloader-rc.patch', 'yarn.lock') }}
+
+      # Apple's clang cannot target wasm32, which the ledger's C dependencies need.
+      - name: Install ledger toolchain
+        if: steps.ledger-cache.outputs.cache-hit != 'true'
+        run: brew install llvm wasm-pack
+
+      - name: Build patched ledger WASM
+        if: steps.ledger-cache.outputs.cache-hit != 'true'
+        run: scripts/build-ledger-wasm.sh
+
+      - name: Save patched ledger WASM
+        if: steps.ledger-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: mobile/ios/vendor/ledger-v8
+          key: ${{ steps.ledger-cache.outputs.cache-primary-key }}
+
+      # The cached build has no node_modules link; the generated glue imports through it.
+      - name: Link ledger dependencies
+        run: ln -sfn "$GITHUB_WORKSPACE/node_modules" vendor/node_modules
+
+      # The vite build peaks near 4 GB; on this 7 GB runner Node's default heap stops at ~2 GB.
+      - name: Build engine
+        env:
+          NODE_OPTIONS: --max-old-space-size=5120
+        run: scripts/build-engine.sh
+
+      - name: Build for simulator
+        run: >-
+          xcodebuild build -project Moth.xcodeproj -scheme Moth -configuration Debug
+          -destination 'generic/platform=iOS Simulator' -derivedDataPath build/DerivedData
+
+      - name: Build for device
+        run: >-
+          xcodebuild build -project Moth.xcodeproj -scheme Moth -configuration Release
+          -sdk iphoneos -derivedDataPath build/DerivedData CODE_SIGNING_ALLOWED=NO
+
+      # Syncs a fresh wallet on preprod, so it needs the public indexer to be up.
+      - name: UI tests
+        run: scripts/ui-test.sh
