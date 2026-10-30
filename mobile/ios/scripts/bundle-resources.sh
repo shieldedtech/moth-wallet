@@ -10,8 +10,8 @@ cd "$(dirname "$0")/.."
 DEST="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH"
 PP=${MIDNIGHT_PP:-$HOME/.cache/midnight/zk-params}
 
-[ -f engine/dist/index.html ] || { echo "error: run mobile/ios/scripts/build-engine.sh first" >&2; exit 1; }
-rsync -a --delete engine/dist/ "$DEST/engine/"
+[ -f ../shared/engine/dist/index.html ] || { echo "error: run mobile/shared/scripts/build-engine.sh first" >&2; exit 1; }
+rsync -a --delete ../shared/engine/dist/ "$DEST/engine/"
 
 mkdir -p "$DEST/params"
 if [ -d "$PP/zswap/9" ] && [ -d "$PP/dust/9" ]; then

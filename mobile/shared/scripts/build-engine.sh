@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Builds the engine page (engine/dist): moth's wallet worker plus the Swift bridge, with the
+# Builds the engine page (engine/dist): moth's wallet worker plus the native-app bridge, with the
 # pre-seed snapshots the extension bundles. Run after `yarn install && yarn build` at the
 # repo root, and again whenever moth's packages change.
 #
 # The ledger WASM is built from source with the DUST-restore fix (scripts/build-ledger-wasm.sh,
-# see README.md); LEDGER=npm uses the published package instead.
+# see mobile/ios/README.md); LEDGER=npm uses the published package instead.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 REPO=$(cd ../.. && pwd)
@@ -17,7 +17,9 @@ if [ "$LEDGER" = src ] && [ ! -f vendor/ledger-v8/midnight_ledger_wasm.js ]; the
 fi
 
 (cd engine && node "$REPO/node_modules/typescript/bin/tsc" -p tsconfig.json)
-(cd engine && node "$REPO/node_modules/vite/bin/vite.js" build --config vite.config.mjs --configLoader native --logLevel error)
+# The bundle peaks above 2 GB of heap, Node's default on smaller machines such as the 7 GB
+# macOS CI runner, so set the limit rather than depend on the machine's memory.
+(cd engine && node --max-old-space-size=4096 "$REPO/node_modules/vite/bin/vite.js" build --config vite.config.mjs --configLoader native --logLevel error)
 # The DApp-page script is a single classic script, injected by Swift as a WKUserScript.
 "$REPO/node_modules/.bin/esbuild" engine/inject.ts --bundle --format=iife --target=es2022 --minify \
   --alias:moth-ext="$REPO/packages/extension/lib" --outfile=engine/dist/inject.js --log-level=warning

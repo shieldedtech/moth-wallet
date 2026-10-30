@@ -1,7 +1,8 @@
 name: Mobile
 
-# Builds Moth for iOS against this commit's packages and runs its UI tests, so a change to
-# core or the extension worker that breaks the app fails here rather than on a phone.
+# Builds Moth for iOS and Android against this commit's packages, so a change to core or the
+# extension worker that breaks an app fails here rather than on a phone. A change runs only
+# the platform it touches; a change to code both apps share runs both.
 on:
   pull_request:
     paths:
@@ -11,6 +12,7 @@ on:
       - packages/extension/lib/**
       - packages/extension/public/preseed/**
       - .github/workflows/mobile.yml
+  workflow_dispatch:
   push:
     branches: [main]
     paths:
@@ -29,8 +31,52 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Detect changed platforms
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      ios: ${{ steps.filter.outputs.ios }}
+      android: ${{ steps.filter.outputs.android }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      # Both apps are built from mobile/shared (engine page, native prover, ledger WASM build)
+      # and the packages the engine is built from, so a change there builds both.
+      # A manual run, or a push whose base commit is unknown, builds both.
+      - name: Classify changed files
+        id: filter
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.sha }}
+        run: |
+          ios=false android=false
+          if [ "$EVENT" = workflow_dispatch ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            ios=true android=true
+          else
+            while IFS= read -r f; do
+              case "$f" in
+                mobile/android/*) android=true ;;
+                mobile/shared/* | packages/core/*| packages/browser/* | packages/extension/lib/* | \
+                packages/extension/public/preseed/* | .github/workflows/mobile.yml)
+                  ios=true android=true ;;
+                mobile/ios/*) ios=true ;;
+              esac
+            done < <(git diff --name-only "$(git merge-base "$BASE" "$HEAD")" "$HEAD")
+          fi
+          echo "ios=$ios android=$android"
+          echo "ios=$ios" >> "$GITHUB_OUTPUT"
+          echo "android=$android" >> "$GITHUB_OUTPUT"
+
   ios:
     name: iOS build and UI test
+    needs: changes
+    if: needs.changes.outputs.ios == 'true'
     # Pinned image: the Xcode and simulator runtimes come from it.
     runs-on: macos-15
     timeout-minutes: 60
@@ -74,8 +120,8 @@ jobs:
         id: ledger-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: mobile/ios/vendor/ledger-v8
-          key: ledger-v8-${{ hashFiles('mobile/ios/scripts/build-ledger-wasm.sh', 'mobile/ios/scripts/ledger-irloader-rc.patch', 'yarn.lock') }}
+          path: mobile/shared/vendor/ledger-v8
+          key: ledger-v8-${{ hashFiles('mobile/shared/scripts/build-ledger-wasm.sh', 'mobile/shared/scripts/ledger-irloader-rc.patch', 'yarn.lock') }}
 
       # Apple's clang cannot target wasm32, which the ledger's C dependencies need.
       - name: Install ledger toolchain
@@ -84,24 +130,21 @@ jobs:
 
       - name: Build patched ledger WASM
         if: steps.ledger-cache.outputs.cache-hit != 'true'
-        run: scripts/build-ledger-wasm.sh
+        run: ../shared/scripts/build-ledger-wasm.sh
 
       - name: Save patched ledger WASM
         if: steps.ledger-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: mobile/ios/vendor/ledger-v8
+          path: mobile/shared/vendor/ledger-v8
           key: ${{ steps.ledger-cache.outputs.cache-primary-key }}
 
       # The cached build has no node_modules link; the generated glue imports through it.
       - name: Link ledger dependencies
-        run: ln -sfn "$GITHUB_WORKSPACE/node_modules" vendor/node_modules
+        run: ln -sfn "$GITHUB_WORKSPACE/node_modules" ../shared/vendor/node_modules
 
-      # The vite build peaks near 4 GB; on this 7 GB runner Node's default heap stops at ~2 GB.
       - name: Build engine
-        env:
-          NODE_OPTIONS: --max-old-space-size=5120
-        run: scripts/build-engine.sh
+        run: ../shared/scripts/build-engine.sh
 
       - name: Build for simulator
         run: >-
@@ -116,3 +159,143 @@ jobs:
       # Syncs a fresh wallet on preprod, so it needs the public indexer to be up.
       - name: UI tests
         run: scripts/ui-test.sh
+
+      # One .xcresult bundle per class, with the failure screenshots and logs.
+      - name: Upload UI test results
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: ios-ui-test-results
+          path: mobile/ios/build/TestResults
+          retention-days: 7
+          if-no-files-found: ignore
+
+  android:
+    name: Android build and UI test
+    needs: changes
+    if: needs.changes.outputs.android == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: mobile/android
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Enable Corepack
+        working-directory: .
+        run: corepack enable
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: yarn
+
+      - name: Install dependencies
+        working-directory: .
+        run: yarn install --immutable
+
+      # The engine page is all the app needs from the workspace.
+      - name: Build packages
+        working-directory: .
+        run: yarn turbo run build --filter=@shieldedtech/moth-browser...
+
+      - name: Install Rust targets
+        run: rustup target add aarch64-linux-android x86_64-linux-android wasm32-unknown-unknown
+
+      # The iOS job caches the same build, but caches don't cross from macOS to Linux.
+      - name: Restore patched ledger WASM
+        id: ledger-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: mobile/shared/vendor/ledger-v8
+          key: ledger-v8-linux-${{ hashFiles('mobile/shared/scripts/build-ledger-wasm.sh', 'mobile/shared/scripts/ledger-irloader-rc.patch', 'yarn.lock') }}
+
+      - name: Install ledger toolchain
+        if: steps.ledger-cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang llvm
+          cargo install wasm-pack --locked
+
+      - name: Build patched ledger WASM
+        if: steps.ledger-cache.outputs.cache-hit != 'true'
+        env:
+          LLVM_BIN: /usr/bin
+        run: ../shared/scripts/build-ledger-wasm.sh
+
+      - name: Save patched ledger WASM
+        if: steps.ledger-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: mobile/shared/vendor/ledger-v8
+          key: ${{ steps.ledger-cache.outputs.cache-primary-key }}
+
+      # The cached build has no node_modules link; the generated glue imports through it.
+      - name: Link ledger dependencies
+        run: ln -sfn "$GITHUB_WORKSPACE/node_modules" ../shared/vendor/node_modules
+
+      - name: Build engine
+        run: ../shared/scripts/build-engine.sh
+
+      - name: Bundle engine
+        run: scripts/bundle-engine.sh
+
+      # cross runs the Android NDK in Docker, which the runner provides.
+      - name: Install cross
+        run: cargo install cross --locked --version 0.2.5
+
+      # arm64-v8a for phones, x86_64 for the emulator the UI tests run on.
+      - name: Build native library
+        env:
+          ABIS: arm64-v8a x86_64
+        run: scripts/build-native.sh
+
+      # AGP 8.7 needs JDK 17+, and the app targets JVM 17. setup-java sets JAVA_HOME, so the
+      # build does not follow the runner image's default JDK when that changes.
+      - name: Setup Java
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad  # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # No Gradle wrapper yet, so pin the version the README asks for.
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6  # v6.4.0
+        with:
+          gradle-version: '8.9'
+
+      - name: Build APK
+        run: gradle assembleDebug
+
+      - name: Unit tests
+        run: gradle testDebugUnitTest
+
+      # The emulator needs hardware virtualisation, which the Linux runners have but do not
+      # expose to the runner user by default.
+      - name: Enable KVM
+        working-directory: .
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      # Sets up an API 36 x86_64 emulator with a PIN and fingerprint, then runs the tests on
+      # it. Like the iOS tests, they sync a fresh wallet on preprod, so they need the public
+      # indexer to be up.
+      - name: UI tests
+        run: scripts/ui-test.sh
+
+      # Screenshot and Gradle reports per failed class, logcat and the emulator log.
+      - name: Upload UI test results
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: android-ui-test-results
+          path: mobile/android/build/ui-test-results
+          retention-days: 7
+          if-no-files-found: ignore

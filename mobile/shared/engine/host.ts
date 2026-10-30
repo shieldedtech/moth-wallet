@@ -1,6 +1,6 @@
 // The engine's link to moth's wallet worker, plus the state the extension's service worker
 // keeps there: unlocked sessions and network configs.
-import WalletWorker from 'moth-ext/offscreen/wallet-worker?worker';
+import WalletWorker from './worker?worker';
 import {
   deserializeHostError,
   type HostEvent,
@@ -179,6 +179,8 @@ export interface PlainBalances {
   dust: string;
   synced: boolean;
   subProgress: WalletBalances['subProgress'];
+  /** Whether each sub-wallet is synced. Wins over subProgress: one with nothing to apply reports 0/0 but is done. */
+  subSynced: { shielded: boolean; unshielded: boolean; dust: boolean };
   /** DUST capacity and generation; amounts in SPECK or STAR as decimal strings. */
   dustGeneration: {
     limit: string;
@@ -199,6 +201,11 @@ export function plainBalances(b: WalletBalances): PlainBalances {
     dust: String(b.dust),
     synced: b.synced,
     subProgress: b.subProgress,
+    subSynced: {
+      shielded: b.syncProgress.shieldedSynced,
+      unshielded: b.syncProgress.unshieldedSynced,
+      dust: b.syncProgress.dustSynced,
+    },
     dustGeneration: g
       ? {
           limit: String(g.limit),

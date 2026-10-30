@@ -74,7 +74,7 @@
   <!-- TypeScript band -->
   <rect x="280" y="340" width="960" height="270" rx="14" class="ts-band"/>
   <text x="296" y="576" class="band-title">Wallet engine · TypeScript → JS + WASM</text>
-  <text x="296" y="596" class="band-path">mobile/ios/engine/ + moth packages/</text>
+  <text x="296" y="596" class="band-path">mobile/shared/engine/ + moth packages/</text>
 
   <rect x="300" y="380" width="190" height="90" rx="10" class="ts"/>
   <text x="314" y="402" class="box-title">inject.js</text>
@@ -105,7 +105,7 @@
   <!-- Rust band -->
   <rect x="580" y="630" width="660" height="230" rx="14" class="rust-band"/>
   <text x="596" y="656" class="band-title">Prover · Rust</text>
-  <text x="596" y="676" class="band-path">mobile/ios/native/ + proof-server/</text>
+  <text x="596" y="676" class="band-path">mobile/shared/native/ + proof-server/</text>
 
   <rect x="900" y="668" width="320" height="64" rx="10" class="rust"/>
   <text x="914" y="692" class="box-title">libmoth_native</text>

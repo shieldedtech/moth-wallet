@@ -16,4 +16,4 @@ rustup target list --installed | grep -qx "$TARGET" || { echo "error: run 'rustu
 # cargo finds the right SDK per target without it.
 unset SDKROOT
 export CARGO_TARGET_DIR=$PWD/target
-cargo build --manifest-path native/Cargo.toml --release --lib --target "$TARGET"
+cargo build --manifest-path ../shared/native/Cargo.toml --release --lib --target "$TARGET"
