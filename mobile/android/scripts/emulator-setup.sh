@@ -44,8 +44,14 @@ if ! emulator -list-avds 2>/dev/null | grep -x "$AVD" >/dev/null; then
   log "installing the emulator and $IMAGE"
   # sdkmanager can exit 0 without installing, so check for the image; its log explains why.
   log=${TMPDIR:-/tmp}/sdkmanager.log
-  # yes ends on SIGPIPE when sdkmanager exits, which pipefail would report as a failure.
-  { yes 2>/dev/null || true; } | sdkmanager --install emulator "$IMAGE" > "$log" 2>&1 || true
+  # A second attempt, because a download sometimes arrives truncated ("Error on ZipFile unknown
+  # archive") and sdkmanager fetches it again.
+  for attempt in 1 2; do
+    # yes ends on SIGPIPE when sdkmanager exits, which pipefail would report as a failure.
+    { yes 2>/dev/null || true; } | sdkmanager --install emulator "$IMAGE" > "$log" 2>&1 || true
+    [ -f "$SDK/${IMAGE//;//}/system.img" ] && [ -x "$SDK/emulator/emulator" ] && break
+    if [ "$attempt" = 1 ]; then log "sdkmanager did not install everything; trying again"; fi
+  done
   if [ ! -f "$SDK/${IMAGE//;//}/system.img" ] || [ ! -x "$SDK/emulator/emulator" ]; then
     tail -30 "$log" >&2
     fail "sdkmanager did not install emulator and $IMAGE into $SDK"

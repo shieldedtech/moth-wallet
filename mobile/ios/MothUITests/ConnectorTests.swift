@@ -18,8 +18,8 @@ final class ConnectorTests: XCTestCase {
 
         // The mock DApp requests preprod, and new wallets start on preview.
         app.tabBars.buttons["Settings"].tap()
-        reveal(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Network'")).firstMatch, in: app).tap()
-        app.buttons["preprod"].tap()
+        let network = reveal(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Network'")).firstMatch, in: app)
+        choose(app.buttons["preprod"], fromMenu: network)
         app.tabBars.buttons["Wallet"].tap()
         // The header is a List section header, which iOS shows in capitals ("MAIN · PREPROD").
         let onPreprod = app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] '· preprod'")).firstMatch
@@ -79,9 +79,37 @@ func reveal(_ element: XCUIElement, in app: XCUIApplication, up: Bool = true) ->
     return element
 }
 
+/// Opens `menu` and taps `item` in it. An item can't be hit while its menu is still opening,
+/// and in CI a redraw behind the menu has closed it before the tap, so wait until the item has
+/// settled in place and reopen the menu if it never does.
+func choose(_ item: XCUIElement, fromMenu menu: XCUIElement, attempts: Int = 3) {
+    for _ in 0..<attempts {
+        menu.tap()
+        if item.waitForSettledFrame(timeout: 5) {
+            item.tap()
+            return
+        }
+    }
+    XCTFail("\(item) never settled after opening \(menu) \(attempts) times")
+}
+
 extension XCUIElement {
     func waitForEnabled(timeout: TimeInterval) -> Bool {
         let predicate = NSPredicate(format: "exists == true AND enabled == true")
         return XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: predicate, object: self)], timeout: timeout) == .completed
+    }
+
+    /// Waits until the element has a real frame that is the same on two checks in a row, which a
+    /// menu item has once its menu has finished opening. Not `hittable`: asking that of an item
+    /// whose menu is still opening fails the test instead of answering false.
+    func waitForSettledFrame(timeout: TimeInterval) -> Bool {
+        var last: CGRect?
+        let settled = NSPredicate { object, _ in
+            guard let element = object as? XCUIElement, element.exists else { last = nil; return false }
+            let frame = element.frame
+            defer { last = frame }
+            return frame.minX.isFinite && frame.minY.isFinite && !frame.isEmpty && frame == last
+        }
+        return XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: settled, object: self)], timeout: timeout) == .completed
     }
 }

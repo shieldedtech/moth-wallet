@@ -60,7 +60,9 @@ class OnboardingTests {
 
         // Registering DUST reaches the prover before anything else; an empty wallet then has
         // nothing to register, so this message proves the prover answered.
-        scrollTo(hasText("Register NIGHT") and isEnabled(), 600_000, "synced")
+        // The wallet starts from the bundled pre-seed and catches up from there, so this wait
+        // grows with the pre-seed's age; on CI, DUST catches up ~2 weeks of preprod in ~10 min.
+        scrollTo(hasText("Register NIGHT") and isEnabled(), 1_200_000, "synced")
         compose.onNodeWithText("Register NIGHT").performClick()
         approve("Approve DUST registration")
         waitFor(hasText("This account has no NIGHT to register."), 120_000, "prover reachable, nothing to register")
