@@ -9,7 +9,7 @@ export const network = {
   network_descQanet: 'Quality assurance network',
   network_descUndeployed: 'Local devnet stack on this machine',
   network_endpointUrls: 'Endpoint URLs',
-  network_useDefaults: 'Use defaults',
+  network_useDefaults: 'Reset to defaults',
   network_nodeUrl: 'Node URL',
   network_indexerUrl: 'Indexer URL',
   network_proofServerUrl: 'Proof server URL',

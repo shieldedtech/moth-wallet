@@ -129,8 +129,13 @@ export interface ExtensionSettings {
    * endpoints for it. It doubles as the preselected network for new accounts.
   */
   network: string;
-  /** Full endpoint overrides for `network`; null uses its maintained preset. */
+  /**
+   * Full endpoint overrides for `network`; null uses its maintained preset. Read
+   * from `endpointOverrides`; setting it sets that network's entry.
+   */
   customEndpoints: NetworkEndpoints | null;
+  /** Endpoint overrides by network id, kept when another network is selected. */
+  endpointOverrides: Record<string, NetworkEndpoints>;
   /** Minutes of inactivity before the wallet auto-locks; null = never (demo). */
   autoLockMinutes: number | null;
   /** Base URL of the `.shielded` name-registry read API for send-to-name

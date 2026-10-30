@@ -747,7 +747,7 @@
     "message": "Endpunkt-URLs"
   },
   "network_useDefaults": {
-    "message": "Standardwerte verwenden"
+    "message": "Auf Standardwerte zurücksetzen"
   },
   "network_nodeUrl": {
     "message": "Node-URL"

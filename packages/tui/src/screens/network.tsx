@@ -30,6 +30,8 @@ interface NetworkProps {
   network: NetworkState;
   onSwitch: (networkId: string) => void;
   onSaveOverrides: (networkId: string, overrides: NetworkOverrides) => void;
+  /** Drop the network's overrides so it uses its preset endpoints again. */
+  onResetOverrides: (networkId: string) => void;
   /**
    * Cardano config, or null while it loads (or if it failed to). The section
    * renders its own unavailable line rather than disappearing — a section that
@@ -54,7 +56,8 @@ const ENDPOINT_ROWS: { field: Exclude<UrlField, 'proofServerUrl'>; label: string
 
 type SettingRow =
   | { kind: 'url'; field: UrlField; label: string }
-  | { kind: 'prover'; label: string };
+  | { kind: 'prover'; label: string }
+  | { kind: 'reset'; label: string };
 
 type CardanoRow =
   | { kind: 'cardanoNetwork'; label: string }
@@ -65,7 +68,7 @@ const CARDANO_ROWS: CardanoRow[] = [
   { kind: 'blockfrost', label: 'Blockfrost' },
 ];
 
-export function Network({ network, onSwitch, onSaveOverrides, cardano, onSaveCardano, onBack }: NetworkProps) {
+export function Network({ network, onSwitch, onSaveOverrides, onResetOverrides, cardano, onSaveCardano, onBack }: NetworkProps) {
   const networkCount = NETWORKS.length;
   const settingRows: SettingRow[] = [
     ...ENDPOINT_ROWS.map((row): SettingRow => ({ kind: 'url', ...row })),
@@ -73,6 +76,7 @@ export function Network({ network, onSwitch, onSaveOverrides, cardano, onSaveCar
     ...(network.proverType === 'server'
       ? [{ kind: 'url', field: 'proofServerUrl', label: 'Proof URL' } satisfies SettingRow]
       : []),
+    { kind: 'reset', label: 'Reset' },
   ];
   const cardanoRows = CARDANO_ROWS;
   const itemCount = networkCount + settingRows.length + cardanoRows.length;
@@ -122,6 +126,9 @@ export function Network({ network, onSwitch, onSaveOverrides, cardano, onSaveCar
           { prover: proverType === 'wasm' ? { type: 'wasm' } : serverProver(network.proofServerUrl) },
         );
         setMessage(`Proving set to ${proverType === 'wasm' ? 'local WASM' : 'proof server'}`);
+      } else if (settingRow?.kind === 'reset') {
+        onResetOverrides(network.id);
+        setMessage(`Reset ${network.id} to its default endpoints`);
       } else if (settingRow?.kind === 'url') {
         setEditValue(network[settingRow.field]);
         setEditField(settingRow.field);
@@ -181,6 +188,8 @@ export function Network({ network, onSwitch, onSaveOverrides, cardano, onSaveCar
       if (target !== network.id) out.push({ key: 'Enter', label: 'switch' });
     } else if (settingRow?.kind === 'prover') {
       out.push({ key: 'Enter', label: 'toggle' });
+    } else if (settingRow?.kind === 'reset') {
+      out.push({ key: 'Enter', label: 'reset' });
     } else {
       out.push({ key: 'Enter', label: 'edit' });
     }
@@ -221,7 +230,8 @@ export function Network({ network, onSwitch, onSaveOverrides, cardano, onSaveCar
             const isHi = idx === highlighted;
             const editing = row.kind === 'url' && editField === row.field;
             return (
-              <Box key={row.kind === 'url' ? row.field : row.kind} flexDirection="column">
+              <Box key={row.kind === 'url' ? row.field : row.kind} flexDirection="column"
+                marginTop={row.kind === 'reset' ? 1 : 0}>
                 <Box>
                   <Text color={isHi ? 'cyan' : undefined} bold={isHi}>
                     {isHi ? '› ' : '  '}{row.label.padEnd(9)}
@@ -230,7 +240,9 @@ export function Network({ network, onSwitch, onSaveOverrides, cardano, onSaveCar
                     <Text dimColor>
                       {row.kind === 'prover'
                         ? (network.proverType === 'wasm' ? 'WASM (local)' : 'Proof server')
-                        : network[row.field]}
+                        : row.kind === 'reset'
+                          ? `Restore ${network.id}'s default endpoints`
+                          : network[row.field]}
                     </Text>
                   )}
                 </Box>

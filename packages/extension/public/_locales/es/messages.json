@@ -747,7 +747,7 @@
     "message": "URLs de endpoints"
   },
   "network_useDefaults": {
-    "message": "Usar predeterminados"
+    "message": "Restablecer predeterminados"
   },
   "network_nodeUrl": {
     "message": "URL del nodo"

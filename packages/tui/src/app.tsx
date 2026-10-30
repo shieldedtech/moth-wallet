@@ -40,7 +40,7 @@ import { useNetwork } from './hooks/useNetwork.js';
 import { useBalance } from './hooks/useBalance.js';
 import { useLogs } from './hooks/useLogs.js';
 import { useChainStatus } from './hooks/useChainStatus.js';
-import { loadSettings, saveSettings, type TuiSettings } from './settings.js';
+import { loadSettings, saveSettings, withoutOverrides, type TuiSettings } from './settings.js';
 
 export interface AppProps {
   walletName?: string;
@@ -827,6 +827,17 @@ export function App({ networkId: networkIdProp }: AppProps) {
                 // User-initiated save — surface the failure as an error.
                 const msg = err instanceof Error ? err.message : String(err);
                 logs.error(`Failed to save network overrides for ${netId}: ${msg}`);
+              }
+            }}
+            onResetOverrides={async (netId) => {
+              try {
+                const settings = withoutOverrides(await loadSettings(storage), netId);
+                await saveSettings(storage, settings);
+                logs.info(`Network overrides reset for ${netId}`);
+                network.connect(netId);
+              } catch (err) {
+                const msg = err instanceof Error ? err.message : String(err);
+                logs.error(`Failed to reset network overrides for ${netId}: ${msg}`);
               }
             }}
             onBack={onBack} />

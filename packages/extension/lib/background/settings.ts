@@ -23,6 +23,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   // they saved — only new ones see this.
   network: 'preprod',
   customEndpoints: null,
+  endpointOverrides: {},
   // A real timeout by default; users opt into "Never (demo mode)" explicitly.
   autoLockMinutes: 60,
   // Send-to-name is opt-in: no resolver configured until the user sets one.
@@ -109,6 +110,34 @@ function parseEndpoints(value: unknown): NetworkEndpoints | null {
   return null;
 }
 
+/**
+ * Endpoint overrides by network, keyed by today's network ids. A key that names a
+ * renamed network moves to the current id unless that id already has its own.
+ *
+ * Settings written before overrides were kept per network hold one
+ * `customEndpoints` object for the network saved alongside it; it becomes that
+ * network's entry.
+ */
+function parseEndpointOverrides(saved: Record<string, unknown> | undefined): Record<string, NetworkEndpoints> {
+  const out: Record<string, NetworkEndpoints> = {};
+  const stored = saved?.endpointOverrides;
+  const entries = stored && typeof stored === 'object' ? Object.entries(stored as Record<string, unknown>) : [];
+  for (const canonicalFirst of [true, false]) {
+    for (const [id, value] of entries) {
+      if ((canonicalNetworkId(id) === id) !== canonicalFirst) continue;
+      const key = canonicalNetworkId(id);
+      const endpoints = parseEndpoints(value);
+      if (endpoints && !(key in out)) out[key] = endpoints;
+    }
+  }
+  const legacy = parseEndpoints(saved?.customEndpoints);
+  const legacyNetwork = canonicalNetworkId(
+    typeof saved?.network === 'string' ? saved.network : DEFAULT_SETTINGS.network,
+  );
+  if (legacy && !(legacyNetwork in out)) out[legacyNetwork] = legacy;
+  return out;
+}
+
 /** Accept a stored auto-lock value, tolerating legacy/absent settings.
  *  `null` is a valid, deliberate value (demo mode); `undefined` → default. */
 function parseAutoLock(value: unknown): number | null {
@@ -119,13 +148,15 @@ function parseAutoLock(value: unknown): number | null {
 export async function getSettings(): Promise<ExtensionSettings> {
   const stored = await browser.storage.local.get(SETTINGS_KEY);
   const saved = stored[SETTINGS_KEY] as Partial<ExtensionSettings> | undefined;
-  const customEndpoints = parseEndpoints(saved?.customEndpoints);
+  // Canonicalised on read: a selection saved under a network id that has since
+  // been renamed would otherwise match no preset and fall through to the
+  // localhost guess below.
+  const network = canonicalNetworkId(saved?.network ?? DEFAULT_SETTINGS.network);
+  const endpointOverrides = parseEndpointOverrides(saved as Record<string, unknown> | undefined);
   return {
-    // Canonicalised on read: a selection saved under a network id that has since
-    // been renamed would otherwise match no preset and fall through to the
-    // localhost guess below.
-    network: canonicalNetworkId(saved?.network ?? DEFAULT_SETTINGS.network),
-    customEndpoints,
+    network,
+    customEndpoints: endpointOverrides[network] ?? null,
+    endpointOverrides,
     autoLockMinutes: 'autoLockMinutes' in (saved ?? {}) ? parseAutoLock(saved?.autoLockMinutes) : DEFAULT_SETTINGS.autoLockMinutes,
     nameResolverUrl: parseResolverUrl(saved?.nameResolverUrl),
     preseedWarming: saved?.preseedWarming === true,
@@ -147,23 +178,36 @@ export async function updateSettings(patch: Partial<ExtensionSettings>): Promise
   const stored = await browser.storage.local.get(SETTINGS_KEY);
   // Only what a caller actually set is persisted. Writing the whole resolved
   // object baked today's defaults into storage, so no default could move again.
-  const next = { ...(stored[SETTINGS_KEY] as Partial<ExtensionSettings> | undefined), ...patch };
-  // Endpoint overrides belong to one named network. Callers that change only
-  // the id must never carry the previous network's URLs across implicitly.
-  if (patch.network && patch.network !== current.network && !('customEndpoints' in patch)) {
-    next.customEndpoints = null;
+  const saved = stored[SETTINGS_KEY] as Partial<ExtensionSettings> | undefined;
+  const { customEndpoints, endpointOverrides, ...rest } = patch;
+  const next: Partial<ExtensionSettings> = { ...saved, ...rest };
+  // Overrides are kept per network, so switching away and back finds them again.
+  // `customEndpoints` sets (or with null, clears) the entry for the network this
+  // patch leaves selected; `endpointOverrides` replaces them all. A legacy single
+  // `customEndpoints` is moved into the map on any write, before a network change
+  // could make it read as the new network's.
+  if ('customEndpoints' in patch || endpointOverrides || saved?.customEndpoints !== undefined) {
+    const overrides = { ...(endpointOverrides ?? current.endpointOverrides) };
+    if ('customEndpoints' in patch) {
+      const network = canonicalNetworkId(patch.network ?? current.network);
+      if (customEndpoints) overrides[network] = customEndpoints;
+      else delete overrides[network];
+    }
+    next.endpointOverrides = overrides;
+    delete next.customEndpoints;
   }
   await browser.storage.local.set({ [SETTINGS_KEY]: next });
   return getSettings();
 }
 
 /**
- * Resolve endpoints for a network. Saved overrides only belong to the selected
- * settings network; explicit lookups for other networks use their presets.
+ * Resolve endpoints for a network (the selected one by default): its saved
+ * overrides, or its preset.
  */
 export async function getNetworkConfig(networkId?: string): Promise<NetworkConfig> {
-  const { network: settingsNetwork, customEndpoints } = await getSettings();
-  const network = networkId ?? settingsNetwork;
+  const { network: settingsNetwork, endpointOverrides } = await getSettings();
+  const network = networkId === undefined ? settingsNetwork : canonicalNetworkId(networkId);
+  const customEndpoints = endpointOverrides[network];
   const base = DEFAULT_NETWORKS[network] ?? {
     id: network,
     nodeUrl: 'ws://localhost:9944',
@@ -172,7 +216,7 @@ export async function getNetworkConfig(networkId?: string): Promise<NetworkConfi
     indexerUrl: 'http://localhost:8088/api/v4/graphql',
     prover: serverProver(),
   };
-  if (!customEndpoints || network !== settingsNetwork) return base;
+  if (!customEndpoints) return base;
   return {
     id: base.id,
     ...(customEndpoints.nodeAuthHeader ? { nodeAuthHeader: customEndpoints.nodeAuthHeader } : {}),

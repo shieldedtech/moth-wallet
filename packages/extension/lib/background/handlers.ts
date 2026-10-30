@@ -237,7 +237,7 @@ export async function saveNetworkConfig(data: {
     // otherwise. Only the two keys the forward write touched are restored.
     await updateSettings({
       network: previousSettings.network,
-      customEndpoints: previousSettings.customEndpoints,
+      endpointOverrides: previousSettings.endpointOverrides,
     }).catch(() => {});
     if (restartRequired) void startSync(session, previousConfig).catch(() => {});
     throw error;
@@ -484,7 +484,11 @@ export function registerHandlers(): void {
     // Each account lives on its own network: the unlocked account's network
     // becomes the wallet-wide selection.
     if (unlocked.network !== settings.network) {
-      settings = await updateSettings({ network: unlocked.network, customEndpoints: null });
+      settings = await updateSettings({ network: unlocked.network });
+      // That network keeps its own endpoints, auth header included; the rule
+      // attaching the header must follow, or it stays on the last network's node.
+      const config = await getNetworkConfig();
+      await applyNodeAuthHeader(config.nodeUrl, config.nodeAuthHeader);
     }
     const session: Session = {
       walletName: unlocked.name,
@@ -857,6 +861,7 @@ export function registerHandlers(): void {
       before.indexerUrl !== after.indexerUrl ||
       !proverConfigsEqual(resolveProverConfig(before), resolveProverConfig(after));
     if (networkChanged) {
+      await applyNodeAuthHeader(after.nodeUrl, after.nodeAuthHeader);
       // Setup uses settingsSet while choosing the configuration for a new
       // account. Settings → Network uses networkConfigSave above to keep the
       // active account unlocked and apply the appropriate restart semantics.

@@ -41,7 +41,7 @@ vi.mock('../lib/background/sync-service', () => ({
 
 import { saveNetworkConfig } from '../lib/background/handlers';
 import { getSession, saveSession, type Session } from '../lib/background/session';
-import { getSettings, updateSettings } from '../lib/background/settings';
+import { getNetworkConfig, getSettings, updateSettings } from '../lib/background/settings';
 
 const SESSION: Session = {
   walletName: 'alice',
@@ -114,7 +114,7 @@ describe('saveNetworkConfig', () => {
       }),
       expect.objectContaining({ id: 'preview' }),
     );
-    expect(await getSettings()).toEqual({ network: 'preview', customEndpoints: null, autoLockMinutes: 60, nameResolverUrl: null, preseedWarming: false, developerMode: false, blockfrostProjectId: null, blockfrostProjectIds: {}, blockfrostUrl: null, cnightPolicyId: null, cnightAssetName: null });
+    expect(await getSettings()).toEqual({ network: 'preview', customEndpoints: null, endpointOverrides: {}, autoLockMinutes: 60, nameResolverUrl: null, preseedWarming: false, developerMode: false, blockfrostProjectId: null, blockfrostProjectIds: {}, blockfrostUrl: null, cnightPolicyId: null, cnightAssetName: null });
     expect(await getSession()).toEqual(expect.objectContaining({ network: 'preview', address: 'mn_unshielded_preview' }));
     expect(status).toEqual(expect.objectContaining({ locked: false, network: 'preview', address: 'mn_unshielded_preview' }));
   });
@@ -137,7 +137,7 @@ describe('saveNetworkConfig', () => {
       expect.objectContaining({ walletName: 'alice', network: 'devnet' }),
       expect.objectContaining({ id: 'devnet', indexerUrl: changed.indexerUrl }),
     );
-    expect(await getSettings()).toEqual({ network: 'devnet', customEndpoints: changed, autoLockMinutes: 60, nameResolverUrl: null, preseedWarming: false, developerMode: false, blockfrostProjectId: null, blockfrostProjectIds: {}, blockfrostUrl: null, cnightPolicyId: null, cnightAssetName: null });
+    expect(await getSettings()).toEqual({ network: 'devnet', customEndpoints: changed, endpointOverrides: { devnet: changed }, autoLockMinutes: 60, nameResolverUrl: null, preseedWarming: false, developerMode: false, blockfrostProjectId: null, blockfrostProjectIds: {}, blockfrostUrl: null, cnightPolicyId: null, cnightAssetName: null });
   });
 
   it('restarts without clearing sync state when the prover changes', async () => {
@@ -153,7 +153,7 @@ describe('saveNetworkConfig', () => {
       expect.objectContaining({ walletName: 'alice', network: 'devnet' }),
       expect.objectContaining({ id: 'devnet', prover: { type: 'wasm' } }),
     );
-    expect(await getSettings()).toEqual({ network: 'devnet', customEndpoints: changed, autoLockMinutes: 60, nameResolverUrl: null, preseedWarming: false, developerMode: false, blockfrostProjectId: null, blockfrostProjectIds: {}, blockfrostUrl: null, cnightPolicyId: null, cnightAssetName: null });
+    expect(await getSettings()).toEqual({ network: 'devnet', customEndpoints: changed, endpointOverrides: { devnet: changed }, autoLockMinutes: 60, nameResolverUrl: null, preseedWarming: false, developerMode: false, blockfrostProjectId: null, blockfrostProjectIds: {}, blockfrostUrl: null, cnightPolicyId: null, cnightAssetName: null });
   });
 
   it('restarts on a node edit without deleting cached sync state', async () => {
@@ -195,6 +195,29 @@ describe('saveNetworkConfig', () => {
       expect.objectContaining({ network: 'devnet', customEndpoints: null }),
     );
     expect(await getSession()).toEqual(expect.objectContaining({ network: 'devnet' }));
+  });
+
+  it("keeps a network's endpoints after the account switches away from it", async () => {
+    const changed = { ...endpoints('devnet'), nodeUrl: 'https://my-node.example' };
+    await saveNetworkConfig({ network: 'devnet', endpoints: changed, resyncApproved: false });
+
+    await saveNetworkConfig({ network: 'preview', endpoints: endpoints('preview'), resyncApproved: true });
+
+    expect((await getSettings()).customEndpoints).toBeNull();
+    expect(await getNetworkConfig('devnet')).toEqual({ id: 'devnet', ...changed });
+  });
+
+  it("restores the target network's own overrides when the switch fails", async () => {
+    const previewCustom = { ...endpoints('preview'), nodeUrl: 'https://my-preview-node.example' };
+    await updateSettings({ network: 'preview', customEndpoints: previewCustom });
+    await updateSettings({ network: 'devnet' });
+    walletSetNetwork.mockRejectedValue(new Error('setNetwork exploded'));
+
+    await expect(
+      saveNetworkConfig({ network: 'preview', endpoints: endpoints('preview'), resyncApproved: true }),
+    ).rejects.toThrow('setNetwork exploded');
+
+    expect((await getSettings()).endpointOverrides).toEqual({ preview: previewCustom });
   });
 
   it('does not reset or restart sync when the saved config is unchanged', async () => {

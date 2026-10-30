@@ -66,6 +66,12 @@ export async function loadSettings(storage: StorageAdapter): Promise<TuiSettings
   }
 }
 
+/** The settings with one network's endpoint overrides removed, so it uses its preset again. */
+export function withoutOverrides(settings: TuiSettings, networkId: string): TuiSettings {
+  const { [networkId]: _reset, ...rest } = settings.networkOverrides;
+  return { ...settings, networkOverrides: rest };
+}
+
 export async function saveSettings(storage: StorageAdapter, settings: TuiSettings): Promise<void> {
   await storage.write(SETTINGS_KEY, encoder.encode(JSON.stringify(settings, null, 2)));
 }

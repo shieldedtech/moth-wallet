@@ -132,6 +132,18 @@ export function loadedNetwork(saved: string, fallback: SupportedNetwork): Suppor
   return isSupported(saved) ? saved : fallback;
 }
 
+/**
+ * The endpoints a network opens with in the panel: the overrides saved for it,
+ * or its preset. Every network keeps its own, so picking one shows what was
+ * saved for it rather than resetting it.
+ */
+export function endpointsFor(
+  network: SupportedNetwork,
+  savedOverrides: Record<string, NetworkEndpoints>,
+): NetworkEndpoints {
+  return savedOverrides[network] ?? presetFor(network);
+}
+
 export interface NetworkConfigState {
   network: SupportedNetwork;
   current: SupportedNetwork;
@@ -163,6 +175,7 @@ export function useNetworkConfig(fallback: SupportedNetwork = 'mainnet'): Networ
   const [network, setNetwork] = useState<SupportedNetwork>(fallback);
   const [currentUrls, setCurrentUrls] = useState<NetworkEndpoints>(fallbackUrls);
   const [urls, setUrls] = useState<NetworkEndpoints>(fallbackUrls);
+  const [savedOverrides, setSavedOverrides] = useState<Record<string, NetworkEndpoints>>({});
   const [ready, setReady] = useState(false);
 
   const [developerMode, setDeveloperMode] = useState(false);
@@ -170,11 +183,12 @@ export function useNetworkConfig(fallback: SupportedNetwork = 'mainnet'): Networ
   useEffect(() => {
     void sendMessage('settingsGet', undefined).then((settings) => {
       const named = loadedNetwork(settings.network, fallback);
-      const loadedUrls = settings.customEndpoints ?? presetFor(named);
+      const loadedUrls = endpointsFor(named, settings.endpointOverrides);
       setCurrent(named);
       setNetwork(named);
       setCurrentUrls(loadedUrls);
       setUrls(loadedUrls);
+      setSavedOverrides(settings.endpointOverrides);
       setDeveloperMode(settings.developerMode);
       setReady(true);
     });
@@ -182,7 +196,7 @@ export function useNetworkConfig(fallback: SupportedNetwork = 'mainnet'): Networ
 
   const pick = (next: SupportedNetwork) => {
     setNetwork(next);
-    setUrls(next === current ? currentUrls : presetFor(next));
+    setUrls(next === current ? currentUrls : endpointsFor(next, savedOverrides));
   };
 
   const edit = (field: 'nodeUrl' | 'indexerUrl') => (value: string) => {
@@ -279,15 +293,14 @@ export function NetworkFields({ state }: { state: NetworkConfigState }) {
       <div className="mt-1 flex flex-col gap-3 rounded-[16px] bg-card p-4">
         <div className="flex items-center justify-between gap-3">
           <p className="section-label m-0">{t('network_endpointUrls')}</p>
-          {state.usesOverrides && (
-            <button
-              type="button"
-              onClick={state.resetEndpoints}
-              className="cursor-pointer border-0 bg-transparent p-0 text-xs font-semibold text-link hover:underline"
-            >
-              {t('network_useDefaults')}
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={state.resetEndpoints}
+            disabled={!state.usesOverrides}
+            className="cursor-pointer border-0 bg-transparent p-0 text-xs font-semibold text-link hover:underline disabled:cursor-default disabled:text-muted-foreground disabled:no-underline"
+          >
+            {t('network_useDefaults')}
+          </button>
         </div>
         <UrlField label={t('network_nodeUrl')} value={state.urls.nodeUrl} onChange={state.edit('nodeUrl')} />
         <UrlField label={t('network_indexerUrl')} value={state.urls.indexerUrl} onChange={state.edit('indexerUrl')} />

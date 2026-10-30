@@ -10,6 +10,7 @@ import {
   NETWORK_DESCRIPTIONS,
   NETWORK_LABELS,
   NetworkFields,
+  endpointsFor,
   selectableNetworks,
   type NetworkConfigState,
 } from '../components/screens/NetworkConfig';
@@ -120,6 +121,38 @@ describe('NetworkFields', () => {
 
 // This wallet is unaudited and unsupported, so a network carrying real value must
 // not be reachable by accident. These pin the gate itself rather than a count.
+describe('endpoint overrides', () => {
+  const custom = {
+    nodeUrl: 'wss://my-node.example',
+    indexerUrl: 'https://my-indexer.example/graphql',
+    prover: resolveProverConfig(DEFAULT_NETWORKS.preprod!),
+  };
+
+  it("opens a network on the endpoints saved for it", () => {
+    expect(endpointsFor('preprod', { preprod: custom })).toEqual(custom);
+  });
+
+  it('opens a network with nothing saved on its preset', () => {
+    expect(endpointsFor('preview', { preprod: custom })).toEqual({
+      nodeUrl: DEFAULT_NETWORKS.preview!.nodeUrl,
+      indexerUrl: DEFAULT_NETWORKS.preview!.indexerUrl,
+      prover: resolveProverConfig(DEFAULT_NETWORKS.preview!),
+    });
+  });
+
+  // Shown either way, so the way back to the presets is always in the same place.
+  it('always shows the reset button, enabled only for edited endpoints', () => {
+    const reset = escaped(t('network_useDefaults'));
+    const button = (html: string) => html.slice(html.lastIndexOf('<button', html.indexOf(reset)), html.indexOf(reset));
+
+    const atPreset = renderToStaticMarkup(<NetworkFields state={networkState({ usesOverrides: false })} />);
+    const edited = renderToStaticMarkup(<NetworkFields state={networkState({ usesOverrides: true })} />);
+
+    expect(button(atPreset)).toContain('disabled=""');
+    expect(button(edited)).not.toContain('disabled=""');
+  });
+});
+
 describe('value-bearing networks', () => {
   const base = (over: Partial<NetworkConfigState>): NetworkConfigState =>
     ({

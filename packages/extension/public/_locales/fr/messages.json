@@ -747,7 +747,7 @@
     "message": "URL des endpoints"
   },
   "network_useDefaults": {
-    "message": "Valeurs par défaut"
+    "message": "Rétablir les valeurs par défaut"
   },
   "network_nodeUrl": {
     "message": "URL du nœud"
