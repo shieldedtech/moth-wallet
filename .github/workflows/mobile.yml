@@ -1,16 +1,13 @@
 name: Mobile
 
-# Builds Moth for iOS and Android against this commit's packages, so a change to core or the
-# extension worker that breaks an app fails here rather than on a phone. A change runs only
-# the platform it touches; a change to code both apps share runs both.
+# Builds Moth for iOS and Android. A pull request runs it only when it changes mobile/**;
+# a change to core or the extension worker that breaks an app is caught on main instead,
+# where the packages the engine is built from also trigger it. A change runs only the
+# platform it touches; a change to code both apps share runs both.
 on:
   pull_request:
     paths:
       - mobile/**
-      - packages/core/**
-      - packages/browser/**
-      - packages/extension/lib/**
-      - packages/extension/public/preseed/**
       - .github/workflows/mobile.yml
   workflow_dispatch:
   push:
@@ -46,8 +43,9 @@ jobs:
           fetch-depth: 0
 
       # Both apps are built from mobile/shared (engine page, native prover, ledger WASM build)
-      # and the packages the engine is built from, so a change there builds both.
-      # A manual run, or a push whose base commit is unknown, builds both.
+      # and the packages the engine is built from, so a change there builds both; the
+      # packages count only on main. A manual run, or a push whose base commit is unknown,
+      # builds both.
       - name: Classify changed files
         id: filter
         env:
@@ -62,9 +60,10 @@ jobs:
             while IFS= read -r f; do
               case "$f" in
                 mobile/android/*) android=true ;;
-                mobile/shared/* | packages/core/*| packages/browser/* | packages/extension/lib/* | \
-                packages/extension/public/preseed/* | .github/workflows/mobile.yml)
-                  ios=true android=true ;;
+                mobile/shared/* | .github/workflows/mobile.yml) ios=true android=true ;;
+                packages/core/* | packages/browser/* | packages/extension/lib/* | \
+                packages/extension/public/preseed/*)
+                  if [ "$EVENT" = push ]; then ios=true android=true; fi ;;
                 mobile/ios/*) ios=true ;;
               esac
             done < <(git diff --name-only "$(git merge-base "$BASE" "$HEAD")" "$HEAD")
