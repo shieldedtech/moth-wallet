@@ -314,6 +314,12 @@
   "approval_contractCallsLabel": {
     "message": "Vertragsaufrufe"
   },
+  "approval_contractDeploysLabel": {
+    "message": "Contract deploys"
+  },
+  "approval_maintenanceUpdatesLabel": {
+    "message": "Contract maintenance updates"
+  },
   "approval_spendsNothing": {
     "message": "Diese Transaktion entnimmt deiner Wallet nichts außer der Netzwerkgebühr."
   },

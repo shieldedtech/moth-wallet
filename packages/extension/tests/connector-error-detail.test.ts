@@ -154,7 +154,14 @@ describe('the reason a dApp receives', () => {
     handlers.clear();
     balanceTransaction.mockReset();
     txSummary.mockReset();
-    txSummary.mockResolvedValue({ spends: [], receives: [], contractActions: 0 });
+    txSummary.mockResolvedValue({
+      spends: [],
+      receives: [],
+      contractActions: 0,
+      contractCalls: 0,
+      contractDeploys: 0,
+      maintenanceUpdates: 0,
+    });
     registerConnectorHandlers();
     await grant(ORIGIN, 'devnet');
     await saveSession(SESSION);

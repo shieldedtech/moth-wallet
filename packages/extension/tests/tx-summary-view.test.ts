@@ -1,12 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { txSummaryRows } from '../lib/ui/tx-summary-view';
+import { contractActionRows, txSummaryRows } from '../lib/ui/tx-summary-view';
 import { TESTNET_NATIVE_ASSET_LABELS, MAINNET_NATIVE_ASSET_LABELS } from '../lib/ui/token-labels';
 import type { TxSummaryDTO } from '../lib/offscreen/messaging';
 
 const NIGHT = '0'.repeat(64);
 const TOKEN = 'd'.repeat(64);
 
-const empty: TxSummaryDTO = { spends: [], receives: [], contractActions: 0 };
+const empty: TxSummaryDTO = {
+  spends: [],
+  receives: [],
+  contractActions: 0,
+  contractCalls: 0,
+  contractDeploys: 0,
+  maintenanceUpdates: 0,
+};
 
 describe('txSummaryRows', () => {
   it('shows a NIGHT deficit as a payment in NIGHT units with the network label', () => {
@@ -28,9 +35,11 @@ describe('txSummaryRows', () => {
   it('lists spends before change, and keeps direction on each row', () => {
     const rows = txSummaryRows(
       {
+        ...empty,
         spends: [{ kind: 'shielded', tokenId: TOKEN, amount: '7' }],
         receives: [{ kind: 'unshielded', tokenId: NIGHT, amount: '2000000' }],
         contractActions: 1,
+        contractCalls: 1,
       },
       TESTNET_NATIVE_ASSET_LABELS,
     );
@@ -66,5 +75,31 @@ describe('txSummaryRows', () => {
 
   it('returns no rows for a balanced transaction', () => {
     expect(txSummaryRows(empty, TESTNET_NATIVE_ASSET_LABELS)).toEqual([]);
+  });
+});
+
+describe('contractActionRows', () => {
+  it('names a deploy as a deploy, so it cannot pass for a call', () => {
+    expect(contractActionRows({ ...empty, contractActions: 1, contractDeploys: 1 })).toEqual([
+      { label: 'Contract deploys', value: '1' },
+    ]);
+  });
+
+  it('lists each kind present, deploys first, and nothing for kinds that are absent', () => {
+    expect(
+      contractActionRows({ ...empty, contractActions: 4, contractDeploys: 1, contractCalls: 2, maintenanceUpdates: 1 }),
+    ).toEqual([
+      { label: 'Contract deploys', value: '1' },
+      { label: 'Contract calls', value: '2' },
+      { label: 'Contract maintenance updates', value: '1' },
+    ]);
+    expect(contractActionRows({ ...empty, contractActions: 1, contractCalls: 1 })).toEqual([
+      { label: 'Contract calls', value: '1' },
+    ]);
+  });
+
+  it('adds no rows for a transfer or a prompt without a summary', () => {
+    expect(contractActionRows(empty)).toEqual([]);
+    expect(contractActionRows(undefined)).toEqual([]);
   });
 });
