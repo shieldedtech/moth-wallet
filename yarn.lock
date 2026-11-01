@@ -3388,6 +3388,7 @@ __metadata:
     "@fontsource/bricolage-grotesque": "npm:^5.2.10"
     "@fontsource/instrument-sans": "npm:^5.2.8"
     "@midnight-ntwrk/dapp-connector-api": "npm:4.0.1"
+    "@midnight-ntwrk/ledger-v8": "npm:8.1.0"
     "@playwright/test": "npm:^1.63.0"
     "@radix-ui/react-dialog": "npm:^1.1.18"
     "@radix-ui/react-dropdown-menu": "npm:^2.1.19"
