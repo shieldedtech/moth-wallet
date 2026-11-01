@@ -56,12 +56,16 @@ final class ConnectorTests: XCTestCase {
     }
 }
 
+/// How long a fresh install may show "Starting Moth…". Usually 12-35 s on CI, but the first launch
+/// after the simulator boots has taken over 90 s.
+let firstScreenTimeout: TimeInterval = 180
+
 /// Gets past onboarding or the lock screen; Face ID prompts are matched by scripts/ui-test.sh.
 func unlockOrCreate(_ app: XCUIApplication) {
     let create = app.buttons["Create a new wallet"]
     let unlock = app.buttons["Unlock"]
     let home = app.navigationBars["Moth"]
-    let deadline = Date().addingTimeInterval(60)
+    let deadline = Date().addingTimeInterval(firstScreenTimeout)
     while Date() < deadline, !create.exists, !unlock.exists, !home.exists { _ = home.waitForExistence(timeout: 1) }
     if create.exists {
         create.tap()
@@ -81,12 +85,16 @@ func reveal(_ element: XCUIElement, in app: XCUIApplication, up: Bool = true) ->
 
 /// Opens `menu` and taps `item` in it. An item can't be hit while its menu is still opening,
 /// and in CI a redraw behind the menu has closed it before the tap, so wait until the item has
-/// settled in place and reopen the menu if it never does.
+/// settled in place and reopen the menu if it never does. Then tap the middle of where it sits:
+/// on CI, XCTest can fail to find a hit point on an iOS 26 menu item that has been open and still
+/// for seconds, and a coordinate tap doesn't ask it for one.
 func choose(_ item: XCUIElement, fromMenu menu: XCUIElement, attempts: Int = 3) {
     for _ in 0..<attempts {
         menu.tap()
         if item.waitForSettledFrame(timeout: 5) {
-            item.tap()
+            let frame = item.frame
+            XCUIApplication().coordinate(withNormalizedOffset: .zero)
+                .withOffset(CGVector(dx: frame.midX, dy: frame.midY)).tap()
             return
         }
     }
