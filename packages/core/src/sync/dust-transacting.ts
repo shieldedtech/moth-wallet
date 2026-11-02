@@ -23,12 +23,12 @@
 // dust-transacting.test.ts pins those so a version bump fails loudly rather
 // than silently reverting to the SDK loop.
 
-import {Either} from 'effect';
+import {Effect, Either} from 'effect';
 import type * as ledger from '@midnight-ntwrk/ledger-v8';
 import * as ledgerV9 from '@midnightntwrk/wallet-sdk/ledger/v9';
 import {Transacting, WalletError, V1Builder, type CoinsAndBalances, type CoreWallet, type Dust} from '@midnightntwrk/wallet-sdk/dust/v1';
 import * as V2 from '@midnightntwrk/wallet-sdk/dust/v2';
-import {asV8DustParameters, CustomForkingDustWallet, type DustWallet} from '@midnightntwrk/wallet-sdk/dust';
+import {CustomForkingDustWallet, dustVariantConfigurations, type DustWallet} from '@midnightntwrk/wallet-sdk/dust';
 import {makeIndexerChainVersionProbe} from '@midnightntwrk/wallet-sdk/capabilities';
 import {
   getBalanceRecipe,
@@ -359,24 +359,33 @@ export function TerminatingDustWallet(
   configuration: Parameters<typeof DustWallet>[0],
   options: {onPass?: (pass: DustFeePass) => void} = {},
 ): ReturnType<typeof DustWallet> {
-  const dustParameters = configuration.dustParameters ?? ledgerV9.LedgerParameters.initialParameters().dust;
+  const {v1, v2, migration} = dustVariantConfigurations(configuration);
+  const withProbes = {
+    ...configuration,
+    chainVersionProbe: configuration.chainVersionProbe ?? makeIndexerChainVersionProbe(configuration),
+    ...(configuration.skipLedgerV8DustHistory === true
+      ? {
+          dustTimelineStartProbe: () =>
+            Effect.runPromise(V2.SyncService.findDustTimelineStart(configuration, configuration.forks.v9)),
+        }
+      : {}),
+  };
   return CustomForkingDustWallet(
-    {...configuration, chainVersionProbe: configuration.chainVersionProbe ?? makeIndexerChainVersionProbe(configuration)},
+    withProbes,
     {
       builder: new V1Builder()
         .withDefaults()
         .withCoinSelection(() => largestDustCoinFirst)
         .withTransacting(terminatingDustTransacting(options)),
-      // The V1 variant needs the ledger-v8 rebuild of the rates, as in the SDK's own DustWallet.
-      configuration: {...configuration, dustParameters: asV8DustParameters(dustParameters)},
+      configuration: v1,
     },
     {
       builder: new V2.V2Builder()
         .withDefaults()
-        .withMigration(() => V2.Migration.makeCrossLedgerMigration({dustParameters}))
+        .withMigration(migration)
         .withCoinSelection(() => largestDustCoinFirst)
         .withTransacting(terminatingDustTransactingV2(options)),
-      configuration,
+      configuration: v2,
     },
   );
 }

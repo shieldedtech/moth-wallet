@@ -10,7 +10,8 @@ import {
   type TokenKindsToBalance,
   type WalletKeys,
 } from '../../../src/sync/operations.js';
-import { forks, unshieldedPublicKeyAt } from '../../../src/sync/ledger-routing.js';
+import { createKeystore } from '@midnightntwrk/wallet-sdk/unshielded';
+import { forks } from '../../../src/sync/ledger-routing.js';
 import { NIGHT_TOKEN_ID } from '../../../src/types/tokens.js';
 import { unboundTransaction } from '../../helpers/ledger-transactions.js';
 import { VERIFIED_PREPROD_ADDRESS, testSeedHex } from '../../helpers/seed.js';
@@ -128,8 +129,11 @@ describe('balanceTransaction against the real facade', () => {
   async function realFacade(stage: 'Finalized' | 'Unbound') {
     const unbound = await unboundTransaction('v9');
     const tx = WalletTransaction.adopt(stage, stage === 'Finalized' ? unbound.bind() : unbound, forks.v9);
-    const { publicKey } = unshieldedPublicKeyAt(forks.v9, keys.unshielded, 'preprod');
-    const unshieldedState = Rx.of({ state: { publicKey: { publicKey }, progress: { isStrictlyComplete: () => false } } });
+    // The facade reads progress and the verifying key off the state itself; the
+    // variant's core state is sealed. In-place balancing names the wallet's own
+    // inputs by that key, so it must be the real one.
+    const verifyingKey = createKeystore({ kind: 'schnorr', secret: keys.unshielded }, 'preprod').getPublicKey();
+    const unshieldedState = Rx.of({ verifyingKey, progress: { isStrictlyComplete: () => false } });
     // Private in the typings; WalletFacade.init calls it with these, in this order.
     const Facade = WalletFacade as unknown as new (...args: unknown[]) => WalletFacade;
     const facade = new Facade(
