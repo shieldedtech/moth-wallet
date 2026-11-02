@@ -402,10 +402,6 @@ export interface WalletSyncOptions {
   onDustFeePass?: (pass: DustFeePass) => void;
 }
 
-/** Bound on the SDK's own teardown. A healthy stop takes tens of milliseconds, so
- *  this only ever elapses for one that will never finish. */
-const STOP_TIMEOUT_MS = 5_000;
-
 /**
  * Bring up the WalletFacade (shielded + unshielded + dust) and start syncing.
  * Takes `walletKeys` (the per-role seeds derived once at unlock — Option A, the
@@ -760,21 +756,7 @@ export async function startWalletSync(
   const stop = async () => {
     subscription.unsubscribe();
     await saveCache(store, facade, pendingTraits, txHistoryStorage, name, network.id).catch(() => {});
-
-    // `facade.stop()` never settles against an unreachable node: it awaits a
-    // Polkadot client created with `throwOnConnect: false`. saveCache ran first.
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const timedOut = await new Promise<boolean>((resolve) => {
-      timer = setTimeout(() => resolve(true), STOP_TIMEOUT_MS);
-      facade.stop().then(
-        () => resolve(false),
-        () => resolve(false)
-      );
-    });
-    clearTimeout(timer);
-    if (timedOut) {
-      onProgress?.(`Sync stop timed out after ${STOP_TIMEOUT_MS / 1000}s — abandoning SDK teardown`);
-    }
+    await facade.stop().catch(() => {});
   };
 
   // `balances` is exposed as a getter so callers (notably the daemon's

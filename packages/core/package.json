@@ -40,7 +40,7 @@
     "@midnight-ntwrk/midnight-js-level-private-state-provider": "4.1.1",
     "@midnight-ntwrk/midnight-js-node-zk-config-provider": "4.1.1",
     "@midnight-ntwrk/zkir-v2": "2.1.0",
-    "@midnightntwrk/wallet-sdk": "2.0.0-canary.20261102110141-786ed95",
+    "@midnightntwrk/wallet-sdk": "2.0.0-canary.20261102170246-27e8969",
     "@noble/ciphers": "^2.2.0",
     "@noble/hashes": "^2.2.0",
     "@scure/bip39": "^2.2.0",
