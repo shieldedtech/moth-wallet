@@ -83,7 +83,7 @@ async function insertViaSDK(options: InsertVerifierKeyOptions): Promise<Transact
   const {pathToFileURL} = await import('node:url');
   const {createRequire} = await import('node:module');
   const {existsSync} = await import('node:fs');
-  const {homedir} = await import('node:os');
+  const {mothHome} = await import('../storage/home.js');
   const {levelPrivateStateProvider} = await import('@midnight-ntwrk/midnight-js-level-private-state-provider');
 
   // The unshielded signing secret: the pre-derived walletKeys (daemon path), else
@@ -171,7 +171,7 @@ async function insertViaSDK(options: InsertVerifierKeyOptions): Promise<Transact
     encryptionPublicKey: encPublicKey,
   });
 
-  const levelDbDir = join(homedir(), '.moth', 'level-db', network.id, encPublicKey.slice(0, 16));
+  const levelDbDir = join(mothHome(), 'level-db', network.id, encPublicKey.slice(0, 16));
 
   // privateStateStoreName matches what the deploy used. The signing key was stored
   // under the contract NAME the stub was deployed with — which is the deployed
@@ -280,7 +280,7 @@ async function insertBatchViaSDK(options: InsertVerifierKeysOptions): Promise<Ba
   const {pathToFileURL} = await import('node:url');
   const {createRequire} = await import('node:module');
   const {existsSync} = await import('node:fs');
-  const {homedir} = await import('node:os');
+  const {mothHome} = await import('../storage/home.js');
   const {levelPrivateStateProvider} = await import('@midnight-ntwrk/midnight-js-level-private-state-provider');
 
   // The unshielded signing secret: the pre-derived walletKeys (daemon path), else
@@ -359,7 +359,7 @@ async function insertBatchViaSDK(options: InsertVerifierKeysOptions): Promise<Ba
     encryptionPublicKey: encPublicKey,
   });
 
-  const levelDbDir = join(homedir(), '.moth', 'level-db', network.id, encPublicKey.slice(0, 16));
+  const levelDbDir = join(mothHome(), 'level-db', network.id, encPublicKey.slice(0, 16));
   const providers = {
     zkConfigProvider: zkConfigProvider as any,
     proofProvider: proofProvider as any,

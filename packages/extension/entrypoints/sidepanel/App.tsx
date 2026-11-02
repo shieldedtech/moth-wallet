@@ -7,6 +7,7 @@ import { useSession, useWallets, usePanelEvents, useSelectedProverType, useRegis
 import { t } from '../../lib/i18n';
 import { nativeAssetLabelsForNetwork } from '../../lib/ui/token-labels';
 import { accountLabel } from '../../lib/ui/format';
+import { Cardano } from '../../components/screens/Cardano';
 import type { Screen } from '../../components/screens/navigation';
 import { GetStarted, openSetupTab } from '../../components/screens/GetStarted';
 import { SetupInProgress } from '../../components/screens/SetupInProgress';
@@ -180,6 +181,9 @@ export function App() {
           balances={balances}
           syncMessage={events.syncMessage}
           relayState={events.relayState}
+          txStage={events.txStage}
+          txStageSince={events.txStageSince}
+          proverType={prover.proverType}
           navigate={setScreen}
         />
       )}
@@ -189,6 +193,7 @@ export function App() {
           network={session.status.network}
           balances={balances}
           txStage={events.txStage}
+          txStageSince={events.txStageSince}
           proverType={prover.proverType}
           relayState={events.relayState}
           onExit={shared.back}
@@ -203,12 +208,14 @@ export function App() {
         <DustDetail
           balances={balances}
           txStage={events.txStage}
+          txStageSince={events.txStageSince}
           proverType={prover.proverType}
           network={session.status.network}
           ownDustAddress={session.status.addresses?.dust?.bech32m?.[session.status.network] ?? ''}
           onBack={shared.back}
         />
       )}
+      {screen === 'cardano' && <Cardano network={session.status.network} onBack={shared.back} />}
       {screen === 'accounts' && wallets && (
         <Accounts
           wallets={wallets}

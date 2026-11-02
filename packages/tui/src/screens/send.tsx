@@ -5,7 +5,7 @@
 import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
-import { NIGHT_TOKEN_ID } from '@shieldedtech/moth-wallet';
+import { InvalidAmountError, NIGHT_TOKEN_ID, parseNightAmount } from '@shieldedtech/moth-wallet';
 import { TxStatus } from '../components/TxStatus.js';
 import { SectionHeader } from '../components/SectionHeader.js';
 import { HelpFooter } from '../components/HelpFooter.js';
@@ -48,24 +48,16 @@ function tokenDisplayName(tokenType: TokenType, tokenId: string): string {
   return tokenId;
 }
 
-function parseAmount(input: string, tokenType: TokenType, tokenId: string): { ok: true; raw: bigint } | { ok: false; error: string } {
+export function parseAmount(input: string, tokenType: TokenType, tokenId: string): { ok: true; raw: bigint } | { ok: false; error: string } {
   const trimmed = input.trim();
   if (!trimmed) return { ok: false, error: 'Enter an amount' };
   try {
-    if (isNight(tokenType, tokenId)) {
-      if (trimmed.includes('.')) {
-        const [int, dec = ''] = trimmed.split('.');
-        const padded = dec.padEnd(6, '0').slice(0, 6);
-        const raw = BigInt(int || '0') * 1_000_000n + BigInt(padded);
-        return raw > 0n ? { ok: true, raw } : { ok: false, error: 'Amount must be greater than zero' };
-      }
-      const raw = BigInt(trimmed) * 1_000_000n;
-      return raw > 0n ? { ok: true, raw } : { ok: false, error: 'Amount must be greater than zero' };
-    }
+    if (isNight(tokenType, tokenId)) return { ok: true, raw: parseNightAmount(trimmed) };
     if (trimmed.includes('.')) return { ok: false, error: 'Custom tokens require whole numbers' };
     const raw = BigInt(trimmed);
     return raw > 0n ? { ok: true, raw } : { ok: false, error: 'Amount must be greater than zero' };
-  } catch {
+  } catch (err) {
+    if (err instanceof InvalidAmountError) return { ok: false, error: err.message };
     return { ok: false, error: 'Invalid amount format' };
   }
 }

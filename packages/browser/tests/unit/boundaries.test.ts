@@ -10,9 +10,9 @@
 // graph from the browser entrypoint reaches none statically, core's barrel reaches
 // 36.
 //
-// "The walked graph" is the load-bearing qualifier. wallet-sync hides two modules
-// from static analysis behind a variable specifier, one of which does statically
-// import three Node builtins — that indirection is deliberate and is what keeps a
+// "The walked graph" is the load-bearing qualifier. wallet-sync hides three modules
+// from static analysis behind a variable specifier, two of which statically
+// import Node builtins — that indirection is deliberate and is what keeps a
 // bundler from pulling it in, but it also ends the walk. Those stopping points are
 // pinned rather than ignored, because an edge the walk cannot see would otherwise
 // be indistinguishable from an edge that is not there.
@@ -60,10 +60,9 @@ const CORE_PKG = '@shieldedtech/moth-wallet';
 const ALLOWED_DYNAMIC_PLATFORM_IMPORTS = new Set([
   // Node-only cleanup of on-disk sync artifacts. Never called in a browser,
   // which uses the IndexedDB sync store instead. Making the cleanup injectable
-  // would remove these three and let this list go away.
+  // would remove these two and let this list go away.
   'core/dist/sync/wallet-sync.js: node:fs',
   'core/dist/sync/wallet-sync.js: node:path',
-  'core/dist/sync/wallet-sync.js: node:os',
 ]);
 
 /**
@@ -72,14 +71,16 @@ const ALLOWED_DYNAMIC_PLATFORM_IMPORTS = new Set([
  * whatever is on the far side is outside everything asserted below — pinning them
  * is what stops that blind spot growing silently.
  *
- * Both entries are wallet-sync deliberately hiding a module from bundler analysis:
- * `./node-sync-store.js`, which statically imports three Node builtins, and `ws`.
+ * All three are wallet-sync deliberately hiding a module from bundler analysis:
+ * `./node-sync-store.js`, which statically imports three Node builtins, `ws`, and
+ * `../storage/home.js` (node:os, node:path) for the on-disk cleanup root.
  * The indirection is why a browser bundle survives them — a bundler cannot resolve
  * a variable specifier either — but it is also why the walk stops there.
  */
 const ALLOWED_OPAQUE_DYNAMIC_IMPORTS = [
   'core/dist/sync/wallet-sync.js: specifier',
   'core/dist/sync/wallet-sync.js: specifier',
+  'core/dist/sync/wallet-sync.js: homeSpecifier',
 ];
 
 function tsSources(dir: string): string[] {

@@ -14,20 +14,22 @@ import {DustWallet} from '@midnightntwrk/wallet-sdk/dust';
 import {ShieldedWallet} from '@midnightntwrk/wallet-sdk/shielded';
 import {UnshieldedWallet, PublicKey, createKeystore} from '@midnightntwrk/wallet-sdk/unshielded';
 import {InMemoryTransactionHistoryStorage, type FinalizedTx} from '@midnightntwrk/wallet-sdk';
-import {WalletEntrySchema, mergeWalletEntries} from '@midnightntwrk/wallet-sdk/facade';
+import {WalletEntrySchema, finalizedTransactionTraits, mergeWalletEntries} from '@midnightntwrk/wallet-sdk/facade';
+import type {PendingTransactions} from '@midnightntwrk/wallet-sdk/capabilities/pendingTransactions';
 import {setNetworkId} from '@midnight-ntwrk/midnight-js/network-id';
 import {resolveProverConfig, type NetworkConfig} from '../types/network.js';
 import {createWalletProvingService} from '../proof/provider.js';
 import {NIGHT_TOKEN_ID, formatNight} from '../types/tokens.js';
 import {formatDustBalance} from '../wallet/balance-format.js';
 import {ensureEmptyRefCache, preSeedNewWallet} from './preseed.js';
-import {InMemorySyncStateStore, syncStateKey, type SyncStateStore, type WalletPart} from './sync-store.js';
+import {EMPTY_REF_WALLET, InMemorySyncStateStore, syncStateKey, type SyncStateStore, type WalletPart} from './sync-store.js';
 import {initialDustParameters} from './ledger-routing.js';
 import {spendableDust, summarizeDustGeneration, type DustGeneration} from './dust-generation.js';
 import {TerminatingDustWallet, type DustFeePass} from './dust-transacting.js';
 import {overallSyncProgress, type SubWallet} from './progress.js';
 import {partsToSeed, preSeedPlan, birthdayAdmits, type SeedablePart} from './preseed-parts.js';
 import {dustHistoryBefore} from './dust-history.js';
+import {makePendingTransactionsService, serializePendingTransactions} from './pending-transactions.js';
 import {dustAddressForSeed} from '../wallet/address.js';
 import {IndexerClient} from '../network/indexer-client.js';
 import type {WalletKeys} from './operations.js';
@@ -491,7 +493,10 @@ export async function startWalletSync(
     unshielded: await loadCachedState(store, name, network.id, 'unshielded'),
     dust: await loadCachedState(store, name, network.id, 'dust'),
   };
-  const missingParts = partsToSeed(cached);
+  // The reference wallet is what pre-seeding copies from, so it never pre-seeds
+  // itself: buildEmptyRefCache syncs it from here while its own build is the
+  // in-flight reference, and looking one up would await that build forever.
+  const missingParts: SeedablePart[] = name === EMPTY_REF_WALLET ? [] : partsToSeed(cached);
 
   if (missingParts.length > 0) {
     onProgress?.('Pre-seed: looking for a reference...');
@@ -622,6 +627,8 @@ export async function startWalletSync(
 
   // --- WalletFacade ---
   onProgress?.('Initializing wallet facade...');
+  const pendingTraits = finalizedTransactionTraits(walletCfg.forks.v9);
+  const savedPending = await loadCachedState(store, name, network.id, 'pending');
   const facade = await WalletFacade.init({
     configuration: walletCfg,
     // The SDK defaults to a proof server. Supply the service explicitly so WASM
@@ -631,6 +638,9 @@ export async function startWalletSync(
     // send doesn't block its message round-trip on finalization — see
     // makeSubmittedOnlySubmissionService.
     submissionService: (cfg) => makeSubmittedOnlySubmissionService(cfg.relayURL),
+    // Seeded with the transactions the last session was still watching, so the
+    // coins they booked are released if they failed while it was down.
+    pendingTransactionsService: (cfg) => makePendingTransactionsService(savedPending, pendingTraits, cfg),
     shielded: () => shieldedWallet!,
     unshielded: () => unshieldedWallet!,
     dust: () => dustWallet!,
@@ -674,6 +684,9 @@ export async function startWalletSync(
     .subscribe({
       next: (s: FacadeState) => {
         emissionCount++;
+        // Captured before lastProgressPct is overwritten below; comparing against
+        // the updated value made the percent-change branch always false.
+        const prevPct = Math.round(lastProgressPct * 100);
         const balances = extractBalancesPartial(s, syncStartTime, lastProgressPct, progressBaseline, latestBalances);
         latestBalances = balances;
         lastProgressPct = balances.syncProgress.percentage;
@@ -689,7 +702,7 @@ export async function startWalletSync(
           emissionCount % 50 === 0 ||
           emissionCount <= 3 ||
           balances.synced ||
-          pct !== Math.round(lastProgressPct * 100)
+          pct !== prevPct
         ) {
           // DUST is denominated in SPECKS (10^15 per DUST); NIGHT in STARS
           // (10^6). formatNight was being applied to both, so every DUST figure
@@ -721,12 +734,12 @@ export async function startWalletSync(
         const cacheNow = Date.now();
         if (cacheNow - lastCacheSaveTime > 60_000) {
           lastCacheSaveTime = cacheNow;
-          saveCache(store, facade, txHistoryStorage, name, network.id).catch(() => {});
+          saveCache(store, facade, pendingTraits, txHistoryStorage, name, network.id).catch(() => {});
         }
 
         if (balances.synced && !hasSavedCache) {
           hasSavedCache = true;
-          saveCache(store, facade, txHistoryStorage, name, network.id).catch(() => {});
+          saveCache(store, facade, pendingTraits, txHistoryStorage, name, network.id).catch(() => {});
         }
       },
       error: (err: any) => {
@@ -754,7 +767,7 @@ export async function startWalletSync(
 
   const stop = async () => {
     subscription.unsubscribe();
-    await saveCache(store, facade, txHistoryStorage, name, network.id).catch(() => {});
+    await saveCache(store, facade, pendingTraits, txHistoryStorage, name, network.id).catch(() => {});
 
     // `facade.stop()` never settles against an unreachable node: it awaits a
     // Polkadot client created with `throwOnConnect: false`. saveCache ran first.
@@ -833,21 +846,28 @@ async function loadHistoryStorage(
 async function saveCache(
   store: SyncStateStore,
   facade: WalletFacade,
+  pendingTraits: PendingTransactions.VersionedTransactionTrait<FinalizedTx>,
   history: {serialize(): Promise<string>},
   walletName: string,
   networkId: string
 ): Promise<void> {
   try {
-    const [sh, un, du, hi] = await Promise.all([
+    const [sh, un, du, hi, pe] = await Promise.all([
       facade.shielded.serializeState().catch(() => null),
       facade.unshielded.serializeState().catch(() => null),
       facade.dust.serializeState().catch(() => null),
       history.serialize().catch(() => null),
-    ]).catch(() => [null, null, null, null]);
+      // undefined when unreadable, so a failed read never wipes the saved list.
+      Rx.firstValueFrom(facade.pendingTransactionsService.state())
+        .then((p) => serializePendingTransactions(p, pendingTraits))
+        .catch(() => undefined),
+    ]).catch(() => [null, null, null, null, undefined]);
     if (sh) await saveCachedState(store, walletName, networkId, 'shielded', sh);
     if (un) await saveCachedState(store, walletName, networkId, 'unshielded', un);
     if (du) await saveCachedState(store, walletName, networkId, 'dust', du);
     if (hi) await saveCachedState(store, walletName, networkId, 'history', hi);
+    if (pe) await saveCachedState(store, walletName, networkId, 'pending', pe);
+    else if (pe === null) await evictCachedState(store, walletName, networkId, 'pending');
   } catch {
     /* best effort */
   }
@@ -1146,6 +1166,7 @@ export async function clearSyncCache(walletName: string, networkId: string, stor
   await evictCachedState(resolved, walletName, networkId, 'unshielded');
   await evictCachedState(resolved, walletName, networkId, 'dust');
   await evictCachedState(resolved, walletName, networkId, 'history');
+  await evictCachedState(resolved, walletName, networkId, 'pending');
 }
 
 /**
@@ -1175,8 +1196,11 @@ export async function removeWalletSyncArtifacts(
   try {
     const {rmSync, unlinkSync} = await import(/* @vite-ignore */ 'node:fs');
     const {join} = await import(/* @vite-ignore */ 'node:path');
-    const {homedir} = await import(/* @vite-ignore */ 'node:os');
-    const cacheBase = join(homedir(), '.moth', 'sync');
+    // Same root as the daemon's socket path (daemon/index.ts). Through a variable
+    // for the same reason as node-sync-store below: home.ts imports node:os.
+    const homeSpecifier = '../storage/home.js';
+    const {mothHome} = await import(/* @vite-ignore */ homeSpecifier);
+    const cacheBase = join(mothHome(), 'sync');
     try {
       rmSync(join(cacheBase, networkId, walletName), {recursive: true, force: true});
     } catch {

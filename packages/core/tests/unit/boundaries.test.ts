@@ -20,6 +20,7 @@ import {
   isMidnightPackage,
   isPlatformBuiltin,
   runtimeSpecifiers,
+  stripComments,
 } from '../helpers/module-imports.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -82,7 +83,7 @@ const WASM_FREE_MODULES = ['types/tokens.ts', 'sync/activity.ts'];
 
 function tsSources(dir: string): string[] {
   return readdirSync(dir, { recursive: true, encoding: 'utf-8' })
-    .filter(name => name.endsWith('.ts') && !name.endsWith('.d.ts'))
+    .filter(name => /\.tsx?$/.test(name) && !name.endsWith('.d.ts'))
     .map(name => name.split('\\').join('/'));
 }
 
@@ -115,6 +116,40 @@ describe('core platform boundary', () => {
   it('allow-listed modules all exist', () => {
     const missing = [...NODE_BUILTIN_ALLOWLIST].filter(file => !existsSync(resolve(SRC, file)));
     expect(missing, 'NODE_BUILTIN_ALLOWLIST references files that were moved or deleted').toEqual([]);
+  });
+});
+
+describe('on-disk root', () => {
+  // MOTH_HOME once moved the keystore and the daemon socket but not the sync cache,
+  // API keys, audit log, timings or TUI log, because each built `homedir()/.moth` itself.
+  const ROOTS = ['core', 'cli', 'tui'].map(pkg => resolve(PACKAGE, '..', pkg, 'src'));
+  const HOME_LOOKUP = [/\bhomedir\b/, /\bprocess\.env(\.|\[\s*['"])(HOME|USERPROFILE)\b/];
+
+  const looksUpHome = (source: string) => HOME_LOOKUP.some(pattern => pattern.test(stripComments(source)));
+
+  it('resolves the home directory only in core storage/home.ts', () => {
+    const found = ROOTS.flatMap(root =>
+      tsSources(root)
+        .map(relPath => resolve(root, relPath))
+        .filter(path => path !== resolve(SRC, 'storage/home.ts'))
+        .filter(path => looksUpHome(readFileSync(path, 'utf-8')))
+        .map(path => relative(resolve(PACKAGE, '..'), path)),
+    ).sort();
+    expect(found, 'build on-disk paths from mothHome() so MOTH_HOME applies to them').toEqual([]);
+  });
+
+  it.each([
+    ["homedir()", "import { homedir } from 'node:os';\nhomedir();"],
+    ['an aliased import', "import { homedir as h } from 'node:os';\nh();"],
+    ['os.homedir()', "import os from 'node:os';\nos.homedir();"],
+    ['process.env.HOME', "const dir = process.env.HOME + '/.moth';"],
+    ["process.env['USERPROFILE']", "const dir = process.env['USERPROFILE'];"],
+  ])('catches %s', (_name, source) => {
+    expect(looksUpHome(source)).toBe(true);
+  });
+
+  it('ignores a mention in a comment', () => {
+    expect(looksUpHome('// written under ~/.moth, not homedir()\nconst x = 1;')).toBe(false);
   });
 });
 

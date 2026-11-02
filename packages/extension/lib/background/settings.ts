@@ -32,7 +32,32 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   preseedWarming: false,
   // Diagnostic detail is opt-in; the plain warning it augments is not.
   developerMode: false,
+  // Cardano follows the Midnight network, always. It does nothing at all
+  // until the user supplies a Blockfrost project id.
+  blockfrostProjectId: null,
+  blockfrostProjectIds: {},
+  blockfrostUrl: null,
+  cnightPolicyId: null,
+  cnightAssetName: null,
 };
+
+/** Per-network Blockfrost ids, dropping anything that is not a usable string. */
+function parseProjectIds(value: unknown): Record<string, string> {
+  if (!value || typeof value !== 'object') return {};
+  const out: Record<string, string> = {};
+  for (const [network, id] of Object.entries(value as Record<string, unknown>)) {
+    const trimmed = parseOptionalText(id);
+    if (trimmed && ['Mainnet', 'Preprod', 'Preview'].includes(network)) out[network] = trimmed;
+  }
+  return out;
+}
+
+/** Trim to a non-empty string, or null. Used for every optional Cardano field. */
+function parseOptionalText(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed === '' ? null : trimmed;
+}
 
 /** Accept a stored name-resolver base URL. Must be an http(s) URL; anything
  *  else (including empty) disables send-to-name. Trailing slash trimmed. */
@@ -105,8 +130,17 @@ export async function getSettings(): Promise<ExtensionSettings> {
     nameResolverUrl: parseResolverUrl(saved?.nameResolverUrl),
     preseedWarming: saved?.preseedWarming === true,
     developerMode: saved?.developerMode === true,
+    blockfrostProjectId: parseOptionalText(saved?.blockfrostProjectId),
+    blockfrostProjectIds: parseProjectIds(saved?.blockfrostProjectIds),
+    blockfrostUrl: parseOptionalText(saved?.blockfrostUrl),
+    cnightPolicyId: parseOptionalText(saved?.cnightPolicyId),
+    cnightAssetName:
+      // Distinct from the others: the testnet cNIGHT token has an EMPTY asset
+      // name, so '' is a meaningful override and only `undefined` means unset.
+      typeof saved?.cnightAssetName === 'string' ? saved.cnightAssetName.trim() : null,
   };
 }
+
 
 export async function updateSettings(patch: Partial<ExtensionSettings>): Promise<ExtensionSettings> {
   const current = await getSettings();

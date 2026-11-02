@@ -21,7 +21,7 @@ vi.mock('../lib/background/sync-service', () => ({
   beginOp: () => beginOp(),
   endOp: () => endOp(),
   hasOpenPorts: vi.fn(() => true),
-  hasWorkInFlight: vi.fn(() => false),
+  hasOpsInFlight: vi.fn(() => false),
   broadcastSessionLocked: vi.fn(),
   getSetupTabIds: vi.fn(() => []),
   teardown: vi.fn(),
