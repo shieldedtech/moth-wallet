@@ -6,8 +6,8 @@
 '@shieldedtech/moth-cli': minor
 ---
 
-Upgrade to `@midnightntwrk/wallet-sdk` 2.0.0-rc.1, which brings `@midnightntwrk/ledger-v9`
-1.0.0-rc.5. The SDK runs ledger-v8 below the chain's v9 fork and ledger-v9 from it, and its
+Upgrade to `@midnightntwrk/wallet-sdk` 2.0.0-canary.20261102110141-786ed95, which brings
+`@midnightntwrk/ledger-v9` 1.0.0-rc.6. The SDK runs ledger-v8 below the chain's v9 fork and ledger-v9 from it, and its
 wallets follow a live chain across the boundary, so moth reaches networks on either side with one
 build.
 
@@ -19,12 +19,17 @@ build.
   through the SDK's `WalletFacade.adoptTransaction`; `transactionHashOf` and
   `activeProtocolVersion` read hashes and versions off the handles.
 - Proving routes by protocol version: one proof server serves both sides, and the in-process
-  prover, including the extension's in-worker one, is registered per ledger version.
+  prover, including the extension's in-worker one, is registered per ledger version. Each backend
+  refuses a transaction built by the other ledger version with `ProvingEpochMismatchError`.
 - The client-side dedup of re-sent boundary events (`sync/sdk-dedup.ts`) is removed; the fix
   landed upstream in both wallet variants.
 - DUST fee balancing keeps largest-first coin selection and moth's own balancing loop on both
-  sides of the fork, through `DustWallet` rebuilt with `CustomForkingDustWallet`. SDK 2.0.0-rc.1
+  sides of the fork, through `DustWallet` rebuilt with `CustomForkingDustWallet` over the SDK's
+  `dustVariantConfigurations`, so each variant is valued against the same rates. SDK 2.0.0-rc.1
   fixed the unbounded loop upstream; moth's stays because it reports each pass to the fee log.
+- A wallet restored from a cache written below the v9 fork is started by the facade with both
+  ledger versions' keys, derived from the seeds, so it resumes on whichever side its cache was
+  written.
 - Contract deploy/call/maintenance keep authoring ledger-v8 transactions through midnight-js
   4.1.1 and refuse a network that has crossed to ledger-v9.
 - Message signing returns the schnorr hex value of ledger-v9's tagged signature, so the wire
@@ -41,8 +46,12 @@ build.
   stays incomplete, and so do the NIGHT and DUST operations that wait for it.
 - A UTXO booked for a transaction that was never submitted is released once its TTL passes, and a
   resync no longer re-admits a booked UTXO as available, which could double the NIGHT balance.
+- Shielded coins booked for a transaction that is never submitted or never included are released
+  during sync, once the lesser of its TTL and 14 days has passed. A send or balance that fails
+  part-way releases the coins it had already booked.
 - A wallet restored from cache reports the protocol version its state records, rather than its
   variant's lower bound, so the protocol version shown in Settings and stamped on the transactions
   it builds is right from the first state after a restart.
 - Cached wallet state and transaction history are written in the SDK's versioned formats. A
   pre-seeded snapshot, which carries no format version, still restores as the legacy format.
+  Fields a newer build wrote are kept on the next save, so rolling back does not lose them.

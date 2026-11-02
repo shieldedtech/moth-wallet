@@ -6,17 +6,23 @@ import {
   type KeyMaterialProvider as WasmKeyMaterialProvider,
 } from '@midnight-ntwrk/zkir-v2';
 import {ProtocolVersion} from '@midnightntwrk/wallet-sdk';
+import * as ledgerV9 from '@midnightntwrk/wallet-sdk/ledger/v9';
 import {
   fromV8ProvingProvider,
   fromV9ProvingProvider,
   makeDefaultVersionedProvingService,
   makeVersionedProvingServiceEffect,
+  ProvingEpochMismatchError,
   wrapVersionedEffectService,
   type AnyVersionUnboundTransaction,
   type AnyVersionUnprovenTransaction,
   type ProvingServiceEffect,
+  type V8UnprovenTransaction,
+  type V9UnprovenTransaction,
   type VersionedProvingService,
+  type VersionProvingServiceEffect,
 } from '@midnightntwrk/wallet-sdk/capabilities/proving';
+import {Effect} from 'effect';
 import {WasmProver} from '@midnightntwrk/wallet-sdk/prover-client/effect';
 import {ProofClient} from './client.js';
 import type {ProverConfig} from '../types/network.js';
@@ -151,17 +157,61 @@ export function createWalletProvingService(config: ProverConfig, forks: Protocol
   // framed by each ledger version on its own side of the fork.
   const keyMaterial = defaultWasmKeyMaterialProvider();
   const provider = wasmProvingFactory(keyMaterial);
-  type AnyVersionProvingService = ProvingServiceEffect<AnyVersionUnboundTransaction, AnyVersionUnprovenTransaction>;
+  const v8Epoch = ProtocolVersion.epochOf(ProtocolVersion.MinSupportedVersion, forks.v9);
+  const v9Epoch = ProtocolVersion.epochOf(forks.v9, forks.v9);
   const services = orThrow(
-    ProtocolVersion.makeRegistryFromActivations<AnyVersionProvingService>([
-      {sinceVersion: ProtocolVersion.MinSupportedVersion, value: fromV8ProvingProvider(provider)},
+    ProtocolVersion.makeRegistry<VersionProvingServiceEffect>([
+      // A chain born on ledger-v9 has no ledger-v8 epoch to register.
+      ...(forks.v9 > ProtocolVersion.MinSupportedVersion
+        ? [{range: v8Epoch, value: onlyFrom(fromV8ProvingProvider(provider), isV8Transaction, v8Epoch)}]
+        : []),
       {
-        sinceVersion: forks.v9,
-        value: fromV9ProvingProvider({...provider, lookupKey: (keyLocation) => keyMaterial.lookupKey(keyLocation)}),
+        range: v9Epoch,
+        value: onlyFrom(
+          // Delegated, not spread: zkir's default provider is a wasm-bindgen class
+          // whose check/prove live on its prototype.
+          fromV9ProvingProvider({
+            check: (preimage, keyLocation) => provider.check(preimage, keyLocation),
+            prove: (preimage, keyLocation, overwriteBindingInput) =>
+              provider.prove(preimage, keyLocation, overwriteBindingInput),
+            lookupKey: (keyLocation) => keyMaterial.lookupKey(keyLocation),
+          }),
+          isV9Transaction,
+          v9Epoch,
+        ),
       },
     ]),
   );
   return wrapVersionedEffectService(makeVersionedProvingServiceEffect(services));
+}
+
+const isV8Transaction = (transaction: AnyVersionUnprovenTransaction): transaction is V8UnprovenTransaction =>
+  transaction instanceof ledger.Transaction;
+
+const isV9Transaction = (transaction: AnyVersionUnprovenTransaction): transaction is V9UnprovenTransaction =>
+  transaction instanceof ledgerV9.Transaction;
+
+/**
+ * Admits only its own ledger version's transactions, as the SDK's registry entries
+ * do: one whose stamp and bytes disagree is refused, never handed to a ledger that
+ * cannot read it.
+ */
+function onlyFrom<TProven extends AnyVersionUnboundTransaction, TUnproven extends AnyVersionUnprovenTransaction>(
+  service: ProvingServiceEffect<TProven, TUnproven>,
+  isOwn: (transaction: AnyVersionUnprovenTransaction) => transaction is TUnproven,
+  epoch: ProtocolVersion.ProtocolVersion.Range,
+): VersionProvingServiceEffect {
+  return {
+    prove: (transaction) =>
+      isOwn(transaction)
+        ? service.prove(transaction)
+        : Effect.fail(
+            new ProvingEpochMismatchError({
+              message: `The proving backend registered for protocol versions [${epoch[0]}, ${epoch[1]}) was handed a transaction built by the other ledger version.`,
+              epoch,
+            }),
+          ),
+  };
 }
 
 /** Proof servers need a preflight; local WASM proving has no remote health check. */

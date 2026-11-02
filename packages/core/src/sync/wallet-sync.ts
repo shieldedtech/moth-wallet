@@ -554,8 +554,8 @@ export async function startWalletSync(
   }
 
   // A restored snapshot carries no key material and sits on whichever variant
-  // wrote it, so it is started from the seed, which answers for either side of
-  // the fork; a fresh wallet asks the chain which side to begin on.
+  // wrote it; facade.start() below hands it both ledger versions' keys from the
+  // seeds. A fresh wallet asks the chain which side to begin on.
 
   // --- Shielded wallet: try restore from cache ---
   onProgress?.('Starting shielded wallet...');
@@ -573,11 +573,7 @@ export async function startWalletSync(
       await evictCachedState(store, name, network.id, 'shielded');
     }
   }
-  if (shieldedWallet) {
-    await shieldedWallet.startWithSeed(keys.shielded);
-  } else {
-    shieldedWallet = await Shielded.startWithSeed(keys.shielded);
-  }
+  shieldedWallet ??= await Shielded.startWithSeed(keys.shielded);
 
   // --- Unshielded wallet: try restore from cache ---
   onProgress?.('Starting unshielded wallet...');
@@ -614,12 +610,8 @@ export async function startWalletSync(
       await evictCachedState(store, name, network.id, 'dust');
     }
   }
-  if (dustWallet) {
-    await dustWallet.startWithSeed(keys.dust);
-  } else {
-    // DUST generation parameters default to the ledger's initial ones.
-    dustWallet = await Dust.startWithSeed(keys.dust);
-  }
+  // DUST generation parameters default to the ledger's initial ones.
+  dustWallet ??= await Dust.startWithSeed(keys.dust);
 
   if (restoredFromCache) {
     onProgress?.('Sync state restored from cache — catching up...');
