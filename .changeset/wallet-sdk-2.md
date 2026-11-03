@@ -6,7 +6,7 @@
 '@shieldedtech/moth-cli': minor
 ---
 
-Upgrade to `@midnightntwrk/wallet-sdk` 2.0.0-canary.20261102110141-786ed95, which brings
+Upgrade to `@midnightntwrk/wallet-sdk` 2.0.0-canary.20261102170246-27e8969, which brings
 `@midnightntwrk/ledger-v9` 1.0.0-rc.6. The SDK runs ledger-v8 below the chain's v9 fork and ledger-v9 from it, and its
 wallets follow a live chain across the boundary, so moth reaches networks on either side with one
 build.
@@ -49,6 +49,9 @@ build.
 - Shielded coins booked for a transaction that is never submitted or never included are released
   during sync, once the lesser of its TTL and 14 days has passed. A send or balance that fails
   part-way releases the coins it had already booked.
+- Stopping a wallet whose node never answered now completes: the SDK's submission service
+  abandons its unfinished connection on close, and nothing it started keeps retrying. The
+  5-second bound on teardown, and its "Sync stop timed out" message, are gone.
 - A wallet restored from cache reports the protocol version its state records, rather than its
   variant's lower bound, so the protocol version shown in Settings and stamped on the transactions
   it builds is right from the first state after a restart.
