@@ -31,7 +31,7 @@ const { FakeWorker } = vi.hoisted(() => {
 vi.mock('../lib/offscreen/wallet-worker?worker', () => ({ default: FakeWorker }));
 vi.mock('../lib/offscreen/messaging', () => ({ offscreenSend: vi.fn().mockResolvedValue(undefined) }));
 
-import { FAST_LANE_TIMEOUT_MS, hostRequest } from '../lib/offscreen/worker-bridge';
+import { FAST_LANE_TIMEOUT_MS, PROVING_TIMEOUT_MS, hostRequest } from '../lib/offscreen/worker-bridge';
 
 const lane = (name: string) => FakeWorker.spawned.find((w) => w.name === name && !w.terminated);
 
@@ -86,12 +86,42 @@ describe('worker bridge lanes', () => {
   });
 
   it('does not bound sync-lane work, which can legitimately run for minutes', async () => {
-    const prove = hostRequest('os/provingProviderProve', { network: {} as never, payloadJson: '[]' });
+    const ensure = hostRequest('os/syncEnsure', { seedHex: 'ab', walletName: 'w', network: {} as never });
     const syncWorker = lane('moth-wallet-host')!;
-    vi.advanceTimersByTime(FAST_LANE_TIMEOUT_MS * 10);
+    vi.advanceTimersByTime(PROVING_TIMEOUT_MS * 10);
     expect(syncWorker.terminated).toBe(false);
-    syncWorker.answer(syncWorker.posted.at(-1)!.id, 'ok');
-    await expect(prove).resolves.toBe('ok');
+    syncWorker.answer(syncWorker.posted.at(-1)!.id, undefined);
+    await expect(ensure).resolves.toBeUndefined();
+  });
+
+  // Two Dust Dice joins made 2.5 minutes apart were proved together 6.5 minutes
+  // after the first: the proof requests sat on the sync lane behind a cold worker's
+  // cache restore. The lanes are separate threads, so a proof is made while the
+  // sync lane is still silent.
+  it('proves a dApp transaction while the sync lane is blocked', async () => {
+    const sync = hostRequest('os/syncEnsure', { seedHex: 'ab', walletName: 'w', network: {} as never });
+    const syncWorker = lane('moth-wallet-host')!;
+    const prove = hostRequest('os/provingProviderProve', { network: {} as never, payloadJson: '[]' });
+    const fastWorker = lane('moth-wallet-fast')!;
+    expect(fastWorker).not.toBe(syncWorker);
+    expect(fastWorker.posted.at(-1)!.method).toBe('os/provingProviderProve');
+    fastWorker.answer(fastWorker.posted.at(-1)!.id, 'proof-hex');
+    await expect(prove).resolves.toBe('proof-hex');
+    syncWorker.answer(syncWorker.posted.at(-1)!.id, undefined);
+    await expect(sync).resolves.toBeUndefined();
+  });
+
+  // A proof legitimately outlasts the 60 s bound (the proof server path alone allows
+  // five minutes per request), but a proof server that never answers must still end
+  // in an error the dApp can show, before the page gives up at ten minutes.
+  it('gives a proof its own longer bound and fails it loudly after that', async () => {
+    const prove = hostRequest('os/provingProviderProve', { network: {} as never, payloadJson: '[]' });
+    const fastWorker = lane('moth-wallet-fast')!;
+    vi.advanceTimersByTime(FAST_LANE_TIMEOUT_MS * 3);
+    expect(fastWorker.terminated).toBe(false);
+    vi.advanceTimersByTime(PROVING_TIMEOUT_MS - FAST_LANE_TIMEOUT_MS * 3);
+    await expect(prove).rejects.toThrow(/did not answer os\/provingProviderProve within 360s/);
+    expect(fastWorker.terminated).toBe(true);
   });
 
   it('clears the bound once a fast-lane request is answered', async () => {

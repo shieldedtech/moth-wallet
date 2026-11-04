@@ -41,6 +41,14 @@ interface Pending {
 // the page-side timeout. Sync-lane work (proving, a cold cache restore) legitimately
 // runs for minutes and is not bounded here.
 export const FAST_LANE_TIMEOUT_MS = 60_000;
+/** A proof can take minutes: the proof server path's own request timeout is five
+ *  minutes (SDK default), so the bound here must not fire first. Still under the
+ *  page's ten-minute wait, so a dApp sees an error rather than a hang. */
+export const PROVING_TIMEOUT_MS = 6 * 60_000;
+const PROVING_METHODS: ReadonlySet<HostMethod> = new Set<HostMethod>(['os/provingProviderCheck', 'os/provingProviderProve']);
+function boundFor(method: HostMethod): number {
+  return PROVING_METHODS.has(method) ? PROVING_TIMEOUT_MS : FAST_LANE_TIMEOUT_MS;
+}
 
 interface Lane {
   name: string;
@@ -118,10 +126,11 @@ export function hostRequest<M extends HostMethod>(method: M, data: MethodData<M>
   return new Promise<MethodResult<M>>((resolve, reject) => {
     const entry: Pending = { resolve: resolve as (value: unknown) => void, reject };
     if (laneName === 'fast') {
+      const bound = boundFor(method);
       entry.timer = setTimeout(() => {
         if (lane.pending.get(id) !== entry) return;
-        failAll(lane, new Error(`Wallet worker did not answer ${method} within ${FAST_LANE_TIMEOUT_MS / 1000}s`));
-      }, FAST_LANE_TIMEOUT_MS);
+        failAll(lane, new Error(`Wallet worker did not answer ${method} within ${bound / 1000}s`));
+      }, bound);
     }
     lane.pending.set(id, entry);
     try {

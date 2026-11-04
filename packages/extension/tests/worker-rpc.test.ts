@@ -129,6 +129,8 @@ describe('host lanes', () => {
   it('routes exactly the sync-independent methods to the fast lane', () => {
     expect([...FAST_LANE_METHODS].sort()).toEqual([
       'os/deriveAppSecret',
+      'os/provingProviderCheck',
+      'os/provingProviderProve',
       'os/signData',
       'os/txSummary',
       'os/walletList',
@@ -143,6 +145,15 @@ describe('host lanes', () => {
   it('answers the seed-only connector methods off the sync lane', () => {
     expect(laneFor('os/deriveAppSecret')).toBe('fast');
     expect(laneFor('os/signData')).toBe('fast');
+  });
+
+  // A dApp's proof request carries its own key material and uses the network's
+  // prover; it never reads the sync session. On the sync lane it waited out a cold
+  // worker's cache restore, and two joins made minutes apart were then proved
+  // together, both too old for the chain to accept (Dust Dice, 2026-11-04).
+  it('proves dApp transactions off the sync lane', () => {
+    expect(laneFor('os/provingProviderCheck')).toBe('fast');
+    expect(laneFor('os/provingProviderProve')).toBe('fast');
   });
 
   it('keeps everything that touches the sync session on the sync lane', () => {
