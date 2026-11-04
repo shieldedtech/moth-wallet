@@ -145,11 +145,12 @@ describe('balanceTransaction against the real facade', () => {
       },
       { state: Rx.NEVER, balanceTransactions: vi.fn() },
       {}, // submission
-      { state: () => Rx.NEVER }, // pending transactions
       {}, // proving
       {}, // validation
       {}, // transaction history
       forks.v9,
+      { now: () => new Date() }, // clock
+      { state: () => Rx.NEVER }, // transaction lifecycle
     );
     const finalizeRecipe = vi.fn().mockResolvedValue(finalized);
     Object.assign(facade, {
