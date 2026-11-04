@@ -33,7 +33,8 @@ export interface EmptyRefStates {
    * wallet whose birthday precedes it: the reference carries the chain's state at
    * this height, so seeding a wallet that was already active earlier would skip
    * that wallet's own history. Compared against `birthday` (also a height) —
-   * never against a snapshot `offset`, which is an event index.
+   * never against a snapshot `offset`, which is an event index or, for DUST
+   * synced from projections, the height its last pass reached.
    */
   height: number;
 }
@@ -74,16 +75,27 @@ function loadRefState(store: SyncStateStore, networkId: string, part: WalletPart
  * rest of the snapshot looks.
  */
 /**
- * Which event stream a part's cursor indexes into.
+ * Which event stream a part's cursor indexes into, if any.
  *
  * Only shielded and dust ride the indexer's global ledger-event numbering, and
  * they are the two the preprod renumbering moved. Unshielded is keyed by address
- * and its cursor is a transaction id, so it is not witnessed here.
+ * and its cursor is a transaction id, so it is not witnessed here. Nor is a dust
+ * snapshot the projections sync wrote, as moth's does from `forks.v9` on: its
+ * offset is the block height the last pass reached, which no renumbering moves.
  */
-function witnessStreamFor(part: WalletPart): WitnessStream | null {
-  if (part === 'dust') return 'dustLedgerEvents';
+export function witnessStreamFor(part: WalletPart, snapshot: string): WitnessStream | null {
+  if (part === 'dust') return writtenByProjections(snapshot) ? null : 'dustLedgerEvents';
   if (part === 'shielded') return 'zswapLedgerEvents';
   return null;
+}
+
+/** The SDK records in `syncKind` which sync saved a DUST snapshot's offset; one without it replayed events. */
+function writtenByProjections(snapshot: string): boolean {
+  try {
+    return (JSON.parse(snapshot) as {syncKind?: unknown}).syncKind === 'projections';
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -102,8 +114,12 @@ async function recordReferenceWitnesses(
   onProgress?: (msg: string) => void,
 ): Promise<void> {
   for (const part of ['shielded', 'dust'] as const) {
-    const stream = witnessStreamFor(part);
-    if (!stream) continue;
+    const stream = witnessStreamFor(part, states[part]);
+    if (!stream) {
+      // One taken while this reference replayed events would vouch for a cursor it no longer has.
+      await store.delete(cursorWitnessKey(network.id, EMPTY_REF_WALLET, part));
+      continue;
+    }
     const id = Number(snapshotOffset(states[part]));
     if (!Number.isFinite(id) || id <= 0) continue;
     try {
@@ -132,9 +148,11 @@ async function recordReferenceWitnesses(
 async function referenceCursorsStillValid(
   store: SyncStateStore,
   network: NetworkConfig,
+  states: {shielded: string; dust: string},
   onProgress?: (msg: string) => void,
 ): Promise<boolean> {
   for (const part of ['shielded', 'dust'] as const) {
+    if (!witnessStreamFor(part, states[part])) continue;
     const raw = await store.get(cursorWitnessKey(network.id, EMPTY_REF_WALLET, part));
     if (!raw) {
       onProgress?.(`Pre-seed: reference has no ${part} witness — cannot prove its cursor is still valid`);
@@ -273,7 +291,7 @@ export async function ensureEmptyRefCache(
     // Verified before it is handed out, not after. This reference is what every
     // new wallet on this machine inherits, so using it across a renumbering
     // spreads the skew instead of containing it.
-    if (!(await referenceCursorsStillValid(resolved, network, onProgress))) return null;
+    if (!(await referenceCursorsStillValid(resolved, network, warm, onProgress))) return null;
     // Memoised after verification, so the check costs one subscription per
     // process rather than one per wallet. The trade is that a renumbering that
     // lands mid-process is not re-detected until the next start; the alternative
@@ -340,7 +358,7 @@ export async function refreshEmptyRefCache(
   // wrong one.
   const resolvedStore = await resolveSyncStore(store);
   const existing = await loadUsableRefStates(resolvedStore, network.id);
-  if (existing && !(await referenceCursorsStillValid(resolvedStore, network, onProgress))) {
+  if (existing && !(await referenceCursorsStillValid(resolvedStore, network, existing, onProgress))) {
     onProgress?.(
       'Pre-seed: refusing to refresh across an indexer renumbering — resuming would carry the old ' +
         'numbering forward. Delete this network\'s reference and build again from genesis.',

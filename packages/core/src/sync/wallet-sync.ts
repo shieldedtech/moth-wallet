@@ -10,7 +10,6 @@ import {
   makeDefaultSubmissionService,
   type SubmissionService,
 } from '@midnightntwrk/wallet-sdk/capabilities/submission';
-import {DustWallet} from '@midnightntwrk/wallet-sdk/dust';
 import {ShieldedWallet} from '@midnightntwrk/wallet-sdk/shielded';
 import {UnshieldedWallet, PublicKey, createKeystore} from '@midnightntwrk/wallet-sdk/unshielded';
 import {InMemoryTransactionHistoryStorage, type FinalizedTx} from '@midnightntwrk/wallet-sdk';
@@ -24,7 +23,7 @@ import {ensureEmptyRefCache, preSeedNewWallet} from './preseed.js';
 import {EMPTY_REF_WALLET, InMemorySyncStateStore, syncStateKey, type SyncStateStore, type WalletPart} from './sync-store.js';
 import {initialDustParameters} from './ledger-routing.js';
 import {spendableDust, summarizeDustGeneration, type DustGeneration} from './dust-generation.js';
-import {TerminatingDustWallet, type DustFeePass} from './dust-transacting.js';
+import {TerminatingDustWallet, type DustFeePass, type MothDustWallet} from './dust-transacting.js';
 import {overallSyncProgress, type SubWallet} from './progress.js';
 import {partsToSeed, preSeedPlan, birthdayAdmits, type SeedablePart} from './preseed-parts.js';
 import {dustHistoryBefore} from './dust-history.js';
@@ -594,7 +593,7 @@ export async function startWalletSync(
   // largest coin first and reports each pass to the fee log
   // (sync/dust-transacting.ts, sync/dust-coin-selection.ts).
   const Dust = TerminatingDustWallet(walletCfg, {onPass: options?.onDustFeePass});
-  let dustWallet: DustWallet | undefined;
+  let dustWallet: MothDustWallet | undefined;
   const savedDust = await loadCachedState(store, name, network.id, 'dust');
   if (savedDust) {
     try {

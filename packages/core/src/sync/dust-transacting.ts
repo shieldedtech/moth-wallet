@@ -26,9 +26,23 @@
 import {Effect, Either} from 'effect';
 import type * as ledger from '@midnight-ntwrk/ledger-v8';
 import * as ledgerV9 from '@midnightntwrk/wallet-sdk/ledger/v9';
-import {Transacting, WalletError, V1Builder, type CoinsAndBalances, type CoreWallet, type Dust} from '@midnightntwrk/wallet-sdk/dust/v1';
+import {
+  Transacting,
+  WalletError,
+  V1Builder,
+  type CoinsAndBalances,
+  type CoreWallet,
+  type Dust,
+  type SyncService as V1SyncService,
+} from '@midnightntwrk/wallet-sdk/dust/v1';
 import * as V2 from '@midnightntwrk/wallet-sdk/dust/v2';
-import {CustomForkingDustWallet, dustVariantConfigurations, type DustWallet} from '@midnightntwrk/wallet-sdk/dust';
+import {
+  CustomForkingDustWallet,
+  dustVariantConfigurations,
+  type DustWallet,
+  type ForkingDustWallet,
+  type ForkingDustWalletClass,
+} from '@midnightntwrk/wallet-sdk/dust';
 import {makeIndexerChainVersionProbe} from '@midnightntwrk/wallet-sdk/capabilities';
 import {
   getBalanceRecipe,
@@ -347,6 +361,15 @@ export const terminatingDustTransactingV2 =
   (config: V2Configuration, getContext: () => V2Context): TerminatingDustTransactingV2 =>
     new TerminatingDustTransactingV2(config, getContext, options.onPass);
 
+/** The DUST wallet moth runs: event replay below `forks.v9`, projections from it. */
+export type MothDustWallet = ForkingDustWallet<V1SyncService.WalletSyncUpdate, V2.SyncService.DustProjectionsUpdate>;
+
+type MothDustWalletClass = ForkingDustWalletClass<
+  V1SyncService.WalletSyncUpdate,
+  V2.SyncService.DustProjectionsUpdate,
+  Parameters<typeof DustWallet>[0]
+>;
+
 /**
  * The SDK's `DustWallet(configuration)` with both variants' fee balancing fixed:
  * the same two builders, per-variant configuration, migration and chain probe,
@@ -354,11 +377,16 @@ export const terminatingDustTransactingV2 =
  * reports every fee-balancing pass to `options.onPass`.
  * `DustWallet` takes no builder options, so this rebuilds it through the SDK's
  * `CustomForkingDustWallet`.
+ *
+ * From `forks.v9` the wallet syncs from the indexer's DUST projections rather
+ * than replaying every DUST ledger event, so its sync scales with the wallet's
+ * own activity instead of the chain's length. Ledger-v8 has no projections
+ * path, so below the fork it replays events as the SDK's own wallet does.
  */
 export function TerminatingDustWallet(
   configuration: Parameters<typeof DustWallet>[0],
   options: {onPass?: (pass: DustFeePass) => void} = {},
-): ReturnType<typeof DustWallet> {
+): MothDustWalletClass {
   const {v1, v2, migration} = dustVariantConfigurations(configuration);
   const withProbes = {
     ...configuration,
@@ -382,6 +410,9 @@ export function TerminatingDustWallet(
     {
       builder: new V2.V2Builder()
         .withDefaults()
+        .withSync(V2.SyncService.makeEventLessSyncService, V2.SyncService.makeEventLessSyncCapability)
+        // `withSync` drops the key derivation a seed start needs, so restate it.
+        .withStartAuxDefaults()
         .withMigration(migration)
         .withCoinSelection(() => largestDustCoinFirst)
         .withTransacting(terminatingDustTransactingV2(options)),
