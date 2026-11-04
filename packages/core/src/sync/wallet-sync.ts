@@ -14,8 +14,7 @@ import {DustWallet} from '@midnightntwrk/wallet-sdk/dust';
 import {ShieldedWallet} from '@midnightntwrk/wallet-sdk/shielded';
 import {UnshieldedWallet, PublicKey, createKeystore} from '@midnightntwrk/wallet-sdk/unshielded';
 import {InMemoryTransactionHistoryStorage, type FinalizedTx} from '@midnightntwrk/wallet-sdk';
-import {WalletEntrySchema, finalizedTransactionTraits, mergeWalletEntries} from '@midnightntwrk/wallet-sdk/facade';
-import type {PendingTransactions} from '@midnightntwrk/wallet-sdk/capabilities/pendingTransactions';
+import {WalletEntrySchema, lifecycleTransactionTraits, mergeWalletEntries} from '@midnightntwrk/wallet-sdk/facade';
 import {setNetworkId} from '@midnight-ntwrk/midnight-js/network-id';
 import {resolveProverConfig, type NetworkConfig} from '../types/network.js';
 import {createWalletProvingService} from '../proof/provider.js';
@@ -29,7 +28,7 @@ import {TerminatingDustWallet, type DustFeePass} from './dust-transacting.js';
 import {overallSyncProgress, type SubWallet} from './progress.js';
 import {partsToSeed, preSeedPlan, birthdayAdmits, type SeedablePart} from './preseed-parts.js';
 import {dustHistoryBefore} from './dust-history.js';
-import {makePendingTransactionsService, serializePendingTransactions} from './pending-transactions.js';
+import {makeTransactionLifecycleService} from './transaction-lifecycle.js';
 import {dustAddressForSeed} from '../wallet/address.js';
 import {IndexerClient} from '../network/indexer-client.js';
 import type {WalletKeys} from './operations.js';
@@ -615,8 +614,7 @@ export async function startWalletSync(
 
   // --- WalletFacade ---
   onProgress?.('Initializing wallet facade...');
-  const pendingTraits = finalizedTransactionTraits(walletCfg.forks.v9);
-  const savedPending = await loadCachedState(store, name, network.id, 'pending');
+  const savedLifecycle = await loadCachedState(store, name, network.id, 'pending');
   const facade = await WalletFacade.init({
     configuration: walletCfg,
     // The SDK defaults to a proof server. Supply the service explicitly so WASM
@@ -626,9 +624,10 @@ export async function startWalletSync(
     // send doesn't block its message round-trip on finalization — see
     // makeSubmittedOnlySubmissionService.
     submissionService: (cfg) => makeSubmittedOnlySubmissionService(cfg.relayURL),
-    // Seeded with the transactions the last session was still watching, so the
-    // coins they booked are released if they failed while it was down.
-    pendingTransactionsService: (cfg) => makePendingTransactionsService(savedPending, pendingTraits, cfg),
+    // Seeded with the records the last session saved, so the coins its
+    // transactions booked are released if they failed while it was down.
+    transactionLifecycleService: (cfg, {clock}) =>
+      makeTransactionLifecycleService(savedLifecycle, lifecycleTransactionTraits(cfg.forks.v9), cfg, clock),
     shielded: () => shieldedWallet!,
     unshielded: () => unshieldedWallet!,
     dust: () => dustWallet!,
@@ -722,12 +721,12 @@ export async function startWalletSync(
         const cacheNow = Date.now();
         if (cacheNow - lastCacheSaveTime > 60_000) {
           lastCacheSaveTime = cacheNow;
-          saveCache(store, facade, pendingTraits, txHistoryStorage, name, network.id).catch(() => {});
+          saveCache(store, facade, txHistoryStorage, name, network.id).catch(() => {});
         }
 
         if (balances.synced && !hasSavedCache) {
           hasSavedCache = true;
-          saveCache(store, facade, pendingTraits, txHistoryStorage, name, network.id).catch(() => {});
+          saveCache(store, facade, txHistoryStorage, name, network.id).catch(() => {});
         }
       },
       error: (err: any) => {
@@ -755,7 +754,7 @@ export async function startWalletSync(
 
   const stop = async () => {
     subscription.unsubscribe();
-    await saveCache(store, facade, pendingTraits, txHistoryStorage, name, network.id).catch(() => {});
+    await saveCache(store, facade, txHistoryStorage, name, network.id).catch(() => {});
     await facade.stop().catch(() => {});
   };
 
@@ -820,28 +819,23 @@ async function loadHistoryStorage(
 async function saveCache(
   store: SyncStateStore,
   facade: WalletFacade,
-  pendingTraits: PendingTransactions.VersionedTransactionTrait<FinalizedTx>,
   history: {serialize(): Promise<string>},
   walletName: string,
   networkId: string
 ): Promise<void> {
   try {
-    const [sh, un, du, hi, pe] = await Promise.all([
+    const [sh, un, du, hi, lc] = await Promise.all([
       facade.shielded.serializeState().catch(() => null),
       facade.unshielded.serializeState().catch(() => null),
       facade.dust.serializeState().catch(() => null),
       history.serialize().catch(() => null),
-      // undefined when unreadable, so a failed read never wipes the saved list.
-      Rx.firstValueFrom(facade.pendingTransactionsService.state())
-        .then((p) => serializePendingTransactions(p, pendingTraits))
-        .catch(() => undefined),
-    ]).catch(() => [null, null, null, null, undefined]);
+      facade.transactionLifecycleService.serializeState().catch(() => null),
+    ]).catch(() => [null, null, null, null, null]);
     if (sh) await saveCachedState(store, walletName, networkId, 'shielded', sh);
     if (un) await saveCachedState(store, walletName, networkId, 'unshielded', un);
     if (du) await saveCachedState(store, walletName, networkId, 'dust', du);
     if (hi) await saveCachedState(store, walletName, networkId, 'history', hi);
-    if (pe) await saveCachedState(store, walletName, networkId, 'pending', pe);
-    else if (pe === null) await evictCachedState(store, walletName, networkId, 'pending');
+    if (lc) await saveCachedState(store, walletName, networkId, 'pending', lc);
   } catch {
     /* best effort */
   }
