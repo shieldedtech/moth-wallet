@@ -9,7 +9,7 @@
 import { browser, type Browser } from 'wxt/browser';
 import { acquireKeepalive, releaseKeepalive } from './keepalive';
 import { recordActivity } from './auto-lock';
-import { beginOp, endOp, hasOpenPorts, hasOpsInFlight, broadcastApproval } from './sync-service';
+import { beginOp, endOp, hasVisiblePanel, hasOpsInFlight, broadcastApproval } from './sync-service';
 
 export interface PendingApproval {
   id: string;
@@ -18,11 +18,16 @@ export interface PendingApproval {
   /** kind-specific display data (amounts as strings) */
   payload: unknown;
   createdAt: number;
+  /** The page document that raised it (see requesterKey); absent when unknown. */
+  requester?: string;
 }
 
 const APPROVAL_PREFIX = 'approval.';
 
-const resolvers = new Map<string, { resolve: (approved: boolean) => void; windowId?: number }>();
+const resolvers = new Map<
+  string,
+  { resolve: (approved: boolean) => void; windowId?: number; requester?: string }
+>();
 let activeApprovalId: string | null = null;
 
 function sessionStore(): Browser.storage.StorageArea {
@@ -42,7 +47,8 @@ export async function getPendingApproval(): Promise<PendingApproval | null> {
  * still live. Call this at connector dispatch entry; even a storage read or
  * tabs.get() can put sidePanel.open() too late. */
 export function prepareApprovalPanel(senderTabId?: number): Promise<boolean> {
-  if (hasOpenPorts()) return Promise.resolve(true);
+  // A covered panel still holds its port; only one the user can see may skip the open.
+  if (hasVisiblePanel()) return Promise.resolve(true);
 
   const sidePanel = (browser as any).sidePanel;
   if (senderTabId === undefined || !sidePanel?.open) return Promise.resolve(false);
@@ -83,9 +89,10 @@ export async function requestApproval(
   payload: unknown,
   senderTabId?: number,
   preparedPanel?: Promise<boolean>,
+  requester?: string,
 ): Promise<boolean> {
   const id = crypto.randomUUID();
-  const approval: PendingApproval = { id, kind, origin, payload, createdAt: Date.now() };
+  const approval: PendingApproval = { id, kind, origin, payload, createdAt: Date.now(), requester };
 
   // Start persistence before using the prepared panel result, and finish it
   // before broadcasting the approval or loading the popup fallback.
@@ -112,6 +119,7 @@ export async function requestApproval(
           resolve(approved);
         },
         windowId,
+        requester,
       });
     });
     // A dApp can request several approvals at once (e.g. deriveAppSecret for
@@ -149,6 +157,34 @@ export function rejectPendingApprovals(): void {
  *  consults this to avoid tearing the wallet down under a pending decision. */
 export function hasPendingApproval(): boolean {
   return resolvers.size > 0;
+}
+
+/**
+ * Identity of the page document a connector request came from. Chrome's document
+ * id changes on every navigation, so a reloaded page is a new requester; where
+ * there is none (Firefox), the tab and frame have to stand in.
+ */
+export function requesterKey(
+  sender: { tab?: { id?: number }; frameId?: number; documentId?: string } | undefined,
+): string | undefined {
+  const tabId = sender?.tab?.id;
+  if (tabId === undefined) return undefined;
+  return `${tabId}/${sender?.frameId ?? 0}/${sender?.documentId ?? ''}`;
+}
+
+/** Drop every prompt a page document raised: nothing is left to deliver its answer to. */
+export function rejectApprovalsFrom(requester: string): void {
+  for (const [, entry] of resolvers) {
+    if (entry.requester === requester) entry.resolve(false);
+  }
+}
+
+/** A page that calls the connector holds this port for the life of its document;
+ *  the port closing (reload, navigation, tab close) is how its prompts are dropped. */
+export function watchRequester(port: Browser.runtime.Port): void {
+  const requester = requesterKey(port.sender as Parameters<typeof requesterKey>[0]);
+  if (requester === undefined) return;
+  port.onDisconnect.addListener(() => rejectApprovalsFrom(requester));
 }
 
 /** Wire once from the background entrypoint: closing the window = reject. */

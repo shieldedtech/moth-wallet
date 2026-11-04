@@ -27,8 +27,10 @@ vi.mock('../lib/background/offscreen-client', () => ({
     makeIntent: (...a: unknown[]) => makeIntent(...(a as [])),
     provingProviderCheck: (...a: unknown[]) => provingProviderCheck(...(a as [])),
     provingProviderProve: (...a: unknown[]) => provingProviderProve(...(a as [])),
+    deriveAppSecret: (...a: unknown[]) => deriveAppSecret(...(a as [])),
   },
 }));
+const deriveAppSecret = vi.fn();
 
 const requestApproval = vi.fn<() => Promise<boolean>>();
 const preparedPanel = Promise.resolve(true);
@@ -107,6 +109,7 @@ describe('connector dispatch', () => {
     transferSubmit.mockReset();
     txHistoryGet.mockReset();
     signData.mockReset();
+    deriveAppSecret.mockReset();
     balanceTransaction.mockReset();
     txSummary.mockReset();
     makeIntent.mockReset();
@@ -348,8 +351,38 @@ describe('connector dispatch', () => {
       { encoding: 'text', message: 'hi' },
       undefined,
       preparedPanel,
+      undefined,
     );
     expect(signData).toHaveBeenCalledWith(expect.objectContaining({ data: 'hi', encoding: 'text' }));
+  });
+
+  // Dust Dice asks for a seat secret on every table page. The prompt must be tied
+  // to the page document that asked, so a reload or close can drop it.
+  it('derives an app secret after approval, naming the requesting page on the prompt', async () => {
+    await connect();
+    requestApproval.mockResolvedValue(true);
+    deriveAppSecret.mockResolvedValue({ secret: 'ab'.repeat(32) });
+    const res = await dispatch(ORIGIN, 'deriveAppSecret', ['dust-dice-seat:1'], 7, '7/0/doc-1');
+    expect(res).toEqual({ secret: 'ab'.repeat(32) });
+    expect(requestApproval).toHaveBeenCalledWith(
+      'deriveAppSecret',
+      ORIGIN,
+      { domain: 'dust-dice-seat:1' },
+      7,
+      preparedPanel,
+      '7/0/doc-1',
+    );
+    // The origin the secret is bound to is the sender's, never a parameter.
+    expect(deriveAppSecret).toHaveBeenCalledWith({ seedHex: SESSION.seedHex, origin: ORIGIN, domain: 'dust-dice-seat:1' });
+  });
+
+  it('rejects deriveAppSecret when the user declines, without deriving', async () => {
+    await connect();
+    requestApproval.mockResolvedValue(false);
+    await expect(dispatch(ORIGIN, 'deriveAppSecret', ['dust-dice-seat:1'], 7, '7/0/doc-1')).rejects.toMatchObject({
+      code: 'Rejected',
+    });
+    expect(deriveAppSecret).not.toHaveBeenCalled();
   });
 
   it('rejects signData when the user declines', async () => {
@@ -402,6 +435,7 @@ describe('connector dispatch', () => {
       { sealed: true, payFees: true, summary: NIGHT_SPEND },
       undefined,
       preparedPanel,
+      undefined,
     );
     expect(balanceTransaction).toHaveBeenCalledWith(
       expect.objectContaining({ txHex: 'abcd', sealed: true, payFees: true }),
@@ -446,6 +480,7 @@ describe('connector dispatch', () => {
       { sealed: true, payFees: true, summary: null },
       undefined,
       preparedPanel,
+      undefined,
     );
   });
 
@@ -474,6 +509,7 @@ describe('connector dispatch', () => {
       { sealed, payFees: false, summary: NIGHT_SPEND },
       undefined,
       preparedPanel,
+      undefined,
     );
     expect(balanceTransaction).toHaveBeenCalledWith(expect.objectContaining({ sealed, payFees: false }));
   });
@@ -513,6 +549,7 @@ describe('connector dispatch', () => {
       { sealed: false, payFees: true, summary: NIGHT_SPEND },
       undefined,
       preparedPanel,
+      undefined,
     );
     expect(balanceTransaction).toHaveBeenCalledWith(expect.objectContaining({ txHex: 'abcd', sealed: false }));
   });
@@ -544,6 +581,7 @@ describe('connector dispatch', () => {
       },
       undefined,
       preparedPanel,
+      undefined,
     );
     // Inputs/outputs reach the offscreen host as decimal-string DTOs.
     expect(makeIntent).toHaveBeenCalledWith(
@@ -567,6 +605,7 @@ describe('connector dispatch', () => {
       expect.objectContaining({ payFees: false }),
       undefined,
       preparedPanel,
+      undefined,
     );
     expect(makeIntent).toHaveBeenCalledWith(expect.objectContaining({ payFees: false }));
   });
@@ -592,6 +631,7 @@ describe('connector dispatch', () => {
       },
       undefined,
       preparedPanel,
+      undefined,
     );
     expect(transferBuild).toHaveBeenCalledWith(
       expect.objectContaining({

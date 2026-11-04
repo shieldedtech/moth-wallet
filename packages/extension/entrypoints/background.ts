@@ -1,10 +1,10 @@
 import { defineBackground } from '#imports';
 import { browser } from 'wxt/browser';
-import { BALANCES_PORT, SETUP_PORT } from '../lib/messaging/protocol';
+import { BALANCES_PORT, CONNECTOR_PORT, SETUP_PORT } from '../lib/messaging/protocol';
 import { registerHandlers, enforceAutoLock } from '../lib/background/handlers';
 import { applyNodeAuthHeader } from '../lib/background/node-auth-header';
 import { registerConnectorHandlers } from '../lib/background/connector-handlers';
-import { watchApprovalWindows } from '../lib/background/approvals';
+import { watchApprovalWindows, watchRequester } from '../lib/background/approvals';
 import { getSession } from '../lib/background/session';
 import { addPort, addSetupPort, startSync, registerSyncEvents, reconcileStartup } from '../lib/background/sync-service';
 import { getNetworkConfig, getSettings } from '../lib/background/settings';
@@ -48,6 +48,10 @@ export default defineBackground({
     browser.runtime.onConnect.addListener((port) => {
       if (port.name === SETUP_PORT) {
         addSetupPort(port);
+        return;
+      }
+      if (port.name === CONNECTOR_PORT) {
+        watchRequester(port);
         return;
       }
       if (port.name !== BALANCES_PORT) return;

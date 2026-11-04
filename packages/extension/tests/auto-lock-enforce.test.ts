@@ -16,6 +16,7 @@ vi.mock('../lib/background/sync-service', () => ({
   hasOpsInFlight: () => ops > 0,
   syncDefersAutoLock: () => false,
   hasOpenPorts: () => true,
+  hasVisiblePanel: () => true,
   broadcastApproval: vi.fn(),
   broadcastSessionLocked: vi.fn(),
   clearSnapshot: vi.fn(() => Promise.resolve()),

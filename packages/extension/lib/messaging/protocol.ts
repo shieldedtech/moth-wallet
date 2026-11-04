@@ -246,11 +246,18 @@ export type PortEvent =
   /** The session was locked out-of-band (auto-lock); the panel re-reads status. */
   | { kind: 'sessionLocked' };
 
+/** Messages a panel sends to background over the "balances" port. */
+export type PanelReport = { kind: 'visibility'; visible: boolean };
+
 export const BALANCES_PORT = 'balances';
 
 /** Held open by the setup tab while an account is being created/imported —
  *  the panel shows a waiting screen until it closes (or setup completes). */
 export const SETUP_PORT = 'setup';
+
+/** Opened by the content script of a page that calls the connector and held for
+ *  the life of its document, so the background learns when that page is gone. */
+export const CONNECTOR_PORT = 'connector';
 
 // ---------------------------------------------------------------------------
 // Protocol map
