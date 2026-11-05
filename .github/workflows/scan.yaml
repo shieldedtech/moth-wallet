@@ -47,7 +47,7 @@ jobs:
           # checkout's persisted credentials; don't leave the token on disk.
           persist-credentials: false
       - name: Scan and upload SARIF
-        uses: midnightntwrk/upload-sarif-github-action@4e7a363e1fcd1be102b28485ad17bcb507deada6  # SHA-pinned; dependabot bumps
+        uses: midnightntwrk/upload-sarif-github-action@6e93ae0ea1494d29b521a2c8bbfa068375bf7a26  # SHA-pinned; dependabot bumps
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           fail_severity: critical
