@@ -6,8 +6,8 @@
 '@shieldedtech/moth-cli': minor
 ---
 
-Upgrade to `@midnightntwrk/wallet-sdk` 2.0.0-rc.2, which brings
-`@midnightntwrk/ledger-v9` 1.0.0-rc.7. The SDK runs ledger-v8 below the chain's v9 fork and ledger-v9 from it, and its
+Upgrade to `@midnightntwrk/wallet-sdk` 2.0.0, which brings `@midnightntwrk/ledger-v9` 1.0.0, and to
+`@midnight-ntwrk/midnight-js` 5.0.0. The SDK runs ledger-v8 below the chain's v9 fork and ledger-v9 from it, and its
 wallets follow a live chain across the boundary, so moth reaches networks on either side with one
 build.
 
@@ -21,20 +21,37 @@ build.
 - Proving routes by protocol version: one proof server serves both sides, and the in-process
   prover, including the extension's in-worker one, is registered per ledger version. Each backend
   refuses a transaction built by the other ledger version with `ProvingEpochMismatchError`.
-- The in-process prover moves to `@midnight-ntwrk/zkir-v2` 2.2.0-rc.6, the version the SDK proves
-  with: node 2.1.0-rc.4 rejects DUST spend proofs from rc.5. The SDK is tested against node
-  2.1.0-rc.4, midnight-indexer 4.4.0-rc.6 and proof-server 9.0.0-rc.10.
+- ledger-v8 now comes from `@midnightntwrk/ledger-v8` 8.1.3, the copy the SDK and midnight-js 5 both use, and the
+  in-process prover from `@midnightntwrk/zkir-v2` 2.2.0, the one the SDK proves with. The `@midnight-ntwrk` copies
+  are gone from the install: a second copy of a WASM ledger refuses the first one's objects.
 - The client-side dedup of re-sent boundary events (`sync/sdk-dedup.ts`) is removed; the fix
   landed upstream in both wallet variants.
 - DUST fee balancing keeps largest-first coin selection and moth's own balancing loop on both
   sides of the fork, through `DustWallet` rebuilt with `CustomForkingDustWallet` over the SDK's
   `dustVariantConfigurations`, so each variant is valued against the same rates. SDK 2.0.0-rc.1
   fixed the unbounded loop upstream; moth's stays because it reports each pass to the fee log.
+- A DUST fee is no longer dated at a block whose DUST events the wallet has not applied, which the
+  node rejected with `Custom error: 170`. When neither the newest block nor the wallet's own is safe
+  to date it at, balancing re-reads the newest block every second and fails with `SyncWalletError`
+  after two minutes.
 - A wallet restored from a cache written below the v9 fork is started by the facade with both
   ledger versions' keys, derived from the seeds, so it resumes on whichever side its cache was
   written.
-- Contract deploy/call/maintenance keep authoring ledger-v8 transactions through midnight-js
-  4.1.1 and refuse a network that has crossed to ledger-v9.
+- Contract deploy, call and maintenance run on midnight-js 5 and work on both sides of the v9 fork. An
+  artifact's compact-runtime version picks its ledger. One compiled by compactc 0.31 (runtime 0.16, as the
+  bundled moth-ft and receive-unshielded are) is a ledger-8 contract: it deploys and takes maintenance updates
+  before the fork, and stays callable after it. One compiled by compactc 0.36.0 (runtime 0.21) is a ledger-9
+  contract, which runs from the fork on and needs a proof server (9.0.0 or later), since its circuits are ZKIR
+  v3 and the in-process prover reads ZKIR v2. Artifacts compiled for any other runtime are refused.
+- A contract project that has its own midnight-js runs the whole operation on that copy, so it must be on
+  midnight-js 5 and have the node-zk-config, indexer, level private state and http-client proof provider
+  packages. A project still on midnight-js 4 is refused with a message saying so.
+- Contract artifacts are checked against `compiler/contract-manifest.json` when they carry one, as compactc
+  0.36 writes it.
+- The intent the wallet adds while balancing a contract transaction lives for one hour, the lifetime
+  midnight-js gives the transaction itself, where it was 30 minutes.
+- `createProofProvider(config, zkConfigProvider)` takes the contract's `ZKConfigProvider` rather than a key
+  material provider, and returns a midnight-js 5 proof provider that serves both ledger eras.
 - Message signing returns the schnorr hex value of ledger-v9's tagged signature, so the wire
   format is unchanged for connectors.
 - Browser bundles now carry both ledgers' WASM, as every SDK 2.0 consumer does.

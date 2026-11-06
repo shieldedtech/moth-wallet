@@ -24,7 +24,7 @@
 // than silently reverting to the SDK loop.
 
 import {Effect, Either} from 'effect';
-import type * as ledger from '@midnight-ntwrk/ledger-v8';
+import type * as ledger from '@midnightntwrk/ledger-v8';
 import * as ledgerV9 from '@midnightntwrk/wallet-sdk/ledger/v9';
 import {
   Transacting,

@@ -1,10 +1,15 @@
-import * as ledger from '@midnight-ntwrk/ledger-v8';
+import * as ledger from '@midnightntwrk/ledger-v8';
 import {httpClientProvingProvider, httpClientProofProvider} from '@midnight-ntwrk/midnight-js-http-client-proof-provider';
-import {ZKConfigProvider, type KeyMaterialProvider} from '@midnight-ntwrk/midnight-js/types';
+import {
+  createProofProviderFromProvingProviders,
+  ZKConfigProvider,
+  type KeyMaterialProvider,
+  type ProofProvider,
+} from '@midnight-ntwrk/midnight-js/types';
 import {
   provingProvider as wasmProvingProvider,
   type KeyMaterialProvider as WasmKeyMaterialProvider,
-} from '@midnight-ntwrk/zkir-v2';
+} from '@midnightntwrk/zkir-v2';
 import {ProtocolVersion} from '@midnightntwrk/wallet-sdk';
 import * as ledgerV9 from '@midnightntwrk/wallet-sdk/ledger/v9';
 import {
@@ -101,26 +106,42 @@ export function createProvingProvider(
   return wasmProvingFactory(wasmKeyMaterialProvider(keyMaterialProvider));
 }
 
-/** Build the transaction-level Midnight.js proof provider. */
+/**
+ * The midnight-js pieces a contract proof provider is built from. midnight-js
+ * takes a transaction handle only from its own installed copy, so a contract
+ * that runs on its project's midnight-js is proved with that copy's.
+ */
+export interface ProofProviderKit {
+  readonly httpClientProofProvider: typeof httpClientProofProvider;
+  readonly createProofProviderFromProvingProviders: typeof createProofProviderFromProvingProviders;
+}
+
+const ownProofProviderKit: ProofProviderKit = {httpClientProofProvider, createProofProviderFromProvingProviders};
+
+/**
+ * Build the Midnight.js proof provider for contracts of both ledger eras. The in-process
+ * prover is zkir-v2's, which reads the ZKIR v2 circuits of compactc 0.31 contracts only.
+ */
 export function createProofProvider(
   config: ProverConfig,
-  keyMaterialProvider: KeyMaterialProvider,
-) {
+  zkConfigProvider: ZKConfigProvider<string>,
+  kit: ProofProviderKit = ownProofProviderKit,
+): ProofProvider {
   if (config.type === 'server') {
-    // Delegate to the SDK's proof provider rather than re-implementing
-    // proveTx. This keeps payload versioning (ledger-v8 8.1.0 rejects
-    // unversioned circuit-call proofs) and any future proveTx behavior —
-    // e.g. partialProveTxConfig — tracking the SDK instead of drifting from
-    // a hand-rolled copy of the same call.
-    return httpClientProofProvider(config.url, new KeyMaterialZkConfigProvider(keyMaterialProvider));
+    return kit.httpClientProofProvider({url: config.url, zkConfigProvider});
   }
-  // WASM path: no SDK proof-provider equivalent, so drive prove() directly
-  // over the local zkir provider.
-  const provingProvider = createProvingProvider(config, keyMaterialProvider);
-  return {
-    proveTx: (transaction: ledger.UnprovenTransaction) =>
-      transaction.prove(provingProvider, ledger.CostModel.initialCostModel()),
-  };
+  const keyMaterial = wasmKeyMaterialProvider(zkConfigProvider.asKeyMaterialProvider());
+  const provider = wasmProvingFactory(keyMaterial);
+  return kit.createProofProviderFromProvingProviders({
+    v8: provider,
+    // Delegated, not spread: zkir's default provider is a wasm-bindgen class
+    // whose check/prove live on its prototype.
+    v9: {
+      check: (preimage, keyLocation) => provider.check(preimage, keyLocation),
+      prove: (preimage, keyLocation, overwriteBindingInput) => provider.prove(preimage, keyLocation, overwriteBindingInput),
+      lookupKey: (keyLocation) => keyMaterial.lookupKey(keyLocation),
+    },
+  });
 }
 
 type EitherLike<R> = {readonly _tag: 'Left'; readonly left: unknown} | {readonly _tag: 'Right'; readonly right: R};

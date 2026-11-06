@@ -2,7 +2,7 @@
 // transaction's proofs concurrently, so each gets its own thread instead of queueing
 // on the in-thread prover. Key material stays here, fetched and cached once.
 
-import type { ProvingProvider } from '@midnight-ntwrk/ledger-v8';
+import type { ProvingProvider } from '@midnightntwrk/ledger-v8';
 import type { WasmKeyMaterialProvider } from '@shieldedtech/moth-browser';
 import { deserializeHostError, serializeHostError } from './worker-rpc';
 import { isKeyRequest, type KeyRequest, type PoolToWorker, type ProofJobResult, type ProofOp, type WorkerToPool } from './proof-rpc';

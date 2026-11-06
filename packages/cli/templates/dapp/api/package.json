@@ -12,7 +12,6 @@
   "dependencies": {
     "@midnight-ntwrk/midnight-js-contracts": "{{SDK_CONTRACTS_VERSION}}",
     "@midnight-ntwrk/midnight-js-types": "{{SDK_TYPES_VERSION}}",
-    "@midnight-ntwrk/midnight-js-network-id": "{{SDK_NETWORK_ID_VERSION}}",
     "@midnight-ntwrk/compact-runtime": "{{SDK_COMPACT_RUNTIME_VERSION}}"
   },
   "devDependencies": {

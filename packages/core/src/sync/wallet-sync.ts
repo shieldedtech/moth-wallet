@@ -14,7 +14,6 @@ import {ShieldedWallet} from '@midnightntwrk/wallet-sdk/shielded';
 import {UnshieldedWallet, PublicKey, createKeystore} from '@midnightntwrk/wallet-sdk/unshielded';
 import {InMemoryTransactionHistoryStorage, type FinalizedTx} from '@midnightntwrk/wallet-sdk';
 import {WalletEntrySchema, lifecycleTransactionTraits, mergeWalletEntries} from '@midnightntwrk/wallet-sdk/facade';
-import {setNetworkId} from '@midnight-ntwrk/midnight-js/network-id';
 import {resolveProverConfig, type NetworkConfig} from '../types/network.js';
 import {createWalletProvingService} from '../proof/provider.js';
 import {NIGHT_TOKEN_ID, formatNight} from '../types/tokens.js';
@@ -431,7 +430,6 @@ export async function startWalletSync(
   await ensureWebSocket();
   const store = await resolveSyncStore(options?.syncStore);
 
-  setNetworkId(network.id);
   onProgress?.('Deriving keys...');
 
   const name = walletName ?? 'default';

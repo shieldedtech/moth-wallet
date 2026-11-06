@@ -1,27 +1,22 @@
 // Contract deployment using the official Midnight SDK provider chain.
 // Follows mn-tui's deployManagedContract pattern. See NOTICE for attribution.
 
-import {existsSync} from 'node:fs';
-import {join, basename, resolve as resolvePath} from 'node:path';
+import {resolve as resolvePath} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {createRequire} from 'node:module';
 import * as Rx from 'rxjs';
-import {setNetworkId} from '@midnight-ntwrk/midnight-js/network-id';
-import {NodeZkConfigProvider} from '@midnight-ntwrk/midnight-js-node-zk-config-provider';
-import {indexerPublicDataProvider} from '@midnight-ntwrk/midnight-js-indexer-public-data-provider';
-import {levelPrivateStateProvider} from '@midnight-ntwrk/midnight-js-level-private-state-provider';
 import {createKeystore} from '@midnightntwrk/wallet-sdk/unshielded';
 import {MidnightBech32m, UnshieldedAddress} from '@midnightntwrk/wallet-sdk/address-format';
-import {mothHome} from '../storage/home.js';
 
 import type {TransactionResult} from '../types/transaction.js';
 import {resolveProverConfig, type NetworkConfig} from '../types/network.js';
-import {createProofProvider, ensureProverReady} from '../proof/provider.js';
+import {ensureProverReady} from '../proof/provider.js';
 import type {ContractArtifact} from './artifact-loader.js';
 import {WalletError, TimeoutError} from '../types/errors.js';
 import type {SyncedWallet} from '../sync/wallet-sync.js';
 import type {WalletKeys} from '../sync/operations.js';
-import {makeContractWalletProvider, unshieldedSecretOf} from './wallet-provider.js';
+import {unshieldedSecretOf} from './wallet-provider.js';
+import {openContract} from './midnight-js.js';
 
 export interface DeployOptions {
   artifact: ContractArtifact;
@@ -51,10 +46,6 @@ export interface DeployOptions {
    * to preserve prior behavior for contracts with no meaningful private state.
    */
   initialPrivateState?: unknown;
-}
-
-function toWsUrl(url: string): string {
-  return url.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
 }
 
 /** Walk an error's cause chain and Effect TaggedError fields to find the real reason */
@@ -151,77 +142,6 @@ export async function deployContract(options: DeployOptions): Promise<Transactio
   const prover = resolveProverConfig(network);
   await ensureProverReady(prover);
 
-  // Resolve SDK packages and handle WASM class identity mismatches (CWE-706).
-  // compact-js creates WASM objects (ContractMaintenanceAuthority, etc.) from our
-  // tree's onchain-runtime-v3, but the contract module validates them against the
-  // project's copy. Since WASM classes hold pointers into separate linear memories,
-  // we can't just bypass instanceof — we must serialize/deserialize across trees.
-  const projRoot = projectDir?.trim() || resolvePath(artifact.path, '..', '..');
-  const projRequire = createRequire(resolvePath(projRoot, 'node_modules', '_virtual.js'));
-
-  // Patch WASM class setters to bridge cross-tree identity mismatches (CWE-706).
-  // When compact-js (from our tree) creates WASM objects and assigns them to
-  // ContractState (from the project's tree), _assertClass fails because the
-  // classes come from different WASM instantiations with separate linear memories.
-  // We intercept setters to serialize incoming objects and deserialize them through
-  // the project's WASM module, converting pointers to the correct memory space.
-  const patchedProperties: Array<{proto: any; prop: string; desc: PropertyDescriptor}> = [];
-  try {
-    const projRuntime = projRequire('@midnight-ntwrk/onchain-runtime-v3');
-
-    // Map: [HostPrototype, propertyName, ExpectedWASMClass]
-    // Only maintenanceAuthority crosses tree boundaries — setOperation receives
-    // objects from the same tree since they come from contractState.operation().
-    const settersToProxy: Array<[string, string, string]> = [
-      ['ContractState', 'maintenanceAuthority', 'ContractMaintenanceAuthority'],
-    ];
-
-    for (const [hostClass, prop, expectedClass] of settersToProxy) {
-      const proto = projRuntime[hostClass]?.prototype;
-      const ExpectedKlass = projRuntime[expectedClass];
-      if (!proto || !ExpectedKlass) continue;
-
-      const desc = Object.getOwnPropertyDescriptor(proto, prop);
-      if (!desc?.set || !desc.configurable) continue;
-
-      const origSetter = desc.set;
-      patchedProperties.push({proto, prop, desc});
-
-      Object.defineProperty(proto, prop, {
-        get: desc.get,
-        set(value: any) {
-          if (value instanceof ExpectedKlass) {
-            return origSetter.call(this, value);
-          }
-          // Cross-tree: serialize → deserialize into project's WASM memory
-          if (typeof value?.serialize === 'function' && typeof ExpectedKlass.deserialize === 'function') {
-            const converted = ExpectedKlass.deserialize(value.serialize());
-            return origSetter.call(this, converted);
-          }
-          return origSetter.call(this, value);
-        },
-        configurable: true,
-        enumerable: desc.enumerable,
-      });
-    }
-  } catch {
-    // Project doesn't have onchain-runtime-v3 — no patching needed
-  }
-
-  let CompiledContract: any;
-  let sdkDeployContract: any;
-  try {
-    CompiledContract = projRequire('@midnight-ntwrk/compact-js').CompiledContract;
-    sdkDeployContract = projRequire('@midnight-ntwrk/midnight-js/contracts').deployContract;
-  } catch {
-    const cjs = await import('@midnight-ntwrk/compact-js');
-    const contracts = await import('@midnight-ntwrk/midnight-js/contracts');
-    CompiledContract = cjs.CompiledContract;
-    sdkDeployContract = contracts.deployContract;
-  }
-
-  setNetworkId(network.id);
-
   // The unshielded signing secret: the pre-derived walletKeys (daemon path), else
   // derived from seedHex (in-process CLI path). D-KM-3.
   const keystore = createKeystore({kind: 'schnorr', secret: unshieldedSecretOf(walletKeys, seedHex, 'deployContract')}, network.id);
@@ -273,75 +193,83 @@ export async function deployContract(options: DeployOptions): Promise<Transactio
 
   const coinPublicKey = (state as any).shielded.coinPublicKey.toHexString() as string;
   const encPublicKey = (state as any).shielded.encryptionPublicKey.toHexString() as string;
-  const unshieldedAddr = (keystore.getBech32Address() as any).toString() as string;
 
-  const walletProvider = makeContractWalletProvider({
-    facade,
-    keystore,
-    protocolVersion: state.activeProtocolVersion,
-    coinPublicKey,
-    encryptionPublicKey: encPublicKey,
-  });
-
-  // Build contract providers (same as mn-tui's buildContractProviders)
-  const managedDir = artifact.path;
-  const contractName = basename(managedDir);
-  const indexerHttpUrl = network.indexerUrl;
-  const indexerWsUrl = toWsUrl(indexerHttpUrl) + '/ws';
-  const zkCfgProvider = new NodeZkConfigProvider(managedDir);
-  const levelDbDir = join(mothHome(), 'level-db', network.id, encPublicKey.slice(0, 16));
-
-  const providers: any = {
-    privateStateProvider: (levelPrivateStateProvider as any)({
-      midnightDbName: levelDbDir,
-      privateStateStoreName: contractName + '-state',
-      privateStoragePasswordProvider: () => unshieldedAddr,
-      accountId: unshieldedAddr,
-    }),
-    publicDataProvider: indexerPublicDataProvider(indexerHttpUrl, indexerWsUrl),
-    zkConfigProvider: zkCfgProvider,
-    proofProvider: createProofProvider(prover, zkCfgProvider.asKeyMaterialProvider()),
-    walletProvider,
-    midnightProvider: walletProvider,
-  };
-
-  // Load contract module
-  const contractJs = join(managedDir, 'contract', 'index.js');
-  if (!existsSync(contractJs)) {
-    throw new WalletError('INVALID_INPUT', `No compiled contract at ${contractJs}`);
-  }
-  const contractModule: any = await import(pathToFileURL(contractJs).href);
-
-  // Build CompiledContract using the .pipe() pattern
-  let compiledContract: any;
+  // Witnesses, from the witness file when one is given. It may export them as:
+  //   1. export default (walletProvider) => ({ localSecretKey: ... })  — factory function
+  //   2. export default { localSecretKey: ... }                       — plain object
+  //   3. export const witnesses = { localSecretKey: ... }             — named export
+  let witnesses: object | ((walletProvider: unknown) => object) | undefined;
   if (witnessPath) {
     const witMod: any = await import(pathToFileURL(witnessPath).href);
-    // Support multiple witness export patterns:
-    //   1. export default (walletProvider) => ({ localSecretKey: ... })  — factory function
-    //   2. export default { localSecretKey: ... }                       — plain object
-    //   3. export const witnesses = { localSecretKey: ... }             — named export
-    let witnessObj: any;
-    if (typeof witMod.default === 'function') {
-      witnessObj = witMod.default(walletProvider);
-    } else if (witMod.default && typeof witMod.default === 'object') {
-      witnessObj = witMod.default;
+    if (witMod.default && (typeof witMod.default === 'function' || typeof witMod.default === 'object')) {
+      witnesses = witMod.default;
     } else if (witMod.witnesses && typeof witMod.witnesses === 'object') {
-      witnessObj = witMod.witnesses;
+      witnesses = witMod.witnesses;
     } else {
       throw new WalletError(
         'INVALID_INPUT',
         'Witness file must export default (function or object) or a named "witnesses" export'
       );
     }
-    compiledContract = (CompiledContract.make(contractName, contractModule.Contract) as any).pipe(
-      (CompiledContract as any).withWitnesses(witnessObj),
-      (CompiledContract as any).withCompiledFileAssets(managedDir)
-    );
-  } else {
-    compiledContract = (CompiledContract.make(contractName, contractModule.Contract) as any).pipe(
-      (CompiledContract as any).withVacantWitnesses,
-      (CompiledContract as any).withCompiledFileAssets(managedDir)
-    );
+  }
+
+  const {midnightJs, contractName, compiledContract, providers} = await openContract({
+    artifactPath: artifact.path,
+    projectDir,
+    network,
+    facade,
+    keystore,
+    coinPublicKey,
+    encryptionPublicKey: encPublicKey,
+    witnesses,
+  });
+
+  // A project with onchain-runtime-v3 but no midnight-js deploys through moth's copy, whose
+  // WASM objects its contract module refuses (CWE-706); the setter re-reads them through the
+  // project's runtime and passes objects from the same tree through unchanged.
+  const projRoot = projectDir?.trim() || resolvePath(artifact.path, '..', '..');
+  const projRequire = createRequire(resolvePath(projRoot, 'node_modules', '_virtual.js'));
+  const patchedProperties: Array<{proto: any; prop: string; desc: PropertyDescriptor}> = [];
+  try {
+    const projRuntime = projRequire('@midnight-ntwrk/onchain-runtime-v3');
+
+    // Map: [HostPrototype, propertyName, ExpectedWASMClass]
+    // Only maintenanceAuthority crosses tree boundaries — setOperation receives
+    // objects from the same tree since they come from contractState.operation().
+    const settersToProxy: Array<[string, string, string]> = [
+      ['ContractState', 'maintenanceAuthority', 'ContractMaintenanceAuthority'],
+    ];
+
+    for (const [hostClass, prop, expectedClass] of settersToProxy) {
+      const proto = projRuntime[hostClass]?.prototype;
+      const ExpectedKlass = projRuntime[expectedClass];
+      if (!proto || !ExpectedKlass) continue;
+
+      const desc = Object.getOwnPropertyDescriptor(proto, prop);
+      if (!desc?.set || !desc.configurable) continue;
+
+      const origSetter = desc.set;
+      patchedProperties.push({proto, prop, desc});
+
+      Object.defineProperty(proto, prop, {
+        get: desc.get,
+        set(value: any) {
+          if (value instanceof ExpectedKlass) {
+            return origSetter.call(this, value);
+          }
+          // Cross-tree: serialize → deserialize into project's WASM memory
+          if (typeof value?.serialize === 'function' && typeof ExpectedKlass.deserialize === 'function') {
+            const converted = ExpectedKlass.deserialize(value.serialize());
+            return origSetter.call(this, converted);
+          }
+          return origSetter.call(this, value);
+        },
+        configurable: true,
+        enumerable: desc.enumerable,
+      });
+    }
+  } catch {
+    // Project doesn't have onchain-runtime-v3 — no patching needed
   }
 
   onProgress?.('proving');
@@ -357,7 +285,7 @@ export async function deployContract(options: DeployOptions): Promise<Transactio
     if (constructorArgs.length > 0) {
       deployOptions.args = constructorArgs;
     }
-    const deployed: any = await (sdkDeployContract as any)(providers, deployOptions);
+    const deployed: any = await (midnightJs.contracts.deployContract as any)(providers, deployOptions);
 
     const contractAddress: string = deployed.deployTxData.public.contractAddress;
 

@@ -3,7 +3,7 @@
 // See NOTICE for attribution to mn-tui (Apache-2.0).
 
 import {HDWallet, Roles as SdkRoles} from '@midnightntwrk/wallet-sdk/hd';
-import {ZswapSecretKeys, DustSecretKey} from '@midnight-ntwrk/ledger-v8';
+import {ZswapSecretKeys, DustSecretKey} from '@midnightntwrk/ledger-v8';
 import {
   ShieldedAddress,
   ShieldedCoinPublicKey,
@@ -12,7 +12,6 @@ import {
   MidnightBech32m,
 } from '@midnightntwrk/wallet-sdk/address-format';
 import {createKeystore} from '@midnightntwrk/wallet-sdk/unshielded';
-import {setNetworkId} from '@midnight-ntwrk/midnight-js/network-id';
 import type {WalletAddresses} from '../types/wallet.js';
 
 /**
@@ -64,7 +63,6 @@ function toHex(bytes: Uint8Array): string {
  * across the fork.
  */
 export function dustAddressForSeed(dustSeed: Uint8Array, network: string): string {
-  setNetworkId(network);
   const key = DustSecretKey.fromSeed(dustSeed);
   try {
     return DustAddress.encodePublicKey(network, key.publicKey);
@@ -81,8 +79,6 @@ export function dustAddressForSeed(dustSeed: Uint8Array, network: string): strin
  * - DUST: DustSecretKey.fromSeed() → public key → DustAddress
  */
 function deriveForNetwork(keys: Record<number, Uint8Array>, network: string) {
-  setNetworkId(network);
-
   const unshielded: string = createKeystore(
     {kind: 'schnorr', secret: keys[Roles.NightExternal]},
     network,
