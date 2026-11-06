@@ -145,7 +145,7 @@ describe('WalletManager.exportSeedHex', () => {
     // extension's single-decrypt key-holder path) is no longer needed.
     expect((unlocked as unknown as { seedHex?: string }).seedHex).toBeUndefined();
     expect(unlocked.walletKeys).toBeDefined();
-    expect(unlocked.walletKeys.shieldedSecretKeys).toBeDefined();
+    expect(unlocked.walletKeys.shielded).toBeDefined();
     unlocked.lock();
 
     const seedHex = await manager.exportSeedHex('alice', PASS);
@@ -181,7 +181,7 @@ describe('WalletManager.unlockWithSeedHex', () => {
     expect(seedHex).toBe(await manager.exportSeedHex('alice', PASS));
     expect(deriveAllAddressesFromSeed(seedHex)).toEqual(created.addresses);
     expect(unlocked.addresses).toEqual(created.addresses);
-    expect(unlocked.walletKeys.shieldedSecretKeys).toBeDefined();
+    expect(unlocked.walletKeys.shielded).toBeDefined();
     // The D-KM-3 invariant holds for the bundle itself: the seed travels beside
     // it, never on it.
     expect((unlocked as unknown as { seedHex?: string }).seedHex).toBeUndefined();

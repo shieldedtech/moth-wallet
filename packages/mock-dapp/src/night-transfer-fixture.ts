@@ -6,7 +6,7 @@ import {
   UnshieldedOffer,
   nativeToken,
   type ProvingProvider,
-} from '@midnight-ntwrk/ledger-v8';
+} from '@midnightntwrk/ledger-v8';
 
 export const NIGHT_TRANSFER_FIXTURE = {
   amountNight: '1',

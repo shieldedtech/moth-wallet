@@ -337,6 +337,7 @@ sequenceDiagram
 | `INVALID_PARAMS` | Params didn't pass the verb's parser. |
 | `INVALID_INPUT` | Params parsed but semantically wrong (`--night` without NIGHT, etc.). |
 | `UNAUTHORIZED` | User denied the L3 modal, or auto-approve was disabled. |
+| `PROTOCOL_VERSION_MISMATCH` | The transaction was built for the other side of a ledger fork than the wallet is acting at (`submitTransaction`). Rebuild it for the current version. |
 | `TIMEOUT` | Operation didn't finish within `timeoutSec`. |
 | `INTERNAL_ERROR` | Unhandled exception in the handler. |
 | `CLOSED` | Connection closed mid-call. |
