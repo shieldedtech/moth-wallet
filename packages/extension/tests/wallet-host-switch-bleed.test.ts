@@ -60,7 +60,7 @@ vi.mock('./../lib/offscreen/relay-socket', () => ({
   setRelayUrl: vi.fn(),
   relayRetry: (fn: unknown) => fn,
 }));
-vi.mock('@midnight-ntwrk/ledger-v8', () => ({}));
+vi.mock('@midnightntwrk/ledger-v8', () => ({}));
 vi.mock('./../lib/messaging/balances-json', () => ({
   // Identify the emitting wallet by its NIGHT balance, which is all this needs.
   serializeBalances: (b: { unshielded: Record<string, bigint> }) => JSON.stringify({ night: String(b.unshielded.night) }),

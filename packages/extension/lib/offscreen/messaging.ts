@@ -2,7 +2,7 @@
 // offscreen document. Kept separate (own namespace) from the UI protocol so
 // the two never cross-handle each other's messages.
 //
-// Why an offscreen document at all: `@midnight-ntwrk/ledger-v8` initializes its
+// Why an offscreen document at all: `@midnightntwrk/ledger-v8` initializes its
 // WASM with a top-level `await`, which a Chrome MV3 service worker cannot have
 // in its module graph (registration fails). The offscreen document is a normal
 // extension page with no such restriction, so all WASM/sync/tx work lives there

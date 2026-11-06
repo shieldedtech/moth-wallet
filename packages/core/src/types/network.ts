@@ -165,7 +165,7 @@ const RENAMED_NETWORK_IDS = new Map<string, string>([['local', 'undeployed']]);
  * ids are not restricted to a known list (endpoints are overridable, so a custom
  * id is a legitimate target), and an object lookup answers `toString` and
  * `constructor` from `Object.prototype` — returning a function where a string is
- * declared, which would then reach setNetworkId(), socket paths and JSON output.
+ * declared, which would then reach the providers' network id, socket paths and JSON output.
  */
 export function canonicalNetworkId(id: string): string {
   return RENAMED_NETWORK_IDS.get(id) ?? id;

@@ -16,8 +16,10 @@ const noProofs = {
   },
 };
 
-/** Proved but not yet bound. */
-export async function unboundTransaction(ledger: 'v8' | 'v9'): Promise<{serialize(): Uint8Array; bind(): {serialize(): Uint8Array}}> {
+/** Not yet proved. */
+export function unprovenTransaction(ledger: 'v8'): ledgerV8.UnprovenTransaction;
+export function unprovenTransaction(ledger: 'v9'): ledgerV9.UnprovenTransaction;
+export function unprovenTransaction(ledger: 'v8' | 'v9'): ledgerV8.UnprovenTransaction | ledgerV9.UnprovenTransaction {
   if (ledger === 'v8') {
     const intent = ledgerV8.Intent.new(new Date(Date.now() + 60_000));
     intent.fallibleUnshieldedOffer = ledgerV8.UnshieldedOffer.new(
@@ -25,8 +27,7 @@ export async function unboundTransaction(ledger: 'v8' | 'v9'): Promise<{serializ
       [{owner: OWNER, type: ledgerV8.nativeToken().raw, value: 1n}],
       [],
     );
-    const unproven = ledgerV8.Transaction.fromParts('preprod', undefined, undefined, intent);
-    return unproven.prove(noProofs, ledgerV8.CostModel.initialCostModel());
+    return ledgerV8.Transaction.fromParts('preprod', undefined, undefined, intent);
   }
   const intent = ledgerV9.Intent.new(new Date(Date.now() + 60_000));
   intent.fallibleUnshieldedOffer = ledgerV9.UnshieldedOffer.new(
@@ -34,8 +35,15 @@ export async function unboundTransaction(ledger: 'v8' | 'v9'): Promise<{serializ
     [{owner: OWNER, type: ledgerV9.nativeToken().raw, value: 1n}],
     [],
   );
-  const unproven = ledgerV9.Transaction.fromParts('preprod', undefined, undefined, intent);
-  return unproven.prove({...noProofs, lookupKey: async () => undefined}, ledgerV9.CostModel.initialCostModel());
+  return ledgerV9.Transaction.fromParts('preprod', undefined, undefined, intent);
+}
+
+/** Proved but not yet bound. */
+export async function unboundTransaction(ledger: 'v8' | 'v9'): Promise<{serialize(): Uint8Array; bind(): {serialize(): Uint8Array}}> {
+  if (ledger === 'v8') {
+    return unprovenTransaction('v8').prove(noProofs, ledgerV8.CostModel.initialCostModel());
+  }
+  return unprovenTransaction('v9').prove({...noProofs, lookupKey: async () => undefined}, ledgerV9.CostModel.initialCostModel());
 }
 
 /** Proved and bound: the only shape the network takes. */

@@ -10,7 +10,6 @@
 // node:fs pre-seed bridge is not used here.
 import {generateMnemonic24, mnemonicToSeed} from '../wallet/mnemonic.js';
 import {ProtocolVersion} from '@midnightntwrk/wallet-sdk';
-import {setNetworkId} from '@midnight-ntwrk/midnight-js/network-id';
 import type {NetworkConfig} from '../types/network.js';
 import {startWalletSync, resolveSyncStore} from './wallet-sync.js';
 import {cursorWitnessKey, emptyRefHeightKey, emptyRefMnemonicKey, emptyRefStateKey, EMPTY_REF_WALLET, type SyncStateStore, type WalletPart} from './sync-store.js';
@@ -562,8 +561,6 @@ export function preSeedNewWallet(
   emptyRef: EmptyRefStates
 ): {shielded: string; unshielded: string; dust?: string} | null {
   try {
-    setNetworkId(networkId);
-
     // Parse reference states
     const refSh = JSON.parse(emptyRef.shielded) as Record<string, unknown>;
     const refUn = JSON.parse(emptyRef.unshielded) as Record<string, unknown>;

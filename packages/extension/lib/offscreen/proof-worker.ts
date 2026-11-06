@@ -2,7 +2,7 @@
 // pool (proof-pool.ts) can run a transaction's proofs in parallel. It holds no key
 // material; each job asks the pool, which keeps the one cached copy.
 
-import { prove, check, type ProvingKeyMaterial } from '@midnight-ntwrk/zkir-v2';
+import { prove, check, type ProvingKeyMaterial } from '@midnightntwrk/zkir-v2';
 import { serializeHostError, deserializeHostError } from './worker-rpc';
 import { isKeyReply, type KeyQuery, type PoolToWorker, type ProofJobRequest, type WorkerToPool } from './proof-rpc';
 

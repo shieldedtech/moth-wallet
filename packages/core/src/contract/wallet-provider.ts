@@ -1,37 +1,37 @@
-// The midnight-js wallet/midnight provider pair over a moth WalletFacade.
+// The midnight-js wallet and midnight providers over a moth WalletFacade.
 //
-// midnight-js 4.1.1 authors ledger-v8 transactions, while the facade speaks in
-// handles stamped with a protocol version. What midnight-js hands over is sealed
-// at the version the wallets are acting at, and what comes back is unwrapped for
-// it. A chain that has handed over to ledger-v9 can never include a ledger-v8
-// transaction, so such a network is refused before anything is built.
+// midnight-js 5 hands transactions over as era-tagged handles. The facade reads their
+// bytes with the ledger it is acting at, so one handler serves both eras and refuses a
+// handle from an era the chain has left.
 
-import type * as ledger from '@midnight-ntwrk/ledger-v8';
-import {WalletTransaction, type ProtocolVersion} from '@midnightntwrk/wallet-sdk';
 import type {WalletFacade} from '@midnightntwrk/wallet-sdk/facade';
 import type {UnshieldedKeystore} from '@midnightntwrk/wallet-sdk/unshielded';
+import type {
+  createMidnightProviderFromHandlers,
+  createWalletProviderFromHandlers,
+  MidnightProvider,
+  WalletProvider,
+} from '@midnight-ntwrk/midnight-js/types';
 import {WalletError} from '../types/errors.js';
-import {isLedgerV9, unwrapTransaction} from '../sync/ledger-routing.js';
 import {deriveWalletKeys, type WalletKeys} from '../sync/operations.js';
 
-/** A proven, unbound ledger-v8 transaction, as midnight-js hands it over for balancing. */
-export type V8UnboundTransaction = ledger.Transaction<ledger.SignatureEnabled, ledger.Proof, ledger.PreBinding>;
-
-export interface ContractWalletProvider {
-  getCoinPublicKey(): string;
-  getEncryptionPublicKey(): string;
-  balanceTx(tx: V8UnboundTransaction, ttl?: Date): Promise<ledger.FinalizedTransaction>;
-  submitTx(tx: ledger.FinalizedTransaction): Promise<string>;
+/**
+ * The midnight-js factories the providers are built with. midnight-js takes a
+ * handle only from its own installed copy, so they come from the copy the
+ * contract operation runs on.
+ */
+export interface ContractProviderFactories {
+  readonly createWalletProviderFromHandlers: typeof createWalletProviderFromHandlers;
+  readonly createMidnightProviderFromHandlers: typeof createMidnightProviderFromHandlers;
 }
 
 export interface ContractWalletProviderOptions {
   facade: WalletFacade;
   /** Signs the wallet's unshielded inputs in the balanced transaction. */
   keystore: UnshieldedKeystore;
-  /** The version the wallets are acting at, which every transaction built here is stamped with. */
-  protocolVersion: ProtocolVersion.ProtocolVersion;
   coinPublicKey: string;
   encryptionPublicKey: string;
+  factories: ContractProviderFactories;
 }
 
 /**
@@ -53,25 +53,32 @@ export function unshieldedSecretOf(
   }
 }
 
-export function makeContractWalletProvider(options: ContractWalletProviderOptions): ContractWalletProvider {
-  const {facade, keystore, protocolVersion, coinPublicKey, encryptionPublicKey} = options;
-  if (isLedgerV9(protocolVersion)) {
-    throw new WalletError(
-      'WALLET_ERROR',
-      `Contract operations author ledger-v8 transactions, but this network is at protocol version ` +
-        `${protocolVersion} and runs ledger-v9, which cannot include them.`,
-    );
-  }
+/**
+ * The wallet provider, which balances and signs a contract transaction through
+ * the facade, and the midnight provider, which submits it, each serving both
+ * ledger eras.
+ */
+export function makeContractWalletProviders(options: ContractWalletProviderOptions): {
+  walletProvider: WalletProvider;
+  midnightProvider: MidnightProvider;
+} {
+  const {facade, keystore, coinPublicKey, encryptionPublicKey, factories} = options;
+  const balance = async (tx: {serialize(): Uint8Array}, ttl?: Date): Promise<Uint8Array> => {
+    const recipe = await facade.balanceUnboundTransaction(facade.adoptTransaction(tx.serialize(), 'Unbound'), {
+      ttl: ttl ?? new Date(Date.now() + 30 * 60_000),
+    });
+    const signed = await facade.signRecipe(recipe, keystore.signDataAsync);
+    return (await facade.finalizeRecipe(signed)).serialize();
+  };
+  const submit = (tx: {serialize(): Uint8Array}): Promise<string> =>
+    facade.submitTransaction(facade.adoptTransaction(tx.serialize(), 'Finalized'));
   return {
-    getCoinPublicKey: () => coinPublicKey,
-    getEncryptionPublicKey: () => encryptionPublicKey,
-    async balanceTx(tx, ttl) {
-      const recipe = await facade.balanceUnboundTransaction(WalletTransaction.adopt('Unbound', tx, protocolVersion), {
-        ttl: ttl ?? new Date(Date.now() + 30 * 60_000),
-      });
-      const signed = await facade.signRecipe(recipe, keystore.signDataAsync);
-      return unwrapTransaction<ledger.FinalizedTransaction>(await facade.finalizeRecipe(signed));
-    },
-    submitTx: (tx) => facade.submitTransaction(WalletTransaction.adopt('Finalized', tx, protocolVersion)),
+    walletProvider: factories.createWalletProviderFromHandlers({
+      v8: balance,
+      v9: balance,
+      getCoinPublicKey: () => coinPublicKey,
+      getEncryptionPublicKey: () => encryptionPublicKey,
+    }),
+    midnightProvider: factories.createMidnightProviderFromHandlers({v8: submit, v9: submit}),
   };
 }

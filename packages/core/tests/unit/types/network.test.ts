@@ -85,7 +85,7 @@ describe('canonicalNetworkId', () => {
     // Network ids are not restricted to a known list, so an arbitrary string
     // reaches here from `--network`. An object-literal lookup answers these from
     // the prototype chain, putting a function where a string is declared and
-    // sending it on to setNetworkId(), socket paths and JSON output.
+    // sending it on to the providers' network id, socket paths and JSON output.
     for (const key of ['toString', 'constructor', '__proto__', 'hasOwnProperty']) {
       expect(typeof canonicalNetworkId(key), `canonicalNetworkId(${key})`).toBe('string');
       expect(canonicalNetworkId(key)).toBe(key);

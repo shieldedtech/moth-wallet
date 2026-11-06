@@ -21,7 +21,6 @@ import type {
   UnboundTransactionRecipe,
 } from '@midnightntwrk/wallet-sdk/facade';
 import {HDWallet, Roles} from '@midnightntwrk/wallet-sdk/hd';
-import {setNetworkId} from '@midnight-ntwrk/midnight-js/network-id';
 import type {NetworkConfig} from '../types/network.js';
 import {NIGHT_TOKEN_ID} from './wallet-sync.js';
 import {transactionHashOf} from './ledger-routing.js';
@@ -262,7 +261,6 @@ export async function buildTransferTransaction(
     payFees?: boolean;
   }
 ): Promise<FinalizedTransaction> {
-  setNetworkId(networkId);
   const ks = unshieldedKeystore(keys, networkId);
   const transfers = combinedTransfers(networkId, requests);
   const ttl = options?.ttl ?? new Date(Date.now() + 30 * 60_000);
@@ -288,7 +286,6 @@ export async function estimateTransferFee(
   networkId: string,
   requests: SendRequest[]
 ): Promise<bigint> {
-  setNetworkId(networkId);
   const transfers = combinedTransfers(networkId, requests);
   const ttl = new Date(Date.now() + 30 * 60_000);
   const recipe = await facade.transferTransaction(transfers, {ttl, payFees: false});
@@ -355,7 +352,6 @@ export async function balanceTransaction(
     tokenKindsToBalance?: TokenKindsToBalance;
   }
 ): Promise<FinalizedTransaction> {
-  setNetworkId(networkId);
   const ks = unshieldedKeystore(keys, networkId);
   const balanceOptions = {...options, ttl: new Date(Date.now() + 30 * 60_000)};
   const kinds = options?.tokenKindsToBalance ?? 'all';
@@ -414,7 +410,6 @@ export async function buildSwapIntent(
     payFees?: boolean;
   }
 ): Promise<FinalizedTransaction> {
-  setNetworkId(networkId);
   const ks = unshieldedKeystore(keys, networkId);
 
   const swapInputs: CombinedSwapInputs = {};
@@ -505,7 +500,6 @@ export async function designateForDustWithKeys(
   onProgress?: (stage: TxStage) => void,
   selectedUtxos?: NightUtxo[],
 ): Promise<string | null> {
-  setNetworkId(networkId);
   const ks = unshieldedKeystore(keys, networkId);
 
   return designateForDustImpl(facade, ks, networkId, receiver, onProgress, selectedUtxos);
@@ -524,7 +518,6 @@ export async function designateForDust(
   onProgress?: (stage: TxStage) => void,
   selectedUtxos?: NightUtxo[]
 ): Promise<string | null> {
-  setNetworkId(networkId);
   const ks = unshieldedKeystore(deriveKeysFromSeed(seedHex), networkId);
   return designateForDustImpl(facade, ks, networkId, receiver, onProgress, selectedUtxos);
 }
@@ -658,7 +651,6 @@ export async function dedesignateFromDustWithKeys(
   onProgress?: (stage: TxStage) => void,
   selectedUtxos?: NightUtxo[],
 ): Promise<string> {
-  setNetworkId(networkId);
   const ks = unshieldedKeystore(keys, networkId);
   return dedesignateFromDustImpl(facade, ks, onProgress, selectedUtxos);
 }
@@ -675,7 +667,6 @@ export async function dedesignateFromDust(
   onProgress?: (stage: TxStage) => void,
   selectedUtxos?: NightUtxo[]
 ): Promise<string> {
-  setNetworkId(networkId);
   const ks = unshieldedKeystore(deriveKeysFromSeed(seedHex), networkId);
   return dedesignateFromDustImpl(facade, ks, onProgress, selectedUtxos);
 }

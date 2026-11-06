@@ -18,7 +18,6 @@ import {
   ShieldedAddress,
   UnshieldedAddress,
 } from '@midnightntwrk/wallet-sdk/address-format';
-import { setNetworkId } from '@midnight-ntwrk/midnight-js/network-id';
 import { loadContractArtifact } from './artifact-loader.js';
 import { deployContract } from './deploy.js';
 import { callCircuit } from './call.js';
@@ -33,9 +32,9 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 /** Directory of the compiled moth-ft artifact bundled with this package. */
 export const FUNGIBLE_TOKEN_ARTIFACT_DIR = resolve(HERE, '../../contracts/moth-ft/managed');
 
-// Resolve the SDK's onchain-runtime from this package's tree so the WASM class
-// identities line up with the bundled artifact (see the CWE-706 handling in
-// deploy.ts). The package root is two levels up from src/contract or dist/contract.
+// The bundled artifact runs on this package's own midnight-js and runtimes, which
+// its module's compact-runtime import resolves to as well (see midnight-js.ts).
+// The package root is two levels up from src/contract or dist/contract.
 const FUNGIBLE_TOKEN_PROJECT_DIR = resolve(HERE, '../..');
 
 export interface DeployFungibleTokenOptions {
@@ -86,7 +85,6 @@ export interface MintFungibleTokenOptions {
  */
 export async function mintFungibleToken(options: MintFungibleTokenOptions): Promise<TransactionResult> {
   const { contractAddress, recipientAddress, amount, shielded, network } = options;
-  setNetworkId(network.id);
 
   const recipient = shielded
     ? decodeShieldedRecipient(recipientAddress, network.id)
