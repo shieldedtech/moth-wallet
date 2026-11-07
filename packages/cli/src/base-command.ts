@@ -11,6 +11,8 @@ import {
   type NetworkConfig,
   resolveProverConfig,
   serverProver,
+  applyStoredProofServerPin,
+  parseProofServerAttestation,
   validateNetworkConfig,
   connectDaemon,
   connectDaemonTcp,
@@ -262,6 +264,9 @@ export abstract class BaseCommand extends Command {
     const persistedProver = await this.storage.read('config/prover').then(
       d => d ? decoder.decode(d) : null,
     ).catch(() => null);
+    const persistedPin = await this.storage.read('config/proof-server-pin').then(
+      d => d ? decoder.decode(d) : null,
+    ).catch(() => null);
 
     const baseProver = resolveProverConfig(base);
     const proofServerUrl = overrides?.proofServer
@@ -276,6 +281,8 @@ export abstract class BaseCommand extends Command {
       throw new WalletError('INVALID_INPUT', `Invalid prover mode "${proverMode}". Use "server" or "wasm".`);
     }
 
+    const pinRaw = process.env.MOTH_PROOF_SERVER_PIN ?? persistedPin;
+    const storedPin = pinRaw ? parseProofServerAttestation(pinRaw) : undefined;
     const config: NetworkConfig = {
       id: networkId,
       indexerUrl: overrides?.indexer
@@ -286,7 +293,9 @@ export abstract class BaseCommand extends Command {
         ?? process.env.MOTH_NODE_URL
         ?? persistedNode
         ?? base.nodeUrl,
-      prover: proverMode === 'wasm' ? {type: 'wasm'} : serverProver(proofServerUrl),
+      prover: proverMode === 'wasm'
+        ? {type: 'wasm'}
+        : applyStoredProofServerPin(serverProver(proofServerUrl), storedPin),
     };
 
     // CWE-918: Validate URL schemes to prevent SSRF via user-controlled URLs

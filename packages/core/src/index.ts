@@ -8,11 +8,16 @@ export {
   validateNetworkUrl,
   validateNetworkConfig,
   serverProver,
+  attestedServerProver,
+  isLoopbackProofServer,
+  applyStoredProofServerPin,
+  parseProofServerAttestation,
   resolveProverConfig,
   isProverConfig,
   proverConfigsEqual,
   describeProver,
 } from './types/network.js';
+export type { ProofServerAttestation, ProofServerMeasurementPin } from './types/network.js';
 
 // Wallet
 export { WalletManager } from './wallet/manager.js';
@@ -64,6 +69,7 @@ export {
   createProofProvider,
   createWalletProvingService,
   ensureProverReady,
+  setAttestedChannelFactory,
   setWasmProvingProviderFactory,
   type WasmProvingProviderFactory,
   type WasmKeyMaterialProvider,

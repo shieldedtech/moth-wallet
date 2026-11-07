@@ -1,5 +1,40 @@
+import { InvalidInputError } from './errors.js';
+
+/**
+ * Measurements of one Lace proof server, captured ahead of time.
+ * Phase 3 of a local attestation session checks the quote against this pin.
+ * The pin is not read from the VM under check.
+ */
+export interface ProofServerMeasurementPin {
+  /** 48-byte SEV-SNP launch measurement, hex. */
+  readonly launchMeasurement: string;
+  /** 16-byte image id, hex. */
+  readonly imageId: string;
+  /** Minimum acceptable microcode SVN. */
+  readonly microcodeSvn: number;
+  /** Minimum acceptable SNP firmware SVN. */
+  readonly snpfwSvn: number;
+  /** PCR 0–4. PCR 15 is recomputed from the quote; it is not a pin field. */
+  readonly pcrs: {
+    readonly 0: string;
+    readonly 1: string;
+    readonly 2: string;
+    readonly 3: string;
+    readonly 4: string;
+  };
+  /** 32-byte dm-verity root hash of the application disk, hex. */
+  readonly applicationDiskRoothash: string;
+}
+
+/** Where to fetch the quote, and the measurements it must match. */
+export interface ProofServerAttestation {
+  /** Host that serves `/tee_attestation` and `attestation.json`. */
+  readonly attestationHost: string;
+  readonly pin: ProofServerMeasurementPin;
+}
+
 export type ProverConfig =
-  | { readonly type: 'server'; readonly url: string }
+  | { readonly type: 'server'; readonly url: string; readonly attestation?: ProofServerAttestation }
   | { readonly type: 'wasm' };
 
 export interface NetworkEndpoints {
@@ -37,25 +72,127 @@ export function serverProver(
   return { type: 'server', url };
 }
 
+/** A remote proof server whose quote must match `attestation` before a witness leaves. */
+export function attestedServerProver(
+  url: string,
+  attestation: ProofServerAttestation,
+): Extract<ProverConfig, { readonly type: 'server' }> {
+  return { type: 'server', url, attestation };
+}
+
+/**
+ * A proof server on this machine. Loopback stays on the plain HTTP client;
+ * every other host needs a measurement pin before a witness is sent.
+ */
+export function isLoopbackProofServer(url: string): boolean {
+  try {
+    const hostname = new URL(url).hostname.toLowerCase().replace(/^\[|\]$/g, '');
+    return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Attach a stored pin to a remote server prover.
+ * A loopback URL keeps the plain client, so a pin saved for Lace does not
+ * change `http://localhost:6300`.
+ */
+export function applyStoredProofServerPin(
+  prover: ProverConfig,
+  attestation: ProofServerAttestation | undefined,
+): ProverConfig {
+  if (!attestation || prover.type !== 'server' || isLoopbackProofServer(prover.url)) return prover;
+  return { ...prover, attestation };
+}
+
+/** Parse the `proof-server-pin` config value. Throws when a field is missing. */
+export function parseProofServerAttestation(raw: string): ProofServerAttestation {
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    throw new InvalidInputError('Proof server pin is not valid JSON');
+  }
+  if (!isProofServerAttestation(value)) {
+    throw new InvalidInputError('Proof server pin is missing a host or a measurement field');
+  }
+  return value;
+}
+
 /** Normalize the legacy proofServerUrl shape into the current prover config. */
 export function resolveProverConfig(config: NetworkConfig): ProverConfig {
   return config.prover ?? serverProver(config.proofServerUrl);
 }
 
+function isHexField(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0;
+}
+
+export function isProofServerAttestation(value: unknown): value is ProofServerAttestation {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<ProofServerAttestation>;
+  if (typeof candidate.attestationHost !== 'string' || candidate.attestationHost.trim() === '') return false;
+  const pin = candidate.pin;
+  if (!pin || typeof pin !== 'object') return false;
+  const pcrs = pin.pcrs;
+  if (!pcrs) return false;
+  return isHexField(pin.launchMeasurement)
+    && isHexField(pin.imageId)
+    && isHexField(pin.applicationDiskRoothash)
+    && typeof pin.microcodeSvn === 'number'
+    && Number.isInteger(pin.microcodeSvn)
+    && pin.microcodeSvn >= 0
+    && typeof pin.snpfwSvn === 'number'
+    && Number.isInteger(pin.snpfwSvn)
+    && pin.snpfwSvn >= 0
+    && isHexField(pcrs[0])
+    && isHexField(pcrs[1])
+    && isHexField(pcrs[2])
+    && isHexField(pcrs[3])
+    && isHexField(pcrs[4]);
+}
+
 export function isProverConfig(value: unknown): value is ProverConfig {
   if (!value || typeof value !== 'object') return false;
-  const candidate = value as Partial<ProverConfig> & { url?: unknown };
-  return candidate.type === 'wasm' || (candidate.type === 'server' && typeof candidate.url === 'string');
+  const candidate = value as Partial<ProverConfig> & { url?: unknown; attestation?: unknown };
+  if (candidate.type === 'wasm') return true;
+  if (candidate.type !== 'server' || typeof candidate.url !== 'string') return false;
+  return candidate.attestation === undefined || isProofServerAttestation(candidate.attestation);
+}
+
+function attestationIdentity(attestation: ProofServerAttestation | undefined): string {
+  if (!attestation) return '';
+  const pin = attestation.pin;
+  const hex = (value: string) => value.toLowerCase();
+  return [
+    attestation.attestationHost.toLowerCase(),
+    hex(pin.launchMeasurement),
+    hex(pin.imageId),
+    String(pin.microcodeSvn),
+    String(pin.snpfwSvn),
+    hex(pin.pcrs[0]),
+    hex(pin.pcrs[1]),
+    hex(pin.pcrs[2]),
+    hex(pin.pcrs[3]),
+    hex(pin.pcrs[4]),
+    hex(pin.applicationDiskRoothash),
+  ].join('\n');
 }
 
 export function proverConfigsEqual(left: ProverConfig, right: ProverConfig): boolean {
   if (left.type !== right.type) return false;
   if (left.type === 'wasm') return true;
-  return right.type === 'server' && left.url === right.url;
+  return right.type === 'server'
+    && left.url === right.url
+    && attestationIdentity(left.attestation) === attestationIdentity(right.attestation);
 }
 
 export function describeProver(config: ProverConfig): string {
-  return config.type === 'wasm' ? 'WASM (local)' : `proof server (${config.url})`;
+  if (config.type === 'wasm') return 'WASM (local)';
+  return config.attestation
+    ? `attested proof server (${config.url})`
+    : `proof server (${config.url})`;
 }
 
 const ALLOWED_SCHEMES = new Set(['http:', 'https:', 'ws:', 'wss:']);

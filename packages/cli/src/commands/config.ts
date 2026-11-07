@@ -3,7 +3,7 @@ import { BaseCommand } from '../base-command.js';
 import { assertNotMainnet } from '../mainnet-guard.js';
 
 const ALLOWED_KEYS = [
-  'default-network', 'prover', 'proof-server-url', 'node-url', 'indexer-url', 'check-matrix', 'matrix-url',
+  'default-network', 'prover', 'proof-server-url', 'proof-server-pin', 'node-url', 'indexer-url', 'check-matrix', 'matrix-url',
   // Cardano / cNIGHT. `blockfrost-project-id` is a credential: it is stored
   // here for convenience but never echoed back by `config get`, and
   // MOTH_BLOCKFROST_PROJECT_ID takes precedence for anyone who would rather
