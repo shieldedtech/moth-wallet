@@ -2,7 +2,11 @@ import {describe, expect, it} from 'vitest';
 import {
   canonicalNetworkId,
   DEFAULT_NETWORKS,
+  applyStoredProofServerPin,
+  attestedServerProver,
   describeProver,
+  isLoopbackProofServer,
+  parseProofServerAttestation,
   proverConfigsEqual,
   resolveProverConfig,
   SUPPORTED_NETWORKS,
@@ -44,6 +48,51 @@ describe('prover network configuration', () => {
     expect(proverConfigsEqual({type: 'wasm'}, {type: 'wasm'})).toBe(true);
     expect(proverConfigsEqual({type: 'server', url: 'https://a'}, {type: 'server', url: 'https://b'})).toBe(false);
     expect(proverConfigsEqual({type: 'wasm'}, {type: 'server', url: 'https://a'})).toBe(false);
+  });
+
+  it('treats two pins for the same URL as different provers', () => {
+    const pin = {
+      attestationHost: 'attestation.example',
+      pin: {
+        launchMeasurement: 'AA',
+        imageId: 'bb',
+        microcodeSvn: 1,
+        snpfwSvn: 2,
+        pcrs: {0: '00', 1: '01', 2: '02', 3: '03', 4: '04'},
+        applicationDiskRoothash: 'cc',
+      },
+    };
+    const other = {...pin, pin: {...pin.pin, launchMeasurement: 'ff'}};
+    expect(proverConfigsEqual(attestedServerProver('https://proof.example', pin), attestedServerProver('https://proof.example', pin))).toBe(true);
+    expect(proverConfigsEqual(
+      attestedServerProver('https://proof.example', pin),
+      attestedServerProver('https://proof.example', {...pin, pin: {...pin.pin, launchMeasurement: 'aa'}}),
+    )).toBe(true);
+    expect(proverConfigsEqual(attestedServerProver('https://proof.example', pin), attestedServerProver('https://proof.example', other))).toBe(false);
+  });
+
+  it('keeps a stored pin off the loopback proof server', () => {
+    const pin = parseProofServerAttestation(JSON.stringify({
+      attestationHost: 'attestation.example',
+      pin: {
+        launchMeasurement: 'aa',
+        imageId: 'bb',
+        microcodeSvn: 1,
+        snpfwSvn: 2,
+        pcrs: {0: '00', 1: '01', 2: '02', 3: '03', 4: '04'},
+        applicationDiskRoothash: 'cc',
+      },
+    }));
+    expect(isLoopbackProofServer('http://localhost:6300')).toBe(true);
+    expect(isLoopbackProofServer('https://proof.example')).toBe(false);
+    expect(applyStoredProofServerPin({type: 'server', url: 'http://localhost:6300'}, pin)).toEqual({
+      type: 'server',
+      url: 'http://localhost:6300',
+    });
+    expect(applyStoredProofServerPin({type: 'server', url: 'https://proof.example'}, pin).attestation).toBe(pin);
+    expect(describeProver(attestedServerProver('https://proof.example', pin))).toBe(
+      'attested proof server (https://proof.example)',
+    );
   });
 });
 

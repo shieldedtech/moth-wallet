@@ -181,14 +181,14 @@ async function callViaSDK(options: CallOptions): Promise<TransactionResult> {
   const publicDataProvider = indexerPublicDataProvider(indexerHttpUrl, indexerWsUrl);
 
   // Selectable prover (reconcile decision #1: keep EITHER WASM or server).
-  // createProofProvider picks per resolveProverConfig(network). For server mode
-  // it proves through the SDK's httpClientProvingProvider via ledger's
-  // transaction.prove(), which runs the preimage through
-  // createProvingPayload/createCheckPayload — i.e. it versions the payload and
-  // attaches the circuit's wrapped-IR from zkConfigProvider. That is why it does
-  // NOT hit the unversioned "expected proof-preimage-versioned" failure that a
-  // hand-rolled bare-preimage POST would (the fix/tui-circuit-call-proof bug):
-  // the versioning happens inside ledger.prove, not in the provider.
+  // createProofProvider picks per resolveProverConfig(network). Server mode
+  // proves through ledger's transaction.prove(), which runs the preimage through
+  // createProvingPayload/createCheckPayload — it versions the payload and
+  // attaches the circuit's wrapped-IR from zkConfigProvider. A loopback proof
+  // server uses the SDK HTTP client. A remote one posts those same payloads
+  // only after its local attestation session is open. The versioning happens
+  // inside ledger.prove, which is what keeps a circuit call off the unversioned
+  // "expected proof-preimage-versioned" failure (the fix/tui-circuit-call-proof bug).
   const proofProvider = createProofProvider(
     resolveProverConfig(network),
     zkConfigProvider.asKeyMaterialProvider(),
