@@ -128,7 +128,10 @@ async function collectCnightUtxos(session: CardanoSession, action: string): Prom
  */
 export async function findRegistrations(session: CardanoSession): Promise<RegistrationRecord[]> {
   const validatorAddress = await dustValidatorAddress(session.config);
-  const candidates = await session.lucid.utxosAtWithUnit(validatorAddress, dustAuthUnit);
+  const candidates = await session.lucid.utxosAtWithUnit(
+    validatorAddress,
+    dustAuthUnit(session.config),
+  );
   const found: RegistrationRecord[] = [];
   for (const utxo of candidates) {
     if (!utxo.datum) continue;
@@ -262,14 +265,15 @@ export async function registerForDust(
     buildDustMappingDatum(session.addresses.stakeKeyHash, dustHex),
   );
 
+  const authUnit = dustAuthUnit(session.config);
   const builder = session.lucid.newTx();
   builder.collectFrom(cnightUtxos);
-  builder.mintAssets({ [dustAuthUnit]: 1n }, encodeMintRedeemer('Create'));
-  builder.attach.MintingPolicy(cnightGeneratesDustScript);
+  builder.mintAssets({ [authUnit]: 1n }, encodeMintRedeemer('Create'));
+  builder.attach.MintingPolicy(cnightGeneratesDustScript(session.config));
   builder.pay.ToContract(
     validatorAddress,
     { kind: 'inline', value: datum },
-    { lovelace: LOVELACE_FOR_REGISTRATION, [dustAuthUnit]: 1n },
+    { lovelace: LOVELACE_FOR_REGISTRATION, [authUnit]: 1n },
   );
   await addSigners(builder, session);
 
@@ -314,17 +318,18 @@ export async function deregisterFromDust(
   const cnightUtxos = await collectCnightUtxos(session, 'deregister');
 
   onStage?.('building');
+  const script = cnightGeneratesDustScript(session.config);
   const builder = session.lucid.newTx();
   builder.collectFrom(cnightUtxos);
   // One NFT per registration UTXO, so the burn has to match the count or the
   // transaction does not balance.
   builder.mintAssets(
-    { [dustAuthUnit]: -BigInt(registrations.length) },
+    { [dustAuthUnit(session.config)]: -BigInt(registrations.length) },
     encodeMintRedeemer('Burn'),
   );
-  builder.attach.MintingPolicy(cnightGeneratesDustScript);
+  builder.attach.MintingPolicy(script);
   builder.collectFrom(registrations.map((r) => r.utxo), unitRedeemer());
-  builder.attach.SpendingValidator(cnightGeneratesDustScript);
+  builder.attach.SpendingValidator(script);
   await addSigners(builder, session);
 
   const completed = await completeWithProviderEval(builder);
@@ -364,11 +369,11 @@ export async function updateDustAddress(
   const builder = session.lucid.newTx();
   builder.collectFrom(cnightUtxos);
   builder.collectFrom([registration.utxo], unitRedeemer());
-  builder.attach.SpendingValidator(cnightGeneratesDustScript);
+  builder.attach.SpendingValidator(cnightGeneratesDustScript(session.config));
   builder.pay.ToContract(
     validatorAddress,
     { kind: 'inline', value: datum },
-    { lovelace: LOVELACE_FOR_REGISTRATION, [dustAuthUnit]: 1n },
+    { lovelace: LOVELACE_FOR_REGISTRATION, [dustAuthUnit(session.config)]: 1n },
   );
   // Deliberately NO withdrawal. The spend validator authorises through
   // `check_auth(c_wallet, extra_signatories, withdrawals)`, which is an
