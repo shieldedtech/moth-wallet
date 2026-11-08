@@ -130,7 +130,7 @@ export async function readCardanoDustStatus(
     registrationCount: registrations.length,
     finality,
     cnightUnit: cnightUnit(session.config),
-    dustAuthPolicyId,
+    dustAuthPolicyId: dustAuthPolicyId(session.config),
     mappingValidatorAddress,
   };
 }

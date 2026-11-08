@@ -1,17 +1,16 @@
 /**
- * Compiled \`cnight_generates_dust\` validator — the deployment the Midnight
- * bridge reads, lifted verbatim from \`/Users/bob/code/shielded/shielded-node/scripts/cnight-generates-dust/mapping_validator.plutus\`.
+ * Compiled `cnight_generates_dust` validator, testnet deployment — the
+ * one the Midnight bridge reads, lifted verbatim from `midnight-reserve-contracts@6310b16c/deployed-scripts/preprod/plutus.json`.
  *
- * It takes no compile-time parameters, so its hash is fixed and the address it
- * guards is a pure function of the network id — there is nothing to apply and
- * nothing to configure.
+ * The cNIGHT policy is compiled in, so each deployment has its own bytes and
+ * hash; blueprint.ts picks one by Cardano network. Nothing is applied at runtime.
  *
  * One script plays three roles in the registration flow, which is why the same
  * bytes get attached as a minting policy, a spending validator and a
  * withdrawal validator in different transactions.
  *
- * There is a SECOND compilation of this contract in the ecosystem — the dApp's
- * \`contracts-new-aiken/plutus.json\`, hash 5027bb76… — which is newer, builds
+ * There is a SECOND testnet compilation of this contract in the ecosystem — the dApp's
+ * `contracts-new-aiken/plutus.json`, hash 5027bb76… — which is newer, builds
  * fine, and is not what the bridge watches. Syncing from it produced
  * registrations that confirmed on Cardano and generated nothing, silently.
  * scripts/sync-cnight-blueprint.mjs pins the deployed hash for that reason.
