@@ -2,7 +2,7 @@ export const WALLET_ID = 'moth';
 export const WALLET_RDNS = 'io.shielded.moth';
 export const WALLET_NAME = 'Moth Wallet';
 /** Version of the @midnight-ntwrk/dapp-connector-api standard implemented. */
-export const API_VERSION = '4.0.1';
+export const API_VERSION = '4.1.0';
 
 /** The Moth mark, inlined so the page never fetches from the extension.
  *
@@ -42,7 +42,7 @@ export const IMPLEMENTED_METHODS = [
 export const NOT_IMPLEMENTED_METHODS = [] as const;
 
 /** Non-standard wallet extension methods — NOT in @midnight-ntwrk/dapp-connector-api
- *  v4.0.1. Exposed on the injected API so DApps can call them (via a TS cast),
+ *  v4.1.0. Exposed on the injected API so DApps can call them (via a TS cast),
  *  and proposed upstream separately. See specs/003-derive-app-secret. */
 export const EXTENSION_METHODS = [
   'deriveAppSecret',

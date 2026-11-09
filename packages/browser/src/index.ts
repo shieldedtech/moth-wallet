@@ -43,7 +43,7 @@ export { WalletManager } from '@shieldedtech/moth-wallet/wallet/manager';
 export { deriveShieldedPublicKeys } from '@shieldedtech/moth-wallet/wallet/address';
 export { signMessage, signedMessageBytes } from '@shieldedtech/moth-wallet/wallet/sign-message';
 export { deriveAppSecret } from '@shieldedtech/moth-wallet/wallet/app-secret';
-export type { SignEncoding, SignedMessage } from '@shieldedtech/moth-wallet/wallet/sign-message';
+export type { SignEncoding, SignedMessage, SignatureScheme } from '@shieldedtech/moth-wallet/wallet/sign-message';
 export { IndexerClient } from '@shieldedtech/moth-wallet/network/indexer-client';
 export { ProofClient } from '@shieldedtech/moth-wallet/proof/client';
 export {

@@ -58,6 +58,14 @@ describe('signMessage', () => {
     expect(ledgerV8.verifySignature(verifyingKey, payload, signature)).toBe(true);
   });
 
+  it('names its scheme and uses the byte formats connector-api 4.1.0 specifies for it', async () => {
+    const { scheme, signature, verifyingKey } = signMessage(await seedHex(), 'devnet', 'hello world', 'text');
+    expect(scheme).toBe('schnorr_bip340');
+    // r‖s, each scalar 32 bytes, and a BIP-340 x-only key.
+    expect(signature).toMatch(/^[0-9a-f]{128}$/);
+    expect(verifyingKey).toMatch(/^[0-9a-f]{64}$/);
+  });
+
   it('derives a network-independent verifying key', async () => {
     const sh = await seedHex();
     expect(signMessage(sh, 'devnet', 'x', 'text').verifyingKey).toBe(

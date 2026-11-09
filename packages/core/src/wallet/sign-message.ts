@@ -14,16 +14,26 @@ import { Roles, deriveRawKeys } from './address.js';
 
 export type SignEncoding = 'hex' | 'base64' | 'text';
 
+/** The dApp connector's name for a signature scheme (connector-api 4.1.0 `Signature.scheme`). */
+export type SignatureScheme = 'schnorr_bip340' | 'ecdsa_secp256k1_sha256';
+
 export interface SignedMessage {
   /** The original data string, echoed back so the caller can correlate. */
   data: string;
-  /** Schnorr signature as the ledger's hex encoding. connector-api 4.0.1 leaves
-   *  the wire format unspecified; ledger-v9 tags its signatures with the scheme,
-   *  and only the hex value travels here because the scheme is always schnorr. */
+  /** Always set, though connector-api 4.1.0 reads an absent scheme as schnorr. */
+  scheme: SignatureScheme;
+  /** The ledger's hex value: r‖s, 64 bytes, as connector-api 4.1.0 specifies.
+   *  Untagged, so a dApp still on ledger-v8 can verify it as it stands. */
   signature: string;
-  /** Schnorr verifying (public) key in the ledger's hex encoding. */
+  /** Hex verifying key: 32-byte x-only for schnorr, 33-byte compressed for ECDSA. */
   verifyingKey: string;
 }
+
+/** The connector's scheme for each ledger signature kind. */
+const SCHEMES: Record<'schnorr' | 'ecdsa', SignatureScheme> = {
+  schnorr: 'schnorr_bip340',
+  ecdsa: 'ecdsa_secp256k1_sha256',
+};
 
 const MESSAGE_PREFIX = 'midnight_signed_message';
 
@@ -70,9 +80,12 @@ export function signMessage(
   const payload = signedMessageBytes(decodeData(data, encoding));
   const keys = deriveRawKeys(seedHex);
   const keystore = createKeystore({ kind: 'schnorr', secret: keys[Roles.NightExternal] }, networkId);
+  // The scheme is read off the ledger's tag, so it names what actually signed.
+  const signature = keystore.signData(payload);
   return {
     data,
-    signature: keystore.signData(payload).value,
+    scheme: SCHEMES[signature.tag],
+    signature: signature.value,
     verifyingKey: keystore.getPublicKey().value,
   };
 }

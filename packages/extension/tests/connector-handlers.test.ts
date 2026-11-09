@@ -335,10 +335,10 @@ describe('connector dispatch', () => {
     await expect(dispatch(ORIGIN, 'getTxHistory', [0, 10])).rejects.toMatchObject({ code: 'PermissionRejected' });
   });
 
-  it('signs data after approval', async () => {
+  it('signs data after approval, naming the scheme', async () => {
     await connect();
     requestApproval.mockResolvedValue(true);
-    const signed = { data: 'hi', signature: 'ab', verifyingKey: 'cd' };
+    const signed = { data: 'hi', scheme: 'schnorr_bip340', signature: 'ab', verifyingKey: 'cd' };
     signData.mockResolvedValue(signed);
     const res = await dispatch(ORIGIN, 'signData', ['hi', { encoding: 'text', keyType: 'unshielded' }]);
     expect(res).toEqual(signed);

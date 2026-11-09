@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { Effect } from 'effect';
 import { serializeHostError, deserializeHostError, jsonSafeError } from '../lib/offscreen/worker-rpc';
 import { WalletError } from '@midnightntwrk/wallet-sdk-shielded/v1';
 import { HOST_METHODS, FAST_LANE_METHODS, laneFor } from '../lib/offscreen/host-dispatch';
@@ -209,5 +210,55 @@ describe('jsonSafeError', () => {
   it('passes a non-Error throwable through', () => {
     expect(jsonSafeError('a string')).toBe('a string');
     expect(jsonSafeError(7n)).toBe('7');
+  });
+});
+
+// The SDK's promise API rejects with Effect's FiberFailure, whose only own
+// field is its name: the tagged error, with `_tag`, `tokenType` and `amount`,
+// sits behind a symbol that no hop carries.
+describe('FiberFailure unwrapping', () => {
+  const shortfall = () =>
+    new WalletError.InsufficientFundsError({ message: 'Insufficient funds', tokenType: 'night', amount: 3n });
+
+  async function rejectionOf(effect: Effect.Effect<unknown, unknown>): Promise<Error> {
+    return Effect.runPromise(effect).then(
+      () => {
+        throw new Error('expected a rejection');
+      },
+      (err: Error) => err,
+    );
+  }
+
+  it('hands the worker codec the tagged failure, not the wrapper', async () => {
+    const wrapper = await rejectionOf(Effect.fail(shortfall()));
+    expect(wrapper.name).toBe('(FiberFailure) Wallet.InsufficientFunds');
+    expect(Object.keys(wrapper)).toEqual(['name']);
+
+    const restored = deserializeHostError(structuredClone(serializeHostError(wrapper))) as Error &
+      Record<string, unknown>;
+    expect(restored.name).toBe('Wallet.InsufficientFunds');
+    expect(restored.message).toBe('Insufficient funds');
+    expect(restored._tag).toBe('Wallet.InsufficientFunds');
+    expect(restored.tokenType).toBe('night');
+    expect(restored.amount).toBe(3n);
+  });
+
+  it('unwraps on the inline dev path too, which goes straight to jsonSafeError', async () => {
+    const safe = jsonSafeError(await rejectionOf(Effect.fail(shortfall()))) as Error & Record<string, unknown>;
+    expect(safe._tag).toBe('Wallet.InsufficientFunds');
+    expect(safe.amount).toBe('3');
+  });
+
+  it('finds the failure when a finalizer also failed', async () => {
+    const wrapper = await rejectionOf(Effect.fail(shortfall()).pipe(Effect.ensuring(Effect.die(new Error('cleanup')))));
+    const restored = deserializeHostError(serializeHostError(wrapper)) as Error & Record<string, unknown>;
+    expect(restored._tag).toBe('Wallet.InsufficientFunds');
+  });
+
+  it('leaves a defect wrapped, since it has no typed failure to hand over', async () => {
+    const wrapper = await rejectionOf(Effect.die(new Error('boom')));
+    const restored = deserializeHostError(serializeHostError(wrapper)) as Error;
+    expect(restored.name).toBe(wrapper.name);
+    expect(restored.message).toBe('boom');
   });
 });
