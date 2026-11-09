@@ -41,8 +41,8 @@ build.
   artifact's compact-runtime version picks its ledger. One compiled by compactc 0.31 (runtime 0.16, as the
   bundled moth-ft and receive-unshielded are) is a ledger-8 contract: it deploys and takes maintenance updates
   before the fork, and stays callable after it. One compiled by compactc 0.36.0 (runtime 0.21) is a ledger-9
-  contract, which runs from the fork on and needs a proof server (9.0.0 or later), since its circuits are ZKIR
-  v3 and the in-process prover reads ZKIR v2. Artifacts compiled for any other runtime are refused.
+  contract, which runs from the fork on; the proof server (9.0.0 or later) and the in-process prover both
+  prove its ZKIR v3 circuits. Artifacts compiled for any other runtime are refused.
 - A contract project that has its own midnight-js runs the whole operation on that copy, so it must be on
   midnight-js 5 and have the node-zk-config, indexer, level private state and http-client proof provider
   packages. A project still on midnight-js 4 is refused with a message saying so.
