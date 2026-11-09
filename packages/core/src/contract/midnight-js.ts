@@ -197,13 +197,6 @@ export async function openContract(options: OpenContractOptions): Promise<Contra
   const zkConfigProvider = new midnightJs.NodeZkConfigProvider(managedDir, {verify: 'require-if-present'});
   const era = contractEraOf(await zkConfigProvider.getArtifactRuntimeVersion());
   const prover = resolveProverConfig(network);
-  if (era === 'v9' && prover.type === 'wasm') {
-    throw new WalletError(
-      'INVALID_INPUT',
-      'This contract is compiled for ledger 9 (compactc 0.36), whose circuits are ZKIR v3, and the in-process ' +
-        'prover reads ZKIR v2 only. Prove it with a proof server (9.0.0 or later).',
-    );
-  }
 
   const contractName = basename(managedDir);
   const contractJs = join(managedDir, 'contract', 'index.js');
@@ -235,6 +228,8 @@ export async function openContract(options: OpenContractOptions): Promise<Contra
     proofProvider: createProofProvider(prover, zkConfigProvider, {
       httpClientProofProvider: midnightJs.httpClientProofProvider,
       createProofProviderFromProvingProviders: midnightJs.types.createProofProviderFromProvingProviders,
+      ZKConfigRegistry: midnightJs.types.ZKConfigRegistry,
+      parseContractKeyLocation: midnightJs.types.parseContractKeyLocation,
     }),
     walletProvider,
     midnightProvider,

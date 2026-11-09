@@ -73,6 +73,7 @@ export {
   setWasmProvingProviderFactory,
   type WasmProvingProviderFactory,
   type WasmKeyMaterialProvider,
+  type ZkirVersion,
 } from '@shieldedtech/moth-wallet/proof/provider';
 export {
   startWalletSync,

@@ -1910,6 +1910,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@midnightntwrk/zkir-v3@npm:3.2.0":
+  version: 3.2.0
+  resolution: "@midnightntwrk/zkir-v3@npm:3.2.0"
+  checksum: 10c0/24769db20f2f384bd9164bef4efd1cd486d750fa1eeefb60584795fc9dcbd52a14b5444972cf4643d466f7003b6d46c6f4a999228aec274c6d5837285060326d
+  languageName: node
+  linkType: hard
+
 "@msgpackr-extract/msgpackr-extract-darwin-arm64@npm:3.0.4":
   version: 3.0.4
   resolution: "@msgpackr-extract/msgpackr-extract-darwin-arm64@npm:3.0.4"
@@ -3533,6 +3540,7 @@ __metadata:
     "@midnightntwrk/ledger-v8": "npm:8.1.3"
     "@midnightntwrk/wallet-sdk": "npm:2.0.0"
     "@midnightntwrk/zkir-v2": "npm:2.2.0"
+    "@midnightntwrk/zkir-v3": "npm:3.2.0"
     "@noble/ciphers": "npm:^2.2.0"
     "@noble/hashes": "npm:^2.2.0"
     "@scure/bip39": "npm:^2.2.0"

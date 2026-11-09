@@ -7,6 +7,7 @@ import {
   createWalletProvingService,
   setWasmProvingProviderFactory,
   type WasmKeyMaterialProvider,
+  type ZkirVersion,
 } from '../../../src/proof/provider.js';
 
 // Local (WASM) proving is single-threaded per provider, while the ledger asks
@@ -23,30 +24,31 @@ afterEach(() => setWasmProvingProviderFactory(null));
 
 describe('setWasmProvingProviderFactory', () => {
   it('routes WASM createProvingProvider through the installed factory, with the key source', async () => {
-    const seen: WasmKeyMaterialProvider[] = [];
+    const seen: Array<{km: WasmKeyMaterialProvider; zkir: ZkirVersion}> = [];
     const proof = new Uint8Array([7]);
-    setWasmProvingProviderFactory(km => {
-      seen.push(km);
+    setWasmProvingProviderFactory((km, zkir) => {
+      seen.push({km, zkir});
       return {check: async () => [], prove: async () => proof};
     });
 
     const provider = createProvingProvider({type: 'wasm'}, keyMaterial);
+    await expect(provider.prove(new Uint8Array(), 'some/contract/circuit')).resolves.toBe(proof);
 
-    expect(seen).toHaveLength(1);
-    await expect(provider.prove(new Uint8Array(), 'midnight/zswap/spend')).resolves.toBe(proof);
+    // Built on the first proof, for the ZKIR version the circuit's IR names.
+    expect(seen.map(({zkir}) => zkir)).toEqual(['v2']);
     // The factory sees the combined source: SDK-maintained wallet circuits
     // first, then the caller's contract keys.
-    await expect(seen[0]!.lookupKey('some/contract/circuit')).resolves.toEqual({
+    await expect(seen[0]!.km.lookupKey('some/contract/circuit')).resolves.toEqual({
       ir: new Uint8Array([1]),
       proverKey: new Uint8Array([2]),
       verifierKey: new Uint8Array([3]),
     });
   });
 
-  it('routes the wallet facade proving service through the factory in a browser-like host', () => {
-    let calls = 0;
-    setWasmProvingProviderFactory(() => {
-      calls += 1;
+  it('routes the wallet facade proving service through the factory in a browser-like host, on zkir-v2', () => {
+    const built: ZkirVersion[] = [];
+    setWasmProvingProviderFactory((_km, zkir) => {
+      built.push(zkir);
       return {check: async () => [], prove: async () => new Uint8Array()};
     });
     const nodeProcess = globalThis.process;
@@ -59,7 +61,8 @@ describe('setWasmProvingProviderFactory', () => {
       globalThis.process = nodeProcess;
     }
 
-    expect(calls).toBe(1);
+    // The SDK publishes the wallet's own circuits as ZKIR v2 for both ledger versions.
+    expect(built).toEqual(['v2']);
   });
 
   it('leaves the proof-server path untouched', () => {

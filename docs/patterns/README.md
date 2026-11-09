@@ -97,7 +97,14 @@ why the seed reaches the offscreen at all; keep it out of everything downstream.
 
 **Pattern.** Support both local WASM proving and a remote proof server behind one
 factory, chosen per network config.
-- `createProvingProvider` / `createProofProvider` — `packages/core/src/proof/provider.ts:61`–`72`.
+- `createProvingProvider` / `createProofProvider` — `packages/core/src/proof/provider.ts`.
+
+**The circuit picks the WASM prover, not the transaction.** compactc 0.31 and the
+SDK's own circuits are ZKIR v2, which `@midnightntwrk/zkir-v2` proves; compactc
+0.36 emits ZKIR v3, which only `@midnightntwrk/zkir-v3` reads. The local prover
+reads the header of each circuit's IR (`zkirVersionOf`) and hands it to the
+matching package. A ledger-8 contract called after the fork puts ZKIR v2 circuits
+in a ledger-9 transaction, so the ledger version cannot decide.
 
 **"Local" WASM proving is not offline.** WASM proving removes the dependency on a
 *proof server* — not the dependency on the network. The default key-material

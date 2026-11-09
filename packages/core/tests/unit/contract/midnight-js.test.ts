@@ -293,13 +293,24 @@ describe('openContract', () => {
     }
   });
 
-  it('refuses a ledger-9 contract with the in-process prover, which cannot read ZKIR v3', async () => {
+  // The in-process prover reads ZKIR v3 as well (see tests/unit/proof/zkir-dispatch.test.ts).
+  it('opens a ledger-9 contract with the in-process prover, with providers for both eras', async () => {
     const managed = join(home, 'project', 'managed', 'ledger9');
     await mkdir(join(managed, 'compiler'), {recursive: true});
+    await mkdir(join(managed, 'contract'), {recursive: true});
     await writeFile(join(managed, 'compiler', 'contract-info.json'), JSON.stringify({'runtime-version': '0.21.0'}));
+    await writeFile(join(managed, 'contract', 'index.js'), 'export class Contract {}\n');
 
-    await expect(
-      openContract({...common, artifactPath: managed, projectDir: join(home, 'project'), network: network({type: 'wasm'})}),
-    ).rejects.toThrow(/ZKIR v3, and the in-process prover reads ZKIR v2 only/);
+    const session = await openContract({
+      ...common,
+      artifactPath: managed,
+      projectDir: join(home, 'project'),
+      network: network({type: 'wasm'}),
+    });
+
+    expect(session.era).toBe('v9');
+    for (const era of ERAS) {
+      expect(() => assertProvidersSupportEra(era, session.providers)).not.toThrow();
+    }
   });
 });
