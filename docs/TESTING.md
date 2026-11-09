@@ -560,9 +560,11 @@ If the stack's indexer is not on 8088, point the CLI at it with
 inherit the environment, and `undeployed` otherwise defaults to 8088.
 
 `daemon-call-unshielded.test.ts` needs no `COUNTER_ARTIFACT_PATH`. It uses the
-committed fixture at `packages/core/contracts/receive-unshielded/managed`, which
-takes no witnesses and no constructor arguments, so it is the one contract test
-that runs unattended. Keep it that way: it is the regression test for unshielded
+committed fixture at `packages/core/contracts/receive-unshielded`, which takes no
+witnesses and no constructor arguments, so it is the one contract test that runs
+unattended. The fixture has a build per ledger era, `ledger8/managed` (compactc
+0.31.1) and `ledger9/managed` (compactc 0.36.0), and the test deploys the one for
+the era the stack is on. Keep it that way: it is the regression test for unshielded
 input signing (node error 192), and only a circuit calling `receiveUnshielded`
 produces the unshielded inputs that expose the bug.
 

@@ -2,17 +2,15 @@
 //
 // Lets the wallet auto-deploy a token contract and mint ledger tokens (shielded
 // or unshielded) to a target recipient without the user supplying a compiled
-// artifact. The compiled artifact ships in this package at
-// `contracts/moth-ft/managed` and is resolved relative to this module so it
-// works from both `src` (tsx/vitest) and `dist` (published) layouts.
+// artifact. The contract ships in this package in two builds, one per ledger
+// era (see bundled.ts): a deploy takes the build for the network's era, and a
+// mint takes the build the contract's verifier keys come from.
 //
 // The contract exposes two circuits (see contracts/moth-ft/moth-ft.compact):
 //   mintShielded(recipient: { bytes }, value: bigint)   -> ShieldedCoinInfo
 //   mintUnshielded(recipient: { bytes }, value: bigint) -> token color bytes
 // It has no witnesses, no constructor args, and initial private state `{}`.
 
-import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
 import {
   MidnightBech32m,
   ShieldedAddress,
@@ -21,21 +19,16 @@ import {
 import { loadContractArtifact } from './artifact-loader.js';
 import { deployContract } from './deploy.js';
 import { callCircuit } from './call.js';
+import {
+  BUNDLED_CONTRACT_PROJECT_DIR,
+  bundledContractForAddress,
+  bundledContractForDeploy,
+} from './bundled.js';
 import { InvalidInputError } from '../types/errors.js';
 import type { DerivedKeys, WalletKeys } from '../types/wallet.js';
 import type { NetworkConfig } from '../types/network.js';
 import type { TransactionResult } from '../types/transaction.js';
 import type { SyncedWallet } from '../sync/wallet-sync.js';
-
-const HERE = dirname(fileURLToPath(import.meta.url));
-
-/** Directory of the compiled moth-ft artifact bundled with this package. */
-export const FUNGIBLE_TOKEN_ARTIFACT_DIR = resolve(HERE, '../../contracts/moth-ft/managed');
-
-// The bundled artifact runs on this package's own midnight-js and runtimes, which
-// its module's compact-runtime import resolves to as well (see midnight-js.ts).
-// The package root is two levels up from src/contract or dist/contract.
-const FUNGIBLE_TOKEN_PROJECT_DIR = resolve(HERE, '../..');
 
 export interface DeployFungibleTokenOptions {
   walletKeys: WalletKeys;
@@ -46,17 +39,19 @@ export interface DeployFungibleTokenOptions {
 }
 
 /**
- * Deploy the bundled fungible-token issuer contract. The returned
- * `TransactionResult.contractAddress` is the address to mint against.
+ * Deploy the bundled fungible-token issuer contract, built for the ledger era
+ * the network is on. The returned `TransactionResult.contractAddress` is the
+ * address to mint against.
  */
 export async function deployFungibleToken(options: DeployFungibleTokenOptions): Promise<TransactionResult> {
-  const artifact = await loadContractArtifact(FUNGIBLE_TOKEN_ARTIFACT_DIR);
+  const build = await bundledContractForDeploy('moth-ft', options.network);
+  const artifact = await loadContractArtifact(build.artifactPath);
   return deployContract({
     artifact,
     walletKeys: options.walletKeys,
     network: options.network,
     syncedWallet: options.syncedWallet,
-    projectDir: FUNGIBLE_TOKEN_PROJECT_DIR,
+    projectDir: BUNDLED_CONTRACT_PROJECT_DIR,
     timeoutMs: options.timeoutMs,
     onProgress: options.onProgress,
   });
@@ -89,6 +84,7 @@ export async function mintFungibleToken(options: MintFungibleTokenOptions): Prom
   const recipient = shielded
     ? decodeShieldedRecipient(recipientAddress, network.id)
     : decodeUnshieldedRecipient(recipientAddress, network.id);
+  const build = await bundledContractForAddress('moth-ft', contractAddress, network);
 
   return callCircuit({
     contractAddress,
@@ -97,9 +93,9 @@ export async function mintFungibleToken(options: MintFungibleTokenOptions): Prom
     keys: options.keys,
     walletKeys: options.walletKeys,
     network,
-    artifactPath: FUNGIBLE_TOKEN_ARTIFACT_DIR,
+    artifactPath: build.artifactPath,
     syncedWallet: options.syncedWallet,
-    projectDir: FUNGIBLE_TOKEN_PROJECT_DIR,
+    projectDir: BUNDLED_CONTRACT_PROJECT_DIR,
     timeoutMs: options.timeoutMs,
   });
 }

@@ -9,17 +9,21 @@ import {fileURLToPath} from 'node:url';
 import {randomBytes} from 'node:crypto';
 import {createKeystore, type UnshieldedKeystore} from '@midnightntwrk/wallet-sdk/unshielded';
 import {ZswapSecretKeys} from '@midnightntwrk/ledger-v8';
+import * as ledgerV8 from '@midnightntwrk/wallet-sdk/ledger/v8';
+import * as ledgerV9 from '@midnightntwrk/wallet-sdk/ledger/v9';
 import type {WalletFacade} from '@midnightntwrk/wallet-sdk/facade';
 import {
   assertProvidersSupportEra,
   createMidnightProviderFromHandlers,
   createWalletProviderFromHandlers,
   LedgerTransaction,
+  SerializedLedgerParameters,
+  SerializedZswapChainState,
   type ZKConfigProvider,
 } from '@midnight-ntwrk/midnight-js/types';
 import {contractEraOf, loadMidnightJs, openContract} from '../../../src/contract/midnight-js.js';
 import {makeContractWalletProviders} from '../../../src/contract/wallet-provider.js';
-import {FUNGIBLE_TOKEN_ARTIFACT_DIR} from '../../../src/contract/fungible-token.js';
+import {bundledContractBuild} from '../../../src/contract/bundled.js';
 import {createProofProvider, setWasmProvingProviderFactory} from '../../../src/proof/provider.js';
 import type {NetworkConfig} from '../../../src/types/network.js';
 import {WalletError} from '../../../src/types/errors.js';
@@ -27,6 +31,8 @@ import {finalizedTransaction, unboundTransaction, unprovenTransaction} from '../
 
 const CORE_PACKAGE_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const ERAS = ['v8', 'v9'] as const;
+const MOTH_FT_LEDGER8 = bundledContractBuild('moth-ft', 'v8').artifactPath;
+const MOTH_FT_LEDGER9 = bundledContractBuild('moth-ft', 'v9').artifactPath;
 
 const network = (prover: NetworkConfig['prover']): NetworkConfig => ({
   id: 'undeployed',
@@ -243,7 +249,7 @@ describe('openContract', () => {
     it(`hands midnight-js the bundled moth-ft as a ledger-8 instance, with providers for both eras (${prover.type} prover)`, async () => {
       const session = await openContract({
         ...common,
-        artifactPath: FUNGIBLE_TOKEN_ARTIFACT_DIR,
+        artifactPath: MOTH_FT_LEDGER8,
         projectDir: CORE_PACKAGE_DIR,
         network: network(prover),
       });
@@ -271,7 +277,7 @@ describe('openContract', () => {
     try {
       const session = await openContract({
         ...common,
-        artifactPath: FUNGIBLE_TOKEN_ARTIFACT_DIR,
+        artifactPath: MOTH_FT_LEDGER8,
         projectDir: CORE_PACKAGE_DIR,
         network: network({type: 'wasm'}),
       });
@@ -292,6 +298,96 @@ describe('openContract', () => {
       setWasmProvingProviderFactory(null);
     }
   });
+
+  it('hands midnight-js the ledger-9 build of moth-ft as a CompiledContract, with providers for both eras', async () => {
+    const session = await openContract({
+      ...common,
+      artifactPath: MOTH_FT_LEDGER9,
+      projectDir: CORE_PACKAGE_DIR,
+      network: network({type: 'server', url: 'http://127.0.0.1:9'}),
+    });
+
+    expect(session.era).toBe('v9');
+    expect(session.midnightJs.projectRoot).toBeUndefined();
+    expect((session.midnightJs.CompiledContract as any).getCompiledAssetsPath(session.compiledContract)).toBe(MOTH_FT_LEDGER9);
+    for (const era of ERAS) {
+      expect(() => assertProvidersSupportEra(era, session.providers)).not.toThrow();
+    }
+  });
+
+  // The ledger-9 build's compact-runtime 0.21 and midnight-js must share the one pinned
+  // onchain-runtime-v4. The deploy has no circuit to prove, so the proof server is never asked.
+  it('builds and proves a ledger-9 deploy of the bundled moth-ft', async () => {
+    const session = await openContract({
+      ...common,
+      artifactPath: MOTH_FT_LEDGER9,
+      projectDir: CORE_PACKAGE_DIR,
+      network: network({type: 'server', url: 'http://127.0.0.1:9'}),
+    });
+    const {providers} = session;
+    const unsubmitted = await session.midnightJs.contracts.createUnprovenDeployTxFromVerifierKeys(
+      providers.zkConfigProvider,
+      common.coinPublicKey,
+      {compiledContract: session.compiledContract},
+      common.encryptionPublicKey,
+      providers.config,
+    );
+    expect(unsubmitted.private.unprovenTx.era).toBe('v9');
+    expect(unsubmitted.public.initialContractState.era).toBe('v9');
+
+    const proven = await providers.proofProvider.proveTx(unsubmitted.private.unprovenTx);
+    expect(proven.era).toBe('v9');
+    expect(proven.stage).toBe('Unbound');
+  });
+
+  // Running a circuit is where the contract module and midnight-js trade the most runtime
+  // objects. Proving the call needs the circuit's keys, so this stops at the unproven call.
+  for (const era of ERAS) {
+    it(`runs mintUnshielded of the ${era} build of moth-ft against the state its deploy wrote`, async () => {
+      const session = await openContract({
+        ...common,
+        artifactPath: era === 'v8' ? MOTH_FT_LEDGER8 : MOTH_FT_LEDGER9,
+        projectDir: CORE_PACKAGE_DIR,
+        network: network({type: 'server', url: 'http://127.0.0.1:9'}),
+      });
+      const {contracts} = session.midnightJs;
+      const {providers} = session;
+      const deploy = await (era === 'v8' ? contracts.createLedger8UnprovenDeployTxFromVerifierKeys : contracts.createUnprovenDeployTxFromVerifierKeys)(
+        providers.zkConfigProvider,
+        common.coinPublicKey,
+        {compiledContract: session.compiledContract},
+        common.encryptionPublicKey,
+        providers.config,
+      );
+      const ledger = era === 'v8' ? ledgerV8 : ledgerV9;
+      const call = {
+        compiledContract: session.compiledContract,
+        contractAddress: deploy.public.contractAddress,
+        circuitId: 'mintUnshielded',
+        args: [{bytes: new Uint8Array(32).fill(7)}, 1_000n],
+        coinPublicKey: common.coinPublicKey,
+        initialContractState: deploy.public.initialContractState,
+        ledgerParameters: SerializedLedgerParameters.fromBytes(era, ledger.LedgerParameters.initialParameters().serialize()),
+        config: providers.config,
+      };
+      const unsubmitted: any =
+        era === 'v8'
+          ? await contracts.createLedger8UnprovenCallTxFromInitialStates(
+              providers.zkConfigProvider,
+              {...call, head: 'v8'} as never,
+              common.encryptionPublicKey,
+            )
+          : await contracts.createUnprovenCallTxFromInitialStates(
+              providers.zkConfigProvider,
+              {...call, initialZswapChainState: SerializedZswapChainState.fromBytes('v9', new ledgerV9.ZswapChainState().serialize())} as never,
+              common.encryptionPublicKey,
+            );
+
+      expect(unsubmitted.private.unprovenTx.era).toBe(era);
+      expect(unsubmitted.private.result).toBeInstanceOf(Uint8Array);
+      expect(unsubmitted.private.result).toHaveLength(32);
+    });
+  }
 
   it('refuses a ledger-9 contract with the in-process prover, which cannot read ZKIR v3', async () => {
     const managed = join(home, 'project', 'managed', 'ledger9');

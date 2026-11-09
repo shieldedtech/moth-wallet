@@ -149,6 +149,14 @@ export async function loadMidnightJs(projectRoot: string): Promise<MidnightJs> {
   );
 }
 
+/** The indexer's public data provider, from the given copy of midnight-js. */
+export function publicDataProviderFor(midnightJs: MidnightJs, network: Pick<NetworkConfig, 'indexerUrl'>) {
+  return midnightJs.indexerPublicDataProvider({
+    queryURL: network.indexerUrl,
+    subscriptionURL: network.indexerUrl.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:') + '/ws',
+  });
+}
+
 /** The ledger era a contract runs on. */
 export type ContractEra = 'v8' | 'v9';
 
@@ -227,10 +235,7 @@ export async function openContract(options: OpenContractOptions): Promise<Contra
       privateStoragePasswordProvider: () => unshieldedAddress,
       accountId: unshieldedAddress,
     }),
-    publicDataProvider: midnightJs.indexerPublicDataProvider({
-      queryURL: network.indexerUrl,
-      subscriptionURL: network.indexerUrl.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:') + '/ws',
-    }),
+    publicDataProvider: publicDataProviderFor(midnightJs, network),
     zkConfigProvider,
     proofProvider: createProofProvider(prover, zkConfigProvider, {
       httpClientProofProvider: midnightJs.httpClientProofProvider,
