@@ -37,22 +37,36 @@ import type {ProverConfig} from '../types/network.js';
 /** The facade's proving service: routes each transaction to the backend for the ledger version that authored it. */
 export type WalletProvingService = VersionedProvingService<AnyVersionUnboundTransaction, AnyVersionUnprovenTransaction>;
 
-/** Adapter from the connector/Midnight.js key interface to ZKConfigProvider. */
+/**
+ * Adapter from the connector's key interface to ZKConfigProvider, for proving at one key location.
+ * The connector serves keys under the location the ledger names, while midnight-js's proof-server
+ * client parses a `contract:<address>/<circuit>?vk=<hash>` location and asks by its bare circuit.
+ */
 class KeyMaterialZkConfigProvider extends ZKConfigProvider<string> {
-  constructor(private readonly source: KeyMaterialProvider) {
+  private readonly circuitId: string | undefined;
+
+  constructor(
+    private readonly source: KeyMaterialProvider,
+    private readonly keyLocation: string,
+  ) {
     super();
+    this.circuitId = parseContractKeyLocation(keyLocation)?.circuitId;
+  }
+
+  private at(circuitId: string): string {
+    return circuitId === this.circuitId ? this.keyLocation : circuitId;
   }
 
   getZKIR(circuitId: string) {
-    return this.source.getZKIR(circuitId) as ReturnType<ZKConfigProvider<string>['getZKIR']>;
+    return this.source.getZKIR(this.at(circuitId)) as ReturnType<ZKConfigProvider<string>['getZKIR']>;
   }
 
   getProverKey(circuitId: string) {
-    return this.source.getProverKey(circuitId) as ReturnType<ZKConfigProvider<string>['getProverKey']>;
+    return this.source.getProverKey(this.at(circuitId)) as ReturnType<ZKConfigProvider<string>['getProverKey']>;
   }
 
   getVerifierKey(circuitId: string) {
-    return this.source.getVerifierKey(circuitId) as ReturnType<ZKConfigProvider<string>['getVerifierKey']>;
+    return this.source.getVerifierKey(this.at(circuitId)) as ReturnType<ZKConfigProvider<string>['getVerifierKey']>;
   }
 }
 
@@ -176,7 +190,21 @@ export function createProvingProvider(
   keyMaterialProvider: KeyMaterialProvider,
 ): ledger.ProvingProvider {
   if (config.type === 'server') {
-    return httpClientProvingProvider(config.url, new KeyMaterialZkConfigProvider(keyMaterialProvider));
+    // A client per key location, since each answers its circuit from that location's keys.
+    const clients = new Map<string, ledger.ProvingProvider>();
+    const clientFor = (keyLocation: string) => {
+      let client = clients.get(keyLocation);
+      if (!client) {
+        client = httpClientProvingProvider(config.url, new KeyMaterialZkConfigProvider(keyMaterialProvider, keyLocation));
+        clients.set(keyLocation, client);
+      }
+      return client;
+    };
+    return {
+      check: (preimage, keyLocation) => clientFor(keyLocation).check(preimage, keyLocation),
+      prove: (preimage, keyLocation, overwriteBindingInput) =>
+        clientFor(keyLocation).prove(preimage, keyLocation, overwriteBindingInput),
+    };
   }
   return zkirDispatchingProvider(wasmKeyMaterialProvider(keysFrom(keyMaterialProvider)));
 }

@@ -21,6 +21,9 @@ ZKIR v2 circuits in a ledger-9 transaction, and those stay on zkir-v2.
   mode. Its proof workers load zkir-v3 only when they are handed a ZKIR v3 circuit. The page no
   longer asks a dApp for the keys of the ledger's own circuits (`midnight/...`), which a
   midnight-js 5 dApp's key provider refuses; the wallet supplies those itself.
+- With a proof server, `createProvingProvider` (and so the dApp connector) proves a midnight-js 5
+  dApp's contract circuits: midnight-js's proof-server client asks for a `contract:` location's
+  keys by its bare circuit id, which is now answered from the keys served for that location.
 - The wallet's own circuits (zswap and dust) are ZKIR v2 for both ledger versions, and stay on
   zkir-v2.
 - `WasmProvingProviderFactory` takes the circuit's ZKIR version as a second argument, and
