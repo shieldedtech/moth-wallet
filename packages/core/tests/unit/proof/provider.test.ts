@@ -1,4 +1,4 @@
-import {describe, it, expect, afterEach} from 'vitest';
+import {describe, it, expect, afterEach, beforeEach} from 'vitest';
 import {ProtocolVersion} from '@midnightntwrk/wallet-sdk';
 import * as ledgerV8 from '@midnightntwrk/wallet-sdk/ledger/v8';
 import * as ledgerV9 from '@midnightntwrk/wallet-sdk/ledger/v9';
@@ -46,9 +46,9 @@ describe('setWasmProvingProviderFactory', () => {
   });
 
   it('routes the wallet facade proving service through the factory in a browser-like host, on zkir-v2', () => {
-    const built: ZkirVersion[] = [];
-    setWasmProvingProviderFactory((_km, zkir) => {
-      built.push(zkir);
+    const built: Array<{km: WasmKeyMaterialProvider; zkir: ZkirVersion}> = [];
+    setWasmProvingProviderFactory((km, zkir) => {
+      built.push({km, zkir});
       return {check: async () => [], prove: async () => new Uint8Array()};
     });
     const nodeProcess = globalThis.process;
@@ -61,8 +61,10 @@ describe('setWasmProvingProviderFactory', () => {
       globalThis.process = nodeProcess;
     }
 
-    // The SDK publishes the wallet's own circuits as ZKIR v2 for both ledger versions.
-    expect(built).toEqual(['v2']);
+    // One prover per ledger version, each over its own key material, and the SDK publishes the
+    // wallet's own circuits as ZKIR v2 for both.
+    expect(built.map(({zkir}) => zkir)).toEqual(['v2', 'v2']);
+    expect(built[0]!.km).not.toBe(built[1]!.km);
   });
 
   it('leaves the proof-server path untouched', () => {
@@ -109,5 +111,60 @@ describe('createWalletProvingService in a browser-like host', () => {
 
     await expect(service.prove(v8Tx(), ProtocolVersion.MinSupportedVersion)).resolves.toBeInstanceOf(ledgerV8.Transaction);
     await expect(service.prove(v9Tx(), forks.v9)).resolves.toBeInstanceOf(ledgerV9.Transaction);
+  });
+
+  // Ledger-v8's circuits are generation 9 and ledger-v9's generation 10, and a node rejects a DUST
+  // spend proved with the other's keys. The key source path names the generation it reads.
+  describe('reads the DUST spend keys of the ledger version it proves for', () => {
+    const fetched: string[] = [];
+    const realFetch = globalThis.fetch;
+    beforeEach(() => {
+      fetched.length = 0;
+      globalThis.fetch = (async (url: URL | string) => {
+        fetched.push(String(url));
+        return new Response(null, {status: 404});
+      }) as typeof fetch;
+      // Each proof the ledger asks for stands in for a DUST spend, whose keys zkir looks up so.
+      setWasmProvingProviderFactory((keys) => {
+        const dustSpend = async () => {
+          await keys.lookupKey('midnight/dust/spend');
+          throw new Error('unreachable: the key source is offline');
+        };
+        return {check: dustSpend, prove: dustSpend};
+      });
+    });
+    afterEach(() => {
+      globalThis.fetch = realFetch;
+    });
+
+    // A shielded output, so the ledger asks the provider for a proof.
+    const seed = new Uint8Array(32).fill(7);
+    const withOutput = {
+      v8: () => {
+        const keys = ledgerV8.ZswapSecretKeys.fromSeed(seed);
+        const coin = ledgerV8.createShieldedCoinInfo(ledgerV8.shieldedToken().raw, 1n);
+        const output = ledgerV8.ZswapOutput.new(coin, 0, keys.coinPublicKey, keys.encryptionPublicKey);
+        return ledgerV8.Transaction.fromParts('preprod', ledgerV8.ZswapOffer.fromOutput(output, coin.type, coin.value));
+      },
+      v9: () => {
+        const keys = ledgerV9.ZswapSecretKeys.fromSeed(seed);
+        const coin = ledgerV9.createShieldedCoinInfo(ledgerV9.shieldedToken().raw, 1n);
+        const output = ledgerV9.ZswapOutput.new(coin, 0, keys.coinPublicKey, keys.encryptionPublicKey);
+        return ledgerV9.Transaction.fromParts('preprod', ledgerV9.ZswapOffer.fromOutput(output, coin.type, coin.value));
+      },
+    };
+    const generationsFetched = () => [...new Set(fetched.map((url) => /\/dust\/(\d+)\/spend\./.exec(url)?.[1] ?? url))];
+
+    it('generation 9 below the fork', async () => {
+      const service = inBrowser(() => createWalletProvingService({type: 'wasm'}, forks));
+      await expect(service.prove(withOutput.v8(), ProtocolVersion.MinSupportedVersion)).rejects.toThrow();
+      expect(generationsFetched()).toEqual(['9']);
+    });
+
+    it('generation 10 from the fork', async () => {
+      const service = inBrowser(() => createWalletProvingService({type: 'wasm'}, forks));
+      await expect(service.prove(withOutput.v9(), forks.v9)).rejects.toThrow();
+      expect(generationsFetched()).toEqual(['10']);
+    });
   });
 });

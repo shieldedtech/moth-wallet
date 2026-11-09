@@ -115,11 +115,20 @@ export function setWasmProvingProviderFactory(factory: WasmProvingProviderFactor
   wasmProvingFactory = factory ?? zkirProvingProvider;
 }
 
-let defaultWasmKeys: WasmKeyMaterialProvider | undefined;
+const sdkKeys: Partial<Record<'v8' | 'v9', WasmKeyMaterialProvider>> = {};
 
-function defaultWasmKeyMaterialProvider(): WasmKeyMaterialProvider {
-  return (defaultWasmKeys ??= WasmProver.makeDefaultKeyMaterialProvider());
+/**
+ * The SDK's key material for one ledger version's own circuits: generation 9 for ledger-v8 and
+ * 10 for ledger-v9. Their zswap circuits are the same bytes, but a node rejects a DUST spend
+ * proved with the other version's keys.
+ */
+function sdkKeyMaterial(version: 'v8' | 'v9'): WasmKeyMaterialProvider {
+  return (sdkKeys[version] ??=
+    version === 'v8' ? WasmProver.makeV8KeyMaterialProvider() : WasmProver.makeV9KeyMaterialProvider());
 }
+
+// Contract and connector proofs read only zswap circuits from it, which both generations share.
+const defaultWasmKeyMaterialProvider = () => sdkKeyMaterial('v9');
 
 type ProvingKeyMaterial = NonNullable<Awaited<ReturnType<WasmKeyMaterialProvider['lookupKey']>>>;
 
@@ -292,17 +301,26 @@ export function createWalletProvingService(config: ProverConfig, forks: Protocol
 
   // Browser bundles do not emit the SDK's proof-worker.js, so prove through the
   // installed factory instead (the extension plugs its proof-worker pool in there),
-  // framed by each ledger version on its own side of the fork. The SDK publishes
-  // its circuits as ZKIR v2 for both ledger versions.
-  const keyMaterial = defaultWasmKeyMaterialProvider();
-  const provider = wasmProvingFactory(keyMaterial, 'v2');
+  // framed by each ledger version on its own side of the fork, with that version's
+  // key material. The SDK publishes its circuits as ZKIR v2 for both versions.
+  const v9Keys = sdkKeyMaterial('v9');
+  const v9Provider = wasmProvingFactory(v9Keys, 'v2');
   const v8Epoch = ProtocolVersion.epochOf(ProtocolVersion.MinSupportedVersion, forks.v9);
   const v9Epoch = ProtocolVersion.epochOf(forks.v9, forks.v9);
   const services = orThrow(
     ProtocolVersion.makeRegistry<VersionProvingServiceEffect>([
       // A chain born on ledger-v9 has no ledger-v8 epoch to register.
       ...(forks.v9 > ProtocolVersion.MinSupportedVersion
-        ? [{range: v8Epoch, value: onlyFrom(fromV8ProvingProvider(provider), isV8Transaction, v8Epoch)}]
+        ? [
+            {
+              range: v8Epoch,
+              value: onlyFrom(
+                fromV8ProvingProvider(wasmProvingFactory(sdkKeyMaterial('v8'), 'v2')),
+                isV8Transaction,
+                v8Epoch,
+              ),
+            },
+          ]
         : []),
       {
         range: v9Epoch,
@@ -310,10 +328,10 @@ export function createWalletProvingService(config: ProverConfig, forks: Protocol
           // Delegated, not spread: zkir's default provider is a wasm-bindgen class
           // whose check/prove live on its prototype.
           fromV9ProvingProvider({
-            check: (preimage, keyLocation) => provider.check(preimage, keyLocation),
+            check: (preimage, keyLocation) => v9Provider.check(preimage, keyLocation),
             prove: (preimage, keyLocation, overwriteBindingInput) =>
-              provider.prove(preimage, keyLocation, overwriteBindingInput),
-            lookupKey: (keyLocation) => keyMaterial.lookupKey(keyLocation),
+              v9Provider.prove(preimage, keyLocation, overwriteBindingInput),
+            lookupKey: (keyLocation) => v9Keys.lookupKey(keyLocation),
           }),
           isV9Transaction,
           v9Epoch,

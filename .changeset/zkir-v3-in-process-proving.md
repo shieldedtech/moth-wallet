@@ -26,6 +26,9 @@ ZKIR v2 circuits in a ledger-9 transaction, and those stay on zkir-v2.
   keys by its bare circuit id, which is now answered from the keys served for that location.
 - The wallet's own circuits (zswap and dust) are ZKIR v2 for both ledger versions, and stay on
   zkir-v2.
+- In the browser, the wallet proves a ledger-v8 transaction with ledger-v8's key material
+  (circuit generation 9) and a ledger-v9 one with ledger-v9's (generation 10). Both used
+  generation 10, so a DUST fee proved locally before the fork would have been rejected.
 - `WasmProvingProviderFactory` takes the circuit's ZKIR version as a second argument, and
   `zkirVersionOf` and `ZkirVersion` are exported. `ProofProviderKit` also carries midnight-js's
   `ZKConfigRegistry` and `parseContractKeyLocation`.
