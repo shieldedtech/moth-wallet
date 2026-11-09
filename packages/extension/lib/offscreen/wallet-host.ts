@@ -100,10 +100,10 @@ if (!import.meta.env.DEV) {
   const pool: Promise<ProofPool> = import('./proof-worker?worker').then(({ default: ProofWorker }) =>
     createProofPool({ spawn: () => new ProofWorker({ name: 'moth-proof-worker' }) }),
   );
-  setWasmProvingProviderFactory((keyMaterial) => ({
-    check: async (preimage, keyLocation) => (await pool).provider(keyMaterial).check(preimage, keyLocation),
+  setWasmProvingProviderFactory((keyMaterial, zkir) => ({
+    check: async (preimage, keyLocation) => (await pool).provider(keyMaterial, zkir).check(preimage, keyLocation),
     prove: async (preimage, keyLocation, overwriteBindingInput) =>
-      (await pool).provider(keyMaterial).prove(preimage, keyLocation, overwriteBindingInput),
+      (await pool).provider(keyMaterial, zkir).prove(preimage, keyLocation, overwriteBindingInput),
   }));
 }
 
