@@ -15,8 +15,8 @@ contract only through the build whose verifier keys it holds, so moth picks one 
   holds: the ledger-8 build for a token deployed before the fork, on either side of it, and the
   ledger-9 build for one deployed after. An address that holds neither build's keys is refused with a
   message saying so.
-- A ledger-9 build runs with a proof server (9.0.0 or later), as any ledger-9 contract does, since
-  its circuits are ZKIR v3.
+- A ledger-9 build's circuits are ZKIR v3, so minting through it needs a prover that reads them, such
+  as proof server 9.0.0 or later.
 - The package now ships moth-ft (both builds, about 16.7 MB packed). It shipped only `dist` before,
   so `deployFungibleToken` and `mintFungibleToken` found no artifact outside this repository.
 - Core depends on `@midnight-ntwrk/compact-runtime` 0.21.0, shared with midnight-js, and on 0.16.0
