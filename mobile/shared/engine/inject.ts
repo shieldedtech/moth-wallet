@@ -12,6 +12,7 @@ import {
   WALLET_ID,
   WALLET_NAME,
   WALLET_RDNS,
+  isProtocolKeyLocation,
 } from 'moth-ext/connector/constants';
 
 type Reply = { ok: true; resultJson: string } | { ok: false; error: { code: never; reason: string } };
@@ -42,7 +43,10 @@ function buildConnectedApi(): ConnectedAPI {
       throw connectorError('InvalidRequest', 'getProvingProvider requires a KeyMaterialProvider');
     }
     await request('getProvingProvider', []);
+    // A dApp serves its own contracts' keys only (midnight-js 5's registry refuses any other
+    // location), and the wallet holds the ledger's own circuits, so those are never asked for.
     const materialFor = async (keyLocation: string) => {
+      if (isProtocolKeyLocation(keyLocation)) return null;
       const [zkir, proverKey, verifierKey] = await Promise.all([
         keys.getZKIR!(keyLocation),
         keys.getProverKey!(keyLocation),
