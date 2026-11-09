@@ -20,7 +20,7 @@ import {
   serializeError,
   type ErrorCode,
 } from '../connector/errors';
-import { NOT_IMPLEMENTED_METHODS, type ConnectorMethod } from '../connector/constants';
+import { NOT_IMPLEMENTED_METHODS, isProtocolKeyLocation, type ConnectorMethod } from '../connector/constants';
 import type { TransferRequestDTO, SwapInputDTO, ProvingKeyMaterialDTO, TxSummaryDTO } from '../offscreen/messaging';
 import { getSettings, getNetworkConfig } from './settings';
 import { getSession, type Session } from './session';
@@ -70,7 +70,9 @@ function assertBytes(value: unknown, label: string): Uint8Array {
   return value;
 }
 
-function assertKeyMaterial(value: unknown): ProvingKeyMaterialDTO {
+function assertKeyMaterial(value: unknown, keyLocation: string): ProvingKeyMaterialDTO | null {
+  // The wallet supplies the ledger's own circuits; a dApp sends the keys of its contract's.
+  if (value === null && isProtocolKeyLocation(keyLocation)) return null;
   if (!value || typeof value !== 'object') {
     throw connectorError('InvalidRequest', 'Proving key material is required');
   }
@@ -335,7 +337,7 @@ async function dispatchMethod(
       if (typeof keyLocation !== 'string' || keyLocation === '') {
         throw connectorError('InvalidRequest', 'Circuit key location must be a non-empty string');
       }
-      const keyMaterial = assertKeyMaterial(params[2]);
+      const keyMaterial = assertKeyMaterial(params[2], keyLocation);
       const network = await getNetworkConfig();
       if (method === 'provingProviderCheck') {
         return offscreen.provingProviderCheck({network, serializedPreimage, keyLocation, keyMaterial});

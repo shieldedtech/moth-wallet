@@ -4,6 +4,11 @@ export const WALLET_NAME = 'Moth Wallet';
 /** Version of the @midnight-ntwrk/dapp-connector-api standard implemented. */
 export const API_VERSION = '4.0.1';
 
+/** The ledger's own circuits (`midnight/zswap/...`, `midnight/dust/...`), whose keys the wallet holds. */
+export function isProtocolKeyLocation(keyLocation: string): boolean {
+  return keyLocation.startsWith('midnight/');
+}
+
 /** The Moth mark, inlined so the page never fetches from the extension.
  *
  *  Kept in step with brand/icon-small.svg — the simplified variant, because this

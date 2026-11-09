@@ -21,6 +21,7 @@ import {
   IMPLEMENTED_METHODS,
   NOT_IMPLEMENTED_METHODS,
   EXTENSION_METHODS,
+  isProtocolKeyLocation,
 } from '../lib/connector/constants';
 
 function buildConnectedApi(client: PageClient): ConnectedAPI {
@@ -48,7 +49,10 @@ function buildConnectedApi(client: PageClient): ConnectedAPI {
     }
     await client.request('getProvingProvider', encodeBigintJson([]));
 
+    // A dApp serves its own contracts' keys only (midnight-js 5's registry refuses any other
+    // location), and the wallet holds the ledger's own circuits, so those are never asked for.
     const materialFor = async (keyLocation: string) => {
+      if (isProtocolKeyLocation(keyLocation)) return null;
       const [zkir, proverKey, verifierKey] = await Promise.all([
         keys.getZKIR!(keyLocation),
         keys.getProverKey!(keyLocation),
