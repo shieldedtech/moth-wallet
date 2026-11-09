@@ -52,7 +52,7 @@ Prerequisites:
 - `yarn install && yarn build` at the repo root, then `mobile/shared/scripts/build-engine.sh`
   (patched ledger WASM by default; see "DUST restore time" in the iOS README). Without a local
   wasm32 clang, build the ledger in Docker: `rust:1.90-bookworm` plus `apt install clang llvm`
-  and wasm-pack, then `LLVM_BIN=/usr/bin mobile/shared/scripts/build-ledger-wasm.sh`. ledger-8.1.0 needs
+  and wasm-pack, then `LLVM_BIN=/usr/bin mobile/shared/scripts/build-ledger-wasm.sh`. ledger-8.1.3 needs
   Rust 1.89 or later (konst 0.4.3). A ledger built before the move to `mobile/shared` is still
   in `mobile/ios/vendor/`; move it as the iOS README shows rather than rebuilding it.
 - Rust with the `aarch64-linux-android` target, `cargo install cross`, Docker
