@@ -264,41 +264,6 @@ describe('openContract', () => {
     });
   }
 
-  // The contract's compact-runtime 0.16 and midnight-js's own ledger-8 copy must share the one
-  // pinned onchain-runtime-v3, or the contract refuses the framework's objects. A deploy needs
-  // no circuit proof, so this runs offline as far as an unbound transaction.
-  it('builds and proves a ledger-8 deploy of the bundled moth-ft', async () => {
-    setWasmProvingProviderFactory(() => ({
-      check: async () => [],
-      prove: async () => {
-        throw new Error('a deploy carries no circuit proof');
-      },
-    }));
-    try {
-      const session = await openContract({
-        ...common,
-        artifactPath: MOTH_FT_LEDGER8,
-        projectDir: CORE_PACKAGE_DIR,
-        network: network({type: 'wasm'}),
-      });
-      const {providers} = session;
-      const unsubmitted = await session.midnightJs.contracts.createLedger8UnprovenDeployTxFromVerifierKeys(
-        providers.zkConfigProvider,
-        common.coinPublicKey,
-        {compiledContract: session.compiledContract},
-        common.encryptionPublicKey,
-        providers.config,
-      );
-      expect(unsubmitted.private.unprovenTx.era).toBe('v8');
-
-      const proven = await providers.proofProvider.proveTx(unsubmitted.private.unprovenTx);
-      expect(proven.era).toBe('v8');
-      expect(proven.stage).toBe('Unbound');
-    } finally {
-      setWasmProvingProviderFactory(null);
-    }
-  });
-
   it('hands midnight-js the ledger-9 build of moth-ft as a CompiledContract, with providers for both eras', async () => {
     const session = await openContract({
       ...common,
@@ -388,6 +353,41 @@ describe('openContract', () => {
       expect(unsubmitted.private.result).toHaveLength(32);
     });
   }
+
+  // The contract's compact-runtime 0.16 and midnight-js's own ledger-8 copy must share the one
+  // pinned onchain-runtime-v3, or the contract refuses the framework's objects. A deploy needs
+  // no circuit proof, so this runs offline as far as an unbound transaction.
+  it('builds and proves a ledger-8 deploy of the bundled moth-ft', async () => {
+    setWasmProvingProviderFactory(() => ({
+      check: async () => [],
+      prove: async () => {
+        throw new Error('a deploy carries no circuit proof');
+      },
+    }));
+    try {
+      const session = await openContract({
+        ...common,
+        artifactPath: MOTH_FT_LEDGER8,
+        projectDir: CORE_PACKAGE_DIR,
+        network: network({type: 'wasm'}),
+      });
+      const {providers} = session;
+      const unsubmitted = await session.midnightJs.contracts.createLedger8UnprovenDeployTxFromVerifierKeys(
+        providers.zkConfigProvider,
+        common.coinPublicKey,
+        {compiledContract: session.compiledContract},
+        common.encryptionPublicKey,
+        providers.config,
+      );
+      expect(unsubmitted.private.unprovenTx.era).toBe('v8');
+
+      const proven = await providers.proofProvider.proveTx(unsubmitted.private.unprovenTx);
+      expect(proven.era).toBe('v8');
+      expect(proven.stage).toBe('Unbound');
+    } finally {
+      setWasmProvingProviderFactory(null);
+    }
+  });
 
   it('refuses a ledger-9 contract with the in-process prover, which cannot read ZKIR v3', async () => {
     const managed = join(home, 'project', 'managed', 'ledger9');
