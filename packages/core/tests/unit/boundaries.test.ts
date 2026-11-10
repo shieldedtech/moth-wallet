@@ -38,8 +38,8 @@ const NODE_BUILTIN_ALLOWLIST = new Set([
   // only ever driven by the CLI, the TUI or the daemon.
   'contract/args-parser.ts',
   'contract/artifact-loader.ts',
+  'contract/bundled.ts',
   'contract/deploy.ts',
-  'contract/fungible-token.ts',
   'contract/initial-private-state.ts',
   'contract/maintenance.ts',
   'contract/midnight-js.ts',

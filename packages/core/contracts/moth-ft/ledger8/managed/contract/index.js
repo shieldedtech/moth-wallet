@@ -1,4 +1,4 @@
-import * as __compactRuntime from '@midnight-ntwrk/compact-runtime';
+import * as __compactRuntime from 'compact-runtime-ledger8';
 __compactRuntime.checkRuntimeVersion('0.16.0');
 
 const _descriptor_0 = new __compactRuntime.CompactTypeBytes(32);

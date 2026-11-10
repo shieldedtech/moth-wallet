@@ -11,7 +11,7 @@
 
 import {describe, it, expect, beforeAll, afterAll} from 'vitest';
 import {existsSync} from 'node:fs';
-import {resolve} from 'node:path';
+import {bundledContractForDeploy, DEFAULT_NETWORKS} from '@shieldedtech/moth-wallet';
 import {
   DEVNET_URL,
   NETWORK,
@@ -24,21 +24,21 @@ import {
   type DaemonHandle,
 } from './helpers.js';
 
-const ARTIFACT = resolve(
-  __dirname,
-  '../../../../core/contracts/receive-unshielded/managed',
-);
 describe.skipIf(!DEVNET_URL)(
   'contract call with unshielded inputs — signatures must reach the node (#119)',
   () => {
     let wallet: string;
     let daemon: DaemonHandle;
     let contractAddress: string;
+    let artifact: string;
 
     beforeAll(async () => {
-      // The fixture is committed, so a missing one is a repo error, not a reason
-      // to skip: this is the regression test for error 192 and must fail loudly.
-      expect(existsSync(ARTIFACT), `missing fixture: ${ARTIFACT}`).toBe(true);
+      // The fixture ships one build per ledger era, and only the one for the
+      // stack's current era deploys. It is committed, so a missing one is a repo
+      // error, not a reason to skip: this regression test must fail loudly.
+      const indexerUrl = process.env.MOTH_INDEXER_URL ?? DEFAULT_NETWORKS[NETWORK].indexerUrl;
+      artifact = (await bundledContractForDeploy('receive-unshielded', {indexerUrl})).artifactPath;
+      expect(existsSync(artifact), `missing fixture: ${artifact}`).toBe(true);
 
       // Bigger than the harness default: this suite makes two contract calls
       // plus a deploy, and DUST generation is proportional to the NIGHT held.
@@ -74,7 +74,7 @@ describe.skipIf(!DEVNET_URL)(
       await waitForDust(wallet, NETWORK);
 
       const deploy = runMothJson<{contractAddress?: string}>([
-        'daemon', 'deploy', ARTIFACT,
+        'daemon', 'deploy', artifact,
         '--wallet', wallet,
         '--network', NETWORK,
       ]);
@@ -94,7 +94,7 @@ describe.skipIf(!DEVNET_URL)(
         '--wallet', wallet,
         '--network', NETWORK,
         '--address', contractAddress,
-        '--artifact', ARTIFACT,
+        '--artifact', artifact,
       ]);
 
       // Before the fix this failed with Custom error: 192.
@@ -117,7 +117,7 @@ describe.skipIf(!DEVNET_URL)(
         '--wallet', wallet,
         '--network', NETWORK,
         '--address', contractAddress,
-        '--artifact', ARTIFACT,
+        '--artifact', artifact,
       ]);
       expect(call.exitCode, call.raw.stderr || call.raw.stdout).toBe(0);
       expect(call.data?.status).toBe('SUCCESS');

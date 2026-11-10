@@ -161,10 +161,17 @@ export { queryContractState, type ContractState } from './contract/state.js';
 export {
   deployFungibleToken,
   mintFungibleToken,
-  FUNGIBLE_TOKEN_ARTIFACT_DIR,
   type DeployFungibleTokenOptions,
   type MintFungibleTokenOptions,
 } from './contract/fungible-token.js';
+export {
+  bundledContractBuild,
+  bundledContractForDeploy,
+  bundledContractForAddress,
+  type BundledContractName,
+  type BundledContractBuild,
+} from './contract/bundled.js';
+export type { ContractEra } from './contract/midnight-js.js';
 export { parseArgs, toPositionalArgs } from './contract/args-parser.js';
 export {
   resolveInitialPrivateState,

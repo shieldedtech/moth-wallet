@@ -1,4 +1,4 @@
-import type * as __compactRuntime from '@midnight-ntwrk/compact-runtime';
+import type * as __compactRuntime from 'compact-runtime-ledger8';
 
 export type Witnesses<PS> = {
 }

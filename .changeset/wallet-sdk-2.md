@@ -38,8 +38,8 @@ build.
   ledger versions' keys, derived from the seeds, so it resumes on whichever side its cache was
   written.
 - Contract deploy, call and maintenance run on midnight-js 5 and work on both sides of the v9 fork. An
-  artifact's compact-runtime version picks its ledger. One compiled by compactc 0.31 (runtime 0.16, as the
-  bundled moth-ft and receive-unshielded are) is a ledger-8 contract: it deploys and takes maintenance updates
+  artifact's compact-runtime version picks its ledger. One compiled by compactc 0.31 (runtime 0.16) is a
+  ledger-8 contract: it deploys and takes maintenance updates
   before the fork, and stays callable after it. One compiled by compactc 0.36.0 (runtime 0.21) is a ledger-9
   contract, which runs from the fork on; the proof server (9.0.0 or later) and the in-process prover both
   prove its ZKIR v3 circuits. Artifacts compiled for any other runtime are refused.
