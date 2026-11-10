@@ -60,7 +60,7 @@ describe('proof pool', () => {
 
   it('runs concurrent proofs on separate workers, up to the pool size, and queues the rest', () => {
     const pool = createProofPool({ size: 2, spawn: () => new FakeWorker() });
-    const provider = pool.provider(keys);
+    const provider = pool.provider(keys, 'v2');
 
     void provider.prove(preimage, 'a');
     void provider.prove(preimage, 'b');
@@ -81,7 +81,7 @@ describe('proof pool', () => {
 
   it('resolves prove with the worker result and check with its list', async () => {
     const pool = createProofPool({ size: 1, spawn: () => new FakeWorker() });
-    const provider = pool.provider(keys);
+    const provider = pool.provider(keys, 'v2');
 
     const proof = provider.prove(preimage, 'x', 7n);
     const worker = FakeWorker.all[0]!;
@@ -98,9 +98,22 @@ describe('proof pool', () => {
     await expect(checked).resolves.toEqual([1n, undefined]);
   });
 
+  it('tells the worker which zkir reads each job, so ZKIR v2 and v3 circuits share the pool', () => {
+    const pool = createProofPool({ size: 2, spawn: () => new FakeWorker() });
+
+    void pool.provider(keys, 'v2').prove(preimage, 'midnight/zswap/output');
+    void pool.provider(keys, 'v3').check(preimage, 'contract:circuit');
+
+    const jobs = FakeWorker.all.flatMap((worker) => worker.jobs()) as Array<{ op: string; zkir: string }>;
+    expect(jobs.map(({ op, zkir }) => ({ op, zkir }))).toEqual([
+      { op: 'prove', zkir: 'v2' },
+      { op: 'check', zkir: 'v3' },
+    ]);
+  });
+
   it("answers a worker's key requests from the job's own key material", async () => {
     const pool = createProofPool({ size: 1, spawn: () => new FakeWorker() });
-    void pool.provider(keys).prove(preimage, 'x');
+    void pool.provider(keys, 'v2').prove(preimage, 'x');
     const worker = FakeWorker.all[0]!;
     const job = worker.jobs()[0] as { id: number };
 
@@ -125,7 +138,7 @@ describe('proof pool', () => {
       getParams: async () => new Uint8Array(),
     };
     const pool = createProofPool({ size: 1, spawn: () => new FakeWorker() });
-    void pool.provider(failing).prove(preimage, 'x');
+    void pool.provider(failing, 'v2').prove(preimage, 'x');
     const worker = FakeWorker.all[0]!;
     const job = worker.jobs()[0] as { id: number };
 
@@ -139,7 +152,7 @@ describe('proof pool', () => {
 
   it('rejects with the reconstructed error when the worker reports a failed proof', async () => {
     const pool = createProofPool({ size: 1, spawn: () => new FakeWorker() });
-    const proof = pool.provider(keys).prove(preimage, 'x');
+    const proof = pool.provider(keys, 'v2').prove(preimage, 'x');
     const worker = FakeWorker.all[0]!;
     const job = worker.jobs()[0] as { id: number };
 
@@ -150,7 +163,7 @@ describe('proof pool', () => {
 
   it('fails the running job when a worker errors, drops that worker, and spawns a fresh one next time', async () => {
     const pool = createProofPool({ size: 1, spawn: () => new FakeWorker() });
-    const provider = pool.provider(keys);
+    const provider = pool.provider(keys, 'v2');
     const proof = provider.prove(preimage, 'x');
     const first = FakeWorker.all[0]!;
 
@@ -167,7 +180,7 @@ describe('proof pool', () => {
 
   it('retires idle workers after the idle period and respawns on demand', () => {
     const pool = createProofPool({ size: 1, idleMs: 1_000, spawn: () => new FakeWorker() });
-    const provider = pool.provider(keys);
+    const provider = pool.provider(keys, 'v2');
     void provider.prove(preimage, 'x');
     const worker = FakeWorker.all[0]!;
     const job = worker.jobs()[0] as { id: number };
@@ -186,7 +199,7 @@ describe('proof pool', () => {
 
   it('does not retire a worker that picked up a new job during its idle window', () => {
     const pool = createProofPool({ size: 1, idleMs: 1_000, spawn: () => new FakeWorker() });
-    const provider = pool.provider(keys);
+    const provider = pool.provider(keys, 'v2');
     void provider.prove(preimage, 'x');
     const worker = FakeWorker.all[0]!;
     worker.emit({ id: (worker.jobs()[0] as { id: number }).id, ok: true, result: new Uint8Array() });
@@ -201,7 +214,7 @@ describe('proof pool', () => {
 
   it('close() terminates every worker and rejects queued and running jobs', async () => {
     const pool = createProofPool({ size: 1, spawn: () => new FakeWorker() });
-    const provider = pool.provider(keys);
+    const provider = pool.provider(keys, 'v2');
     const running = provider.prove(preimage, 'x');
     const queued = provider.prove(preimage, 'y');
 

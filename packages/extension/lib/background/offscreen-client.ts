@@ -369,7 +369,7 @@ export const offscreen = {
     network: NetworkConfig;
     serializedPreimage: Uint8Array;
     keyLocation: string;
-    keyMaterial: ProvingKeyMaterialDTO;
+    keyMaterial: ProvingKeyMaterialDTO | null;
   }) {
     await ensureOffscreen();
     const {network, ...payload} = data;
@@ -383,7 +383,7 @@ export const offscreen = {
     network: NetworkConfig;
     serializedPreimage: Uint8Array;
     keyLocation: string;
-    keyMaterial: ProvingKeyMaterialDTO;
+    keyMaterial: ProvingKeyMaterialDTO | null;
     overwriteBindingInput?: bigint;
   }) {
     await ensureOffscreen();

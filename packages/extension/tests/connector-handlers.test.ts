@@ -228,6 +228,31 @@ describe('connector dispatch', () => {
     expect(provingProviderProve).toHaveBeenCalledWith(expect.objectContaining({overwriteBindingInput: 42n}));
   });
 
+  // A midnight-js 5 dApp's key provider serves its contract's circuits only; the page leaves the
+  // ledger's own circuits (a shielded output the contract creates, say) to the wallet.
+  it("proves the ledger's own circuits without key material from the dApp", async () => {
+    await connect();
+    const serializedPreimage = new Uint8Array([1, 2, 3]);
+    provingProviderProve.mockResolvedValue(new Uint8Array([8, 9]));
+
+    await expect(
+      dispatch(ORIGIN, 'provingProviderProve', [serializedPreimage, 'midnight/zswap/output', null]),
+    ).resolves.toEqual(new Uint8Array([8, 9]));
+    expect(provingProviderProve).toHaveBeenCalledWith(
+      expect.objectContaining({keyLocation: 'midnight/zswap/output', keyMaterial: null}),
+    );
+  });
+
+  it("refuses a contract circuit sent without the dApp's key material", async () => {
+    await connect();
+    const contractCircuit = `contract:${'ab'.repeat(32)}/mint?vk=${'cd'.repeat(32)}`;
+
+    await expect(
+      dispatch(ORIGIN, 'provingProviderProve', [new Uint8Array([1]), contractCircuit, null]),
+    ).rejects.toMatchObject({code: 'InvalidRequest'});
+    expect(provingProviderProve).not.toHaveBeenCalled();
+  });
+
   it('exposes the shielded public keys from the session', async () => {
     await connect();
     const res = (await dispatch(ORIGIN, 'getShieldedAddresses', [])) as {

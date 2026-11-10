@@ -100,10 +100,10 @@ if (!import.meta.env.DEV) {
   const pool: Promise<ProofPool> = import('./proof-worker?worker').then(({ default: ProofWorker }) =>
     createProofPool({ spawn: () => new ProofWorker({ name: 'moth-proof-worker' }) }),
   );
-  setWasmProvingProviderFactory((keyMaterial) => ({
-    check: async (preimage, keyLocation) => (await pool).provider(keyMaterial).check(preimage, keyLocation),
+  setWasmProvingProviderFactory((keyMaterial, zkir) => ({
+    check: async (preimage, keyLocation) => (await pool).provider(keyMaterial, zkir).check(preimage, keyLocation),
     prove: async (preimage, keyLocation, overwriteBindingInput) =>
-      (await pool).provider(keyMaterial).prove(preimage, keyLocation, overwriteBindingInput),
+      (await pool).provider(keyMaterial, zkir).prove(preimage, keyLocation, overwriteBindingInput),
   }));
 }
 
@@ -1020,17 +1020,19 @@ export async function deriveAppSecret(
   return { secret: await coreDeriveAppSecret(seedHex, origin, domain) };
 }
 
-function connectorKeyMaterialProvider(keyLocation: string, material: ProvingKeyMaterialDTO) {
-  const read = async (requested: string, value: Uint8Array): Promise<Uint8Array> => {
-    if (requested !== keyLocation) {
+// `material` is null for the ledger's own circuits: the local prover reads those from the
+// SDK's key source, and a proof server holds them itself.
+function connectorKeyMaterialProvider(keyLocation: string, material: ProvingKeyMaterialDTO | null) {
+  const read = async (requested: string, value: Uint8Array | undefined): Promise<Uint8Array> => {
+    if (requested !== keyLocation || value === undefined) {
       throw new Error(`Missing key material for circuit "${requested}"`);
     }
     return value;
   };
   return {
-    getZKIR: (requested: string) => read(requested, material.zkir),
-    getProverKey: (requested: string) => read(requested, material.proverKey),
-    getVerifierKey: (requested: string) => read(requested, material.verifierKey),
+    getZKIR: (requested: string) => read(requested, material?.zkir),
+    getProverKey: (requested: string) => read(requested, material?.proverKey),
+    getVerifierKey: (requested: string) => read(requested, material?.verifierKey),
   };
 }
 
@@ -1039,7 +1041,7 @@ export async function provingProviderCheck(
   network: NetworkConfig,
   serializedPreimage: Uint8Array,
   keyLocation: string,
-  keyMaterial: ProvingKeyMaterialDTO,
+  keyMaterial: ProvingKeyMaterialDTO | null,
 ): Promise<(bigint | undefined)[]> {
   const provider = createProvingProvider(
     resolveProverConfig(network),
@@ -1052,7 +1054,7 @@ export async function provingProviderProve(
   network: NetworkConfig,
   serializedPreimage: Uint8Array,
   keyLocation: string,
-  keyMaterial: ProvingKeyMaterialDTO,
+  keyMaterial: ProvingKeyMaterialDTO | null,
   overwriteBindingInput?: bigint,
 ): Promise<Uint8Array> {
   const provider = createProvingProvider(

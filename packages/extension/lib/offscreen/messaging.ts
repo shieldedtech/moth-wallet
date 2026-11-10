@@ -100,7 +100,8 @@ export interface ProvingKeyMaterialDTO {
 export interface ProvingProviderCheckPayload {
   serializedPreimage: Uint8Array;
   keyLocation: string;
-  keyMaterial: ProvingKeyMaterialDTO;
+  /** `null` for the ledger's own circuits, whose keys the wallet holds. */
+  keyMaterial: ProvingKeyMaterialDTO | null;
 }
 
 export interface ProvingProviderProvePayload extends ProvingProviderCheckPayload {
