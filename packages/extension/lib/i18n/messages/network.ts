@@ -7,6 +7,7 @@ export const network = {
   network_descPreview: 'Preview upcoming changes',
   network_descPreprod: 'Pre-production testing',
   network_descQanet: 'Quality assurance network',
+  network_descLocal: 'midnight-node local-env on this machine',
   network_descUndeployed: 'Local devnet stack on this machine',
   network_endpointUrls: 'Endpoint URLs',
   network_useDefaults: 'Use defaults',

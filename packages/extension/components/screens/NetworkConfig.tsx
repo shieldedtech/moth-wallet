@@ -32,6 +32,7 @@ export const NETWORK_LABELS: Record<SupportedNetwork, string> = {
   preview: 'Preview',
   preprod: 'Preprod',
   qanet: 'QA net',
+  local: 'Local env',
   undeployed: 'Undeployed',
 };
 
@@ -41,6 +42,7 @@ export const NETWORK_DESCRIPTIONS: Record<SupportedNetwork, MessageKey> = {
   preview: 'network_descPreview',
   preprod: 'network_descPreprod',
   qanet: 'network_descQanet',
+  local: 'network_descLocal',
   undeployed: 'network_descUndeployed',
 };
 
