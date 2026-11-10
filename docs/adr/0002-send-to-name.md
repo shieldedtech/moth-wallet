@@ -35,7 +35,7 @@ address format, and behaves safely until then.
 - **Configurable resolver URL** (`ExtensionSettings.nameResolverUrl`, set in
   Settings → Addresses). Null disables send-to-name (opt-in). The fetch runs in
   the background service worker, where `host_permissions` apply (localhost and
-  `*.midnight.network` are already granted; an arbitrary-host resolver would
+  `*.shielded.tools` are already granted; an arbitrary-host resolver would
   need a manifest entry).
 - **Forward resolution, debounced + cached by name.** `name → records.address`
   via `GET {resolver}/api/names/:name/resolve`.

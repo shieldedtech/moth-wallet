@@ -1,6 +1,6 @@
 // Background side of send-to-name: forward-resolve a `.shielded` registry name
 // to a send target via the configured read API. Runs in the service worker,
-// where host_permissions apply (localhost + *.midnight.network are granted; an
+// where host_permissions apply (localhost + *.shielded.tools are granted; an
 // arbitrary-host resolver would need a manifest entry). Never throws for a
 // normal miss — every failure path returns a NameResolution with `error` set,
 // so the Send UI can safe-degrade. See docs/adr/0002.

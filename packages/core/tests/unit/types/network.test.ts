@@ -12,8 +12,8 @@ import {
 
 const endpoints = {
   id: 'devnet',
-  nodeUrl: 'https://rpc.devnet.midnight.network',
-  indexerUrl: 'https://indexer.devnet.midnight.network/api/v4/graphql',
+  nodeUrl: 'https://rpc.devnet.shielded.tools',
+  indexerUrl: 'https://indexer.devnet.shielded.tools/api/v4/graphql',
 };
 
 describe('prover network configuration', () => {

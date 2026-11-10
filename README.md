@@ -285,7 +285,7 @@ ADDR=$(moth wallet list -o json | jq -r '.[] | select(.name=="dev") | .addresses
 npx -y -p midnight-wallet-cli@latest midnight airdrop 1000 --wallet "$ADDR"
 ```
 
-For `preview` / `preprod` use the HTTP faucet at `https://faucet.<network>.midnight.network/`. `mainnet` has no faucet.
+For the test networks (`preview`, `preprod`, `qanet`, `devnet`) use the HTTP faucet at `https://faucet.<network>.shielded.tools/`. `mainnet` has no faucet.
 
 ### 3. Check Balance
 
@@ -645,7 +645,7 @@ import { createMothBrowser } from '@shieldedtech/moth-browser';
 
 // Configure with custom endpoints
 const moth = createMothBrowser({
-  indexerUrl: 'https://indexer.preview.midnight.network',
+  indexerUrl: 'https://indexer.preview.shielded.tools',
   network: 'preview',
 });
 
@@ -666,10 +666,10 @@ const prover = new ProofClient('http://localhost:6300');
 
 | Network | Node | Indexer | Proof Server |
 |---------|------|--------|--------------|
-| devnet | `https://rpc.devnet.midnight.network` | `https://indexer.devnet.midnight.network/api/v4/graphql` | `http://localhost:6300` |
-| preview | `https://rpc.preview.midnight.network` | `https://indexer.preview.midnight.network/api/v4/graphql` | `http://localhost:6300` |
-| preprod | `https://rpc.preprod.midnight.network` | `https://indexer.preprod.shielded.tools/api/v4/graphql` | `http://localhost:6300` |
-| qanet | `https://rpc.qanet.midnight.network` | `https://indexer.qanet.midnight.network/api/v4/graphql` | `http://localhost:6300` |
+| devnet | `https://rpc.devnet.shielded.tools` | `https://indexer.devnet.shielded.tools/api/v4/graphql` | `http://localhost:6300` |
+| preview | `https://rpc.preview.shielded.tools` | `https://indexer.preview.shielded.tools/api/v4/graphql` | `http://localhost:6300` |
+| preprod | `https://rpc.preprod.shielded.tools` | `https://indexer.preprod.shielded.tools/api/v4/graphql` | `http://localhost:6300` |
+| qanet | `https://rpc.qanet.shielded.tools` | `https://indexer.qanet.shielded.tools/api/v4/graphql` | `http://localhost:6300` |
 | undeployed | `ws://localhost:9944` | `http://localhost:8088/api/v4/graphql` | `http://localhost:6300` |
 
 `undeployed` is the local devnet stack — see [§2. Fund the Wallet](#2-fund-the-wallet-local-devnet-only) for bringing one up.
@@ -687,8 +687,8 @@ moth transfer 1 NIGHT --to <addr> --node-url wss://my-node:9944
 
 **2. Environment variables**:
 ```bash
-export MOTH_INDEXER_URL=https://indexer.preview.midnight.network/api/v4/graphql
-export MOTH_NODE_URL=https://rpc.preview.midnight.network
+export MOTH_INDEXER_URL=https://indexer.preview.shielded.tools/api/v4/graphql
+export MOTH_NODE_URL=https://rpc.preview.shielded.tools
 export MOTH_PROOF_SERVER_URL=http://localhost:6300
 moth info  # uses env vars
 ```
@@ -696,14 +696,14 @@ moth info  # uses env vars
 **3. `.env` file** (loaded automatically from working directory):
 ```bash
 # .env
-MOTH_INDEXER_URL=https://indexer.preview.midnight.network/api/v4/graphql
-MOTH_NODE_URL=https://rpc.preview.midnight.network
+MOTH_INDEXER_URL=https://indexer.preview.shielded.tools/api/v4/graphql
+MOTH_NODE_URL=https://rpc.preview.shielded.tools
 ```
 
 **4. Persistent config** (saved to `~/.moth/`):
 ```bash
-moth config set indexer-url https://indexer.preview.midnight.network/api/v4/graphql
-moth config set node-url https://rpc.preview.midnight.network
+moth config set indexer-url https://indexer.preview.shielded.tools/api/v4/graphql
+moth config set node-url https://rpc.preview.shielded.tools
 moth config set default-network preview
 ```
 

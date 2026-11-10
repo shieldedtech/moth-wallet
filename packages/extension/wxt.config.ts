@@ -63,7 +63,7 @@ export default defineConfig({
       ...(browser === 'firefox' ? [] : ['sidePanel', 'offscreen']),
     ],
     host_permissions: [
-      'https://*.midnight.network/*',
+      'https://*.shielded.tools/*',
       'https://midnight-s3-fileshare-dev-eu-west-1.s3.eu-west-1.amazonaws.com/*',
       'http://localhost/*',
     ],
