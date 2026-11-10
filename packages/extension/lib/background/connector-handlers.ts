@@ -6,7 +6,13 @@
 // here; the actual wallet/ledger work (balances, transfers) is delegated to the
 // offscreen document, which owns the WASM.
 
-import type { DesiredInput, DesiredOutput, Configuration, ConnectionStatus } from '@midnight-ntwrk/dapp-connector-api';
+import type {
+  DesiredInput,
+  DesiredOutput,
+  Configuration,
+  ConnectionStatus,
+  Signature,
+} from '@midnight-ntwrk/dapp-connector-api';
 import type { WalletBalances } from '@shieldedtech/moth-browser';
 import { resolveProverConfig } from '@shieldedtech/moth-wallet/types/network';
 import { onMessage, deserializeBalances } from '../messaging/protocol';
@@ -17,8 +23,8 @@ import {
   connectorError,
   describeCip30Error,
   describeErrorFields,
+  errorCodeFor,
   serializeError,
-  type ErrorCode,
 } from '../connector/errors';
 import { NOT_IMPLEMENTED_METHODS, type ConnectorMethod } from '../connector/constants';
 import type { TransferRequestDTO, SwapInputDTO, ProvingKeyMaterialDTO, TxSummaryDTO } from '../offscreen/messaging';
@@ -436,7 +442,8 @@ async function dispatchMethod(
 
       const network = await getNetworkConfig();
       try {
-        return await offscreen.signData({ seedHex: session.seedHex, network, data, encoding });
+        const signed: Signature = await offscreen.signData({ seedHex: session.seedHex, network, data, encoding });
+        return signed;
       } catch (err) {
         // The realistic failure here is malformed hex/base64 input.
         throw connectorError('InvalidRequest', (err as Error).message ?? 'Failed to sign data');
@@ -615,7 +622,7 @@ export function registerConnectorHandlers(): void {
         const reason = describeCip30Error(cip30);
         return { ok: false as const, error: { ...serializeError('InternalError', reason), cip30 } };
       }
-      const code: ErrorCode = (err as { code?: ErrorCode }).code ?? 'InternalError';
+      const code = errorCodeFor(err);
       const base = (err as { reason?: string; message?: string }).reason ?? (err as Error).message ?? String(err);
       // Fold the error's structured fields into the reason. Without this a DApp
       // only ever sees the message, and SDK errors keep the useful part (e.g.

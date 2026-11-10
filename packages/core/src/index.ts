@@ -43,7 +43,7 @@ export {
   NIGHT_DECIMALS,
 } from './wallet/night-amount.js';
 export { deriveAllAddressesFromSeed, deriveRawKeys, deriveShieldedPublicKeys, decodeBech32mAddress } from './wallet/address.js';
-export { signMessage, signedMessageBytes, type SignEncoding, type SignedMessage } from './wallet/sign-message.js';
+export { signMessage, signedMessageBytes, type SignEncoding, type SignedMessage, type SignatureScheme } from './wallet/sign-message.js';
 export { deriveAppSecret } from './wallet/app-secret.js';
 export { loadBatchFile, executeBatchTransfer, batchExitCode, type BatchTransferEntry, type BatchTransferResult, type BatchTransferSummary } from './wallet/batch-transfer.js';
 

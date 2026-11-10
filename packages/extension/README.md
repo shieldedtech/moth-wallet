@@ -95,6 +95,10 @@ the release tag manually.
   a proof server (default `http://localhost:6300`). WASM parameters and built-in
   keys are fetched on demand from the Midnight SDK's key source.
 - The dApp connector implements the [Midnight dApp connector API](https://docs.midnight.network/api-reference/dapp-connector) as `window.midnight.moth`, including a functional `getProvingProvider` backed by the wallet's selected proving method.
+- A connector request the wallet cannot fund (balancing, `makeTransfer` or
+  `makeIntent` short of a token, or of DUST for the fee) rejects with
+  `InsufficientFunds`, its reason naming the token and the shortfall. `signData`
+  results carry `scheme: 'schnorr_bip340'`.
 - When a dApp asks the wallet to balance a transaction it built
   (`balanceSealedTransaction` / `balanceUnsealedTransaction`), the approval
   screen lists what the transaction takes from the wallet — every token and
