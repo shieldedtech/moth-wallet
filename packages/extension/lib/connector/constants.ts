@@ -9,6 +9,17 @@ export function isProtocolKeyLocation(keyLocation: string): boolean {
   return keyLocation.startsWith('midnight/');
 }
 
+/** midnight-js 5's name for a contract circuit, `contract:<address>/<circuit>?vk=<hash>`: the hash pins its keys. */
+export function isContractKeyLocation(keyLocation: string): boolean {
+  return /^contract:[0-9a-fA-F]{64}\/[A-Za-z0-9_]+\?vk=[0-9a-f]{64}$/.test(keyLocation);
+}
+
+/** Opens the failure of a proof that names a prover key the wallet does not hold; the page sends the key then. */
+export const PROVER_KEY_NOT_HELD = 'Prover key not held by the wallet';
+
+/** Bytes of prover key per upload message: about 11 MiB once base64-encoded, far under Chrome's 64 MiB cap. */
+export const PROVER_KEY_CHUNK_BYTES = 8 * 1024 * 1024;
+
 /** The Moth mark, inlined so the page never fetches from the extension.
  *
  *  Kept in step with brand/icon-small.svg — the simplified variant, because this
@@ -57,6 +68,7 @@ export const EXTENSION_METHODS = [
 export const PROVING_PROVIDER_METHODS = [
   'provingProviderCheck',
   'provingProviderProve',
+  'proverKeyPut',
 ] as const;
 
 export type ConnectorMethod =
