@@ -1190,6 +1190,17 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@input-output-hk/veritee-attestation-verifier@npm:^0.5.0":
+  version: 0.5.0
+  resolution: "@input-output-hk/veritee-attestation-verifier@npm:0.5.0::__archiveUrl=https%3A%2F%2Fnpm.pkg.github.com%2Fdownload%2F%40input-output-hk%2Fveritee-attestation-verifier%2F0.5.0%2Fe72111c8e4b4c4f1b08b72d0d98657e3f12e5d96"
+  dependencies:
+    "@midnight-ntwrk/compact-runtime": "npm:^0.15.0"
+    asn1js: "npm:^3.0.10"
+    pkijs: "npm:^3.4.0"
+  checksum: 10c0/fe9d233e0cfe5547e94abd3f1fd1926e3b119ab690a01607aec2179bb985f97625c367935856616f56e64196db524f95cfeff21f368e1d5ecf2312853862b3a7
+  languageName: node
+  linkType: hard
+
 "@isaacs/cliui@npm:^8.0.2":
   version: 8.0.2
   resolution: "@isaacs/cliui@npm:8.0.2"
@@ -1480,6 +1491,17 @@ __metadata:
     "@types/object-inspect": "npm:^1.8.1"
     object-inspect: "npm:^1.12.3"
   checksum: 10c0/45e70543539ef837150a84fe2143e5c95bdf078cfe2943d0ff1ec256a90560e9638e301878df061b8d70cb7480d0b1ecde0b1a27fabebd04053387264564a759
+  languageName: node
+  linkType: hard
+
+"@midnight-ntwrk/compact-runtime@npm:^0.15.0":
+  version: 0.15.0
+  resolution: "@midnight-ntwrk/compact-runtime@npm:0.15.0"
+  dependencies:
+    "@midnight-ntwrk/onchain-runtime-v3": "npm:^3.0.0"
+    "@types/object-inspect": "npm:^1.8.1"
+    object-inspect: "npm:^1.12.3"
+  checksum: 10c0/58217c4f1b09bd58e462cce7a7eb1cd402b48b7c8a57c51918d4a59333a2179d12f521d4dc94d155891a1a97bc93024247c0a9b0d6cee7e303087a8cba7cabfd
   languageName: node
   linkType: hard
 
@@ -3457,6 +3479,7 @@ __metadata:
     "@harmoniclabs/bytestring": "npm:^1.0.0"
     "@harmoniclabs/cbor": "npm:^1.6.6"
     "@harmoniclabs/pair": "npm:^1.0.0"
+    "@input-output-hk/veritee-attestation-verifier": "npm:^0.5.0"
     "@lucid-evolution/lucid": "npm:^0.4.29"
     "@midnight-ntwrk/compact-js": "npm:2.5.1"
     "@midnight-ntwrk/compact-runtime": "npm:0.16.0"
@@ -4288,7 +4311,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"asn1js@npm:^3.0.6":
+"asn1js@npm:^3.0.10, asn1js@npm:^3.0.6":
   version: 3.1.0
   resolution: "asn1js@npm:3.1.0"
   dependencies:
