@@ -21,6 +21,9 @@ import {
   cleanupTestWallet,
   waitForSynced,
   waitForDust,
+  registerDust,
+  DEPLOY_DUST,
+  FEE_PAYER_NIGHT,
   waitForDaemonStderr,
   runMoth,
   runMothJson,
@@ -46,7 +49,8 @@ describe.skipIf(!DEVNET_URL || !COUNTER_AVAILABLE)('moth daemon call — circuit
   let contractAddress: string;
 
   beforeAll(async () => {
-    wallet = await setupTestWallet('daemon-call', NETWORK);
+    // A deploy's fee outruns what the default airdrop generates in a test's time.
+    wallet = await setupTestWallet('daemon-call', NETWORK, FEE_PAYER_NIGHT);
     daemon = await startDaemon(wallet, NETWORK);
     await waitForSynced(wallet, NETWORK);
 
@@ -54,15 +58,8 @@ describe.skipIf(!DEVNET_URL || !COUNTER_AVAILABLE)('moth daemon call — circuit
     // witnesses to satisfy CompactContext. Register, wait, then
     // deploy via inline CLI — the inline pipeline shares the same
     // sync cache the daemon populated.
-    const reg = runMothJson([
-      'daemon', 'dust', 'register',
-      '--wallet', wallet,
-      '--network', NETWORK,
-    ]);
-    if (reg.exitCode !== 0) {
-      throw new Error(`dust register failed: ${reg.raw.stderr || reg.raw.stdout}`);
-    }
-    await waitForDust(wallet, NETWORK);
+    await registerDust(wallet, NETWORK);
+    await waitForDust(wallet, NETWORK, 300_000, DEPLOY_DUST);
 
     // Deploy via `daemon deploy` (not inline `moth deploy`): the
     // daemon already has a warm sync + the dust accrual we just

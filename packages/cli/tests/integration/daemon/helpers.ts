@@ -27,6 +27,17 @@ export const NETWORK = 'undeployed';
 const DEFAULT_PASSPHRASE = process.env.MOTH_PASSPHRASE ?? 'daemon-test-passphrase-12345';
 const AIRDROP_NIGHT = process.env.MOTH_TEST_AIRDROP_NIGHT ?? '1000';
 
+/** NIGHT for a coin that must pay fees soon after it arrives. DUST accrues in
+ *  proportion to the NIGHT held, ten times faster here than at the default. */
+export const FEE_PAYER_NIGHT = '10000';
+
+/** The daemon's `--max-spend`, in NIGHT: high enough that no test transfer meets it. */
+export const MAX_SPEND_NIGHT = '1000000000';
+
+// The funding CLI, pinned to the release checked against a ledger-v9 chain:
+// `latest` is still 0.5.x, which reads ledger-v8 only and cannot sync one.
+const MIDNIGHT_CLI = 'midnight-wallet-cli@0.6.0-rc.12';
+
 // Bech32m addresses captured from `moth wallet generate -o json` —
 // `wallet list` does not populate `addresses.*` for wallets that
 // have never been unlocked, so we cache them ourselves at creation
@@ -106,7 +117,7 @@ export async function startDaemon(walletName: string, network: string): Promise<
     // and tests only really need an observable airdrop balance.
     // --max-spend is required under --auto-approve (bounds the per-tx NIGHT
     // a headless daemon can move); use a large cap so test transfers pass.
-    ['daemon', 'serve', '--wallet', walletName, '--network', network, '--auto-approve', '--max-spend', '1000000000', '--no-wait-for-sync', '--verbose'],
+    ['daemon', 'serve', '--wallet', walletName, '--network', network, '--auto-approve', '--max-spend', MAX_SPEND_NIGHT, '--no-wait-for-sync', '--verbose'],
     {
       env: {
         ...process.env,
@@ -285,6 +296,33 @@ export async function setupTestWallet(
   return walletName;
 }
 
+/** Airdrop one more NIGHT coin to a wallet `setupTestWallet` made, and wait for
+ *  its running daemon to see it. */
+export async function fundTestWallet(
+  walletName: string,
+  network: string,
+  nightAmount: string = AIRDROP_NIGHT,
+): Promise<void> {
+  const night = (): bigint => {
+    const res = runMothJson<DaemonStateResponse>([
+      'wallet', 'status', '--wallet', walletName, '--network', network,
+    ]);
+    return BigInt(res.data?.balances?.unshielded?.[NIGHT_TOKEN_ID] ?? '0');
+  };
+  const before = night();
+  const air = await runMidnight(['airdrop', nightAmount, '--wallet', getReceiveAddress(walletName, network)]);
+  if (air.exitCode !== 0) {
+    throw new Error(`midnight airdrop failed: ${air.stderr || air.stdout}`);
+  }
+  const deadline = Date.now() + 120_000;
+  while (night() <= before) {
+    if (Date.now() > deadline) {
+      throw new Error(`wallet ${walletName} on ${network} never saw its ${nightAmount} NIGHT top-up`);
+    }
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+}
+
 /**
  * Poll `handle.stderr()` until it matches `pattern`, or throw on
  * timeout. Use this instead of a one-shot `daemon.stderr()` read when
@@ -309,14 +347,66 @@ export async function waitForDaemonStderr(
   );
 }
 
-/** Minimum dust accrual we wait for in `waitForDust` before declaring
- *  the wallet ready for a fee-paying op. Any non-zero value works for
- *  the SDK's "available > 0" precondition, but txs need enough dust to
- *  cover their fee — 1e10 SPECK (≈ 0.00001 DUST in major units) is
- *  empirically generous on a fresh chain without being so high that
- *  we starve the test of time. Bump this if a future op's fee
- *  outgrows it. */
-const MIN_DUST_FOR_FEE = 10_000_000_000n;
+/** What `moth daemon dust register` reports. */
+export interface DustRegistration {
+  txId: string | null;
+  registered: boolean;
+}
+
+/**
+ * Register the wallet's NIGHT for DUST generation through its daemon.
+ *
+ * Registration pays its own fee from the DUST the NIGHT has generated since it
+ * arrived, so a wallet funded moments ago is refused and told how long is left.
+ * That refusal is retried; any other failure throws.
+ */
+export async function registerDust(
+  walletName: string,
+  network: string,
+  timeoutMs = 180_000,
+): Promise<DustRegistration> {
+  const deadline = Date.now() + timeoutMs;
+  let lastFailure = '';
+  while (Date.now() < deadline) {
+    const reg = runMothJson<DustRegistration>([
+      'daemon', 'dust', 'register',
+      '--wallet', walletName,
+      '--network', network,
+    ]);
+    if (reg.exitCode === 0 && reg.data) return reg.data;
+    lastFailure = reg.raw.stderr || reg.raw.stdout;
+    if (!/needs .* DUST and has/.test(lastFailure)) {
+      throw new Error(`dust register failed: ${lastFailure}`);
+    }
+    await new Promise((r) => setTimeout(r, 5_000));
+  }
+  throw new Error(`dust register could not pay its fee within ${timeoutMs}ms: ${lastFailure}`);
+}
+
+/** SPECK per DUST. */
+export const ONE_DUST = 1_000_000_000_000_000n;
+
+/** The DUST `waitForDust` waits for unless told otherwise. A transfer on ledger-v9
+ *  pays about 0.3 DUST, and the wallet wants 0.3 more in hand before it balances one. */
+const MIN_DUST_FOR_FEE = ONE_DUST;
+
+/** The DUST to wait for before a deploy. The small bundled contract needs about
+ *  0.9 DUST in hand to balance its deploy, and a larger contract needs more. */
+export const DEPLOY_DUST = 3n * ONE_DUST;
+
+/**
+ * Register a wallet funded with `FEE_PAYER_NIGHT` and leave it holding `coins`
+ * coins that can each pay a fee. A transaction books every coin it spends until
+ * it lands, so a test that builds several back to back needs a coin for each.
+ */
+export async function prepareFeePayer(walletName: string, network: string, coins: number): Promise<void> {
+  await registerDust(walletName, network);
+  // Topped up after registering, which re-creates the wallet's NIGHT and can merge coins.
+  for (let coin = 1; coin < coins; coin++) await fundTestWallet(walletName, network, FEE_PAYER_NIGHT);
+  // Equal coins accrue equally, so this much more in total is 1 DUST on the newest.
+  const dust = await waitForDust(walletName, network);
+  await waitForDust(walletName, network, 300_000, dust + BigInt(coins) * ONE_DUST);
+}
 
 /**
  * Poll the daemon's `getState` until the wallet has enough accrued
@@ -331,7 +421,7 @@ export async function waitForDust(
   network: string,
   timeoutMs = 300_000,
   minDust: bigint = MIN_DUST_FOR_FEE,
-): Promise<void> {
+): Promise<bigint> {
   const deadline = Date.now() + timeoutMs;
   let lastDust = '0';
   while (Date.now() < deadline) {
@@ -340,7 +430,7 @@ export async function waitForDust(
     ]);
     if (res.exitCode === 0 && res.data?.ready) {
       lastDust = res.data.balances?.dust ?? '0';
-      if (BigInt(lastDust) >= minDust) return;
+      if (BigInt(lastDust) >= minDust) return BigInt(lastDust);
     }
     await new Promise((r) => setTimeout(r, 2000));
   }
@@ -391,14 +481,14 @@ export function getReceiveAddress(walletName: string, network: string): string {
   return cached;
 }
 
-/** Spawn `npx midnight-wallet-cli@latest midnight <args>` and collect
+/** Spawn the pinned `midnight-wallet-cli`'s `midnight <args>` and collect
  *  stdout/stderr. Used for funding via the genesis wallet — and, in the
  *  dust-wedge repro, as the only available way to make the genesis wallet
  *  spend on demand (a second `airdrop` to a throwaway address is a genesis
  *  wallet transaction like any other). */
 export async function runMidnight(args: string[]): Promise<CliResult> {
   return new Promise((resolveOuter) => {
-    const child = spawn('npx', ['-y', '-p', 'midnight-wallet-cli@latest', 'midnight', ...args], {
+    const child = spawn('npx', ['-y', '-p', MIDNIGHT_CLI, 'midnight', ...args], {
       env: process.env,
       stdio: ['ignore', 'pipe', 'pipe'],
     });

@@ -16,6 +16,9 @@ import {
   cleanupTestWallet,
   waitForSynced,
   waitForDust,
+  registerDust,
+  DEPLOY_DUST,
+  FEE_PAYER_NIGHT,
   runMothJson,
   runMoth,
   type DaemonHandle,
@@ -46,21 +49,15 @@ describe.skipIf(!DEVNET_URL || !COUNTER_AVAILABLE)('moth daemon maintenance inse
     if (!picked) throw new Error(`No .verifier files in ${COUNTER_ARTIFACT}/keys`);
     firstCircuit = picked;
 
-    wallet = await setupTestWallet('daemon-maint', NETWORK);
+    // A deploy's fee outruns what the default airdrop generates in a test's time.
+    wallet = await setupTestWallet('daemon-maint', NETWORK, FEE_PAYER_NIGHT);
     daemon = await startDaemon(wallet, NETWORK);
     await waitForSynced(wallet, NETWORK);
 
     // Inline `moth deploy` needs DUST for the tx fee and a real
     // witness file for the contract's Witnesses<PS> constructor.
-    const reg = runMothJson([
-      'daemon', 'dust', 'register',
-      '--wallet', wallet,
-      '--network', NETWORK,
-    ]);
-    if (reg.exitCode !== 0) {
-      throw new Error(`dust register failed: ${reg.raw.stderr || reg.raw.stdout}`);
-    }
-    await waitForDust(wallet, NETWORK);
+    await registerDust(wallet, NETWORK);
+    await waitForDust(wallet, NETWORK, 300_000, DEPLOY_DUST);
 
     // Deploy via `daemon deploy` so the contract creation shares
     // the daemon's warm sync + dust state. Inline `moth deploy`

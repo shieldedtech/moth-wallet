@@ -14,6 +14,7 @@ import {
   waitForSynced,
   waitForDaemonStderr,
   waitForDust,
+  registerDust,
   runMothJson,
   runMoth,
   type DaemonHandle,
@@ -36,15 +37,10 @@ describe.skipIf(!DEVNET_URL)('moth daemon dust register + deregister — fresh w
   }, 60_000);
 
   it('register: turns unregistered NIGHT UTXOs into dust-generating ones', async () => {
-    const result = runMothJson<{txId: string | null; registered: boolean}>([
-      'daemon', 'dust', 'register',
-      '--wallet', wallet,
-      '--network', NETWORK,
-    ]);
-    expect(result.exitCode, result.raw.stderr || result.raw.stdout).toBe(0);
-    expect(result.data?.registered).toBe(true);
-    expect(result.data?.txId).toBeTruthy();
-    expect(result.data?.txId).toMatch(/^[0-9a-fA-F]+$/);
+    const result = await registerDust(wallet, NETWORK);
+    expect(result.registered).toBe(true);
+    expect(result.txId).toBeTruthy();
+    expect(result.txId).toMatch(/^[0-9a-fA-F]+$/);
 
     await waitForDaemonStderr(
       daemon,
