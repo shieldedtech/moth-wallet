@@ -31,6 +31,20 @@ scripting. Global flags include `--network/-n` (default `devnet`), `--wallet/-w`
 Transaction commands accept `--prover server|wasm` (or `MOTH_PROVER`). Server
 mode uses `--proof-server <url>`; WASM mode proves locally.
 
+A proof server on this computer (`http://localhost:6300` by default) needs no pin.
+A remote proof server, such as the one Lace runs in the TEE, needs one before a
+witness is sent. Store it with `moth config set proof-server-pin '<json>'`, or
+pass the same JSON in `MOTH_PROOF_SERVER_PIN`. The JSON is an `attestationHost`
+plus `launchMeasurement`, `imageId`, `microcodeSvn`, `snpfwSvn`, PCR `0`–`4`,
+and `applicationDiskRoothash`.
+
+Those values come from the Temenos deploy, not from the running VM. The person
+who deployed it with the `veritee` CLI already has them: `local-azure-snp/policy.json`
+holds the launch measurement, image id, and both SVNs; `local-azure-snp/pcrs.json`
+holds PCR 0–4; the application-disk root hash comes from packaging. `attestationHost`
+is the host that serves the quote. Set `proof-server-url` to that server's `https`
+address. A saved pin is ignored while the URL is still on this computer.
+
 ```bash
 # Create and fund a wallet
 moth wallet generate --name dev
