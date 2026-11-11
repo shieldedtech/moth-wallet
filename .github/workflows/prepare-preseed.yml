@@ -81,6 +81,8 @@ jobs:
           cache: yarn
 
       - name: Install dependencies
+        env:
+          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
         run: yarn install --immutable
 
       - name: Build core package

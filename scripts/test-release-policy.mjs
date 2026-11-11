@@ -156,9 +156,10 @@ requirePolicy(
   ),
   'the custom publisher must push its annotated tags with Git so recovery preserves their target commits',
 );
+const withoutPackagesRead = workflow.replaceAll('${{ secrets.GH_PACKAGES_TOKEN }}', '');
 requirePolicy(
-  !workflow.includes('secrets.') && !workflow.includes('MIDNIGHTCI_PACKAGES_WRITE'),
-  'the release workflow must not depend on PATs or repository secrets',
+  !withoutPackagesRead.includes('secrets.') && !workflow.includes('MIDNIGHTCI_PACKAGES_WRITE'),
+  'the release workflow must not depend on PATs or repository secrets except the read-only GitHub packages token',
 );
 requirePolicy(
   !workflow.includes('steps.releases.outputs.hasChangesets') &&
