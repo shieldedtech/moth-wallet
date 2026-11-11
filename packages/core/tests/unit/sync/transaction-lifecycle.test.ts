@@ -1,19 +1,32 @@
 // The facade's lifecycle records are what release coins a failed transaction
 // booked, and they used to be lost on restart while the booked coins were
-// restored from cache (#208). These pin their save → restore round trip, and
-// that the list earlier builds saved under the same key still reads.
+// restored from cache (#208). These pin their save → restore round trip, in the
+// service and across a restart of wallet sync, and that the list earlier builds
+// saved under the same key still reads.
 
-import {describe, expect, it} from 'vitest';
+import {afterEach, describe, expect, it} from 'vitest';
 import {Either, Option} from 'effect';
 import * as Rx from 'rxjs';
-import {ProtocolVersion} from '@midnightntwrk/wallet-sdk';
+import {InMemoryTransactionHistoryStorage, ProtocolVersion} from '@midnightntwrk/wallet-sdk';
+import {DustWallet} from '@midnightntwrk/wallet-sdk/dust';
+import {
+  WalletEntrySchema,
+  WalletFacade,
+  mergeWalletEntries,
+  type DefaultConfiguration,
+} from '@midnightntwrk/wallet-sdk/facade';
+import {ShieldedWallet} from '@midnightntwrk/wallet-sdk/shielded';
+import {UnshieldedWallet, PublicKey, createKeystore} from '@midnightntwrk/wallet-sdk/unshielded';
 import {
   Lifecycle,
   type TransactionTraits,
 } from '@midnightntwrk/wallet-sdk/capabilities/transactionLifecycle';
+import {deriveWalletKeys, type WalletKeys} from '../../../src/sync/operations.js';
 import {makeTransactionLifecycleService} from '../../../src/sync/transaction-lifecycle.js';
-import {clearSyncCache} from '../../../src/sync/wallet-sync.js';
-import {InMemorySyncStateStore, syncStateKey} from '../../../src/sync/sync-store.js';
+import {clearSyncCache, startWalletSync} from '../../../src/sync/wallet-sync.js';
+import {InMemorySyncStateStore, syncStateKey, type WalletPart} from '../../../src/sync/sync-store.js';
+import {serverProver, type NetworkConfig} from '../../../src/types/network.js';
+import {testSeedHex} from '../../helpers/seed.js';
 
 type Era = 'v8' | 'v9';
 
@@ -54,6 +67,16 @@ const traits = Either.getOrThrow(
 
 const configuration = {indexerClientConnection: {indexerHttpUrl: 'http://127.0.0.1:1'}};
 
+/** A balanced-but-unsubmitted spend, as the pending-transactions list held it. */
+const BOOKED_SPEND = {
+  identifiers: ['booked'],
+  intentHashes: ['intent-1'],
+  inputs: {unshielded: ['intent-0#0']},
+  ttl: '2100-01-01T00:00:00.000Z',
+  createdAt: '2026-11-01T12:00:00.000Z',
+  expired: false,
+};
+
 /**
  * What wallet-sdk 2.0.0-canary.20261102170246-27e8969 wrote for two watched
  * transactions, one per ledger version, and one balanced-but-unsubmitted spend:
@@ -65,17 +88,11 @@ const PENDING_LIST_V1 = JSON.stringify({
     {tx: '0001ff', creationTime: '2026-11-01T12:00:00.000Z', protocolVersion: '0'},
     {tx: '1020', creationTime: '2026-11-01T12:00:00.000Z', protocolVersion: '9000000'},
   ],
-  reservations: [
-    {
-      identifiers: ['booked'],
-      intentHashes: ['intent-1'],
-      inputs: {unshielded: ['intent-0#0']},
-      ttl: '2100-01-01T00:00:00.000Z',
-      createdAt: '2026-11-01T12:00:00.000Z',
-      expired: false,
-    },
-  ],
+  reservations: [BOOKED_SPEND],
 });
+
+/** The same list holding the booked spend alone, which the facade's own traits can read. */
+const BOOKED_SPEND_LIST_V1 = JSON.stringify({version: 'v1', transactions: [], reservations: [BOOKED_SPEND]});
 
 const facts = (tx: FakeTx, protocolVersion: ProtocolVersion.ProtocolVersion) => ({
   tx,
@@ -86,7 +103,7 @@ const facts = (tx: FakeTx, protocolVersion: ProtocolVersion.ProtocolVersion) => 
   protocolVersion,
 });
 
-const recordsOf = async (service: {state: () => Rx.Observable<Lifecycle.TransactionLifecycle<FakeTx>>}) =>
+const recordsOf = async <T>(service: {state: () => Rx.Observable<Lifecycle.TransactionLifecycle<T>>}) =>
   (await Rx.firstValueFrom(service.state())).records;
 
 const summary = (record: Lifecycle.LifecycleRecord<FakeTx>) => [
@@ -143,6 +160,72 @@ describe('transaction lifecycle cache', () => {
     await store.put(key, PENDING_LIST_V1);
     await clearSyncCache('alice', 'devnet', store);
     expect(await store.get(key)).toBeNull();
+  });
+});
+
+// Nothing listens on port 9: the wallets start, reach no chain, and keep what they restored.
+const OFFLINE: NetworkConfig = {
+  id: 'preprod',
+  nodeUrl: 'ws://127.0.0.1:9',
+  indexerUrl: 'http://127.0.0.1:9/api',
+  prover: serverProver('http://127.0.0.1:9'),
+};
+
+/** A store holding a fresh wallet's three snapshots, so wallet sync restores it rather than pre-seeding. */
+async function cachedWallet(keys: WalletKeys, name: string): Promise<InMemorySyncStateStore> {
+  const config = WalletFacade.resolveConfiguration<DefaultConfiguration>({
+    networkId: OFFLINE.id,
+    indexerClientConnection: {indexerHttpUrl: OFFLINE.indexerUrl, indexerWsUrl: 'ws://127.0.0.1:9/api/ws'},
+    relayURL: new URL(OFFLINE.nodeUrl),
+    txHistoryStorage: new InMemoryTransactionHistoryStorage(WalletEntrySchema, mergeWalletEntries),
+    costParameters: {additionalFeeOverhead: 0n, feeBlocksMargin: 0},
+  });
+  const wallets: Array<[WalletPart, {serializeState(): Promise<string>; stop(): Promise<void>}]> = [
+    ['shielded', await ShieldedWallet(config).startWithSeed(keys.shielded)],
+    [
+      'unshielded',
+      await UnshieldedWallet(config).startWithPublicKey(
+        PublicKey.fromKeyStore(createKeystore({kind: 'schnorr', secret: keys.unshielded}, OFFLINE.id))
+      ),
+    ],
+    ['dust', await DustWallet(config).startWithSeed(keys.dust)],
+  ];
+  const store = new InMemorySyncStateStore();
+  for (const [part, wallet] of wallets) {
+    await store.put(syncStateKey(OFFLINE.id, name, part), await wallet.serializeState());
+    await wallet.stop();
+  }
+  return store;
+}
+
+describe('wallet sync', () => {
+  const stoppers: Array<() => Promise<void>> = [];
+  afterEach(async () => {
+    await Promise.allSettled(stoppers.splice(0).map((stop) => stop()));
+  });
+
+  it('carries a live record across a restart', async () => {
+    const keys = deriveWalletKeys(await testSeedHex());
+    const store = await cachedWallet(keys, 'alice');
+    const pending = syncStateKey(OFFLINE.id, 'alice', 'pending');
+    await store.put(pending, BOOKED_SPEND_LIST_V1);
+
+    const session = async () => {
+      const sync = await startWalletSync(keys, OFFLINE, undefined, 'alice', false, undefined, {syncStore: store});
+      stoppers.push(() => sync.stop());
+      return sync;
+    };
+    const liveStates = async (sync: {facade: WalletFacade}) =>
+      (await recordsOf(sync.facade.transactionLifecycleService)).filter(Lifecycle.isLive).map((r) => r.state._tag);
+
+    const first = await session();
+    expect(await liveStates(first)).toEqual(['Balanced']);
+
+    // Dropped, so only what the first session saves on stop can hand the record to the second.
+    await store.delete(pending);
+    await first.stop();
+
+    expect(await liveStates(await session())).toEqual(['Balanced']);
   });
 });
 
