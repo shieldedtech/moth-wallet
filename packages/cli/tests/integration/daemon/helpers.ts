@@ -28,7 +28,7 @@ const DEFAULT_PASSPHRASE = process.env.MOTH_PASSPHRASE ?? 'daemon-test-passphras
 const AIRDROP_NIGHT = process.env.MOTH_TEST_AIRDROP_NIGHT ?? '1000';
 
 /** NIGHT for a coin that must pay fees soon after it arrives. DUST accrues in
- *  proportion to the NIGHT held, ten times faster here than at the default. */
+ *  proportion to the NIGHT held, about 0.08 DUST a second at this size. */
 export const FEE_PAYER_NIGHT = '10000';
 
 /** The daemon's `--max-spend`, in NIGHT: high enough that no test transfer meets it. */
@@ -74,9 +74,15 @@ export function runMoth(args: string[], env: Record<string, string> = {}): CliRe
   }
 }
 
+export interface CliJsonResult<T> {
+  data: T | null;
+  exitCode: number;
+  raw: CliResult;
+}
+
 /** Run moth with `-o json` and parse the result. Returns `{data: null}`
  *  if the output isn't valid JSON. */
-export function runMothJson<T = unknown>(args: string[], env?: Record<string, string>): {data: T | null; exitCode: number; raw: CliResult} {
+export function runMothJson<T = unknown>(args: string[], env?: Record<string, string>): CliJsonResult<T> {
   const raw = runMoth([...args, '-o', 'json'], env);
   try {
     return {data: JSON.parse(raw.stdout) as T, exitCode: raw.exitCode, raw};
@@ -296,28 +302,42 @@ export async function setupTestWallet(
   return walletName;
 }
 
+/** The wallet's NIGHT in STAR, or why its daemon could not report it. A failed
+ *  read is an error and never a balance of zero, which callers would act on. */
+function readNight(walletName: string, network: string): bigint | Error {
+  const res = runMothJson<DaemonStateResponse>([
+    'wallet', 'status', '--wallet', walletName, '--network', network,
+  ]);
+  if (res.exitCode !== 0 || !res.data?.ready) {
+    return new Error(
+      `wallet ${walletName} on ${network} could not report its NIGHT: ${res.raw.stderr || res.raw.stdout}`,
+    );
+  }
+  return BigInt(res.data.balances?.unshielded?.[NIGHT_TOKEN_ID] ?? '0');
+}
+
 /** Airdrop one more NIGHT coin to a wallet `setupTestWallet` made, and wait for
- *  its running daemon to see it. */
+ *  its running daemon to see it. Returns the wallet's NIGHT afterwards, in STAR. */
 export async function fundTestWallet(
   walletName: string,
   network: string,
   nightAmount: string = AIRDROP_NIGHT,
-): Promise<void> {
-  const night = (): bigint => {
-    const res = runMothJson<DaemonStateResponse>([
-      'wallet', 'status', '--wallet', walletName, '--network', network,
-    ]);
-    return BigInt(res.data?.balances?.unshielded?.[NIGHT_TOKEN_ID] ?? '0');
-  };
-  const before = night();
+): Promise<bigint> {
+  const before = readNight(walletName, network);
+  if (before instanceof Error) throw before;
   const air = await runMidnight(['airdrop', nightAmount, '--wallet', getReceiveAddress(walletName, network)]);
   if (air.exitCode !== 0) {
     throw new Error(`midnight airdrop failed: ${air.stderr || air.stdout}`);
   }
   const deadline = Date.now() + 120_000;
-  while (night() <= before) {
+  for (;;) {
+    const now = readNight(walletName, network);
+    if (typeof now === 'bigint' && now > before) return now;
     if (Date.now() > deadline) {
-      throw new Error(`wallet ${walletName} on ${network} never saw its ${nightAmount} NIGHT top-up`);
+      throw new Error(
+        `wallet ${walletName} on ${network} never saw its ${nightAmount} NIGHT top-up` +
+          (now instanceof Error ? `: ${now.message}` : ''),
+      );
     }
     await new Promise((r) => setTimeout(r, 2000));
   }
@@ -390,22 +410,46 @@ export const ONE_DUST = 1_000_000_000_000_000n;
  *  pays about 0.3 DUST, and the wallet wants 0.3 more in hand before it balances one. */
 const MIN_DUST_FOR_FEE = ONE_DUST;
 
-/** The DUST to wait for before a deploy. The small bundled contract needs about
- *  0.9 DUST in hand to balance its deploy, and a larger contract needs more. */
+/** The DUST to wait for before a deploy. It is a floor and not a guarantee, since
+ *  the fee moves with how busy the chain has been: deploy through `runFeePaying`. */
 export const DEPLOY_DUST = 3n * ONE_DUST;
 
 /**
- * Register a wallet funded with `FEE_PAYER_NIGHT` and leave it holding `coins`
- * coins that can each pay a fee. A transaction books every coin it spends until
- * it lands, so a test that builds several back to back needs a coin for each.
+ * Run a fee-paying `moth` command, retrying while the wallet cannot balance its fee.
+ * DUST is reported as of now but spent as of the last block the wallet's DUST sync
+ * verified, so a wallet that reports enough can still be refused for some seconds.
+ */
+export async function runFeePaying<T = unknown>(args: string[], timeoutMs = 120_000): Promise<CliJsonResult<T>> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const res = runMothJson<T>(args);
+    const refused = res.exitCode !== 0 && /could not balance dust/.test(res.raw.stderr || res.raw.stdout);
+    if (!refused || Date.now() > deadline) return res;
+    await new Promise((r) => setTimeout(r, 5_000));
+  }
+}
+
+/**
+ * Register a wallet and leave it holding `coins` coins that can each pay a fee.
+ * A transaction books every coin it spends until it lands, so a test that builds
+ * several back to back needs a coin for each.
  */
 export async function prepareFeePayer(walletName: string, network: string, coins: number): Promise<void> {
   await registerDust(walletName, network);
+  const first = readNight(walletName, network);
+  if (first instanceof Error) throw first;
+  let total = first;
+  let smallest = first;
   // Topped up after registering, which re-creates the wallet's NIGHT and can merge coins.
-  for (let coin = 1; coin < coins; coin++) await fundTestWallet(walletName, network, FEE_PAYER_NIGHT);
-  // Equal coins accrue equally, so this much more in total is 1 DUST on the newest.
+  for (let coin = 1; coin < coins; coin++) {
+    const after = await fundTestWallet(walletName, network, FEE_PAYER_NIGHT);
+    if (after - total < smallest) smallest = after - total;
+    total = after;
+  }
+  // A coin accrues its share of the wallet's DUST, so the smallest coin has
+  // gained 1 DUST once the wallet as a whole has gained this much.
   const dust = await waitForDust(walletName, network);
-  await waitForDust(walletName, network, 300_000, dust + BigInt(coins) * ONE_DUST);
+  await waitForDust(walletName, network, 300_000, dust + (ONE_DUST * total) / smallest);
 }
 
 /**

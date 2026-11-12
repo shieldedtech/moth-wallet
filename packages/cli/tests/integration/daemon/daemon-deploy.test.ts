@@ -21,7 +21,7 @@ import {
   FEE_PAYER_NIGHT,
   waitForDaemonStderr,
   runMoth,
-  runMothJson,
+  runFeePaying,
   type DaemonHandle,
 } from './helpers.js';
 const COUNTER_ARTIFACT = process.env.COUNTER_ARTIFACT_PATH;
@@ -56,7 +56,7 @@ describe.skipIf(!DEVNET_URL || !COUNTER_AVAILABLE)('moth daemon deploy — round
     // the stub fixture below provides them with passthrough
     // implementations that satisfy the constructor's typecheck
     // but never get invoked at deploy time.
-    const deploy = runMothJson<{txHash?: string; contractAddress?: string; status?: string}>([
+    const deploy = await runFeePaying<{txHash?: string; contractAddress?: string; status?: string}>([
       'daemon', 'deploy', COUNTER_ARTIFACT!,
       '--wallet', wallet,
       '--network', NETWORK,

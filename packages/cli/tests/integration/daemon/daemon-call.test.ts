@@ -27,6 +27,7 @@ import {
   waitForDaemonStderr,
   runMoth,
   runMothJson,
+  runFeePaying,
   type DaemonHandle,
 } from './helpers.js';
 
@@ -65,7 +66,7 @@ describe.skipIf(!DEVNET_URL || !COUNTER_AVAILABLE)('moth daemon call — circuit
     // daemon already has a warm sync + the dust accrual we just
     // waited for, so we don't pay the fee out of an inline-deploy's
     // separate DUST view (which races against accrual).
-    const deploy = runMothJson<{contractAddress?: string}>([
+    const deploy = await runFeePaying<{contractAddress?: string}>([
       'daemon', 'deploy', COUNTER_ARTIFACT!,
       '--wallet', wallet,
       '--network', NETWORK,

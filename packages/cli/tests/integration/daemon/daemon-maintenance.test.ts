@@ -20,6 +20,7 @@ import {
   DEPLOY_DUST,
   FEE_PAYER_NIGHT,
   runMothJson,
+  runFeePaying,
   runMoth,
   type DaemonHandle,
 } from './helpers.js';
@@ -62,7 +63,7 @@ describe.skipIf(!DEVNET_URL || !COUNTER_AVAILABLE)('moth daemon maintenance inse
     // Deploy via `daemon deploy` so the contract creation shares
     // the daemon's warm sync + dust state. Inline `moth deploy`
     // races against dust accrual in its own separate sync.
-    const deploy = runMothJson<{contractAddress?: string}>([
+    const deploy = await runFeePaying<{contractAddress?: string}>([
       'daemon', 'deploy', COUNTER_ARTIFACT!,
       '--wallet', wallet,
       '--network', NETWORK,
