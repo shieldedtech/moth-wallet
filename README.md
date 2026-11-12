@@ -285,7 +285,7 @@ ADDR=$(moth wallet list -o json | jq -r '.[] | select(.name=="dev") | .addresses
 npx -y -p midnight-wallet-cli@latest midnight airdrop 1000 --wallet "$ADDR"
 ```
 
-For `preview` / `preprod` use the HTTP faucet at `https://faucet.<network>.midnight.network/`. The `qanet` and `devnet` faucets are at `https://faucet.<network>.shielded.tools/` and need the VPN. `mainnet` has no faucet.
+For `preview` / `preprod` use the HTTP faucet at `https://faucet.<network>.midnight.network/`. `mainnet` has no faucet.
 
 ### 3. Check Balance
 

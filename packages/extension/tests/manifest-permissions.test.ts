@@ -30,6 +30,23 @@ const hostedPresetUrls = Object.values(DEFAULT_NETWORKS)
   .flatMap((network) => [network.nodeUrl, network.indexerUrl])
   .filter((url) => url.startsWith('https://'));
 
+// The coverage check below is only as strict as this matcher, so pin it: a
+// wildcard must match on a label boundary and the scheme must agree.
+describe('host permission matching', () => {
+  it.each([
+    ['https://*.shielded.tools/*', 'https://rpc.preprod.shielded.tools', true],
+    ['https://*.shielded.tools/*', 'https://rpc.preprod.shielded.tools/api/v4/graphql', true],
+    ['https://*.shielded.tools/*', 'https://rpc.preprod.notshielded.tools', false],
+    ['https://*.ools/*', 'https://rpc.preprod.shielded.tools', false],
+    ['https://*.tools/*', 'https://rpc.preprod.shielded.tools', true],
+    ['http://*.shielded.tools/*', 'https://rpc.preprod.shielded.tools', false],
+    ['https://rpc.preprod.shielded.tools/*', 'https://rpc.preprod.shielded.tools', true],
+    ['https://rpc.preprod.shielded.tools/*', 'https://indexer.preprod.shielded.tools', false],
+  ] as const)('treats %s as covering %s: %s', (pattern, url, expected) => {
+    expect(covers(pattern, url)).toBe(expected);
+  });
+});
+
 describe('manifest permissions', () => {
   // Chrome serves clipboard reads to an extension page whether or not the
   // permission is declared, so only stricter builds catch a missing entry.
