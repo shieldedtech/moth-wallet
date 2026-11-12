@@ -156,7 +156,7 @@ export interface MothBrowserConfig {
  *
  * ```ts
  * const moth = createMothBrowser({
- *   indexerUrl: 'https://indexer.preview.shielded.tools',
+ *   indexerUrl: 'https://indexer.preview.midnight.network',
  *   network: 'preview',
  * });
  * const wallets = moth.wallets;

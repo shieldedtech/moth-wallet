@@ -214,7 +214,7 @@ describe('reporting an outage', () => {
     }
   }
 
-  const RELAY = 'wss://rpc.preview.shielded.tools/';
+  const RELAY = 'wss://rpc.preview.midnight.network/';
 
   beforeEach(() => {
     dials.length = 0;

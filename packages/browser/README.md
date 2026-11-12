@@ -22,7 +22,7 @@ import { createMothBrowser } from '@shieldedtech/moth-browser';
 
 // Configure with custom endpoints (IndexedDB-backed storage is wired up for you).
 const moth = createMothBrowser({
-  indexerUrl: 'https://indexer.preview.shielded.tools',
+  indexerUrl: 'https://indexer.preview.midnight.network',
   network: 'preview',
   prover: { type: 'wasm' },
 });

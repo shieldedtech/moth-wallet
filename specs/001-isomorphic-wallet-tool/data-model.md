@@ -54,7 +54,7 @@ A configured Midnight network endpoint.
 | ID | Node | Indexer | Proof Server |
 |----|------|---------|--------------|
 | devnet | `ws://localhost:9944` | `http://localhost:8088` | `http://localhost:6300` |
-| preview | `https://rpc.preview.shielded.tools` | `https://indexer.preview.shielded.tools/api/v4/graphql` | `http://localhost:6300` |
+| preview | `https://rpc.preview.midnight.network` | `https://indexer.preview.midnight.network/api/v4/graphql` | `http://localhost:6300` |
 | preprod | `https://rpc.preprod.shielded.tools` | `https://indexer.preprod.shielded.tools/api/v4/graphql` | `http://localhost:6300` |
 
 ### WalletConfig

@@ -63,6 +63,9 @@ export default defineConfig({
       ...(browser === 'firefox' ? [] : ['sidePanel', 'offscreen']),
     ],
     host_permissions: [
+      // The hosted presets: preview is still on midnight.network, the rest are on
+      // shielded.tools. Drop midnight.network only once no preset uses it.
+      'https://*.midnight.network/*',
       'https://*.shielded.tools/*',
       'https://midnight-s3-fileshare-dev-eu-west-1.s3.eu-west-1.amazonaws.com/*',
       'http://localhost/*',

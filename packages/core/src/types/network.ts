@@ -86,8 +86,10 @@ export function validateNetworkConfig(config: NetworkConfig): void {
   if (prover.type === 'server') validateNetworkUrl(prover.url, 'Proof server URL');
 }
 
-// Hosted endpoints live under *.shielded.tools; the extension's host_permissions
-// in wxt.config.ts must cover them, so change both together.
+// Hosted endpoints live under *.shielded.tools, except preview, which stays on
+// *.midnight.network until its shielded.tools hosts have DNS records. The
+// extension's host_permissions in wxt.config.ts must cover every host here, so
+// change both together.
 // Format follows moth-wallet's NetworkConfig: HTTP-style URLs that the sync
 // layer auto-converts to WS where needed.
 export const DEFAULT_NETWORKS: Record<string, NetworkConfig> = {
@@ -105,8 +107,8 @@ export const DEFAULT_NETWORKS: Record<string, NetworkConfig> = {
   },
   preview: {
     id: 'preview',
-    nodeUrl: 'https://rpc.preview.shielded.tools',
-    indexerUrl: 'https://indexer.preview.shielded.tools/api/v4/graphql',
+    nodeUrl: 'https://rpc.preview.midnight.network',
+    indexerUrl: 'https://indexer.preview.midnight.network/api/v4/graphql',
     prover: serverProver(),
   },
   qanet: {
