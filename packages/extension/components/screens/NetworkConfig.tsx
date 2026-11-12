@@ -32,7 +32,7 @@ export const NETWORK_LABELS: Record<SupportedNetwork, string> = {
   preview: 'Preview',
   preprod: 'Preprod',
   qanet: 'QA net',
-  local: 'Local env',
+  local: 'Local',
   undeployed: 'Undeployed',
 };
 

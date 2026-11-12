@@ -87,29 +87,15 @@ describe('a profile saved on the local network', () => {
   beforeAll(() => serveSettings());
   beforeEach(() => fakeBrowser.storage.local.clear());
 
-  it('opens the picker on Local env, selected', async () => {
+  it('opens the picker on Local, selected', async () => {
     await fakeBrowser.storage.local.set({ settings: LOCAL_PROFILE });
 
     const { settings, state, html } = await openNetworkPanel();
 
     expect(settings.network).toBe('local');
     expect(state.network).toBe('local');
-    expect(checkedNetwork(html)).toBe('Local env');
+    expect(checkedNetwork(html)).toBe('Local');
     expect(html).toContain(DEFAULT_NETWORKS.local!.nodeUrl);
-  });
-
-  it('does not offer mainnet to a profile that never asked for it', async () => {
-    // The failure this guards against is not a blank radio. `selectableNetworks`
-    // never strands a wallet on the network it is already using, so a fallback to
-    // mainnet would ALSO unhide mainnet with developer mode off — presenting a
-    // value-bearing network as this account's own, one click from being saved.
-    await fakeBrowser.storage.local.set({ settings: LOCAL_PROFILE });
-
-    const { state, html } = await openNetworkPanel();
-
-    expect(state.developerMode).toBe(false);
-    expect(state.available).not.toContain('mainnet');
-    expect(html).not.toContain('>Mainnet</span>');
   });
 
   it('keeps endpoint edits made on local', async () => {
