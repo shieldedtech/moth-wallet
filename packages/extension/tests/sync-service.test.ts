@@ -35,6 +35,7 @@ const TEARDOWN_DELAY_MS = 10_000;
 
 function fakePort() {
   const listeners: Array<() => void> = [];
+  const messageListeners: Array<(msg: unknown) => void> = [];
   const port = {
     postMessage: vi.fn(),
     onDisconnect: {
@@ -42,9 +43,18 @@ function fakePort() {
         listeners.push(fn);
       },
     },
+    onMessage: {
+      addListener: (fn: (msg: unknown) => void) => {
+        messageListeners.push(fn);
+      },
+    },
     sender: undefined,
   } as unknown as Browser.runtime.Port;
-  return { port, disconnect: () => listeners.forEach((fn) => fn()) };
+  return {
+    port,
+    disconnect: () => listeners.forEach((fn) => fn()),
+    send: (msg: unknown) => messageListeners.forEach((fn) => fn(msg)),
+  };
 }
 
 describe('sync-service teardown', () => {
@@ -414,6 +424,57 @@ describe('sync-service transaction stage', () => {
 // syncDefersAutoLock feeds the auto-lock: a panel watching an engine that is still
 // progressing and not yet synced defers the lock; stall, completion, panel close or
 // the cap release it, and the cap runs from the first deferral of each sync.
+// Opening another extension's side panel hides Moth's without closing it, so the
+// port stays open. A dApp prompt was then sent only to the hidden panel and the
+// request waited until the user opened Moth themselves (Brave + 1AM, 2026-11-04).
+describe('sync-service panel visibility', () => {
+  let sync: typeof import('../lib/background/sync-service');
+
+  beforeEach(async () => {
+    vi.resetModules();
+    hasPendingApproval.mockReset().mockReturnValue(false);
+    sync = await import('../lib/background/sync-service');
+  });
+
+  it('a panel covered by another panel keeps its port but is not visible', () => {
+    const panel = fakePort();
+    sync.addPort(panel.port);
+    expect(sync.hasVisiblePanel()).toBe(true);
+
+    panel.send({ kind: 'visibility', visible: false });
+    expect(sync.hasOpenPorts()).toBe(true);
+    expect(sync.hasVisiblePanel()).toBe(false);
+
+    panel.send({ kind: 'visibility', visible: true });
+    expect(sync.hasVisiblePanel()).toBe(true);
+  });
+
+  it('one visible panel is enough, and a closed hidden panel is forgotten', () => {
+    const covered = fakePort();
+    const shown = fakePort();
+    sync.addPort(covered.port);
+    sync.addPort(shown.port);
+    covered.send({ kind: 'visibility', visible: false });
+    expect(sync.hasVisiblePanel()).toBe(true);
+
+    shown.send({ kind: 'visibility', visible: false });
+    expect(sync.hasVisiblePanel()).toBe(false);
+
+    shown.disconnect();
+    covered.disconnect();
+    expect(sync.hasOpenPorts()).toBe(false);
+    expect(sync.hasVisiblePanel()).toBe(false);
+  });
+
+  it('ignores other messages on the port', () => {
+    const panel = fakePort();
+    sync.addPort(panel.port);
+    panel.send({ kind: 'something-else' });
+    panel.send(null);
+    expect(sync.hasVisiblePanel()).toBe(true);
+  });
+});
+
 describe('sync-service syncDefersAutoLock', () => {
   const session = { seedHex: 'ab'.repeat(32), walletName: 'Account-2' } as never;
   const network = { id: 'preprod' } as never;

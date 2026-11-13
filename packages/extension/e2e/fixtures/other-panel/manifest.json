@@ -1,0 +1,8 @@
+{
+  "manifest_version": 3,
+  "name": "Other Panel (e2e stand-in)",
+  "version": "1.0",
+  "description": "Stands in for another wallet extension whose side panel displaces Moth's.",
+  "permissions": ["sidePanel"],
+  "side_panel": { "default_path": "panel.html" }
+}

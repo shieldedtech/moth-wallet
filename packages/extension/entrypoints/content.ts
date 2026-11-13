@@ -4,7 +4,8 @@
 // world: 'MAIN') so it works on Firefox < 128 too.
 
 import { defineContentScript, injectScript } from '#imports';
-import { sendMessage } from '../lib/messaging/protocol';
+import { browser, type Browser } from 'wxt/browser';
+import { CONNECTOR_PORT, sendMessage } from '../lib/messaging/protocol';
 import {
   PAGE_REQUEST_EVENT,
   isPageRequest,
@@ -16,7 +17,24 @@ export default defineContentScript({
   matches: ['<all_urls>'],
   runAt: 'document_start',
   async main() {
+    // One port per document, opened before its first request: the background drops
+    // this page's pending prompts when the port closes with the page.
+    let presence: Browser.runtime.Port | null = null;
+    const announcePresence = () => {
+      if (presence) return;
+      try {
+        presence = browser.runtime.connect({ name: CONNECTOR_PORT });
+        // A restarted service worker drops the port; the next request reopens it.
+        presence.onDisconnect.addListener(() => {
+          presence = null;
+        });
+      } catch {
+        presence = null;
+      }
+    };
+
     const relay = ({ id, method, paramsJson }: PageRequestEnvelope) => {
+      announcePresence();
       // Do not await here. sendMessage() must start during the synchronous DOM
       // event so Chrome carries the dApp click's user activation to background.
       void sendMessage('connectorRequest', { method, paramsJson })

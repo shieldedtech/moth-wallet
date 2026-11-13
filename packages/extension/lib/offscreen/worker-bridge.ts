@@ -33,6 +33,21 @@ function relayEvent<E extends HostEvent>(event: E, data: HostEventData[E]): void
 interface Pending {
   resolve: (value: unknown) => void;
   reject: (reason: unknown) => void;
+  timer?: ReturnType<typeof setTimeout>;
+}
+
+// Fast-lane methods finish in seconds, so a worker silent this long is gone: an
+// out-of-memory kill raises no event, and its requests would otherwise hang until
+// the page-side timeout. Sync-lane work (proving, a cold cache restore) legitimately
+// runs for minutes and is not bounded here.
+export const FAST_LANE_TIMEOUT_MS = 60_000;
+/** A proof can take minutes: the proof server path's own request timeout is five
+ *  minutes (SDK default), so the bound here must not fire first. Still under the
+ *  page's ten-minute wait, so a dApp sees an error rather than a hang. */
+export const PROVING_TIMEOUT_MS = 6 * 60_000;
+const PROVING_METHODS: ReadonlySet<HostMethod> = new Set<HostMethod>(['os/provingProviderCheck', 'os/provingProviderProve']);
+function boundFor(method: HostMethod): number {
+  return PROVING_METHODS.has(method) ? PROVING_TIMEOUT_MS : FAST_LANE_TIMEOUT_MS;
 }
 
 interface Lane {
@@ -54,7 +69,10 @@ let nextId = 1;
 // Reject every in-flight request on the lane and drop its worker so the next
 // request respawns it (loud failure — never a silent slow fallback).
 function failAll(lane: Lane, error: Error): void {
-  for (const { reject } of lane.pending.values()) reject(error);
+  for (const { reject, timer } of lane.pending.values()) {
+    clearTimeout(timer);
+    reject(error);
+  }
   lane.pending.clear();
   lane.worker?.terminate();
   lane.worker = null;
@@ -74,6 +92,7 @@ function spawn(lane: Lane): Worker {
     const entry = lane.pending.get(message.id);
     if (!entry) return;
     lane.pending.delete(message.id);
+    clearTimeout(entry.timer);
     if (message.ok) entry.resolve(message.result);
     else entry.reject(deserializeHostError(message.error));
   };
@@ -100,15 +119,25 @@ export function hostRequest<M extends HostMethod>(method: M, data: MethodData<M>
   // whole branch is dead-code-eliminated from production builds.
   if (import.meta.env.DEV) return inlineRequest(method, data);
 
-  const lane = lanes[laneFor(method)];
+  const laneName = laneFor(method);
+  const lane = lanes[laneName];
   const w = (lane.worker ??= spawn(lane));
   const id = nextId++;
   return new Promise<MethodResult<M>>((resolve, reject) => {
-    lane.pending.set(id, { resolve: resolve as (value: unknown) => void, reject });
+    const entry: Pending = { resolve: resolve as (value: unknown) => void, reject };
+    if (laneName === 'fast') {
+      const bound = boundFor(method);
+      entry.timer = setTimeout(() => {
+        if (lane.pending.get(id) !== entry) return;
+        failAll(lane, new Error(`Wallet worker did not answer ${method} within ${bound / 1000}s`));
+      }, bound);
+    }
+    lane.pending.set(id, entry);
     try {
       w.postMessage({ id, method, data } satisfies WorkerRequest);
     } catch (err) {
       // postMessage can throw synchronously (e.g. a non-cloneable payload).
+      clearTimeout(entry.timer);
       lane.pending.delete(id);
       reject(err);
     }
