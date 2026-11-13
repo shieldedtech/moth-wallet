@@ -3,11 +3,15 @@ import type { ActivityEntry } from '@shieldedtech/moth-browser';
 import type { SyncStateStore } from '@shieldedtech/moth-wallet/sync/sync-store';
 import {
   SUBMISSIONS_MAX,
+  SUBMISSION_DEADLINE_MARGIN_MS,
   SUBMISSION_PENDING_TTL_MS,
+  connectorSubmission,
   loadSubmissions,
   mergeSubmissions,
   recordSubmission,
+  recordSubmissionFailure,
   submissionsKey,
+  transactionDeadline,
   type SubmittedTx,
 } from '../lib/offscreen/submissions';
 
@@ -57,9 +61,8 @@ function chainEntry(overrides: Partial<ActivityEntry>): ActivityEntry {
 
 describe('mergeSubmissions', () => {
   it('surfaces an unapplied fresh submission as a pending sent row', () => {
-    const { entries, prune } = mergeSubmissions([], [submission({})], NOW);
+    const entries = mergeSubmissions([], [submission({})], NOW);
 
-    expect(prune).toEqual([]);
     expect(entries).toHaveLength(1);
     expect(entries[0]).toMatchObject({
       hash: 'a'.repeat(64),
@@ -73,7 +76,7 @@ describe('mergeSubmissions', () => {
   });
 
   it('enriches the applied chain entry with the recorded recipient instead of duplicating it', () => {
-    const { entries } = mergeSubmissions([chainEntry({})], [submission({})], NOW);
+    const entries = mergeSubmissions([chainEntry({})], [submission({})], NOW);
 
     expect(entries).toHaveLength(1);
     expect(entries[0]?.pending).toBe(false);
@@ -87,7 +90,7 @@ describe('mergeSubmissions', () => {
       identifiers: [submitted.hash],
     });
 
-    const { entries } = mergeSubmissions([applied], [submitted], NOW);
+    const entries = mergeSubmissions([applied], [submitted], NOW);
 
     expect(entries).toHaveLength(1);
     expect(entries[0]).toMatchObject({
@@ -104,7 +107,7 @@ describe('mergeSubmissions', () => {
       transactionHash: appliedHash,
     });
 
-    const { entries } = mergeSubmissions(
+    const entries = mergeSubmissions(
       [chainEntry({ hash: appliedHash, identifiers: undefined })],
       [submitted],
       NOW,
@@ -115,7 +118,7 @@ describe('mergeSubmissions', () => {
   });
 
   it('never overwrites a counterparty the chain entry already reveals', () => {
-    const { entries } = mergeSubmissions(
+    const entries = mergeSubmissions(
       [chainEntry({ counterparty: 'mn_addr1fromchain' })],
       [submission({})],
       NOW,
@@ -128,7 +131,7 @@ describe('mergeSubmissions', () => {
     // A full-balance shielded send returns no change output, so the sender's
     // only chain entry is the DUST fee spend — kind 'dust', no token deltas.
     const feeOnly = chainEntry({ kind: 'dust', deltas: [], dustDelta: -5n });
-    const { entries } = mergeSubmissions(
+    const entries = mergeSubmissions(
       [feeOnly],
       [submission({ tokenKind: 'shielded', amount: '66666' })],
       NOW,
@@ -144,14 +147,14 @@ describe('mergeSubmissions', () => {
     // they would sort below the entire feed and look like a missing transfer.
     const unstamped = chainEntry({ kind: 'dust', deltas: [], timestamp: null });
     const older = chainEntry({ hash: 'b'.repeat(64), timestamp: new Date(NOW - 120_000) });
-    const { entries } = mergeSubmissions([unstamped, older], [submission({})], NOW);
+    const entries = mergeSubmissions([unstamped, older], [submission({})], NOW);
 
     expect(entries.map((entry) => entry.hash)).toEqual(['a'.repeat(64), 'b'.repeat(64)]);
     expect(entries[0]?.timestamp).toEqual(new Date(NOW - 60_000));
   });
 
   it('keeps the chain timestamp when the entry has one', () => {
-    const { entries } = mergeSubmissions([chainEntry({})], [submission({})], NOW);
+    const entries = mergeSubmissions([chainEntry({})], [submission({})], NOW);
     expect(entries[0]?.timestamp).toEqual(new Date(NOW - 30_000));
   });
 
@@ -159,23 +162,103 @@ describe('mergeSubmissions', () => {
     const withDelta = chainEntry({
       deltas: [{ tokenType: TOKEN, kind: 'unshielded', amount: -120_000_000n }],
     });
-    const { entries } = mergeSubmissions([withDelta], [submission({})], NOW);
+    const entries = mergeSubmissions([withDelta], [submission({})], NOW);
 
     expect(entries[0]?.deltas).toEqual([
       { tokenType: TOKEN, kind: 'unshielded', amount: -120_000_000n },
     ]);
   });
 
-  it('prunes a submission unseen on chain past the pending TTL', () => {
-    const stale = submission({ submittedAt: NOW - SUBMISSION_PENDING_TTL_MS - 1 });
-    const { entries, prune } = mergeSubmissions([], [stale], NOW);
+  it('calls a submission unseen on chain past the pending TTL failed', () => {
+    const stale = submission({ submittedAt: NOW - SUBMISSION_PENDING_TTL_MS });
+    const entries = mergeSubmissions([], [stale], NOW);
 
-    expect(entries).toEqual([]);
-    expect(prune).toEqual([stale.hash]);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ hash: stale.hash, kind: 'sent', status: 'FAILURE', pending: false });
+    expect(entries[0]?.deltas).toEqual([{ tokenType: TOKEN, kind: 'unshielded', amount: -120_000_000n }]);
+  });
+
+  it('keeps an old submission pending while history is still catching up', () => {
+    // Age proves nothing until sync has reached the tip: the transaction may
+    // well be on chain in a block the wallet has not applied yet.
+    const stale = submission({ submittedAt: NOW - SUBMISSION_PENDING_TTL_MS });
+    const entries = mergeSubmissions([], [stale], NOW, false);
+
+    expect(entries[0]).toMatchObject({ status: 'SUCCESS', pending: true });
+  });
+
+  it('holds a submission with a known deadline pending until that deadline has passed', () => {
+    // Mainnet accepts an intent TTL of up to two weeks, so a connector
+    // transaction can still land long after the fallback window.
+    const expiresAt = NOW + 24 * 60 * 60 * 1000;
+    const longLived = submission({ submittedAt: NOW - 3 * SUBMISSION_PENDING_TTL_MS, expiresAt });
+
+    expect(mergeSubmissions([], [longLived], NOW)[0]).toMatchObject({ status: 'SUCCESS', pending: true });
+    expect(
+      mergeSubmissions([], [longLived], expiresAt + SUBMISSION_DEADLINE_MARGIN_MS - 1)[0],
+    ).toMatchObject({ status: 'SUCCESS', pending: true });
+    expect(
+      mergeSubmissions([], [longLived], expiresAt + SUBMISSION_DEADLINE_MARGIN_MS)[0],
+    ).toMatchObject({ status: 'FAILURE', pending: false });
+  });
+
+  it('rules a submission failed at its deadline even inside the fallback window', () => {
+    const expired = submission({ submittedAt: NOW - 30 * 60 * 1000, expiresAt: NOW - SUBMISSION_DEADLINE_MARGIN_MS });
+
+    expect(mergeSubmissions([], [expired], NOW)[0]).toMatchObject({ status: 'FAILURE', pending: false });
+  });
+
+  it('shows a confirmed submission as settled however long history stays silent', () => {
+    // A connector transaction that moves none of the wallet's coins never
+    // gets a history entry, so nothing would ever replace its row.
+    const confirmed = submission({ submittedAt: NOW - 3 * SUBMISSION_PENDING_TTL_MS, confirmed: true });
+
+    expect(mergeSubmissions([], [confirmed], NOW)[0]).toMatchObject({ status: 'SUCCESS', pending: false });
+  });
+
+  it('lets a failure verdict stand over a confirmation', () => {
+    const entries = mergeSubmissions([], [submission({ confirmed: true, failure: { at: NOW } })], NOW);
+
+    expect(entries[0]).toMatchObject({ status: 'FAILURE', pending: false });
+  });
+
+  it('shows a submission the node rejected as a failed sent row with its amount', () => {
+    const failed = submission({ failure: { at: NOW - 50_000 } });
+    const entries = mergeSubmissions([], [failed], NOW);
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      hash: failed.hash,
+      kind: 'sent',
+      status: 'FAILURE',
+      pending: false,
+      counterparty: 'mn_addr1recipient',
+      timestamp: new Date(NOW - 60_000),
+    });
+    expect(entries[0]?.deltas).toEqual([{ tokenType: TOKEN, kind: 'unshielded', amount: -120_000_000n }]);
+  });
+
+  it('shows a rejected dust operation as a failed DUST row', () => {
+    const entries = mergeSubmissions(
+      [],
+      [submission({ kind: 'dust', to: undefined, tokenType: undefined, amount: undefined, failure: { at: NOW } })],
+      NOW,
+    );
+
+    expect(entries[0]).toMatchObject({ kind: 'dust', status: 'FAILURE', pending: false, deltas: [] });
+  });
+
+  it('lets the chain entry win over a recorded failure once the transaction is applied', () => {
+    // The tracker can rule a transaction failed because its TTL lapsed unseen;
+    // if history later reports it applied, the chain's own status stands.
+    const entries = mergeSubmissions([chainEntry({})], [submission({ failure: { at: NOW } })], NOW);
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ status: 'SUCCESS', pending: false, counterparty: 'mn_addr1recipient' });
   });
 
   it('shows a dust registration submission as a pending DUST row', () => {
-    const { entries } = mergeSubmissions(
+    const entries = mergeSubmissions(
       [],
       [submission({ kind: 'dust', to: undefined, tokenType: undefined, amount: undefined })],
       NOW,
@@ -186,7 +269,7 @@ describe('mergeSubmissions', () => {
 
   it('sorts pending submissions in with chain entries, newest first', () => {
     const older = chainEntry({ hash: 'b'.repeat(64), timestamp: new Date(NOW - 120_000) });
-    const { entries } = mergeSubmissions([older], [submission({})], NOW);
+    const entries = mergeSubmissions([older], [submission({})], NOW);
 
     expect(entries.map((entry) => entry.hash)).toEqual(['a'.repeat(64), 'b'.repeat(64)]);
   });
@@ -214,6 +297,70 @@ describe('submission storage', () => {
     expect(loaded[0]?.hash).toBe('5'.padEnd(64, 'c'));
   });
 
+  it('marks a submission failed by its hash, transaction hash or logical identifier', async () => {
+    const store = new MemoryStore();
+    await recordSubmission(store, 'devnet', 'alice', submission({ hash: 'a'.repeat(64), transactionHash: 'b'.repeat(64) }));
+    await recordSubmission(store, 'devnet', 'alice', submission({ hash: 'c'.repeat(64) }));
+
+    const failure = { at: NOW };
+    expect(await recordSubmissionFailure(store, 'devnet', 'alice', ['b'.repeat(64)], failure)).toBe(true);
+    expect(await recordSubmissionFailure(store, 'devnet', 'alice', ['z'.repeat(64)], failure)).toBe(false);
+
+    const loaded = await loadSubmissions(store, 'devnet', 'alice');
+    expect(loaded.find((tx) => tx.hash === 'a'.repeat(64))?.failure).toEqual(failure);
+    expect(loaded.find((tx) => tx.hash === 'c'.repeat(64))?.failure).toBeUndefined();
+  });
+
+  it('keeps the first verdict when a second one arrives for the same transaction', async () => {
+    const store = new MemoryStore();
+    await recordSubmission(store, 'devnet', 'alice', submission({}));
+
+    await recordSubmissionFailure(store, 'devnet', 'alice', ['a'.repeat(64)], { at: NOW });
+    await recordSubmissionFailure(store, 'devnet', 'alice', ['a'.repeat(64)], { at: NOW + 1 });
+
+    const [loaded] = await loadSubmissions(store, 'devnet', 'alice');
+    expect(loaded?.failure).toEqual({ at: NOW });
+  });
+
+  it('loses neither write when a verdict and a new submission interleave', async () => {
+    // A store whose reads and writes each take a turn of the event loop, as
+    // IndexedDB does, so unserialized load-then-save passes would overlap.
+    class SlowStore extends MemoryStore {
+      override async get(key: string) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        return super.get(key);
+      }
+      override async put(key: string, value: string) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        return super.put(key, value);
+      }
+    }
+    const store = new SlowStore();
+    await recordSubmission(store, 'devnet', 'alice', submission({ hash: 'a'.repeat(64) }));
+
+    await Promise.all([
+      recordSubmissionFailure(store, 'devnet', 'alice', ['a'.repeat(64)], { at: NOW }),
+      recordSubmission(store, 'devnet', 'alice', submission({ hash: 'b'.repeat(64) })),
+    ]);
+
+    const loaded = await loadSubmissions(store, 'devnet', 'alice');
+    expect(loaded.map((tx) => [tx.hash[0], tx.failure !== undefined])).toEqual([['a', true], ['b', false]]);
+  });
+
+  it('keeps writing after a store failure', async () => {
+    const store = new MemoryStore();
+    const put = store.put.bind(store);
+    store.put = async () => {
+      throw new Error('quota');
+    };
+    await expect(recordSubmission(store, 'devnet', 'alice', submission({}))).rejects.toThrow('quota');
+
+    store.put = put;
+    await recordSubmission(store, 'devnet', 'alice', submission({}));
+
+    expect(await loadSubmissions(store, 'devnet', 'alice')).toHaveLength(1);
+  });
+
   it('treats a corrupted payload as empty', async () => {
     const store = new MemoryStore();
     await store.put(submissionsKey('devnet', 'alice'), '{not json');
@@ -223,5 +370,90 @@ describe('submission storage', () => {
   it('keys submissions per wallet and network', () => {
     expect(submissionsKey('devnet', 'alice')).not.toBe(submissionsKey('preprod', 'alice'));
     expect(submissionsKey('devnet', 'alice')).not.toBe(submissionsKey('devnet', 'bob'));
+  });
+});
+
+describe('connectorSubmission', () => {
+  const HASH = 'f'.repeat(64);
+
+  it('records only the hash when nothing was prepared', () => {
+    expect(connectorSubmission(HASH, undefined, NOW)).toEqual({
+      hash: HASH,
+      transactionHash: HASH,
+      submittedAt: NOW,
+      kind: 'send',
+    });
+  });
+
+  it('takes the amount from a lone non-DUST deficit the wallet covered', () => {
+    // A contract call that takes 100 NIGHT: the balancing summary shows the
+    // NIGHT deficit plus the DUST the fee needs. Only the NIGHT is the row.
+    const tx = connectorSubmission(
+      HASH,
+      {
+        spends: [
+          { kind: 'unshielded', tokenId: TOKEN, amount: '100000000' },
+          { kind: 'dust', tokenId: '', amount: '5' },
+        ],
+      },
+      NOW,
+    );
+
+    expect(tx).toMatchObject({ kind: 'send', tokenType: TOKEN, tokenKind: 'unshielded', amount: '100000000' });
+    expect(tx.to).toBeUndefined();
+  });
+
+  it('shows no single amount for a mixed-token spend', () => {
+    const tx = connectorSubmission(
+      HASH,
+      {
+        spends: [
+          { kind: 'unshielded', tokenId: TOKEN, amount: '1' },
+          { kind: 'shielded', tokenId: '1'.repeat(64), amount: '2' },
+        ],
+      },
+      NOW,
+    );
+
+    expect(tx.amount).toBeUndefined();
+    expect(tx.tokenType).toBeUndefined();
+  });
+
+  it('keeps the recipient and size of a transfer the wallet built itself', () => {
+    const tx = connectorSubmission(
+      HASH,
+      {
+        spends: [{ kind: 'shielded', tokenId: TOKEN, amount: '7' }],
+        transfer: { to: 'mn_addr1recipient', outputs: 1 },
+      },
+      NOW,
+    );
+
+    expect(tx).toMatchObject({ to: 'mn_addr1recipient', outputs: 1, tokenKind: 'shielded', amount: '7' });
+  });
+
+  it('renders as a pending send once merged', () => {
+    const tx = connectorSubmission(
+      HASH,
+      { spends: [{ kind: 'unshielded', tokenId: TOKEN, amount: '100000000' }] },
+      NOW - 1_000,
+    );
+    const entries = mergeSubmissions([], [tx], NOW);
+
+    expect(entries[0]).toMatchObject({ hash: HASH, kind: 'sent', pending: true });
+    expect(entries[0]?.deltas).toEqual([{ tokenType: TOKEN, kind: 'unshielded', amount: -100_000_000n }]);
+  });
+});
+
+describe('transactionDeadline', () => {
+  const intents = (...ttls: number[]) => ({ intents: new Map(ttls.map((ttl, segment) => [segment, { ttl: new Date(ttl) }])) });
+
+  it('is the earliest intent TTL, since every intent must be in date', () => {
+    expect(transactionDeadline(intents(NOW + 5_000, NOW + 1_000, NOW + 9_000))).toBe(NOW + 1_000);
+  });
+
+  it('is unknown for a transaction without intents', () => {
+    expect(transactionDeadline({})).toBeUndefined();
+    expect(transactionDeadline(intents())).toBeUndefined();
   });
 });
