@@ -88,6 +88,7 @@ export {
   // extension imports, plus v8's derive-and-drop walletKeys write paths.
   sendTokens, sendTokensWithKeys, deriveWalletKeys,
   buildTransferTransaction, estimateTransferFee, submitFinalizedTransaction,
+  submitFinalizedTransactionWithReceipt, rejectedTransactionHash, type SubmissionReceipt,
   designateForDust, designateForDustWithKeys, estimateDustRegistration,
   dedesignateFromDust, dedesignateFromDustWithKeys,
   listNightUtxos,

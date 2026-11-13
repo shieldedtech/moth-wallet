@@ -3,6 +3,7 @@ import type { ActivityEntry } from '@shieldedtech/moth-browser';
 import type { SyncStateStore } from '@shieldedtech/moth-wallet/sync/sync-store';
 import {
   SUBMISSIONS_MAX,
+  SUBMISSION_DEADLINE_MARGIN_MS,
   SUBMISSION_PENDING_TTL_MS,
   connectorSubmission,
   loadSubmissions,
@@ -10,6 +11,7 @@ import {
   recordSubmission,
   recordSubmissionFailure,
   submissionsKey,
+  transactionDeadline,
   type SubmittedTx,
 } from '../lib/offscreen/submissions';
 
@@ -185,8 +187,43 @@ describe('mergeSubmissions', () => {
     expect(entries[0]).toMatchObject({ status: 'SUCCESS', pending: true });
   });
 
+  it('holds a submission with a known deadline pending until that deadline has passed', () => {
+    // Mainnet accepts an intent TTL of up to two weeks, so a connector
+    // transaction can still land long after the fallback window.
+    const expiresAt = NOW + 24 * 60 * 60 * 1000;
+    const longLived = submission({ submittedAt: NOW - 3 * SUBMISSION_PENDING_TTL_MS, expiresAt });
+
+    expect(mergeSubmissions([], [longLived], NOW)[0]).toMatchObject({ status: 'SUCCESS', pending: true });
+    expect(
+      mergeSubmissions([], [longLived], expiresAt + SUBMISSION_DEADLINE_MARGIN_MS - 1)[0],
+    ).toMatchObject({ status: 'SUCCESS', pending: true });
+    expect(
+      mergeSubmissions([], [longLived], expiresAt + SUBMISSION_DEADLINE_MARGIN_MS)[0],
+    ).toMatchObject({ status: 'FAILURE', pending: false });
+  });
+
+  it('rules a submission failed at its deadline even inside the fallback window', () => {
+    const expired = submission({ submittedAt: NOW - 30 * 60 * 1000, expiresAt: NOW - SUBMISSION_DEADLINE_MARGIN_MS });
+
+    expect(mergeSubmissions([], [expired], NOW)[0]).toMatchObject({ status: 'FAILURE', pending: false });
+  });
+
+  it('shows a confirmed submission as settled however long history stays silent', () => {
+    // A connector transaction that moves none of the wallet's coins never
+    // gets a history entry, so nothing would ever replace its row.
+    const confirmed = submission({ submittedAt: NOW - 3 * SUBMISSION_PENDING_TTL_MS, confirmed: true });
+
+    expect(mergeSubmissions([], [confirmed], NOW)[0]).toMatchObject({ status: 'SUCCESS', pending: false });
+  });
+
+  it('lets a failure verdict stand over a confirmation', () => {
+    const entries = mergeSubmissions([], [submission({ confirmed: true, failure: { at: NOW } })], NOW);
+
+    expect(entries[0]).toMatchObject({ status: 'FAILURE', pending: false });
+  });
+
   it('shows a submission the node rejected as a failed sent row with its amount', () => {
-    const failed = submission({ failure: { at: NOW - 50_000, message: '1010: Invalid Transaction' } });
+    const failed = submission({ failure: { at: NOW - 50_000 } });
     const entries = mergeSubmissions([], [failed], NOW);
 
     expect(entries).toHaveLength(1);
@@ -265,7 +302,7 @@ describe('submission storage', () => {
     await recordSubmission(store, 'devnet', 'alice', submission({ hash: 'a'.repeat(64), transactionHash: 'b'.repeat(64) }));
     await recordSubmission(store, 'devnet', 'alice', submission({ hash: 'c'.repeat(64) }));
 
-    const failure = { at: NOW, message: 'rejected' };
+    const failure = { at: NOW };
     expect(await recordSubmissionFailure(store, 'devnet', 'alice', ['b'.repeat(64)], failure)).toBe(true);
     expect(await recordSubmissionFailure(store, 'devnet', 'alice', ['z'.repeat(64)], failure)).toBe(false);
 
@@ -278,11 +315,50 @@ describe('submission storage', () => {
     const store = new MemoryStore();
     await recordSubmission(store, 'devnet', 'alice', submission({}));
 
-    await recordSubmissionFailure(store, 'devnet', 'alice', ['a'.repeat(64)], { at: NOW, message: 'first' });
-    await recordSubmissionFailure(store, 'devnet', 'alice', ['a'.repeat(64)], { at: NOW + 1, message: 'second' });
+    await recordSubmissionFailure(store, 'devnet', 'alice', ['a'.repeat(64)], { at: NOW });
+    await recordSubmissionFailure(store, 'devnet', 'alice', ['a'.repeat(64)], { at: NOW + 1 });
 
     const [loaded] = await loadSubmissions(store, 'devnet', 'alice');
-    expect(loaded?.failure).toEqual({ at: NOW, message: 'first' });
+    expect(loaded?.failure).toEqual({ at: NOW });
+  });
+
+  it('loses neither write when a verdict and a new submission interleave', async () => {
+    // A store whose reads and writes each take a turn of the event loop, as
+    // IndexedDB does, so unserialized load-then-save passes would overlap.
+    class SlowStore extends MemoryStore {
+      override async get(key: string) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        return super.get(key);
+      }
+      override async put(key: string, value: string) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        return super.put(key, value);
+      }
+    }
+    const store = new SlowStore();
+    await recordSubmission(store, 'devnet', 'alice', submission({ hash: 'a'.repeat(64) }));
+
+    await Promise.all([
+      recordSubmissionFailure(store, 'devnet', 'alice', ['a'.repeat(64)], { at: NOW }),
+      recordSubmission(store, 'devnet', 'alice', submission({ hash: 'b'.repeat(64) })),
+    ]);
+
+    const loaded = await loadSubmissions(store, 'devnet', 'alice');
+    expect(loaded.map((tx) => [tx.hash[0], tx.failure !== undefined])).toEqual([['a', true], ['b', false]]);
+  });
+
+  it('keeps writing after a store failure', async () => {
+    const store = new MemoryStore();
+    const put = store.put.bind(store);
+    store.put = async () => {
+      throw new Error('quota');
+    };
+    await expect(recordSubmission(store, 'devnet', 'alice', submission({}))).rejects.toThrow('quota');
+
+    store.put = put;
+    await recordSubmission(store, 'devnet', 'alice', submission({}));
+
+    expect(await loadSubmissions(store, 'devnet', 'alice')).toHaveLength(1);
   });
 
   it('treats a corrupted payload as empty', async () => {
@@ -366,5 +442,18 @@ describe('connectorSubmission', () => {
 
     expect(entries[0]).toMatchObject({ hash: HASH, kind: 'sent', pending: true });
     expect(entries[0]?.deltas).toEqual([{ tokenType: TOKEN, kind: 'unshielded', amount: -100_000_000n }]);
+  });
+});
+
+describe('transactionDeadline', () => {
+  const intents = (...ttls: number[]) => ({ intents: new Map(ttls.map((ttl, segment) => [segment, { ttl: new Date(ttl) }])) });
+
+  it('is the earliest intent TTL, since every intent must be in date', () => {
+    expect(transactionDeadline(intents(NOW + 5_000, NOW + 1_000, NOW + 9_000))).toBe(NOW + 1_000);
+  });
+
+  it('is unknown for a transaction without intents', () => {
+    expect(transactionDeadline({})).toBeUndefined();
+    expect(transactionDeadline(intents())).toBeUndefined();
   });
 });

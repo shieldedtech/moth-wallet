@@ -16,7 +16,8 @@ import {
   buildSwapIntent,
   designateForDust as coreDesignateForDust,
   dedesignateFromDust as coreDedesignateFromDust,
-  submitFinalizedTransaction,
+  submitFinalizedTransactionWithReceipt,
+  rejectedTransactionHash,
   deriveShieldedPublicKeys,
   deriveWalletKeys,
   clearSyncCache,
@@ -35,6 +36,7 @@ import {
   resolveProverConfig,
   setWasmProvingProviderFactory,
   EMPTY_COINS,
+  type SubmissionReceipt,
   type SyncedWallet,
   type TransactionOutcome,
   type TxStage,
@@ -79,6 +81,7 @@ import {
   recordSubmission,
   recordSubmissionFailure,
   submissionsKey,
+  transactionDeadline,
   type PreparedSubmission,
   type SubmissionFailure,
   type SubmittedTx,
@@ -694,25 +697,27 @@ function submitTracked<T>(network: NetworkConfig, walletName: string, submit: ()
 // into a reported error — the tokens are already on their way.
 async function noteSubmitted(networkId: string, walletName: string, tx: SubmittedTx): Promise<void> {
   try {
-    await recordSubmission(new IdbSyncStateStore(), networkId, walletName, tx);
+    const early = earlyFailures.get(tx.transactionHash ?? tx.hash);
+    earlyFailures.delete(tx.transactionHash ?? tx.hash);
+    const record = early && !tx.failure ? { ...tx, failure: early } : tx;
+    await recordSubmission(new IdbSyncStateStore(), networkId, walletName, record);
     emit('os/eventActivityChanged', tx.hash);
   } catch {
     /* ignore */
   }
 }
 
-function rejected(error: unknown): SubmissionFailure {
-  return { at: Date.now(), message: error instanceof Error ? error.message : String(error) };
-}
-
-// A DUST operation the node rejected has no chain hash to reconcile against and
-// never will, so its failed row gets a local identity.
+// A DUST operation the node rejected is recorded under its transaction hash, so
+// a chain entry overrides the verdict if an attempt did get through. A failure
+// carrying no hash gets a local identity.
 function noteDustRejected(networkId: string, walletName: string, error: unknown): Promise<void> {
+  const transactionHash = rejectedTransactionHash(error);
   return noteSubmitted(networkId, walletName, {
-    hash: `local:${crypto.randomUUID()}`,
+    hash: transactionHash ?? `local:${crypto.randomUUID()}`,
+    transactionHash,
     submittedAt: Date.now(),
     kind: 'dust',
-    failure: rejected(error),
+    failure: { at: Date.now() },
   });
 }
 
@@ -732,18 +737,32 @@ function rememberPrepared(hash: string, submission: PreparedSubmission): void {
   }
 }
 
+// A verdict can arrive before the record it is for: the facade resolves a
+// submission only once the node finalizes it, and the indexer may report the
+// transaction failed first. Such a verdict waits here for its record.
+const earlyFailures = new Map<string, SubmissionFailure>();
+
 // Verdicts from the SDK's pending tracker arrive off the sync stream, not from
 // an operation the panel is waiting on, so nothing awaits this either.
 async function noteOutcome(networkId: string, walletName: string, outcome: TransactionOutcome): Promise<void> {
+  const failure = { at: Date.now() };
+  // Parked before the store is read, so a record written meanwhile picks it up.
+  earlyFailures.set(outcome.transactionHash, failure);
+  for (const oldest of earlyFailures.keys()) {
+    if (earlyFailures.size <= PREPARED_MAX) break;
+    earlyFailures.delete(oldest);
+  }
   try {
     const marked = await recordSubmissionFailure(
       new IdbSyncStateStore(),
       networkId,
       walletName,
       [outcome.transactionHash, ...outcome.identifiers],
-      { at: Date.now() },
+      failure,
     );
-    if (marked) emit('os/eventActivityChanged', outcome.transactionHash);
+    if (!marked) return;
+    earlyFailures.delete(outcome.transactionHash);
+    emit('os/eventActivityChanged', outcome.transactionHash);
   } catch {
     /* ignore */
   }
@@ -780,16 +799,18 @@ export function sendTokens(
       tokenKind: single?.type,
       amount: single?.amount,
       outputs: requests.length,
+      expiresAt: transactionDeadline(finalized),
     };
-    let txHash: string;
+    let receipt: SubmissionReceipt;
     try {
-      txHash = await submitTracked(network, walletName, () => submitFinalizedTransaction(wallet.facade, finalized));
+      receipt = await submitTracked(network, walletName, () =>
+        submitFinalizedTransactionWithReceipt(wallet.facade, finalized));
     } catch (e) {
-      await noteSubmitted(network.id, walletName, { ...submission, failure: rejected(e) });
+      await noteSubmitted(network.id, walletName, { ...submission, failure: { at: Date.now() } });
       throw e;
     }
-    await noteSubmitted(network.id, walletName, { ...submission, hash: txHash });
-    return { txHash };
+    await noteSubmitted(network.id, walletName, { ...submission, hash: receipt.txHash, confirmed: receipt.included });
+    return { txHash: receipt.txHash };
   }));
 }
 
@@ -1022,15 +1043,20 @@ export async function transferSubmit(
       fromHex(txHex),
     );
     const hash = transaction.transactionHash();
-    const submission = connectorSubmission(hash, preparedSubmissions.get(hash), Date.now());
+    const submission: SubmittedTx = {
+      ...connectorSubmission(hash, preparedSubmissions.get(hash), Date.now()),
+      expiresAt: transactionDeadline(transaction),
+    };
     preparedSubmissions.delete(hash);
+    let receipt: SubmissionReceipt;
     try {
-      await submitTracked(network, walletName, () => submitFinalizedTransaction(wallet.facade, transaction));
+      receipt = await submitTracked(network, walletName, () =>
+        submitFinalizedTransactionWithReceipt(wallet.facade, transaction));
     } catch (e) {
-      await noteSubmitted(network.id, walletName, { ...submission, failure: rejected(e) });
+      await noteSubmitted(network.id, walletName, { ...submission, failure: { at: Date.now() } });
       throw e;
     }
-    await noteSubmitted(network.id, walletName, submission);
+    await noteSubmitted(network.id, walletName, { ...submission, confirmed: receipt.included });
   });
 }
 

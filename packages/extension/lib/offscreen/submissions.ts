@@ -1,11 +1,11 @@
 // Locally-submitted transactions, persisted next to the sync state. A
-// submission reaches on-chain history only once the indexer reports it applied;
-// recording what we submitted bridges that gap: the activity feed shows it as
-// pending immediately, calls it failed once the node or the SDK's pending
-// tracker rules it out, and keeps the recipient visible after it lands (a chain
-// entry alone may not reveal the counterparty). Stored per wallet + network in
-// the same store as the serialized sync state, so it survives session restarts
-// alongside it.
+// submission reaches on-chain history only once the indexer reports it applied,
+// and one that moves none of the wallet's coins never does. Recording what we
+// submitted bridges that gap: the activity feed shows it as pending, calls it
+// failed once the node or the SDK's pending tracker rules it out, and keeps the
+// recipient visible after it lands (a chain entry alone may not reveal the
+// counterparty). Stored per wallet + network in the same store as the
+// serialized sync state, so it survives session restarts alongside it.
 //
 // WASM-free: type-only imports plus the pure activity helpers.
 
@@ -15,8 +15,6 @@ import type { SyncStateStore } from '@shieldedtech/moth-wallet/sync/sync-store';
 export interface SubmissionFailure {
   /** Epoch ms the verdict was reached. */
   at: number;
-  /** The node's rejection, when the transaction never entered the pool. */
-  message?: string;
 }
 
 export interface SubmittedTx {
@@ -34,8 +32,32 @@ export interface SubmittedTx {
   amount?: string;
   /** Number of transfers in a (possibly batched) send. */
   outputs?: number;
+  /** Epoch ms after which the ledger rejects the transaction, when known. */
+  expiresAt?: number;
+  /** The node reported the transaction in a finalized block. */
+  confirmed?: boolean;
   /** Set once the transaction is known not to have gone through. */
   failure?: SubmissionFailure;
+}
+
+/** The slice of a ledger transaction read for its deadline, structural so this
+ *  module stays WASM-free. */
+export interface TransactionWithIntents {
+  intents?: ReadonlyMap<number, { ttl: Date }>;
+}
+
+/**
+ * When the ledger stops accepting `tx`: its earliest intent TTL, since every
+ * intent has to be in date for the transaction to apply. Undefined for a
+ * transaction without intents.
+ */
+export function transactionDeadline(tx: TransactionWithIntents): number | undefined {
+  let earliest: number | undefined;
+  for (const intent of tx.intents?.values() ?? []) {
+    const ttl = intent.ttl.getTime();
+    if (Number.isFinite(ttl) && (earliest === undefined || ttl < earliest)) earliest = ttl;
+  }
+  return earliest;
 }
 
 /** What the wallet learned about a connector transaction before the dApp asked
@@ -71,11 +93,23 @@ export function connectorSubmission(hash: string, prepared: PreparedSubmission |
 /** Newest submissions kept per wallet + network. */
 export const SUBMISSIONS_MAX = 100;
 
-/** How long an unconfirmed submission stays pending before the feed calls it
- *  failed. The ledger accepts no intent deadline beyond an hour, so a
- *  transaction unseen this long can no longer be included; a chain entry that
- *  turns up later still wins. */
+/** How long a submission with no known deadline stays pending before the feed
+ *  calls it failed. Covers the hour the wallet and midnight-js give their own
+ *  transactions; a chain entry that turns up later still wins. */
 export const SUBMISSION_PENDING_TTL_MS = 2 * 60 * 60 * 1000;
+
+/** Slack past a known deadline, for clock skew and a block the indexer has not
+ *  delivered yet. */
+export const SUBMISSION_DEADLINE_MARGIN_MS = 10 * 60 * 1000;
+
+/** Whether an unreported submission can no longer land. The network's TTL
+ *  ceiling is a ledger parameter (two weeks on mainnet), so a recorded
+ *  deadline decides and the fixed window is only the fallback. */
+function isStale(tx: SubmittedTx, now: number): boolean {
+  return tx.expiresAt !== undefined
+    ? now >= tx.expiresAt + SUBMISSION_DEADLINE_MARGIN_MS
+    : now - tx.submittedAt >= SUBMISSION_PENDING_TTL_MS;
+}
 
 export function submissionsKey(networkId: string, walletName: string): string {
   return `activity/${networkId}/${walletName}/submissions.json`;
@@ -104,17 +138,41 @@ export async function saveSubmissions(
   await store.put(submissionsKey(networkId, walletName), JSON.stringify(submissions.slice(-SUBMISSIONS_MAX)));
 }
 
-export async function recordSubmission(
+// Writers run one at a time per key. A verdict arrives off the sync stream
+// while an operation records its own submission, and two interleaved
+// load-then-save passes would drop whichever saved first.
+const writes = new Map<string, Promise<unknown>>();
+
+function updateSubmissions<T>(
+  store: SyncStateStore,
+  networkId: string,
+  walletName: string,
+  update: (existing: SubmittedTx[]) => { next?: SubmittedTx[]; result: T },
+): Promise<T> {
+  const key = submissionsKey(networkId, walletName);
+  const run = (writes.get(key) ?? Promise.resolve()).catch(() => undefined).then(async () => {
+    const { next, result } = update(await loadSubmissions(store, networkId, walletName));
+    if (next) await saveSubmissions(store, networkId, walletName, next);
+    return result;
+  });
+  writes.set(key, run);
+  const settle = () => {
+    if (writes.get(key) === run) writes.delete(key);
+  };
+  run.then(settle, settle);
+  return run;
+}
+
+export function recordSubmission(
   store: SyncStateStore,
   networkId: string,
   walletName: string,
   tx: SubmittedTx,
 ): Promise<void> {
-  const existing = await loadSubmissions(store, networkId, walletName);
-  await saveSubmissions(store, networkId, walletName, [
-    ...existing.filter((s) => s.hash !== tx.hash),
-    tx,
-  ]);
+  return updateSubmissions(store, networkId, walletName, (existing) => ({
+    next: [...existing.filter((s) => s.hash !== tx.hash), tx],
+    result: undefined,
+  }));
 }
 
 /**
@@ -122,7 +180,7 @@ export async function recordSubmission(
  * a logical identifier) as failed. The first verdict sticks. Returns whether a
  * submission matched.
  */
-export async function recordSubmissionFailure(
+export function recordSubmissionFailure(
   store: SyncStateStore,
   networkId: string,
   walletName: string,
@@ -130,19 +188,20 @@ export async function recordSubmissionFailure(
   failure: SubmissionFailure,
 ): Promise<boolean> {
   const wanted = new Set(ids);
-  const existing = await loadSubmissions(store, networkId, walletName);
-  let matched = false;
-  const next = existing.map((tx) => {
-    const known = wanted.has(tx.hash) || (tx.transactionHash !== undefined && wanted.has(tx.transactionHash));
-    if (!known) return tx;
-    matched = true;
-    return tx.failure ? tx : { ...tx, failure };
+  return updateSubmissions(store, networkId, walletName, (existing) => {
+    let matched = false;
+    const next = existing.map((tx) => {
+      const known = wanted.has(tx.hash) || (tx.transactionHash !== undefined && wanted.has(tx.transactionHash));
+      if (!known) return tx;
+      matched = true;
+      return tx.failure ? tx : { ...tx, failure };
+    });
+    return matched ? { next, result: true } : { result: false };
   });
-  if (matched) await saveSubmissions(store, networkId, walletName, next);
-  return matched;
 }
 
-/** A submission the chain has not reported, as a pending or a failed row. */
+/** A submission history has not reported, as a failed row, a pending one, or a
+ *  settled one once the node has confirmed it. */
 function toLocalEntry(tx: SubmittedTx, failed: boolean): ActivityEntry {
   const hasAmount = tx.amount !== undefined && tx.tokenType !== undefined;
   return {
@@ -156,7 +215,7 @@ function toLocalEntry(tx: SubmittedTx, failed: boolean): ActivityEntry {
     dustDelta: 0n,
     counterparty: tx.to ?? null,
     fees: null,
-    pending: !failed,
+    pending: !failed && !tx.confirmed,
     outputs: tx.outputs,
   };
 }
@@ -167,6 +226,8 @@ function toLocalEntry(tx: SubmittedTx, failed: boolean): ActivityEntry {
  * rest as pending rows, or as failed rows once a verdict is in. `synced` says
  * whether history has reached the chain tip; until it has, a submission's age
  * proves nothing, so an old one stays pending rather than being called failed.
+ * Nor does age count against a confirmed submission: one that moved none of
+ * the wallet's coins has no history entry to wait for.
  */
 export function mergeSubmissions(
   chain: ActivityEntry[],
@@ -199,7 +260,7 @@ export function mergeSubmissions(
       if (!applied.timestamp) applied.timestamp = new Date(tx.submittedAt);
       graftSendDelta(applied, tx);
     } else {
-      const stale = synced && now - tx.submittedAt >= SUBMISSION_PENDING_TTL_MS;
+      const stale = synced && !tx.confirmed && isStale(tx, now);
       entries.push(toLocalEntry(tx, tx.failure !== undefined || stale));
     }
   }

@@ -188,22 +188,54 @@ async function submitWithRetry(
   finalized: FinalizedTransaction,
   attempts = 3,
   delayMs = 5_000
-): Promise<string> {
+): Promise<SubmissionReceipt> {
+  // The facade resolves to an intent identifier (`identifiers().at(-1)`),
+  // but everything downstream — indexer status queries, tx-history entries
+  // (WalletEntry.hash), explorers, and the activity feed's pending-row
+  // reconciliation — is keyed by the transaction hash. Return that.
+  const txHash = finalized.transactionHash();
   for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
-      // The facade resolves to an intent identifier (`identifiers().at(-1)`),
-      // but everything downstream — indexer status queries, tx-history entries
-      // (WalletEntry.hash), explorers, and the activity feed's pending-row
-      // reconciliation — is keyed by the transaction hash. Return that.
       await facade.submitTransaction(finalized);
-      return finalized.transactionHash();
+      return {txHash, included: true};
     } catch (e) {
-      if (isAlreadyImported(e)) return finalized.transactionHash();
-      if (attempt === attempts || !isTransient(e)) throw asSubmissionFailure(e);
+      if (isAlreadyImported(e)) return {txHash, included: false};
+      if (attempt === attempts || !isTransient(e)) {
+        const failure = asSubmissionFailure(e);
+        rejectedHashes.set(failure, txHash);
+        throw failure;
+      }
       await new Promise((r) => setTimeout(r, delayMs));
     }
   }
   throw new Error('unreachable');
+}
+
+/** What a submission that did not throw established about the transaction. */
+export interface SubmissionReceipt {
+  txHash: string;
+  /**
+   * The node reported the transaction in a finalized block, which is what the
+   * facade's submission waits for. False when an earlier attempt's copy was
+   * already in the pool: that one is submitted, but nothing has seen it land.
+   */
+  included: boolean;
+}
+
+const rejectedHashes = new WeakMap<object, string>();
+
+/**
+ * The hash of the transaction whose submission failed with `error`, or
+ * undefined when the failure came before anything was sent. Follows the cause
+ * chain, so it survives a caller rewrapping the error.
+ */
+export function rejectedTransactionHash(error: unknown): string | undefined {
+  for (let e = error, depth = 0; e !== null && typeof e === 'object' && depth < 8; depth++) {
+    const hash = rejectedHashes.get(e);
+    if (hash !== undefined) return hash;
+    e = (e as {cause?: unknown}).cause;
+  }
+  return undefined;
 }
 
 /**
@@ -289,6 +321,14 @@ export async function submitFinalizedTransaction(
   facade: WalletFacade,
   finalized: FinalizedTransaction
 ): Promise<string> {
+  return (await submitWithRetry(facade, finalized)).txHash;
+}
+
+/** {@link submitFinalizedTransaction}, also saying whether the node saw it land. */
+export async function submitFinalizedTransactionWithReceipt(
+  facade: WalletFacade,
+  finalized: FinalizedTransaction
+): Promise<SubmissionReceipt> {
   return submitWithRetry(facade, finalized);
 }
 
@@ -638,7 +678,7 @@ async function designateForDustImpl(
   const finalized = await facade.finalizeRecipe(recipe);
 
   onProgress?.('submitting');
-  return submitWithRetry(facade, finalized);
+  return (await submitWithRetry(facade, finalized)).txHash;
 }
 
 /**
@@ -712,5 +752,5 @@ async function dedesignateFromDustImpl(
   onProgress?.('proving');
   const finalized = await facade.finalizeRecipe(balancedRecipe);
   onProgress?.('submitting');
-  return submitWithRetry(facade, finalized);
+  return (await submitWithRetry(facade, finalized)).txHash;
 }

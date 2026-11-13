@@ -113,6 +113,8 @@ export {
   buildTransferTransaction,
   estimateTransferFee,
   submitFinalizedTransaction,
+  submitFinalizedTransactionWithReceipt,
+  rejectedTransactionHash,
   balanceTransaction,
   buildSwapIntent,
   designateForDust,
@@ -121,7 +123,7 @@ export {
   dedesignateFromDust,
   deriveWalletKeys,
 } from '@shieldedtech/moth-wallet/sync/operations';
-export type { SwapInput, WalletKeys } from '@shieldedtech/moth-wallet/sync/operations';
+export type { SubmissionReceipt, SwapInput, WalletKeys } from '@shieldedtech/moth-wallet/sync/operations';
 export {
   summarizeTransaction,
   summarizeConnectorTransaction,
