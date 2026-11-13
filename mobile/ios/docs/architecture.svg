@@ -145,7 +145,7 @@
   <text x="1306" y="422" class="box-text mono">indexer.preprod.shielded.tools</text>
   <rect x="1292" y="442" width="276" height="56" rx="10" class="ext"/>
   <text x="1306" y="464" class="box-title">Midnight node</text>
-  <text x="1306" y="484" class="box-text mono">rpc.preprod.midnight.network</text>
+  <text x="1306" y="484" class="box-text mono">rpc.preprod.shielded.tools</text>
   <rect x="1292" y="508" width="276" height="56" rx="10" class="ext"/>
   <text x="1306" y="530" class="box-title">Blockfrost (Cardano)</text>
   <text x="1306" y="550" class="box-text mono">cardano-preprod.blockfrost.io</text>

@@ -42,7 +42,7 @@ class FakeSocket implements SocketLike {
 }
 
 const socket = (url: string, protocol: string) => new FakeSocket(url, protocol);
-const INDEXER = 'https://indexer.preprod.midnight.network/api/v4/graphql';
+const INDEXER = 'https://indexer.preprod.shielded.tools/api/v4/graphql';
 const ADDRESS = 'mn_dust_preprod1w0fju9wm5sgrwa6g7a65z39gazn82jpmf55dx66de3gykv6eygvxw6j8a6w';
 
 afterEach(() => {
@@ -56,7 +56,7 @@ describe('probeDustGenerations', () => {
     const sock = FakeSocket.all[0]!;
     const subscribe = sock.handshake();
 
-    expect(sock.url).toBe('wss://indexer.preprod.midnight.network/api/v4/graphql/ws');
+    expect(sock.url).toBe('wss://indexer.preprod.shielded.tools/api/v4/graphql/ws');
     expect(sock.protocol).toBe('graphql-transport-ws');
     expect(subscribe.payload.variables).toEqual({address: ADDRESS, end: 392_575});
 
