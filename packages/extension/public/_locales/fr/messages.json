@@ -314,6 +314,12 @@
   "approval_contractCallsLabel": {
     "message": "Appels de contrat"
   },
+  "approval_contractDeploysLabel": {
+    "message": "Contract deploys"
+  },
+  "approval_maintenanceUpdatesLabel": {
+    "message": "Contract maintenance updates"
+  },
   "approval_spendsNothing": {
     "message": "Cette transaction ne prélève rien sur votre portefeuille en dehors des frais de réseau."
   },

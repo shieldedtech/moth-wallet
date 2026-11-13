@@ -34,6 +34,10 @@ export interface TransactionSummary {
   receives: TxTokenAmount[];
   /** Contract calls, deploys and maintenance updates across all intents. */
   contractActions: number;
+  /** `contractActions` by kind, so a deploy is never presented as a call. */
+  contractCalls: number;
+  contractDeploys: number;
+  maintenanceUpdates: number;
 }
 
 type AnyTransaction = ledger.Transaction<ledger.Signaturish, ledger.Proofish, ledger.Bindingish>;
@@ -102,10 +106,30 @@ export function summarizeTransaction(tx: AnyTransaction): TransactionSummary {
     else if (amount > 0n) receives.push(toTokenAmount(type, amount));
   }
 
-  let contractActions = 0;
-  for (const intent of tx.intents?.values() ?? []) contractActions += intent.actions.length;
+  let contractCalls = 0;
+  let contractDeploys = 0;
+  let maintenanceUpdates = 0;
+  for (const intent of tx.intents?.values() ?? []) {
+    for (const action of intent.actions) {
+      if (action instanceof ledger.ContractCall) contractCalls += 1;
+      else if (action instanceof ledger.ContractDeploy) contractDeploys += 1;
+      else if (action instanceof ledger.MaintenanceUpdate) maintenanceUpdates += 1;
+      else {
+        // A kind a later ledger adds must be named here, not shown as a call.
+        const unknown: never = action;
+        throw new Error(`Unrecognised contract action: ${String(unknown)}`);
+      }
+    }
+  }
 
-  return {spends, receives, contractActions};
+  return {
+    spends,
+    receives,
+    contractActions: contractCalls + contractDeploys + maintenanceUpdates,
+    contractCalls,
+    contractDeploys,
+    maintenanceUpdates,
+  };
 }
 
 /** Decode + summarize in one step, for the connector's approval prompt. */

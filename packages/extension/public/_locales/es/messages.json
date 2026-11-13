@@ -314,6 +314,12 @@
   "approval_contractCallsLabel": {
     "message": "Llamadas a contratos"
   },
+  "approval_contractDeploysLabel": {
+    "message": "Contract deploys"
+  },
+  "approval_maintenanceUpdatesLabel": {
+    "message": "Contract maintenance updates"
+  },
   "approval_spendsNothing": {
     "message": "Esta transacción no toma nada de tu billetera aparte de la comisión de red."
   },

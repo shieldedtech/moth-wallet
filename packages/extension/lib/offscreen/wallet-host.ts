@@ -855,7 +855,14 @@ export async function txSummary(network: NetworkConfig, txHex: string, sealed: b
   const summary = summarizeConnectorTransaction(fromHex(txHex), sealed);
   const dto = (entries: typeof summary.spends) =>
     entries.map((entry) => ({ kind: entry.kind, tokenId: entry.tokenId, amount: entry.amount.toString() }));
-  return { spends: dto(summary.spends), receives: dto(summary.receives), contractActions: summary.contractActions };
+  return {
+    spends: dto(summary.spends),
+    receives: dto(summary.receives),
+    contractActions: summary.contractActions,
+    contractCalls: summary.contractCalls,
+    contractDeploys: summary.contractDeploys,
+    maintenanceUpdates: summary.maintenanceUpdates,
+  };
 }
 
 // Balance a dApp-supplied transaction (connector balance*Transaction). Needs a
