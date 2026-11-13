@@ -53,10 +53,12 @@ vi.mock('../lib/background/sync-service', () => ({
 }));
 
 import { dispatch } from '../lib/background/connector-handlers';
+import { getLastActivity, getLastUserActivity } from '../lib/background/auto-lock';
 import { grant, isAllowed } from '../lib/background/permissions';
 import { saveSession, type Session } from '../lib/background/session';
 import { updateSettings } from '../lib/background/settings';
 import { serializeBalances } from '../lib/messaging/protocol';
+import { CONNECT_CAN, CONNECT_CANT } from '../components/screens/Approval';
 
 const ORIGIN = 'https://dapp.example';
 
@@ -306,6 +308,22 @@ describe('connector dispatch', () => {
     );
   });
 
+  // The connect screen once said a site could not see balances or history while
+  // these reads were served without a prompt. Gate them behind approval,
+  // or keep them listed under what a connected site can do.
+  it('serves balances and history without a prompt, as the connect screen says', async () => {
+    await connect();
+    requestApproval.mockClear();
+    balancesGet.mockResolvedValue(serializeBalances(sampleBalances()));
+    txHistoryGet.mockResolvedValue([]);
+    await dispatch(ORIGIN, 'getShieldedBalances', []);
+    await dispatch(ORIGIN, 'getUnshieldedBalances', []);
+    await dispatch(ORIGIN, 'getTxHistory', [0, 10]);
+    expect(requestApproval).not.toHaveBeenCalled();
+    expect(CONNECT_CAN).toContain('approval_canSeeBalances');
+    expect(CONNECT_CANT as readonly string[]).not.toContain('approval_canSeeBalances');
+  });
+
   it('rejects getTxHistory with invalid paging as InvalidRequest', async () => {
     await connect();
     await expect(dispatch(ORIGIN, 'getTxHistory', [0, 0])).rejects.toMatchObject({ code: 'InvalidRequest' });
@@ -381,11 +399,13 @@ describe('connector dispatch', () => {
     expect(requestApproval).toHaveBeenCalledWith(
       'balance',
       ORIGIN,
-      { sealed: true, summary: NIGHT_SPEND },
+      { sealed: true, payFees: true, summary: NIGHT_SPEND },
       undefined,
       preparedPanel,
     );
-    expect(balanceTransaction).toHaveBeenCalledWith(expect.objectContaining({ txHex: 'abcd', sealed: true }));
+    expect(balanceTransaction).toHaveBeenCalledWith(
+      expect.objectContaining({ txHex: 'abcd', sealed: true, payFees: true }),
+    );
   });
 
   // The user is authorizing a spend, so what the transaction takes from the
@@ -423,7 +443,7 @@ describe('connector dispatch', () => {
     expect(requestApproval).toHaveBeenCalledWith(
       'balance',
       ORIGIN,
-      { sealed: true, summary: null },
+      { sealed: true, payFees: true, summary: null },
       undefined,
       preparedPanel,
     );
@@ -436,10 +456,32 @@ describe('connector dispatch', () => {
     expect(balanceTransaction).not.toHaveBeenCalled();
   });
 
-  it('rejects balanceSealedTransaction with payFees:false as InvalidRequest', async () => {
+  it.each([
+    ['balanceSealedTransaction', true],
+    ['balanceUnsealedTransaction', false],
+  ] as const)('%s with payFees:false balances without fees', async (method, sealed) => {
+    await connect();
+    requestApproval.mockResolvedValue(true);
+    const dustFee = { kind: 'dust', tokenId: '', amount: '5000' };
+    txSummary.mockResolvedValue({ ...NIGHT_SPEND, spends: [...NIGHT_SPEND.spends, dustFee] });
+    balanceTransaction.mockResolvedValue({ txHex: 'beef' });
+
+    await expect(dispatch(ORIGIN, method, ['abcd', { payFees: false }])).resolves.toEqual({ tx: 'beef' });
+    // The wallet leaves the DUST imbalance for another payer, so the prompt must not show it as spent.
+    expect(requestApproval).toHaveBeenCalledWith(
+      'balance',
+      ORIGIN,
+      { sealed, payFees: false, summary: NIGHT_SPEND },
+      undefined,
+      preparedPanel,
+    );
+    expect(balanceTransaction).toHaveBeenCalledWith(expect.objectContaining({ sealed, payFees: false }));
+  });
+
+  it('rejects a non-boolean payFees as InvalidRequest', async () => {
     await connect();
     await expect(
-      dispatch(ORIGIN, 'balanceSealedTransaction', ['abcd', { payFees: false }]),
+      dispatch(ORIGIN, 'balanceSealedTransaction', ['abcd', { payFees: 'no' }]),
     ).rejects.toMatchObject({ code: 'InvalidRequest' });
     expect(requestApproval).not.toHaveBeenCalled();
   });
@@ -468,7 +510,7 @@ describe('connector dispatch', () => {
     expect(requestApproval).toHaveBeenCalledWith(
       'balance',
       ORIGIN,
-      { sealed: false, summary: NIGHT_SPEND },
+      { sealed: false, payFees: true, summary: NIGHT_SPEND },
       undefined,
       preparedPanel,
     );
@@ -490,11 +532,16 @@ describe('connector dispatch', () => {
     const outputs = [{ kind: 'shielded', type: 'b'.repeat(64), value: 3n, recipient: 'mn_shield_devnet' }];
     const res = await dispatch(ORIGIN, 'makeIntent', [inputs, outputs, { intentId: 'random', payFees: true }]);
     expect(res).toEqual({ tx: 'f00d' });
-    // Approval shows the outputs (amounts as strings).
+    // The approval carries the inputs as well as the outputs: the inputs are what
+    // the wallet gives up, and an approval of outputs alone hid them.
     expect(requestApproval).toHaveBeenCalledWith(
       'transfer',
       ORIGIN,
-      { outputs: [{ kind: 'shielded', type: 'b'.repeat(64), value: '3', recipient: 'mn_shield_devnet' }] },
+      {
+        inputs: [{ kind: 'unshielded', type: 'a'.repeat(64), value: '5' }],
+        outputs: [{ kind: 'shielded', type: 'b'.repeat(64), value: '3', recipient: 'mn_shield_devnet' }],
+        payFees: true,
+      },
       undefined,
       preparedPanel,
     );
@@ -504,6 +551,52 @@ describe('connector dispatch', () => {
         inputs: [{ type: 'unshielded', tokenId: 'a'.repeat(64), amount: '5' }],
         outputs: [{ type: 'shielded', tokenId: 'b'.repeat(64), amount: '3', to: 'mn_shield_devnet' }],
         payFees: true,
+      }),
+    );
+  });
+
+  it('builds a swap intent without fees when payFees is false', async () => {
+    await connect();
+    requestApproval.mockResolvedValue(true);
+    makeIntent.mockResolvedValue({ txHex: 'f00d' });
+    const outputs = [{ kind: 'shielded', type: 'b'.repeat(64), value: 3n, recipient: 'mn_shield_devnet' }];
+    await dispatch(ORIGIN, 'makeIntent', [[], outputs, { intentId: 'random', payFees: false }]);
+    expect(requestApproval).toHaveBeenCalledWith(
+      'transfer',
+      ORIGIN,
+      expect.objectContaining({ payFees: false }),
+      undefined,
+      preparedPanel,
+    );
+    expect(makeIntent).toHaveBeenCalledWith(expect.objectContaining({ payFees: false }));
+  });
+
+  it.each([
+    [undefined, true],
+    [{}, true],
+    [{ payFees: true }, true],
+    [{ payFees: false }, false],
+  ])('makeTransfer with options %j builds with payFees %s', async (options, payFees) => {
+    await connect();
+    requestApproval.mockResolvedValue(true);
+    transferBuild.mockResolvedValue({ txHex: 'd00d' });
+    const outputs = [{ kind: 'unshielded', type: '0'.repeat(64), value: 7n, recipient: 'mn_unshield_devnet' }];
+    const res = await dispatch(ORIGIN, 'makeTransfer', options === undefined ? [outputs] : [outputs, options]);
+    expect(res).toEqual({ tx: 'd00d' });
+    expect(requestApproval).toHaveBeenCalledWith(
+      'transfer',
+      ORIGIN,
+      {
+        outputs: [{ kind: 'unshielded', type: '0'.repeat(64), value: '7', recipient: 'mn_unshield_devnet' }],
+        payFees,
+      },
+      undefined,
+      preparedPanel,
+    );
+    expect(transferBuild).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requests: [{ type: 'unshielded', tokenId: '0'.repeat(64), amount: '7', to: 'mn_unshield_devnet' }],
+        payFees,
       }),
     );
   });
@@ -551,5 +644,33 @@ describe('connector dispatch', () => {
     });
     expect(beginOp).toHaveBeenCalledTimes(1);
     expect(endOp).toHaveBeenCalledTimes(1);
+  });
+
+  // The auto-lock clock used to be reset only by the panel, so a session spent in a
+  // dApp with the panel closed locked mid-play. A connected dApp's requests count.
+  it('records auto-lock activity for a successful request from a connected origin', async () => {
+    await connect();
+    balancesGet.mockResolvedValue(serializeBalances(sampleBalances()));
+    expect(await getLastActivity()).toBeNull();
+    await dispatch(ORIGIN, 'getShieldedBalances', []);
+    expect(await getLastActivity()).toEqual(expect.any(Number));
+  });
+
+  // Those requests must not reset the user's own clock, or the ceiling that stops
+  // a polling dApp holding the wallet open forever never applies.
+  it('does not count a dApp request as the user\'s own activity', async () => {
+    await connect();
+    balancesGet.mockResolvedValue(serializeBalances(sampleBalances()));
+    await dispatch(ORIGIN, 'getShieldedBalances', []);
+    expect(await getLastActivity()).toEqual(expect.any(Number));
+    expect(await getLastUserActivity()).toBeNull();
+  });
+
+  it('records no activity for a request that is refused', async () => {
+    await saveSession(SESSION); // unlocked but not connected
+    await expect(dispatch(ORIGIN, 'getShieldedBalances', [])).rejects.toMatchObject({
+      code: 'PermissionRejected',
+    });
+    expect(await getLastActivity()).toBeNull();
   });
 });

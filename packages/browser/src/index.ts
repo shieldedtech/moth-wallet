@@ -25,6 +25,7 @@ export type {
   SyncedWallet,
   WalletBalances,
 } from '@shieldedtech/moth-wallet/sync/wallet-sync';
+export type { DustFeePass } from '@shieldedtech/moth-wallet/sync/dust-transacting';
 export type {
   SendRequest,
   TxStage,
@@ -44,7 +45,14 @@ export { deriveAppSecret } from '@shieldedtech/moth-wallet/wallet/app-secret';
 export type { SignEncoding, SignedMessage } from '@shieldedtech/moth-wallet/wallet/sign-message';
 export { IndexerClient } from '@shieldedtech/moth-wallet/network/indexer-client';
 export { ProofClient } from '@shieldedtech/moth-wallet/proof/client';
-export { WalletError, NetworkError, ProofError } from '@shieldedtech/moth-wallet/types/errors';
+export {
+  WalletError,
+  NetworkError,
+  ProofError,
+  TransactionSubmissionError,
+  errorChainMessage,
+  errorChainMessages,
+} from '@shieldedtech/moth-wallet/types/errors';
 export { ExitCode } from '@shieldedtech/moth-wallet/types/exit-codes';
 export {
   canonicalNetworkId,
@@ -61,6 +69,9 @@ export {
   createProofProvider,
   createWalletProvingService,
   ensureProverReady,
+  setWasmProvingProviderFactory,
+  type WasmProvingProviderFactory,
+  type WasmKeyMaterialProvider,
 } from '@shieldedtech/moth-wallet/proof/provider';
 export {
   startWalletSync,

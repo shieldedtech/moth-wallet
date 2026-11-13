@@ -17,6 +17,8 @@ import type {
   TokenTransfer,
   CombinedSwapInputs,
   CombinedSwapOutputs,
+  FinalizedTransactionRecipe,
+  UnboundTransactionRecipe,
 } from '@midnightntwrk/wallet-sdk/facade';
 import {HDWallet, Roles} from '@midnightntwrk/wallet-sdk/hd';
 import {setNetworkId} from '@midnight-ntwrk/midnight-js/network-id';
@@ -27,6 +29,7 @@ import {
   DustRegistrationNotYetError,
   type DustRegistrationEstimate,
 } from './dust-registration-estimate.js';
+import {errorChainMessage, TransactionSubmissionError} from '../types/errors.js';
 
 // Re-exported from the module that throws it, so a consumer importing the
 // registration API by subpath (packages/browser does) gets the error type it has
@@ -35,6 +38,10 @@ export {DustRegistrationNotYetError, type DustRegistrationEstimate};
 
 /** The proven, signed, ready-to-submit transaction produced by the facade. */
 export type FinalizedTransaction = ledger.FinalizedTransaction;
+// Not exported by wallet-sdk-facade 4.1.0, so derived from the method that takes it.
+export type TokenKindsToBalance = NonNullable<
+  Parameters<WalletFacade['balanceFinalizedTransaction']>[2]['tokenKindsToBalance']
+>;
 
 export type TxStage = 'building' | 'proving' | 'submitting';
 
@@ -115,9 +122,12 @@ function deriveKeysFromSeed(seedHex: string): WalletKeys {
  * with error 1013 "Transaction Already Imported". Because a finalized tx has a
  * fixed hash, this fires whenever we resubmit identical bytes — which means the
  * transaction already reached the node, so it should be treated as success.
+ *
+ * Matched against the whole cause chain: the SDK hands us its own fixed
+ * wrapper message, never the node's, so `e.message` alone never says 1013.
  */
 function isAlreadyImported(e: unknown): boolean {
-  const msg = e instanceof Error ? e.message : String(e);
+  const msg = errorChainMessage(e);
   return msg.includes('1013') || /already imported/i.test(msg);
 }
 
@@ -127,12 +137,40 @@ function isAlreadyImported(e: unknown): boolean {
  * and rejected it (bad proof, insufficient funds, low priority, …) returns a
  * deterministic verdict; resending the identical bytes only makes the user
  * wait for the same answer, so those rejections must surface immediately.
+ *
+ * Also matched against the whole chain — and this is the direction that costs
+ * a user something when it is missed. A submission the relay never delivered
+ * arrives wearing the same "Transaction submission error" as a rejection, so
+ * reading only `e.message` classified every dropped connection as the node's
+ * final answer and skipped the one retry that would have landed it.
  */
 function isTransient(e: unknown): boolean {
-  const msg = e instanceof Error ? e.message : String(e);
-  return /disconnect|not connected|connection|websocket|socket hang up|time\s?d?\s?out|timeout|ECONN|ENOTFOUND|network|fetch failed|1006/i.test(
+  const msg = errorChainMessage(e);
+  // `not connect` rather than `not connected`: the relay's own failure to
+  // come up is worded "Could not connect within specified time range (5s)",
+  // which the narrower spelling missed even though nothing was ever sent.
+  return /disconnect|not connect|connection|websocket|socket hang up|time\s?d?\s?out|timeout|ECONN|ENOTFOUND|network|fetch failed|1006/i.test(
     msg
   );
+}
+
+/**
+ * Restate a submission failure with the reason actually in it.
+ *
+ * The wallet SDK's own message for every one of these is the constant
+ * "Transaction submission error" — the node's verdict (`1010: Invalid
+ * Transaction: Custom error: 170`) or the relay's ("Could not connect within
+ * specified time range (5s)") sits two `cause` levels below it, and every
+ * surface Moth has shows `error.message`. So a user was being told only that
+ * submission failed, never what the network said, no matter which of these it
+ * was. Flatten the chain into the message and keep the original on `cause`.
+ */
+function asSubmissionFailure(e: unknown): Error {
+  const chained = errorChainMessage(e);
+  const own = e instanceof Error ? e.message : String(e);
+  // Nothing gained by re-wrapping an error that already says its own reason.
+  if (!chained || chained === own) return e instanceof Error ? e : new Error(own);
+  return new TransactionSubmissionError(chained, e);
 }
 
 /**
@@ -161,7 +199,7 @@ async function submitWithRetry(
       return finalized.transactionHash();
     } catch (e) {
       if (isAlreadyImported(e)) return finalized.transactionHash();
-      if (attempt === attempts || !isTransient(e)) throw e;
+      if (attempt === attempts || !isTransient(e)) throw asSubmissionFailure(e);
       await new Promise((r) => setTimeout(r, delayMs));
     }
   }
@@ -174,7 +212,8 @@ async function submitWithRetry(
  * finalized transaction as a standalone artifact; sendTokens composes this
  * with submission.
  *
- * `ttl` overrides the default 30-minute intent deadline. Callers that hold a
+ * `options` are passed to the facade's `transferTransaction`; `ttl` overrides
+ * the default 30-minute intent deadline. Callers that hold a
  * proof before submitting — the daemon's `proveTransaction` verb — need to
  * choose the window themselves. The ledger rejects an intent whose ttl is
  * more than 3600s past the including block, so 60 minutes is the practical
@@ -192,18 +231,21 @@ export async function buildTransferTransaction(
   networkId: string,
   requests: SendRequest[],
   onProgress?: (stage: TxStage) => void,
-  ttlOverride?: Date
+  options?: {
+    ttl?: Date;
+    payFees?: boolean;
+  }
 ): Promise<FinalizedTransaction> {
   setNetworkId(networkId);
   const ks = createKeystore(keys.nightExternalKey, networkId);
   const transfers = combinedTransfers(networkId, requests);
-  const ttl = ttlOverride ?? new Date(Date.now() + 30 * 60_000);
+  const ttl = options?.ttl ?? new Date(Date.now() + 30 * 60_000);
 
   onProgress?.('building');
   const recipe = await facade.transferTransaction(
     transfers,
     {shieldedSecretKeys: keys.shieldedSecretKeys, dustSecretKey: keys.dustSecretKey},
-    {ttl}
+    {...options, ttl}
   );
 
   onProgress?.('proving');
@@ -278,6 +320,7 @@ export async function sendTokensWithKeys(
  * - unsealed → Transaction<SignatureEnabled, Proof, PreBinding> (UnboundTransaction)
  *
  * The prove/finalize tail is the same as {@link buildTransferTransaction}.
+ * Leaving `dust` out of `tokenKindsToBalance` skips the fee, leaving it to another payer.
  */
 export async function balanceTransaction(
   facade: WalletFacade,
@@ -285,47 +328,64 @@ export async function balanceTransaction(
   networkId: string,
   txBytes: Uint8Array,
   sealed: boolean,
-  onProgress?: (stage: TxStage) => void
+  onProgress?: (stage: TxStage) => void,
+  options?: {
+    tokenKindsToBalance?: TokenKindsToBalance;
+  }
 ): Promise<FinalizedTransaction> {
   setNetworkId(networkId);
   const ks = createKeystore(keys.nightExternalKey, networkId);
   const secretKeys = {shieldedSecretKeys: keys.shieldedSecretKeys, dustSecretKey: keys.dustSecretKey};
-  const ttl = new Date(Date.now() + 30 * 60_000);
+  const balanceOptions = {...options, ttl: new Date(Date.now() + 30 * 60_000)};
+  const kinds = options?.tokenKindsToBalance ?? 'all';
+  const payFees = kinds === 'all' || kinds.includes('dust');
 
   onProgress?.('building');
-  const recipe = sealed
-    ? await facade.balanceFinalizedTransaction(
-        ledger.Transaction.deserialize<ledger.SignatureEnabled, ledger.Proof, ledger.Binding>(
-          'signature',
-          'proof',
-          'binding',
-          txBytes
-        ),
-        secretKeys,
-        {ttl}
-      )
-    : await facade.balanceUnboundTransaction(
-        ledger.Transaction.deserialize<ledger.SignatureEnabled, ledger.Proof, ledger.PreBinding>(
-          'signature',
-          'proof',
-          'pre-binding',
-          txBytes
-        ),
-        secretKeys,
-        {ttl}
-      );
+  let recipe: FinalizedTransactionRecipe | UnboundTransactionRecipe;
+  if (sealed) {
+    const tx = ledger.Transaction.deserialize<ledger.SignatureEnabled, ledger.Proof, ledger.Binding>(
+      'signature',
+      'proof',
+      'binding',
+      txBytes
+    );
+    try {
+      recipe = await facade.balanceFinalizedTransaction(tx, secretKeys, balanceOptions);
+    } catch (error) {
+      // A sealed tx that needs no token balancing is already final when the wallet skips fees.
+      if (!payFees && isNothingToBalance(error)) return tx;
+      throw error;
+    }
+  } else {
+    const tx = ledger.Transaction.deserialize<ledger.SignatureEnabled, ledger.Proof, ledger.PreBinding>(
+      'signature',
+      'proof',
+      'pre-binding',
+      txBytes
+    );
+    try {
+      recipe = await facade.balanceUnboundTransaction(tx, secretKeys, balanceOptions);
+    } catch (error) {
+      // The SDK's recipe type allows an unbound base with no balancing tx; finalizing it just binds.
+      if (!payFees && isNothingToBalance(error)) recipe = {type: 'UNBOUND_TRANSACTION', baseTransaction: tx};
+      else throw error;
+    }
+  }
 
   onProgress?.('proving');
   const signed = await facade.signRecipe(recipe, (payload: Uint8Array) => ks.signData(payload));
   return facade.finalizeRecipe(signed);
 }
 
+// Matches wallet-sdk-facade 4.1.0's error when nothing needs balancing; a contract test runs the real facade.
+function isNothingToBalance(error: unknown): boolean {
+  return error instanceof Error && error.message.startsWith('No balancing transaction was created');
+}
+
 /**
  * Build a swap intent (connector `makeIntent`): the wallet's half of a swap,
- * providing `inputs` (spent) and `outputs` (sent to recipients). Returns the
- * raw unproven, unbound transaction from the SDK's `initSwap` — deliberately
- * NOT proven or bound, so the dApp can combine it with the counterparty's half
- * before the combined transaction is proven, balanced, and submitted.
+ * providing `inputs` (spent) and `outputs` (sent to recipients). Returns it sealed,
+ * as the counterparty completes it with `balanceSealedTransaction`.
  *
  * NOTE: the connector's `intentId` option is not honored — the SDK's `initSwap`
  * exposes no segment-id control, so callers cannot pin the intent's id or opt
@@ -337,10 +397,13 @@ export async function buildSwapIntent(
   networkId: string,
   inputs: SwapInput[],
   outputs: SendRequest[],
-  payFees: boolean,
-  onProgress?: (stage: TxStage) => void
-): Promise<ledger.UnprovenTransaction> {
+  onProgress?: (stage: TxStage) => void,
+  options?: {
+    payFees?: boolean;
+  }
+): Promise<FinalizedTransaction> {
   setNetworkId(networkId);
+  const ks = createKeystore(keys.nightExternalKey, networkId);
 
   const swapInputs: CombinedSwapInputs = {};
   for (const input of inputs) {
@@ -367,9 +430,12 @@ export async function buildSwapIntent(
     swapInputs,
     swapOutputs,
     {shieldedSecretKeys: keys.shieldedSecretKeys, dustSecretKey: keys.dustSecretKey},
-    {ttl, payFees}
+    {...options, ttl}
   );
-  return recipe.transaction;
+
+  onProgress?.('proving');
+  const signed = await facade.signRecipe(recipe, (payload: Uint8Array) => ks.signData(payload));
+  return facade.finalizeRecipe(signed);
 }
 
 /**

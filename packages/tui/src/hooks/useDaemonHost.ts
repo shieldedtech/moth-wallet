@@ -23,6 +23,7 @@ import {
   type WalletKeys,
   type ConfirmationQueue,
 } from '@shieldedtech/moth-wallet';
+import type {CardanoNetworkConfig} from '@shieldedtech/moth-wallet/cardano/network';
 import type {WalletFacade} from '@midnightntwrk/wallet-sdk/facade';
 
 export interface UseDaemonHostOptions {
@@ -38,6 +39,18 @@ export interface UseDaemonHostOptions {
   /** Getter for the active wallet's typed key bundle (D-KM-3). */
   readonly getWalletKeys: () => WalletKeys | null;
   readonly queue: ConfirmationQueue;
+  /**
+   * Cardano capability for the cNIGHT verbs. Omitted until the config has
+   * loaded; the verbs stay in the method table either way and refuse with a
+   * reason, which a client can tell apart from an old daemon that has never
+   * heard of them.
+   */
+  readonly cardano?: {
+    readonly config: CardanoNetworkConfig;
+    /** The active Cardano account's phrase and index, resolved per call. */
+    readonly resolveAccountKey: () => Promise<{mnemonic: string; accountIndex: number}>;
+    readonly getDustAddress: () => string;
+  };
   readonly daemonVersion: string;
   readonly logs?: {
     info?: (msg: string) => void;
@@ -55,11 +68,16 @@ export interface UseDaemonHostState {
 }
 
 export function useDaemonHost(opts: UseDaemonHostOptions): UseDaemonHostState {
-  const {network, walletName, balancesRef, getFacade, getWalletKeys, queue, daemonVersion, logs} = opts;
+  const {network, walletName, balancesRef, getFacade, getWalletKeys, queue, cardano, daemonVersion, logs} = opts;
   const getFacadeRef = useRef(getFacade);
   getFacadeRef.current = getFacade;
   const getWalletKeysRef = useRef(getWalletKeys);
   getWalletKeysRef.current = getWalletKeys;
+  // Read through a ref for the same reason as the facade: handlers run outside
+  // the render tree, and the wallet can be locked and unlocked under a bound
+  // socket without the daemon rebinding.
+  const cardanoRef = useRef(cardano);
+  cardanoRef.current = cardano;
   const logsRef = useRef(logs);
   logsRef.current = logs;
 
@@ -106,6 +124,19 @@ export function useDaemonHost(opts: UseDaemonHostOptions): UseDaemonHostState {
       getWalletKeys: () => getWalletKeysRef.current(),
       getBalances: () => balancesRef.current,
       queue,
+      ...(cardano
+        ? {
+            cardano: {
+              config: cardano.config,
+              resolveAccountKey: () => {
+                const current = cardanoRef.current;
+                if (!current) return Promise.reject(new Error('Cardano is not available in this session'));
+                return current.resolveAccountKey();
+              },
+              getDustAddress: () => cardanoRef.current?.getDustAddress() ?? '',
+            },
+          }
+        : {}),
       auditLog,
       log: (level, msg) => {
         if (level === 'info') logsRef.current?.info?.(msg);
@@ -163,7 +194,10 @@ export function useDaemonHost(opts: UseDaemonHostOptions): UseDaemonHostState {
         event: 'daemon-stop',
       });
     };
-  }, [network?.id, walletName, queue, daemonVersion, balancesRef, auditLog, network]);
+  // `cardano?.config.network` and not the object: the config loads async, so
+  // the first render has none and the socket must rebind once it arrives.
+  // Keying on the object identity instead would rebind on every render.
+  }, [network?.id, walletName, queue, daemonVersion, balancesRef, auditLog, network, cardano?.config.network]);
 
   return state;
 }

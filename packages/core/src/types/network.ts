@@ -99,7 +99,7 @@ export const DEFAULT_NETWORKS: Record<string, NetworkConfig> = {
   preprod: {
     id: 'preprod',
     nodeUrl: 'https://rpc.preprod.midnight.network',
-    indexerUrl: 'https://indexer.preprod.midnight.network/api/v4/graphql',
+    indexerUrl: 'https://indexer.preprod.shielded.tools/api/v4/graphql',
     prover: serverProver(),
   },
   preview: {

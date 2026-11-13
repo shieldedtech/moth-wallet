@@ -16,7 +16,7 @@ import {
   flattenBalanceRows,
 } from '../../utils/balance.js';
 import {
-  formatTimeRemaining, truncateMiddle, windowRows, balanceBudget,
+  formatDustFillRemaining, truncateMiddle, windowRows, balanceBudget,
   type BalanceBudget,
 } from '../../utils/display.js';
 
@@ -199,7 +199,7 @@ function DustBalanceBlock({
       </Box>
       <Box marginLeft={LABEL_WIDTH} flexDirection="column">
         {shown.map((coin, idx) => {
-          const timeRemaining = formatTimeRemaining(coin.maxCapReachedAt, now);
+          const timeRemaining = formatDustFillRemaining(coin, now);
           const isComplete = coin.generatedNow >= coin.maxCap;
           return (
             <Box key={idx} flexDirection="column">

@@ -14,6 +14,10 @@ export interface DustView {
   etaText: string;
   /** True while the dust sub-wallet is still syncing — amounts are provisional. */
   syncing: boolean;
+  /** Registered and holding value, but the records that define the cap have not
+   *  been applied — the cap is UNKNOWN, not zero. Callers must show this instead
+   *  of a percentage of nothing, or a real balance reads as "3,301.04 of 0". */
+  capacityUnknown: boolean;
   /** The wallet holds NIGHT, but none of it is registered for generation — so
    *  it has capacity available to it and is not using it. Distinct from holding
    *  no NIGHT at all, which is what the "waiting" copy is for. */
@@ -45,10 +49,40 @@ export function dustView(
   const registered = generation?.registered === true;
   const unregisteredNight = night > 0n && !registered;
 
+  // A cap of zero on a registered wallet that holds value is missing records,
+  // not an empty allowance. The value clause is defensive: core only reports
+  // `registered` off a registered NIGHT UTXO, so it already implies night > 0n.
+  const capacityUnknown = registered && max === 0n && (current > 0n || night > 0n);
+
+  // Computed before the ETA, which uses it to tell a genuinely stale view from
+  // one that is merely settling.
+  //
+  // lastHealAt is null: the old cooldown existed to stop an automatic repair
+  // from looping. A rebuild the user asked for needs no cooldown.
+  //
+  // Note the predicate's pending-dust guard is inert here — serializeForClients
+  // strips `coins` before balances reach the panel, so client-side this reduces
+  // to "synced, registered, deficit, newest registration older than the grace
+  // period". That is the right gate for *offering* a rebuild; the engine-side
+  // guards still apply to running one.
+  const canRebuild = shouldRepairDustView(balances, Date.now(), null);
+
   // Mid-sync amounts move as coins apply, so never claim "Fully generated"
   // (or an ETA) until the dust sub-wallet has caught up.
-  let etaText = night > 0n ? t('dust_etaNotRegistered', [labels.night]) : t('dust_etaWaitingFor', [labels.night]);
+  //
+  // Ordered so the fallback is reached only when nothing better applies; every
+  // override used to be gated on `max > 0n`, which left a registered wallet with
+  // no cap showing "not registered yet".
+  //
+  // A missing cap is only an error once it has outlived the settling window.
+  // Core reports `registered, limit: 0n` for the whole normal gap between
+  // registering and the first dust coin applying, so calling that "records
+  // missing" — with no rebuild offered, beside a note saying generation starts
+  // on its own — reproduces the contradiction this is meant to remove.
+  // `canRebuild` already encodes exactly that staleness test.
+  let etaText: string;
   if (syncing) etaText = t('dust_etaSyncing');
+  else if (capacityUnknown) etaText = canRebuild ? t('dust_etaRecordsMissing') : t('dust_etaRecordsSettling');
   else if (max > 0n && percent >= 100) etaText = t('dust_etaFullyGenerated');
   else if (max > 0n && generation) {
     const fill = generation.fillTime;
@@ -68,17 +102,20 @@ export function dustView(
       const days = Math.round(ms / 86_400_000);
       etaText = t('dust_etaFullInDays', [days]);
     }
+  } else if (night > 0n && !registered) {
+    etaText = t('dust_etaNotRegistered', [labels.night]);
+  } else {
+    etaText = t('dust_etaWaitingFor', [labels.night]);
   }
 
-  // lastHealAt is null: the old cooldown existed to stop an automatic repair
-  // from looping. A rebuild the user asked for needs no cooldown.
-  //
-  // Note the predicate's pending-dust guard is inert here — serializeForClients
-  // strips `coins` before balances reach the panel, so client-side this reduces
-  // to "synced, registered, deficit, newest registration older than the grace
-  // period". That is the right gate for *offering* a rebuild; the engine-side
-  // guards still apply to running one.
-  const canRebuild = shouldRepairDustView(balances, Date.now(), null);
-
-  return { current: formatDust(current), max: formatDust(max), percent, etaText, syncing, unregisteredNight, canRebuild };
+  return {
+    current: formatDust(current),
+    max: formatDust(max),
+    percent,
+    etaText,
+    syncing,
+    capacityUnknown,
+    unregisteredNight,
+    canRebuild,
+  };
 }

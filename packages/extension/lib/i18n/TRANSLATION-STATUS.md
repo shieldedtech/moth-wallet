@@ -19,6 +19,8 @@ The English catalog (`messages/`) is the source of truth. Shipped locales live i
   - `send_overspent`, `send_addressKindInvalid` — amount / address validation
   - `send_failureSubSingle`, `send_failureSubMulti` — "Nothing was spent" assurance
   - `send_oneTransactionNote` — combined-fee semantics
+  - `approval_balanceSubtitleNoFees`, `approval_notPaidByWallet`, `approval_spendsNothingNoFees`
+    — who pays the network fee
   - `send_provingFootnote`, `dust_provingFootnote` — prover-choice guidance
   - `network_wasmDesc`, `network_proofServerDesc`, `network_provingHelp` — prover guidance
   - `settings_autoLockDemo`, `settings_autoLockDescription` — auto-lock/demo-mode meaning
@@ -29,6 +31,9 @@ The English catalog (`messages/`) is the source of truth. Shipped locales live i
     — DUST register/deregister consequences
   - `dust_receiverHint`, `dust_receiverInvalid`, `dust_addressLabel` — where funds go / address validity
   - `addressBook_detected`, `addressBook_notMidnight`, `addressBook_autoRecognized` — address validity
+  - `status_provingLocal`, `status_provingLocalDetail`, `status_pendingLocalTime` — prover
+    guidance (where proving runs, how long local proving takes). The `status_*` chrome
+    keys around them (elapsed clock, background-banner labels) are AI-assisted drafts.
 
 - **Verbatim by design** (correct as English in every locale — do NOT translate):
   protocol terms *Shielded* / *Unshielded* / *WASM* / *NIGHT* / *DUST*, `mn_…` address

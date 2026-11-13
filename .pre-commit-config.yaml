@@ -8,8 +8,11 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c # v6.0.0
     hooks:
+      # A diff's blank context lines are a lone space; stripping it corrupts the patch.
       - id: trailing-whitespace
+        exclude: \.patch$
       - id: end-of-file-fixer
+        exclude: \.patch$
       - id: check-yaml
       - id: check-merge-conflict
       - id: detect-private-key

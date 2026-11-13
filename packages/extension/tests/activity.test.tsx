@@ -48,7 +48,7 @@ describe('ActivityRow', () => {
             pending: true,
           },
           labels,
-          NOW,
+          { now: NOW },
         )}
       />,
     );
@@ -76,7 +76,7 @@ describe('ActivityRow', () => {
             pending: false,
           },
           labels,
-          NOW,
+          { now: NOW },
         )}
       />,
     );
@@ -106,7 +106,7 @@ describe('ActivityRow', () => {
             pending: false,
           },
           labels,
-          NOW,
+          { now: NOW },
         )}
       />,
     );
