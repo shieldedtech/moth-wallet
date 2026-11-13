@@ -32,6 +32,22 @@ class KeyMaterialZkConfigProvider extends ZKConfigProvider<string> {
   }
 }
 
+export type {WasmKeyMaterialProvider};
+
+/**
+ * Builds the local (WASM) prover over a key-material source. Injectable because the
+ * ledger requests a transaction's proofs concurrently while zkir's in-thread prover
+ * serialises them; a host with spare threads (the extension) installs a parallel one.
+ */
+export type WasmProvingProviderFactory = (keyMaterial: WasmKeyMaterialProvider) => ledger.ProvingProvider;
+
+let wasmProvingFactory: WasmProvingProviderFactory = wasmProvingProvider;
+
+/** Replace the local prover for this process; `null` restores zkir's default. */
+export function setWasmProvingProviderFactory(factory: WasmProvingProviderFactory | null): void {
+  wasmProvingFactory = factory ?? wasmProvingProvider;
+}
+
 let defaultWasmKeys: WasmKeyMaterialProvider | undefined;
 
 function defaultWasmKeyMaterialProvider(): WasmKeyMaterialProvider {
@@ -65,7 +81,7 @@ export function createProvingProvider(
   if (config.type === 'server') {
     return httpClientProvingProvider(config.url, new KeyMaterialZkConfigProvider(keyMaterialProvider));
   }
-  return wasmProvingProvider(wasmKeyMaterialProvider(keyMaterialProvider));
+  return wasmProvingFactory(wasmKeyMaterialProvider(keyMaterialProvider));
 }
 
 /** Build the transaction-level Midnight.js proof provider. */
@@ -102,11 +118,9 @@ export function createWalletProvingService(config: ProverConfig) {
     return makeWasmProvingService();
   }
 
-  // Browser bundles do not emit the SDK's dependency-internal proof-worker.js.
-  // Moth already runs the wallet host in its own dedicated Worker, so execute
-  // the same ZKIR WASM provider there directly instead of nesting a missing
-  // worker asset.
-  const provider = wasmProvingProvider(defaultWasmKeyMaterialProvider());
+  // Browser bundles do not emit the SDK's proof-worker.js, so prove through the
+  // installed factory instead (the extension plugs its proof-worker pool in there).
+  const provider = wasmProvingFactory(defaultWasmKeyMaterialProvider());
   return {
     prove: (transaction: ledger.UnprovenTransaction) =>
       transaction.prove(provider, ledger.CostModel.initialCostModel()),

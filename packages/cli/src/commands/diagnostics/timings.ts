@@ -1,5 +1,5 @@
 import { Args } from '@oclif/core';
-import { BaseCommand } from '../../base-command.js';
+import { BaseCommand, timingsPath } from '../../base-command.js';
 import type { TimingEntry } from '@shieldedtech/moth-wallet';
 
 /**
@@ -38,7 +38,7 @@ export default class DiagnosticsTimings extends BaseCommand {
       await this.timings.setEnabled(args.action === 'on');
       this.outputSuccess({
         enabled: args.action === 'on',
-        path: '~/.moth/timings.json',
+        path: timingsPath(),
         message:
           args.action === 'on'
             ? 'Recording on. Run a command that syncs, then `diagnostics timings` to read it.'

@@ -69,6 +69,9 @@ export {
   createProofProvider,
   createWalletProvingService,
   ensureProverReady,
+  setWasmProvingProviderFactory,
+  type WasmProvingProviderFactory,
+  type WasmKeyMaterialProvider,
 } from '@shieldedtech/moth-wallet/proof/provider';
 export {
   startWalletSync,

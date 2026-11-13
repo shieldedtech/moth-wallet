@@ -4,6 +4,7 @@ export type Screen =
   | 'receive'
   | 'activity'
   | 'dust'
+  | 'cardano'
   | 'accounts'
   | 'settings'
   | 'connected-sites'

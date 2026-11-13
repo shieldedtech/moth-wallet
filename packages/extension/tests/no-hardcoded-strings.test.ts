@@ -20,6 +20,10 @@ const ALLOWED: RegExp[] = [
   /^mn_/, // address-format hints (mn_addr…, mn_shield-addr…) — not prose
   /^N$/, // the NIGHT token glyph letter
   /^MOTH$/, // the wordmark on the setup shell — a brand mark, never translated
+  // Cardano's own network identifiers, in the exact spelling Lucid expects.
+  // They are values the wallet sends on the wire, not prose about them — a
+  // translated "Vorschau" in that <select> would resolve to no network at all.
+  /^(Preview|Preprod|Mainnet)$/,
 ];
 
 /** Prose = two or more consecutive letters; symbols, digits and single glyphs pass. */

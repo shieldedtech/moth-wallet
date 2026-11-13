@@ -1,5 +1,7 @@
 import {describe, it, expect} from 'vitest';
 import {
+  parseCardanoRegisterParams,
+  parseCardanoUpdateParams,
   parseProveTransactionParams,
   PROVE_TTL_MAX_MINUTES,
   PROVE_TTL_MIN_MINUTES,
@@ -68,5 +70,27 @@ describe('parseProveTransactionParams', () => {
       expect(err).toBeInstanceOf(DaemonProtocolError);
       expect((err as DaemonProtocolError).code).toBe('INVALID_PARAMS');
     }
+  });
+});
+
+describe('cardano receiver params', () => {
+  const DUST = 'mn_dust_preprod1wwxhaf472uhxnltad72rmph52gdpef7a7ytq78vneqs2secjdyjzyh4t0ey';
+  const DUST_HEX = '738d7ea6be572e69fd7d6f943d86f4521a1ca7ddf1160f1d93c820a86712692422';
+
+  // The parsers once accepted only a 64-hex coin public key while core accepted
+  // only a DUST address, so no receiver ever got through both.
+  it('accepts a DUST address or its 66-hex serialization, as core does', () => {
+    expect(parseCardanoRegisterParams({receiver: DUST}).receiver).toBe(DUST_HEX);
+    expect(parseCardanoRegisterParams({receiver: `0x${DUST_HEX.toUpperCase()}`}).receiver).toBe(DUST_HEX);
+    expect(parseCardanoUpdateParams({receiver: DUST}).receiver).toBe(DUST_HEX);
+  });
+
+  it('refuses a 64-hex coin public key as INVALID_PARAMS', () => {
+    expect(() => parseCardanoRegisterParams({receiver: 'ab'.repeat(32)})).toThrow(DaemonProtocolError);
+    expect(() => parseCardanoUpdateParams({receiver: 'ab'.repeat(32)})).toThrow(/cardanoUpdate\.receiver/);
+  });
+
+  it('leaves the register receiver optional', () => {
+    expect(parseCardanoRegisterParams({}).receiver).toBeUndefined();
   });
 });

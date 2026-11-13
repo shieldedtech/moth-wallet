@@ -1,0 +1,15 @@
+[package]
+name = "moth-native"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+midnight-proof-server = { path = "../proof-server" }
+actix-web = { version = "^4.13.0", default-features = false, features = ["macros"] }
+tokio = { version = "1.46.1", features = ["sync"] }
+
+[profile.release]
+lto = "thin"

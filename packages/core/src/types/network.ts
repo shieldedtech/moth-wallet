@@ -86,20 +86,23 @@ export function validateNetworkConfig(config: NetworkConfig): void {
   if (prover.type === 'server') validateNetworkUrl(prover.url, 'Proof server URL');
 }
 
-// Endpoint values mirror midnight-wallet-cli/src/config/environments.ts.
+// Hosted endpoints live under *.shielded.tools, except preview, which stays on
+// *.midnight.network until its shielded.tools hosts have DNS records. The
+// extension's host_permissions in wxt.config.ts must cover every host here, so
+// change both together.
 // Format follows moth-wallet's NetworkConfig: HTTP-style URLs that the sync
 // layer auto-converts to WS where needed.
 export const DEFAULT_NETWORKS: Record<string, NetworkConfig> = {
   mainnet: {
     id: 'mainnet',
-    nodeUrl: 'https://rpc.mainnet.midnight.network',
-    indexerUrl: 'https://indexer.mainnet.midnight.network/api/v4/graphql',
+    nodeUrl: 'https://rpc.mainnet.shielded.tools',
+    indexerUrl: 'https://indexer.mainnet.shielded.tools/api/v4/graphql',
     prover: serverProver(),
   },
   preprod: {
     id: 'preprod',
-    nodeUrl: 'https://rpc.preprod.midnight.network',
-    indexerUrl: 'https://indexer.preprod.midnight.network/api/v4/graphql',
+    nodeUrl: 'https://rpc.preprod.shielded.tools',
+    indexerUrl: 'https://indexer.preprod.shielded.tools/api/v4/graphql',
     prover: serverProver(),
   },
   preview: {
@@ -110,14 +113,14 @@ export const DEFAULT_NETWORKS: Record<string, NetworkConfig> = {
   },
   qanet: {
     id: 'qanet',
-    nodeUrl: 'https://rpc.qanet.midnight.network',
-    indexerUrl: 'https://indexer.qanet.midnight.network/api/v4/graphql',
+    nodeUrl: 'https://rpc.qanet.shielded.tools',
+    indexerUrl: 'https://indexer.qanet.shielded.tools/api/v4/graphql',
     prover: serverProver(),
   },
   devnet: {
     id: 'devnet',
-    nodeUrl: 'https://rpc.devnet.midnight.network',
-    indexerUrl: 'https://indexer.devnet.midnight.network/api/v4/graphql',
+    nodeUrl: 'https://rpc.devnet.shielded.tools',
+    indexerUrl: 'https://indexer.devnet.shielded.tools/api/v4/graphql',
     prover: serverProver(),
   },
   undeployed: {
