@@ -12,10 +12,10 @@ import {
   type NetworkConfigState,
 } from '../components/screens/NetworkConfig';
 
-// What a profile saved by a build that offered `local` looks like on disk. The
-// panel reads it back through the background, so the whole path is exercised:
+// A profile saved on midnight-node local-env. `local` was once folded into
+// `undeployed`, which moved these profiles to the wrong chain. The panel reads it back through the background, so the whole path is exercised:
 // stored bytes → getSettings → messaging → the panel's load decision → markup.
-const LEGACY_PROFILE = { network: 'local' as const };
+const LOCAL_PROFILE = { network: 'local' as const };
 
 /** The exact wiring from handlers.ts — the panel's only source of settings.
  *  Registered once: the messaging layer allows a single listener per message
@@ -83,42 +83,28 @@ function checkedNetwork(html: string): string {
   return selected[0]!.label;
 }
 
-describe('upgrading a profile saved on the retired local network', () => {
+describe('a profile saved on the local network', () => {
   beforeAll(() => serveSettings());
   beforeEach(() => fakeBrowser.storage.local.clear());
 
-  it('opens the picker on Undeployed, selected', async () => {
-    await fakeBrowser.storage.local.set({ settings: LEGACY_PROFILE });
+  it('opens the picker on Local, selected', async () => {
+    await fakeBrowser.storage.local.set({ settings: LOCAL_PROFILE });
 
     const { settings, state, html } = await openNetworkPanel();
 
-    expect(settings.network).toBe('undeployed');
-    expect(state.network).toBe('undeployed');
-    expect(checkedNetwork(html)).toBe('Undeployed');
-    expect(html).toContain(DEFAULT_NETWORKS.undeployed!.nodeUrl);
+    expect(settings.network).toBe('local');
+    expect(state.network).toBe('local');
+    expect(checkedNetwork(html)).toBe('Local');
+    expect(html).toContain(DEFAULT_NETWORKS.local!.nodeUrl);
   });
 
-  it('does not offer mainnet to a profile that never asked for it', async () => {
-    // The failure this guards against is not a blank radio. `selectableNetworks`
-    // never strands a wallet on the network it is already using, so a fallback to
-    // mainnet would ALSO unhide mainnet with developer mode off — presenting a
-    // value-bearing network as this account's own, one click from being saved.
-    await fakeBrowser.storage.local.set({ settings: LEGACY_PROFILE });
-
-    const { state, html } = await openNetworkPanel();
-
-    expect(state.developerMode).toBe(false);
-    expect(state.available).not.toContain('mainnet');
-    expect(html).not.toContain('>Mainnet</span>');
-  });
-
-  it('keeps endpoint edits made while the network was called local', async () => {
+  it('keeps endpoint edits made on local', async () => {
     const customEndpoints = {
       nodeUrl: 'ws://localhost:19944',
       indexerUrl: 'http://localhost:18088/api/v4/graphql',
       prover: { type: 'wasm' as const },
     };
-    await fakeBrowser.storage.local.set({ settings: { ...LEGACY_PROFILE, customEndpoints } });
+    await fakeBrowser.storage.local.set({ settings: { ...LOCAL_PROFILE, customEndpoints } });
 
     const { state, html } = await openNetworkPanel();
 
@@ -126,9 +112,7 @@ describe('upgrading a profile saved on the retired local network', () => {
     expect(html).toContain('ws://localhost:19944');
   });
 
-  // The mechanism above only works because the id is resolved before it reaches
-  // the panel. An id with no mapping still takes the fallback, which is what
-  // makes the migration load-bearing rather than decorative.
+  // An id with no preset still takes the fallback.
   it('still falls back for an id that has no current equivalent', async () => {
     await fakeBrowser.storage.local.set({ settings: { network: 'stagenet' } });
 

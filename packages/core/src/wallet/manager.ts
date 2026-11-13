@@ -128,10 +128,9 @@ interface WalletMeta {
 /**
  * Re-key per-network birthdays onto the ids in use today.
  *
- * Colliding keys keep the LOWER height. Both `local` and `undeployed` were
- * offered at once, so a wallet can hold a birthday under each — created on one
- * name, switched to the other — and letting insertion order decide would pick
- * either. Lower is the safe direction: a birthday below the wallet's true
+ * Colliding keys keep the LOWER height. A wallet can hold a birthday under both
+ * a renamed id and its new name — created on one, switched to the other — and
+ * letting insertion order decide would pick either. Lower is the safe direction: a birthday below the wallet's true
  * first-existence height only costs scanning, while one above it lets the
  * pre-seed guard (`reference.height <= birthday`) accept a reference newer than
  * the wallet's own history, skipping transactions it needs to see.
