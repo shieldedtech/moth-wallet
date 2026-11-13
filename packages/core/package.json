@@ -30,6 +30,7 @@
     "@harmoniclabs/bytestring": "^1.0.0",
     "@harmoniclabs/cbor": "^1.6.6",
     "@harmoniclabs/pair": "^1.0.0",
+    "@input-output-hk/veritee-attestation-verifier": "^0.5.0",
     "@lucid-evolution/lucid": "^0.4.29",
     "@midnight-ntwrk/compact-js": "2.5.1",
     "@midnight-ntwrk/compact-runtime": "0.16.0",
@@ -48,6 +49,7 @@
     "graphql": "^16.10.0",
     "graphql-request": "^7.4.0",
     "graphql-ws": "^6.0.0",
+    "pkijs": "^3.4.0",
     "rxjs": "7.8.2",
     "ws": "8.21.0"
   },

@@ -10,8 +10,17 @@ import {
   makeWasmProvingService,
 } from '@midnightntwrk/wallet-sdk/capabilities/proving';
 import {WasmProver} from '@midnightntwrk/wallet-sdk/prover-client/effect';
+import {ProofError} from '../types/errors.js';
+import {isLoopbackProofServer, type ProverConfig} from '../types/network.js';
+import {
+  boundProvingProvider,
+  contractCircuitPayloads,
+  walletCircuitPayloads,
+  type AttestedChannel,
+  type AttestedSessionModule,
+  type ServerProverConfig,
+} from './attested-channel.js';
 import {ProofClient} from './client.js';
-import type {ProverConfig} from '../types/network.js';
 
 /** Adapter from the connector/Midnight.js key interface to ZKConfigProvider. */
 class KeyMaterialZkConfigProvider extends ZKConfigProvider<string> {
@@ -73,12 +82,73 @@ function wasmKeyMaterialProvider(source: KeyMaterialProvider): WasmKeyMaterialPr
   };
 }
 
+let attestedChannelFactory: ((config: ServerProverConfig) => Promise<AttestedChannel>) | null = null;
+
+/** Test seam. `null` restores the local attestation session. */
+export function setAttestedChannelFactory(
+  factory: ((config: ServerProverConfig) => Promise<AttestedChannel>) | null,
+): void {
+  attestedChannelFactory = factory;
+}
+
+/**
+ * `plain` is the loopback proof server, which has no quote to check.
+ * `attested` has a stored pin. Any other remote server throws before a witness
+ * can be posted.
+ */
+function serverTransport(config: ServerProverConfig): 'plain' | 'attested' {
+  if (config.attestation) {
+    let protocol: string;
+    try {
+      protocol = new URL(config.url).protocol;
+    } catch {
+      throw new ProofError(`Invalid proof server URL "${config.url}"`);
+    }
+    if (protocol !== 'https:') {
+      throw new ProofError(
+        `Attested proof server URL "${config.url}" must use https so the witness is sent on the pinned channel.`,
+      );
+    }
+    if (typeof process === 'undefined' || !process.versions?.node) {
+      throw new ProofError(
+        `Checking the proof server at ${config.url} needs the Node wallet (CLI, TUI, or daemon).`,
+      );
+    }
+    return 'attested';
+  }
+  if (isLoopbackProofServer(config.url)) return 'plain';
+  throw new ProofError(
+    `Proof server ${config.url} has no measurement pin, so the witness stays in this process.`,
+  );
+}
+
+async function openAttestedChannel(config: ServerProverConfig): Promise<AttestedChannel> {
+  if (!config.attestation) {
+    throw new ProofError(`Proof server ${config.url} has no measurement pin, so the witness stays in this process.`);
+  }
+  if (attestedChannelFactory) return attestedChannelFactory(config);
+  // Non-literal so the browser bundle does not pull in the Node TLS session.
+  const specifier = './attested-session.js';
+  const loaded = await (import(specifier) as Promise<AttestedSessionModule>);
+  return loaded.openAttestedProofChannel({ ...config, attestation: config.attestation });
+}
+
+function attestedProvingProvider(
+  config: ServerProverConfig,
+  payloads: ReturnType<typeof contractCircuitPayloads>,
+): ledger.ProvingProvider {
+  return boundProvingProvider(() => openAttestedChannel(config), payloads);
+}
+
 /** Build the low-level provider used by contracts and the dApp connector. */
 export function createProvingProvider(
   config: ProverConfig,
   keyMaterialProvider: KeyMaterialProvider,
 ): ledger.ProvingProvider {
   if (config.type === 'server') {
+    if (serverTransport(config) === 'attested') {
+      return attestedProvingProvider(config, contractCircuitPayloads(keyMaterialProvider));
+    }
     return httpClientProvingProvider(config.url, new KeyMaterialZkConfigProvider(keyMaterialProvider));
   }
   return wasmProvingFactory(wasmKeyMaterialProvider(keyMaterialProvider));
@@ -90,6 +160,16 @@ export function createProofProvider(
   keyMaterialProvider: KeyMaterialProvider,
 ) {
   if (config.type === 'server') {
+    if (serverTransport(config) === 'attested') {
+      // Same transaction.prove() the SDK proof provider uses, so payload
+      // versioning stays in the ledger. The channel underneath posts only
+      // after the local attestation session is open.
+      const provingProvider = attestedProvingProvider(config, contractCircuitPayloads(keyMaterialProvider));
+      return {
+        proveTx: (transaction: ledger.UnprovenTransaction) =>
+          transaction.prove(provingProvider, ledger.CostModel.initialCostModel()),
+      };
+    }
     // Delegate to the SDK's proof provider rather than re-implementing
     // proveTx. This keeps payload versioning (ledger-v8 8.1.0 rejects
     // unversioned circuit-call proofs) and any future proveTx behavior —
@@ -109,6 +189,13 @@ export function createProofProvider(
 /** Build the wallet facade service. WASM follows the SDK's documented setup. */
 export function createWalletProvingService(config: ProverConfig) {
   if (config.type === 'server') {
+    if (serverTransport(config) === 'attested') {
+      const provingProvider = attestedProvingProvider(config, walletCircuitPayloads());
+      return {
+        prove: (transaction: ledger.UnprovenTransaction) =>
+          transaction.prove(provingProvider, ledger.CostModel.initialCostModel()),
+      };
+    }
     return makeServerProvingService({provingServerUrl: new URL(config.url)});
   }
 
@@ -129,5 +216,10 @@ export function createWalletProvingService(config: ProverConfig) {
 
 /** Proof servers need a preflight; local WASM proving has no remote health check. */
 export async function ensureProverReady(config: ProverConfig): Promise<void> {
-  if (config.type === 'server') await new ProofClient(config.url).ensureReady();
+  if (config.type !== 'server') return;
+  if (serverTransport(config) === 'attested') {
+    await (await openAttestedChannel(config)).ready();
+    return;
+  }
+  await new ProofClient(config.url).ensureReady();
 }

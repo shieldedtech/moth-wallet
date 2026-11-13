@@ -35,6 +35,7 @@ export default class Info extends BaseCommand {
       indexerUrl: network.indexerUrl,
       prover: prover.type,
       proofServerUrl: prover.type === 'server' ? prover.url : null,
+      proofServerAttested: prover.type === 'server' && prover.attestation !== undefined,
       blockHeight,
       syncStatus,
     });

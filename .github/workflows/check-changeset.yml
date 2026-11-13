@@ -37,6 +37,8 @@ jobs:
           cache: 'yarn'
 
       - name: Install Dependencies
+        env:
+          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
         run: yarn install --immutable
 
       # Fails if packages changed without a changeset, prompting the author to add one.

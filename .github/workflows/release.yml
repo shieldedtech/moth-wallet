@@ -55,6 +55,8 @@ jobs:
           echo "$RUNNER_TEMP/npm-bin" >> "$GITHUB_PATH"
 
       - name: Install Dependencies
+        env:
+          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
         run: yarn install --immutable
 
       - name: Build Packages
@@ -158,9 +160,13 @@ jobs:
           echo "$RUNNER_TEMP/npm-bin" >> "$GITHUB_PATH"
 
       - name: Install Dependencies
+        env:
+          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
         run: yarn install --immutable
 
       - name: Publish canary snapshot
+        env:
+          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
         run: |
           set -euo pipefail
           SHORT_SHA=$(git rev-parse --short=7 HEAD)
@@ -229,6 +235,8 @@ jobs:
           echo "$RUNNER_TEMP/npm-bin" >> "$GITHUB_PATH"
 
       - name: Install Dependencies
+        env:
+          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
         run: yarn install --immutable
 
       # Snapshot versions are computed from the branch's own package.json, so a
@@ -254,6 +262,8 @@ jobs:
 
       - name: Publish next snapshot
         id: snapshot
+        env:
+          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
         run: |
           set -euo pipefail
           SHORT_SHA=$(git rev-parse --short=7 HEAD)

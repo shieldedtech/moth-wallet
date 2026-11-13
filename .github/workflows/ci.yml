@@ -54,6 +54,8 @@ jobs:
           cache: yarn
 
       - name: Install dependencies
+        env:
+          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
         run: yarn install --immutable
 
       # Builds the workspace in dependency order (core/browser first) so the
@@ -96,6 +98,8 @@ jobs:
           cache: yarn
 
       - name: Install dependencies
+        env:
+          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
         run: yarn install --immutable
 
       # The e2e tests load an unpacked extension, which the default
@@ -148,6 +152,8 @@ jobs:
           cache: yarn
 
       - name: Install dependencies
+        env:
+          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
         run: yarn install --immutable
 
       - name: Build packages

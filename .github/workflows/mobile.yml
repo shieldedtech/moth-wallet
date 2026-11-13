@@ -104,6 +104,8 @@ jobs:
 
       - name: Install dependencies
         working-directory: .
+        env:
+          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
         run: yarn install --immutable
 
       # Only what the app and its tests use: core and moth-browser for the engine, the mock
@@ -196,6 +198,8 @@ jobs:
 
       - name: Install dependencies
         working-directory: .
+        env:
+          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
         run: yarn install --immutable
 
       # The engine page is all the app needs from the workspace.
