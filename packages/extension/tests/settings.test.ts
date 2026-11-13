@@ -28,21 +28,18 @@ describe('extension settings', () => {
     expect(await getNetworkConfig()).toEqual({ id: 'preview', ...migratedEndpoints });
   });
 
-  // `local` was a second preset for the same local devnet stack as `undeployed`,
-  // pointing at a node port the stack does not listen on. Installs that selected
-  // it still have it saved, and it is no longer a network the panel can offer —
-  // so it has to resolve rather than fall through to a localhost guess.
-  it('resolves a selection saved under the retired local id', async () => {
+  // `local` (midnight-node local-env) is its own chain, not an alias for
+  // `undeployed`: folding it in put local-env wallets on the wrong address prefix.
+  it('keeps a selection saved on local', async () => {
     await fakeBrowser.storage.local.set({ settings: { network: 'local' } });
 
-    expect((await getSettings()).network).toBe('undeployed');
-    expect(await getNetworkConfig()).toEqual(DEFAULT_NETWORKS.undeployed);
+    expect((await getSettings()).network).toBe('local');
+    expect(await getNetworkConfig()).toEqual(DEFAULT_NETWORKS.local);
   });
 
-  it('keeps endpoint overrides across the rename', async () => {
+  it('keeps endpoint overrides saved on local', async () => {
     // Overrides belong to the selected network, and `getNetworkConfig` only
-    // applies them when the requested network IS the selected one. If the
-    // migration moved one side and not the other, the edits would be dropped.
+    // applies them when the requested network IS the selected one.
     const customEndpoints = {
       nodeUrl: 'ws://localhost:19944',
       indexerUrl: 'http://localhost:18088/api/v4/graphql',
@@ -50,7 +47,7 @@ describe('extension settings', () => {
     };
     await fakeBrowser.storage.local.set({ settings: { network: 'local', customEndpoints } });
 
-    expect(await getNetworkConfig()).toEqual({ id: 'undeployed', ...customEndpoints });
+    expect(await getNetworkConfig()).toEqual({ id: 'local', ...customEndpoints });
   });
 
   // A write used to persist the whole resolved object, so the first one — every

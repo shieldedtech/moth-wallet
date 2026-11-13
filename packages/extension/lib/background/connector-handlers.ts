@@ -6,7 +6,13 @@
 // here; the actual wallet/ledger work (balances, transfers) is delegated to the
 // offscreen document, which owns the WASM.
 
-import type { DesiredInput, DesiredOutput, Configuration, ConnectionStatus } from '@midnight-ntwrk/dapp-connector-api';
+import type {
+  DesiredInput,
+  DesiredOutput,
+  Configuration,
+  ConnectionStatus,
+  Signature,
+} from '@midnight-ntwrk/dapp-connector-api';
 import type { WalletBalances } from '@shieldedtech/moth-browser';
 import { resolveProverConfig } from '@shieldedtech/moth-wallet/types/network';
 import { onMessage, deserializeBalances } from '../messaging/protocol';
@@ -17,11 +23,17 @@ import {
   connectorError,
   describeCip30Error,
   describeErrorFields,
+  errorCodeFor,
   serializeError,
-  type ErrorCode,
 } from '../connector/errors';
-import { NOT_IMPLEMENTED_METHODS, type ConnectorMethod } from '../connector/constants';
-import type { TransferRequestDTO, SwapInputDTO, ProvingKeyMaterialDTO, TxSummaryDTO } from '../offscreen/messaging';
+import { NOT_IMPLEMENTED_METHODS, isProtocolKeyLocation, type ConnectorMethod } from '../connector/constants';
+import type {
+  TransferRequestDTO,
+  SwapInputDTO,
+  ProvingKeyMaterialDTO,
+  ProvingKeyMaterialRefDTO,
+  TxSummaryDTO,
+} from '../offscreen/messaging';
 import { getSettings, getNetworkConfig } from './settings';
 import { getSession, type Session } from './session';
 import { isAllowed, grant, revoke, listAll } from './permissions';
@@ -70,16 +82,30 @@ function assertBytes(value: unknown, label: string): Uint8Array {
   return value;
 }
 
-function assertKeyMaterial(value: unknown): ProvingKeyMaterialDTO {
+function assertSha256(value: unknown, label: string): string {
+  if (typeof value !== 'string' || !/^[0-9a-f]{64}$/.test(value)) {
+    throw connectorError('InvalidRequest', `${label} must be a lowercase hex SHA-256`);
+  }
+  return value;
+}
+
+function assertKeyMaterial(
+  value: unknown,
+  keyLocation: string,
+): ProvingKeyMaterialDTO | ProvingKeyMaterialRefDTO | null {
+  // The wallet supplies the ledger's own circuits; a dApp sends the keys of its contract's.
+  if (value === null && isProtocolKeyLocation(keyLocation)) return null;
   if (!value || typeof value !== 'object') {
     throw connectorError('InvalidRequest', 'Proving key material is required');
   }
-  const material = value as Partial<ProvingKeyMaterialDTO>;
-  return {
-    zkir: assertBytes(material.zkir, 'ZKIR'),
-    proverKey: assertBytes(material.proverKey, 'Prover key'),
-    verifierKey: assertBytes(material.verifierKey, 'Verifier key'),
-  };
+  const material = value as Partial<ProvingKeyMaterialDTO & ProvingKeyMaterialRefDTO>;
+  const zkir = assertBytes(material.zkir, 'ZKIR');
+  const verifierKey = assertBytes(material.verifierKey, 'Verifier key');
+  // A prover key the page has sent before travels as its hash only.
+  if (material.proverKey === undefined && material.proverKeySha256 !== undefined) {
+    return { zkir, verifierKey, proverKeySha256: assertSha256(material.proverKeySha256, 'Prover key hash') };
+  }
+  return { zkir, verifierKey, proverKey: assertBytes(material.proverKey, 'Prover key') };
 }
 
 function toWsUrl(url: string): string {
@@ -335,10 +361,10 @@ async function dispatchMethod(
       if (typeof keyLocation !== 'string' || keyLocation === '') {
         throw connectorError('InvalidRequest', 'Circuit key location must be a non-empty string');
       }
-      const keyMaterial = assertKeyMaterial(params[2]);
+      const keyMaterial = assertKeyMaterial(params[2], keyLocation);
       const network = await getNetworkConfig();
       if (method === 'provingProviderCheck') {
-        return offscreen.provingProviderCheck({network, serializedPreimage, keyLocation, keyMaterial});
+        return offscreen.provingProviderCheck({network, origin, serializedPreimage, keyLocation, keyMaterial});
       }
       const overwriteBindingInput = params[3];
       if (overwriteBindingInput !== undefined && typeof overwriteBindingInput !== 'bigint') {
@@ -346,10 +372,30 @@ async function dispatchMethod(
       }
       return offscreen.provingProviderProve({
         network,
+        origin,
         serializedPreimage,
         keyLocation,
         keyMaterial,
         overwriteBindingInput,
+      });
+    }
+
+    case 'proverKeyPut': {
+      await requireConnected(origin);
+      const [sha256, uploadId, index, count, chunk] = params;
+      if (typeof uploadId !== 'string' || uploadId === '' || uploadId.length > 64) {
+        throw connectorError('InvalidRequest', 'Prover key upload needs an upload id');
+      }
+      if (!Number.isInteger(index) || !Number.isInteger(count)) {
+        throw connectorError('InvalidRequest', 'Prover key upload needs an integer chunk index and count');
+      }
+      return offscreen.proverKeyPut({
+        origin,
+        sha256: assertSha256(sha256, 'Prover key hash'),
+        uploadId,
+        index: index as number,
+        count: count as number,
+        chunk: assertBytes(chunk, 'Prover key chunk'),
       });
     }
 
@@ -436,7 +482,8 @@ async function dispatchMethod(
 
       const network = await getNetworkConfig();
       try {
-        return await offscreen.signData({ seedHex: session.seedHex, network, data, encoding });
+        const signed: Signature = await offscreen.signData({ seedHex: session.seedHex, network, data, encoding });
+        return signed;
       } catch (err) {
         // The realistic failure here is malformed hex/base64 input.
         throw connectorError('InvalidRequest', (err as Error).message ?? 'Failed to sign data');
@@ -615,7 +662,7 @@ export function registerConnectorHandlers(): void {
         const reason = describeCip30Error(cip30);
         return { ok: false as const, error: { ...serializeError('InternalError', reason), cip30 } };
       }
-      const code: ErrorCode = (err as { code?: ErrorCode }).code ?? 'InternalError';
+      const code = errorCodeFor(err);
       const base = (err as { reason?: string; message?: string }).reason ?? (err as Error).message ?? String(err);
       // Fold the error's structured fields into the reason. Without this a DApp
       // only ever sees the message, and SDK errors keep the useful part (e.g.

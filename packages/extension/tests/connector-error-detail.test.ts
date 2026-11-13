@@ -7,7 +7,13 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing';
-import { describeErrorFields } from '../lib/connector/errors';
+import { Effect } from 'effect';
+import { serializeError, deserializeError } from '@aklinker1/zero-serialize-error';
+import { WalletError as ShieldedErrors } from '@midnightntwrk/wallet-sdk-shielded/v1';
+import { WalletError as UnshieldedErrors } from '@midnightntwrk/wallet-sdk-unshielded-wallet/v2';
+import { WalletError as DustErrors } from '@midnightntwrk/wallet-sdk-dust-wallet/v2';
+import { connectorError, describeErrorFields, errorCodeFor } from '../lib/connector/errors';
+import { serializeHostError, deserializeHostError, jsonSafeError } from '../lib/offscreen/worker-rpc';
 
 class WalletError extends Error {
   readonly category: string;
@@ -99,10 +105,12 @@ describe('describeErrorFields', () => {
 // Driven through the registered `connectorRequest` handler rather than
 // `dispatch`, because the fold lives in that handler's catch.
 
-const { handlers, balanceTransaction, txSummary } = vi.hoisted(() => ({
+const { handlers, balanceTransaction, txSummary, transferBuild, makeIntent } = vi.hoisted(() => ({
   handlers: new Map<string, (m: unknown) => Promise<unknown>>(),
   balanceTransaction: vi.fn(),
   txSummary: vi.fn(),
+  transferBuild: vi.fn(),
+  makeIntent: vi.fn(),
 }));
 
 vi.mock('../lib/messaging/protocol', async (importOriginal) => ({
@@ -115,6 +123,8 @@ vi.mock('../lib/background/offscreen-client', () => ({
   offscreen: {
     balanceTransaction: (...a: unknown[]) => balanceTransaction(...(a as [])),
     txSummary: (...a: unknown[]) => txSummary(...(a as [])),
+    transferBuild: (...a: unknown[]) => transferBuild(...(a as [])),
+    makeIntent: (...a: unknown[]) => makeIntent(...(a as [])),
   },
 }));
 vi.mock('../lib/background/approvals', () => ({
@@ -193,5 +203,147 @@ describe('the reason a dApp receives', () => {
       status: 502,
     });
     expect(await reasonFor(err)).toBe('fetch failed');
+  });
+});
+
+// --- InsufficientFunds (dapp-connector-api 4.1.0) ---------------------------
+// The SDK rejects with an Effect FiberFailure around its tagged error, so these
+// drive that exact value through every hop before the connector handler.
+
+describe('errorCodeFor', () => {
+  it('keeps the code of an error the connector raised itself', () => {
+    expect(errorCodeFor(connectorError('InvalidRequest', 'bad'))).toBe('InvalidRequest');
+    expect(errorCodeFor(connectorError('Rejected', 'no'))).toBe('Rejected');
+  });
+
+  it('reads the SDK tag off the error or its name', () => {
+    const tagged = Object.assign(new Error('short'), { _tag: 'Wallet.InsufficientFunds' });
+    expect(errorCodeFor(tagged)).toBe('InsufficientFunds');
+    // A FiberFailure rebuilt on another hop keeps only its name.
+    const wrapper = new Error('short');
+    wrapper.name = '(FiberFailure) Wallet.InsufficientFunds';
+    expect(errorCodeFor(wrapper)).toBe('InsufficientFunds');
+  });
+
+  it('finds the tag on a cause', () => {
+    const inner = Object.assign(new Error('short'), { _tag: 'Wallet.InsufficientDustForFee' });
+    expect(errorCodeFor(new Error('registration failed', { cause: inner }))).toBe('InsufficientFunds');
+  });
+
+  it('does not guess from the message', () => {
+    expect(errorCodeFor(new Error('Insufficient funds'))).toBe('InternalError');
+    expect(errorCodeFor(Object.assign(new Error('x'), { _tag: 'Wallet.Other' }))).toBe('InternalError');
+  });
+
+  it('falls back to InternalError for anything else', () => {
+    expect(errorCodeFor(undefined)).toBe('InternalError');
+    expect(errorCodeFor('a string')).toBe('InternalError');
+  });
+});
+
+/** The value the SDK's promise API rejects with for a typed failure. */
+async function sdkRejection(failure: Error): Promise<unknown> {
+  return Effect.runPromise(Effect.fail(failure)).then(
+    () => {
+      throw new Error('expected a rejection');
+    },
+    (err: unknown) => err,
+  );
+}
+
+/** A thrown value as the service worker receives it: worker postMessage, then the @webext-core JSON hop. */
+function acrossHops(err: unknown): unknown {
+  const fromWorker = deserializeHostError(structuredClone(serializeHostError(err)));
+  return deserializeError(JSON.parse(JSON.stringify(serializeError(jsonSafeError(fromWorker)))));
+}
+
+const TOKEN = '00'.repeat(32);
+const REQUESTS = {
+  balanceSealedTransaction: { offscreen: balanceTransaction, params: ['00ff'] },
+  balanceUnsealedTransaction: { offscreen: balanceTransaction, params: ['00ff'] },
+  makeTransfer: {
+    offscreen: transferBuild,
+    params: [[{ kind: 'unshielded', type: TOKEN, value: 5n, recipient: 'mn_addr_devnet1x' }]],
+  },
+  makeIntent: {
+    offscreen: makeIntent,
+    params: [[{ kind: 'shielded', type: TOKEN, value: 5n }], [], { intentId: 'random', payFees: true }],
+  },
+} as const;
+type FundedMethod = keyof typeof REQUESTS;
+
+describe('the code a dApp receives', () => {
+  beforeEach(async () => {
+    fakeBrowser.reset();
+    handlers.clear();
+    for (const { offscreen } of Object.values(REQUESTS)) offscreen.mockReset();
+    txSummary.mockReset();
+    txSummary.mockResolvedValue({ spends: [], receives: [], contractActions: 0 });
+    registerConnectorHandlers();
+    await grant(ORIGIN, 'devnet');
+    await saveSession(SESSION);
+  });
+
+  async function errorFor(method: FundedMethod, offscreenFailure: unknown): Promise<{ code: string; reason: string }> {
+    const { offscreen, params } = REQUESTS[method];
+    offscreen.mockRejectedValue(offscreenFailure);
+    const res = (await handlers.get('connectorRequest')!({
+      data: { method, paramsJson: encodeBigintJson(params) },
+      sender: { origin: ORIGIN },
+    })) as { ok: boolean; error: { code: string; reason: string } };
+    expect(res.ok).toBe(false);
+    return res.error;
+  }
+
+  it.each(Object.keys(REQUESTS) as FundedMethod[])('%s reports a shortfall as InsufficientFunds', async (method) => {
+    const shortfall = new ShieldedErrors.InsufficientFundsError({
+      message: 'Insufficient funds for fallible segment 1',
+      tokenType: TOKEN,
+      amount: 5n,
+    });
+    expect(await errorFor(method, acrossHops(await sdkRejection(shortfall)))).toEqual({
+      code: 'InsufficientFunds',
+      reason: `Insufficient funds for fallible segment 1 [tokenType=${TOKEN}, amount=5]`,
+    });
+  });
+
+  it('does the same for the unshielded wallet', async () => {
+    const shortfall = new UnshieldedErrors.InsufficientFundsError({
+      message: 'Insufficient funds',
+      tokenType: TOKEN,
+      amount: 7n,
+    });
+    expect(await errorFor('makeTransfer', acrossHops(await sdkRejection(shortfall)))).toEqual({
+      code: 'InsufficientFunds',
+      reason: `Insufficient funds [tokenType=${TOKEN}, amount=7]`,
+    });
+  });
+
+  it('does the same for a DUST fee the wallet cannot pay', async () => {
+    const shortfall = new DustErrors.InsufficientFundsError({
+      message: 'Insufficient Funds: could not balance dust',
+      tokenType: 'dust',
+    });
+    expect(await errorFor('balanceUnsealedTransaction', acrossHops(await sdkRejection(shortfall)))).toEqual({
+      code: 'InsufficientFunds',
+      reason: 'Insufficient Funds: could not balance dust [tokenType=dust]',
+    });
+  });
+
+  it('leaves other wallet failures as InternalError', async () => {
+    const other = new ShieldedErrors.OtherWalletError({ message: 'Balancing guaranteed section failed' });
+    expect(await errorFor('balanceSealedTransaction', acrossHops(await sdkRejection(other)))).toEqual({
+      code: 'InternalError',
+      reason: 'Balancing guaranteed section failed',
+    });
+  });
+
+  it('keeps a malformed request InvalidRequest', async () => {
+    const res = (await handlers.get('connectorRequest')!({
+      data: { method: 'makeTransfer', paramsJson: encodeBigintJson([[]]) },
+      sender: { origin: ORIGIN },
+    })) as { ok: boolean; error: { code: string } };
+    expect(res.error.code).toBe('InvalidRequest');
+    expect(transferBuild).not.toHaveBeenCalled();
   });
 });

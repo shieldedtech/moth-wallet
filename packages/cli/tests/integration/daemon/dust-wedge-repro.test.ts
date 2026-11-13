@@ -37,7 +37,8 @@
 //
 // Requires a fresh devnet the test is allowed to leave wedged: unlike every
 // other file in this directory, a positive result here is destructive to the
-// chain. Point MOTH_DEVNET_URL at a disposable stack, never a shared one.
+// chain. Point MOTH_DEVNET_URL at a disposable stack, never a shared one. For
+// the same reason it runs only when asked for, with MOTH_TEST_WEDGE_REPRO=1.
 
 import {describe, it, expect, afterAll} from 'vitest';
 import {isDustSpendProofRejection} from '@shieldedtech/moth-wallet';
@@ -60,11 +61,14 @@ import {
 const REGISTRATION_NIGHT = process.env.MOTH_TEST_WEDGE_NIGHT ?? '10000000';
 
 // 90s by default — enough to clear the documented ~90-second onset window
-// without making a routine CI run pay minutes for a repro that usually won't
-// fire. Override to chase a specific occurrence, e.g.:
-//   MOTH_TEST_WEDGE_WAIT_MS=2340000 npx vitest run dust-wedge-repro   # 39 min, occurrence 4
-//   MOTH_TEST_WEDGE_WAIT_MS=22000   npx vitest run dust-wedge-repro   # 22s, occurrence 3
+// without making every run pay minutes for a repro that usually won't fire.
+// Override to chase a specific occurrence, e.g.:
+//   MOTH_TEST_WEDGE_REPRO=1 MOTH_TEST_WEDGE_WAIT_MS=2340000 npx vitest run dust-wedge-repro   # 39 min, occurrence 4
+//   MOTH_TEST_WEDGE_REPRO=1 MOTH_TEST_WEDGE_WAIT_MS=22000   npx vitest run dust-wedge-repro   # 22s, occurrence 3
 const WAIT_MS = Number(process.env.MOTH_TEST_WEDGE_WAIT_MS ?? 90_000);
+
+// A run of the whole directory must not reach a test that can end the chain.
+const WEDGE_REPRO = process.env.MOTH_TEST_WEDGE_REPRO === '1';
 
 const INDEXER_URL = DEFAULT_NETWORKS[NETWORK]?.indexerUrl;
 
@@ -111,7 +115,7 @@ async function emptyBlockRun(fromHeight: number, toHeight: number): Promise<{che
   return {checked, empty};
 }
 
-describe.skipIf(!DEVNET_URL)('dust-ledger wedge repro (docs/bugs-found #15) — delay axis', () => {
+describe.skipIf(!DEVNET_URL || !WEDGE_REPRO)('dust-ledger wedge repro (docs/bugs-found #15) — delay axis', () => {
   let subjectWallet: string | undefined;
   let throwawayWallet: string | undefined;
 
@@ -134,8 +138,9 @@ describe.skipIf(!DEVNET_URL)('dust-ledger wedge repro (docs/bugs-found #15) — 
       // whenever we ask, which is what "attempt one spend from genesis" means
       // here: docs/bugs-found #15's second occurrence used exactly this (a
       // plain genesis-funded transfer) to prove the wedge was chain-wide, not
-      // wallet-specific.
-      throwawayWallet = await setupTestWallet('wedge-genesis-probe', NETWORK, '0');
+      // wallet-specific. The funding CLI refuses an airdrop of zero, so the
+      // wallet is created with the smallest whole amount.
+      throwawayWallet = await setupTestWallet('wedge-genesis-probe', NETWORK, '1');
       const throwawayAddress = getReceiveAddress(throwawayWallet, NETWORK);
 
       // --- Wait -------------------------------------------------------------

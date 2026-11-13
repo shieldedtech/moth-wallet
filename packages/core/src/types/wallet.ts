@@ -1,5 +1,3 @@
-import type * as ledger from '@midnight-ntwrk/ledger-v8';
-
 export interface DerivedKeys {
   readonly nightExternal: Uint8Array;
   readonly nightInternal: Uint8Array;
@@ -9,19 +7,25 @@ export interface DerivedKeys {
 }
 
 /**
- * Typed key bundle ready for SDK consumption. Built once at wallet
- * unlock via deriveWalletKeys(seedHex). Daemon write paths read this
- * and never the raw BIP-39 seed — see
- * docs/spec/wallet-service/05-key-management.md D-KM-3.
+ * The per-role seeds the wallet SDK starts from, derived once at wallet unlock
+ * via deriveWalletKeys(seedHex). Daemon write paths read this and never the raw
+ * BIP-39 seed — see docs/spec/wallet-service/05-key-management.md D-KM-3.
  *
- * Lives in types/wallet.ts (not sync/operations.ts) so the
- * UnlockedWallet interface can reference it without a cross-module
- * import.
+ * Structurally the SDK's `WalletSeeds`: a seed is the one piece of key material
+ * that serves both ledger versions, so this is what a wallet that follows the
+ * chain across the v9 fork has to be started with. The SDK derives each ledger
+ * version's key objects from these and holds them for as long as the wallet runs.
+ *
+ * Lives in types/wallet.ts (not sync/operations.ts) so the UnlockedWallet
+ * interface can reference it without a cross-module import.
  */
 export interface WalletKeys {
-  readonly shieldedSecretKeys: ledger.ZswapSecretKeys;
-  readonly dustSecretKey: ledger.DustSecretKey;
-  readonly nightExternalKey: Uint8Array;
+  /** Seed of the shielded (Zswap) role. */
+  readonly shielded: Uint8Array;
+  /** Secret of the unshielded (NightExternal) role; also the schnorr signing key. */
+  readonly unshielded: Uint8Array;
+  /** Seed of the DUST role. */
+  readonly dust: Uint8Array;
 }
 
 export interface AddressEncoding {
@@ -77,7 +81,7 @@ export interface UnlockedWallet {
   readonly addresses: WalletAddresses;
   readonly keys: DerivedKeys;
   /**
-   * Typed key bundle derived at unlock. Every Midnight write path
+   * Per-role seeds derived at unlock. Every Midnight write path
    * accepts this directly. This is the only key surface
    * UnlockedWallet exposes — the raw BIP-39 seed is dropped after
    * derivation inside the manager and never visible to consumers.
@@ -86,9 +90,8 @@ export interface UnlockedWallet {
    */
   readonly walletKeys: WalletKeys;
   /**
-   * Mark the wallet as unusable and let the WASM-typed keys clean
-   * up any internal state. Callers should invoke this on logout /
-   * process shutdown.
+   * Mark the wallet as unusable and zero the key material. Callers
+   * should invoke this on logout / process shutdown.
    */
   lock(): void;
 }

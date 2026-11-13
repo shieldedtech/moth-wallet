@@ -77,7 +77,7 @@ const DEFAULTS: Record<CardanoNetwork, Omit<CardanoNetworkConfig, 'blockfrostPro
  * wallet, which is well-formed on Cardano, invisible to Midnight, and gives no
  * feedback for the twelve hours you spend waiting for DUST that cannot arrive.
  *
- * devnet, qanet and undeployed return null rather than falling back to a
+ * devnet, qanet, local and undeployed return null rather than falling back to a
  * testnet. They have no Cardano counterpart, and quietly pointing them at
  * Preview is the same class of mistake with a different pair of names.
  */

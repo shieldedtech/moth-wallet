@@ -9,8 +9,7 @@
 // state persists through the async SyncStateStore (browser-safe), so v8's
 // node:fs pre-seed bridge is not used here.
 import {generateMnemonic24, mnemonicToSeed} from '../wallet/mnemonic.js';
-import {createKeystore, PublicKey} from '@midnightntwrk/wallet-sdk/unshielded';
-import {setNetworkId} from '@midnight-ntwrk/midnight-js/network-id';
+import {ProtocolVersion} from '@midnightntwrk/wallet-sdk';
 import type {NetworkConfig} from '../types/network.js';
 import {startWalletSync, resolveSyncStore} from './wallet-sync.js';
 import {cursorWitnessKey, emptyRefHeightKey, emptyRefMnemonicKey, emptyRefStateKey, EMPTY_REF_WALLET, type SyncStateStore, type WalletPart} from './sync-store.js';
@@ -22,6 +21,7 @@ import {
 } from './cursor-witness.js';
 import {IndexerClient} from '../network/indexer-client.js';
 import {deriveWalletKeys, type WalletKeys} from './operations.js';
+import {dustPublicKeyAt, shieldedPublicKeysAt, unshieldedPublicKeyAt} from './ledger-routing.js';
 
 export interface EmptyRefStates {
   shielded: string;
@@ -32,7 +32,8 @@ export interface EmptyRefStates {
    * wallet whose birthday precedes it: the reference carries the chain's state at
    * this height, so seeding a wallet that was already active earlier would skip
    * that wallet's own history. Compared against `birthday` (also a height) —
-   * never against a snapshot `offset`, which is an event index.
+   * never against a snapshot `offset`, which is an event index or, for DUST
+   * synced from projections, the height its last pass reached.
    */
   height: number;
 }
@@ -73,16 +74,27 @@ function loadRefState(store: SyncStateStore, networkId: string, part: WalletPart
  * rest of the snapshot looks.
  */
 /**
- * Which event stream a part's cursor indexes into.
+ * Which event stream a part's cursor indexes into, if any.
  *
  * Only shielded and dust ride the indexer's global ledger-event numbering, and
  * they are the two the preprod renumbering moved. Unshielded is keyed by address
- * and its cursor is a transaction id, so it is not witnessed here.
+ * and its cursor is a transaction id, so it is not witnessed here. Nor is a dust
+ * snapshot the projections sync wrote, as moth's does from `forks.v9` on: its
+ * offset is the block height the last pass reached, which no renumbering moves.
  */
-function witnessStreamFor(part: WalletPart): WitnessStream | null {
-  if (part === 'dust') return 'dustLedgerEvents';
+export function witnessStreamFor(part: WalletPart, snapshot: string): WitnessStream | null {
+  if (part === 'dust') return writtenByProjections(snapshot) ? null : 'dustLedgerEvents';
   if (part === 'shielded') return 'zswapLedgerEvents';
   return null;
+}
+
+/** The SDK records in `syncKind` which sync saved a DUST snapshot's offset; one without it replayed events. */
+function writtenByProjections(snapshot: string): boolean {
+  try {
+    return (JSON.parse(snapshot) as {syncKind?: unknown}).syncKind === 'projections';
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -101,8 +113,12 @@ async function recordReferenceWitnesses(
   onProgress?: (msg: string) => void,
 ): Promise<void> {
   for (const part of ['shielded', 'dust'] as const) {
-    const stream = witnessStreamFor(part);
-    if (!stream) continue;
+    const stream = witnessStreamFor(part, states[part]);
+    if (!stream) {
+      // One taken while this reference replayed events would vouch for a cursor it no longer has.
+      await store.delete(cursorWitnessKey(network.id, EMPTY_REF_WALLET, part));
+      continue;
+    }
     const id = Number(snapshotOffset(states[part]));
     if (!Number.isFinite(id) || id <= 0) continue;
     try {
@@ -131,9 +147,11 @@ async function recordReferenceWitnesses(
 async function referenceCursorsStillValid(
   store: SyncStateStore,
   network: NetworkConfig,
+  states: {shielded: string; dust: string},
   onProgress?: (msg: string) => void,
 ): Promise<boolean> {
   for (const part of ['shielded', 'dust'] as const) {
+    if (!witnessStreamFor(part, states[part])) continue;
     const raw = await store.get(cursorWitnessKey(network.id, EMPTY_REF_WALLET, part));
     if (!raw) {
       onProgress?.(`Pre-seed: reference has no ${part} witness — cannot prove its cursor is still valid`);
@@ -272,7 +290,7 @@ export async function ensureEmptyRefCache(
     // Verified before it is handed out, not after. This reference is what every
     // new wallet on this machine inherits, so using it across a renumbering
     // spreads the skew instead of containing it.
-    if (!(await referenceCursorsStillValid(resolved, network, onProgress))) return null;
+    if (!(await referenceCursorsStillValid(resolved, network, warm, onProgress))) return null;
     // Memoised after verification, so the check costs one subscription per
     // process rather than one per wallet. The trade is that a renumbering that
     // lands mid-process is not re-detected until the next start; the alternative
@@ -339,7 +357,7 @@ export async function refreshEmptyRefCache(
   // wrong one.
   const resolvedStore = await resolveSyncStore(store);
   const existing = await loadUsableRefStates(resolvedStore, network.id);
-  if (existing && !(await referenceCursorsStillValid(resolvedStore, network, onProgress))) {
+  if (existing && !(await referenceCursorsStillValid(resolvedStore, network, existing, onProgress))) {
     onProgress?.(
       'Pre-seed: refusing to refresh across an indexer renumbering — resuming would carry the old ' +
         'numbering forward. Delete this network\'s reference and build again from genesis.',
@@ -516,6 +534,11 @@ async function buildEmptyRefCache(
   }
 }
 
+/** The protocol version a snapshot declares; snapshots store the bigint as a decimal string. */
+function snapshotVersion(snapshot: Record<string, unknown>): ProtocolVersion.ProtocolVersion {
+  return ProtocolVersion.ProtocolVersion(BigInt(snapshot.protocolVersion as string | number | bigint));
+}
+
 /**
  * Pre-seed a newly generated wallet's sync state from the empty reference.
  *
@@ -527,6 +550,10 @@ async function buildEmptyRefCache(
  *   own to preserve, so the reference's generation tree and cursor transfer
  *   directly. This is the expensive one to get right: without it dust walks the
  *   whole chain, which is minutes-to-an-hour where shielded takes seconds.
+ *
+ * Each part's keys are encoded by the ledger that wrote the reference, read off
+ * the snapshot's own protocol version: the wallet variant that restores a
+ * snapshot reads only its own key shapes.
  */
 export function preSeedNewWallet(
   walletKeys: WalletKeys,
@@ -534,23 +561,13 @@ export function preSeedNewWallet(
   emptyRef: EmptyRefStates
 ): {shielded: string; unshielded: string; dust?: string} | null {
   try {
-    setNetworkId(networkId);
-
-    // Keys arrive pre-derived (Option A) — no seed to re-derive from.
-    const shieldedSecretKeys = walletKeys.shieldedSecretKeys;
-    const ks = createKeystore(walletKeys.nightExternalKey, networkId);
-    const pk = PublicKey.fromKeyStore(ks);
-
     // Parse reference states
     const refSh = JSON.parse(emptyRef.shielded) as Record<string, unknown>;
     const refUn = JSON.parse(emptyRef.unshielded) as Record<string, unknown>;
 
     // Shielded: swap public keys, keep reference's tree + offset
     const shieldedSnap: Record<string, unknown> = {
-      publicKeys: {
-        coinPublicKey: shieldedSecretKeys.coinPublicKey,
-        encryptionPublicKey: shieldedSecretKeys.encryptionPublicKey,
-      },
+      publicKeys: shieldedPublicKeysAt(snapshotVersion(refSh), walletKeys.shielded),
       state: refSh.state,
       protocolVersion: refSh.protocolVersion,
       networkId,
@@ -560,7 +577,7 @@ export function preSeedNewWallet(
 
     // Unshielded: swap public key, keep reference's indexer cursor
     const unshieldedSnap: Record<string, unknown> = {
-      publicKey: {publicKey: pk.publicKey, addressHex: pk.addressHex, address: pk.address},
+      publicKey: unshieldedPublicKeyAt(snapshotVersion(refUn), walletKeys.unshielded, networkId),
       state: {availableUtxos: [], pendingUtxos: []},
       protocolVersion: refUn.protocolVersion,
       networkId,
@@ -574,11 +591,9 @@ export function preSeedNewWallet(
     let dustSnap: string | undefined;
     try {
       const refDust = JSON.parse(emptyRef.dust) as Record<string, unknown>;
-      // Swap in the new wallet's dust key, keep everything else. The public
-      // key is a bigint; snapshots store it as a decimal string (JSON.stringify
-      // throws on a raw bigint) — hence the .toString().
+      // Swap in the new wallet's dust key, keep everything else.
       dustSnap = JSON.stringify({
-        publicKey: {publicKey: walletKeys.dustSecretKey.publicKey.toString()},
+        publicKey: {publicKey: dustPublicKeyAt(snapshotVersion(refDust), walletKeys.dust)},
         state: refDust.state,
         protocolVersion: refDust.protocolVersion,
         networkId,

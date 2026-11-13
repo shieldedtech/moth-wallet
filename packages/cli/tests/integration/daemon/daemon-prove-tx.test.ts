@@ -8,7 +8,7 @@
 //   - wire-format rejections, which need a daemon but never touch the chain
 //   - a prove -> submit round trip, which is the only way to show the hex the
 //     verb hands back is actually submittable. That needs NIGHT and DUST, so
-//     it waits for the airdrop and the fee to accrue.
+//     it registers the airdropped NIGHT and waits for the fees to accrue.
 //
 // Requires a running devnet, gated on MOTH_DEVNET_URL like its siblings.
 
@@ -26,8 +26,10 @@ import {
   setupTestWallet,
   cleanupTestWallet,
   waitForSynced,
-  waitForDust,
+  prepareFeePayer,
   getReceiveAddress,
+  FEE_PAYER_NIGHT,
+  MAX_SPEND_NIGHT,
   type DaemonHandle,
 } from './helpers.js';
 
@@ -41,7 +43,7 @@ describe.skipIf(!DEVNET_URL)('moth daemon proveTransaction', () => {
   let destination: string;
 
   beforeAll(async () => {
-    wallet = await setupTestWallet('daemon-prove', NETWORK);
+    wallet = await setupTestWallet('daemon-prove', NETWORK, FEE_PAYER_NIGHT);
     daemon = await startDaemon(wallet, NETWORK);
     await waitForSynced(wallet, NETWORK);
     const c = await connectDaemon(daemon.socketPath);
@@ -105,8 +107,10 @@ describe.skipIf(!DEVNET_URL)('moth daemon proveTransaction', () => {
   // ---- proving: needs NIGHT for the transfer and DUST for the fee ---------
 
   describe('with a funded wallet', () => {
+    // A proof books the coins it spends until it lands or its ttl lapses, so each
+    // of the three proofs below needs a NIGHT coin and a DUST coin of its own.
     beforeAll(async () => {
-      await waitForDust(wallet, NETWORK);
+      await prepareFeePayer(wallet, NETWORK, 3);
     }, 600_000);
 
     it('returns submittable hex, a ttl and a size', async () => {
@@ -149,11 +153,10 @@ describe.skipIf(!DEVNET_URL)('moth daemon proveTransaction', () => {
     }, 600_000);
 
     it('refuses a NIGHT amount above the --max-spend cap', async () => {
-      // startDaemon sets --max-spend 1000000000 STAR (1000 NIGHT). A proof is
-      // a spendable artifact, so the cap has to apply here as it does to
-      // transferTokens.
+      // A proof is a spendable artifact, so the cap has to apply here as it
+      // does to transferTokens.
       await expect(
-        prove({...base(), amount: (2000n * ONE_NIGHT).toString()}),
+        prove({...base(), amount: ((BigInt(MAX_SPEND_NIGHT) + 1n) * ONE_NIGHT).toString()}),
       ).rejects.toThrow(/max-spend|exceeds/i);
     }, 600_000);
   });
