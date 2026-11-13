@@ -2,7 +2,19 @@ import { Args } from '@oclif/core';
 import { BaseCommand } from '../base-command.js';
 import { assertNotMainnet } from '../mainnet-guard.js';
 
-const ALLOWED_KEYS = ['default-network', 'prover', 'proof-server-url', 'node-url', 'indexer-url', 'check-matrix', 'matrix-url'];
+const ALLOWED_KEYS = [
+  'default-network', 'prover', 'proof-server-url', 'node-url', 'indexer-url', 'check-matrix', 'matrix-url',
+  // Cardano / cNIGHT. `blockfrost-project-id` is a credential: it is stored
+  // here for convenience but never echoed back by `config get`, and
+  // MOTH_BLOCKFROST_PROJECT_ID takes precedence for anyone who would rather
+  // not have it on disk at all.
+  // No 'cardano-network': the Cardano network is derived from the Midnight
+  // one, because a mismatched pair registers on a chain the other never reads.
+  'blockfrost-url', 'blockfrost-project-id', 'cnight-policy-id', 'cnight-asset-name',
+];
+
+/** Keys whose value `config get` must not print. */
+const SECRET_KEYS = new Set(['blockfrost-project-id']);
 
 export default class Config extends BaseCommand {
   static override description = 'Get or set configuration values';
@@ -43,6 +55,10 @@ export default class Config extends BaseCommand {
         this.exit(1);
         return;
       }
+      if (SECRET_KEYS.has(args.key)) {
+        this.outputSuccess({ key: args.key, value: '(set)', secret: true });
+        return;
+      }
       this.outputSuccess({ key: args.key, value: decoder.decode(data) });
     } else {
       if (!args.value) {
@@ -62,6 +78,13 @@ export default class Config extends BaseCommand {
         return;
       }
       await this.storage.write(configKey, encoder.encode(args.value));
+      // Same masking as `get`. The user typed this value, so echoing it reveals
+      // nothing they do not know — but `config set -o json` output gets piped
+      // into logs and CI transcripts, and a credential should not ride along.
+      if (SECRET_KEYS.has(args.key)) {
+        this.outputSuccess({ key: args.key, value: '(set)', secret: true });
+        return;
+      }
       this.outputSuccess({ key: args.key, value: args.value });
     }
   }

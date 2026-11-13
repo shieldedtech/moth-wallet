@@ -24,7 +24,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   network: 'preprod',
   customEndpoints: null,
   // A real timeout by default; users opt into "Never (demo mode)" explicitly.
-  autoLockMinutes: 15,
+  autoLockMinutes: 60,
   // Send-to-name is opt-in: no resolver configured until the user sets one.
   nameResolverUrl: null,
   // Opt-in: warming costs a full chain walk in the background (~71 min on
@@ -32,7 +32,32 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   preseedWarming: false,
   // Diagnostic detail is opt-in; the plain warning it augments is not.
   developerMode: false,
+  // Cardano follows the Midnight network, always. It does nothing at all
+  // until the user supplies a Blockfrost project id.
+  blockfrostProjectId: null,
+  blockfrostProjectIds: {},
+  blockfrostUrl: null,
+  cnightPolicyId: null,
+  cnightAssetName: null,
 };
+
+/** Per-network Blockfrost ids, dropping anything that is not a usable string. */
+function parseProjectIds(value: unknown): Record<string, string> {
+  if (!value || typeof value !== 'object') return {};
+  const out: Record<string, string> = {};
+  for (const [network, id] of Object.entries(value as Record<string, unknown>)) {
+    const trimmed = parseOptionalText(id);
+    if (trimmed && ['Mainnet', 'Preprod', 'Preview'].includes(network)) out[network] = trimmed;
+  }
+  return out;
+}
+
+/** Trim to a non-empty string, or null. Used for every optional Cardano field. */
+function parseOptionalText(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed === '' ? null : trimmed;
+}
 
 /** Accept a stored name-resolver base URL. Must be an http(s) URL; anything
  *  else (including empty) disables send-to-name. Trailing slash trimmed. */
@@ -105,19 +130,31 @@ export async function getSettings(): Promise<ExtensionSettings> {
     nameResolverUrl: parseResolverUrl(saved?.nameResolverUrl),
     preseedWarming: saved?.preseedWarming === true,
     developerMode: saved?.developerMode === true,
+    blockfrostProjectId: parseOptionalText(saved?.blockfrostProjectId),
+    blockfrostProjectIds: parseProjectIds(saved?.blockfrostProjectIds),
+    blockfrostUrl: parseOptionalText(saved?.blockfrostUrl),
+    cnightPolicyId: parseOptionalText(saved?.cnightPolicyId),
+    cnightAssetName:
+      // Distinct from the others: the testnet cNIGHT token has an EMPTY asset
+      // name, so '' is a meaningful override and only `undefined` means unset.
+      typeof saved?.cnightAssetName === 'string' ? saved.cnightAssetName.trim() : null,
   };
 }
 
+
 export async function updateSettings(patch: Partial<ExtensionSettings>): Promise<ExtensionSettings> {
   const current = await getSettings();
-  const next = { ...current, ...patch };
+  const stored = await browser.storage.local.get(SETTINGS_KEY);
+  // Only what a caller actually set is persisted. Writing the whole resolved
+  // object baked today's defaults into storage, so no default could move again.
+  const next = { ...(stored[SETTINGS_KEY] as Partial<ExtensionSettings> | undefined), ...patch };
   // Endpoint overrides belong to one named network. Callers that change only
   // the id must never carry the previous network's URLs across implicitly.
   if (patch.network && patch.network !== current.network && !('customEndpoints' in patch)) {
     next.customEndpoints = null;
   }
   await browser.storage.local.set({ [SETTINGS_KEY]: next });
-  return next;
+  return getSettings();
 }
 
 /**
