@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isAutoLockExpired } from '../lib/background/auto-lock';
+import { DAPP_ACTIVITY_CEILING, isAutoLockExpired, syncHoldsAutoLock, SYNC_HOLD_MAX_MS, SYNC_STALL_MS } from '../lib/background/auto-lock';
 
 const NOW = Date.parse('2026-07-17T12:00:00Z');
 const MIN = 60_000;
@@ -26,5 +26,51 @@ describe('isAutoLockExpired', () => {
 
   it('treats the boundary as expired (>=)', () => {
     expect(isAutoLockExpired(NOW - 1 * MIN, 1, NOW)).toBe(true);
+  });
+
+  // A polling dApp once kept the wallet unlocked forever. Its requests still
+  // extend the session, but only up to the ceiling.
+  it('locks once the user has been away for the ceiling, however busy a dApp is', () => {
+    const recent = NOW - 1 * MIN;
+    expect(isAutoLockExpired(recent, 15, NOW, NOW - (15 * DAPP_ACTIVITY_CEILING - 1) * MIN)).toBe(false);
+    expect(isAutoLockExpired(recent, 15, NOW, NOW - 15 * DAPP_ACTIVITY_CEILING * MIN)).toBe(true);
+  });
+
+  it('ignores the ceiling before any user activity is recorded, and in demo mode', () => {
+    expect(isAutoLockExpired(NOW - 1 * MIN, 15, NOW, null)).toBe(false);
+    expect(isAutoLockExpired(NOW - 1 * MIN, null, NOW, NOW - 100 * 60 * MIN)).toBe(false);
+  });
+});
+
+// A sync the user is watching defers the lock — but only while it progresses and never
+// past a hard cap, and without touching the clock. An unbounded hold would keep key
+// material resident for as long as a sync failed to finish.
+describe('syncHoldsAutoLock', () => {
+  const watching = { panelOpen: true, syncActive: true, synced: false as boolean | null, lastProgressAt: NOW, holdSince: null as number | null, now: NOW };
+
+  it('holds while a panel is open on a progressing engine that is not yet synced', () => {
+    expect(syncHoldsAutoLock(watching)).toBe(true);
+    // No balances yet — still restoring caches — counts as not synced; the start is progress.
+    expect(syncHoldsAutoLock({ ...watching, synced: null })).toBe(true);
+  });
+
+  it('releases once the engine reports synced', () => {
+    expect(syncHoldsAutoLock({ ...watching, synced: true })).toBe(false);
+  });
+
+  it('never holds an unattended wallet: no panel, or no engine running', () => {
+    expect(syncHoldsAutoLock({ ...watching, panelOpen: false })).toBe(false);
+    expect(syncHoldsAutoLock({ ...watching, syncActive: false })).toBe(false);
+  });
+
+  it('releases a sync that has stopped making progress', () => {
+    expect(syncHoldsAutoLock({ ...watching, lastProgressAt: NOW - SYNC_STALL_MS + 1 })).toBe(true);
+    expect(syncHoldsAutoLock({ ...watching, lastProgressAt: NOW - SYNC_STALL_MS })).toBe(false);
+    expect(syncHoldsAutoLock({ ...watching, lastProgressAt: null })).toBe(false);
+  });
+
+  it('releases once the hold has run for the cap, progress or not', () => {
+    expect(syncHoldsAutoLock({ ...watching, holdSince: NOW - SYNC_HOLD_MAX_MS + 1 })).toBe(true);
+    expect(syncHoldsAutoLock({ ...watching, holdSince: NOW - SYNC_HOLD_MAX_MS })).toBe(false);
   });
 });

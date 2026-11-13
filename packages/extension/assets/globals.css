@@ -240,6 +240,15 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* A native <select> list does not take the page's dark surface, so options
+   need opaque theme colors or the dark scheme's white text lands on white. */
+@layer base {
+  option {
+    background-color: var(--card);
+    color: var(--card-foreground);
+  }
+}
+
 /* Section labels: 13px uppercase 700, tracked */
 .section-label {
   font-size: 13px;

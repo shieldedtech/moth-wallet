@@ -25,7 +25,7 @@ import {createWalletProvingService} from '../proof/provider.js';
 import {NIGHT_TOKEN_ID, formatNight} from '../types/tokens.js';
 import {formatDustBalance} from '../wallet/balance-format.js';
 import {ensureEmptyRefCache, preSeedNewWallet} from './preseed.js';
-import {InMemorySyncStateStore, syncStateKey, type SyncStateStore, type WalletPart} from './sync-store.js';
+import {EMPTY_REF_WALLET, InMemorySyncStateStore, syncStateKey, type SyncStateStore, type WalletPart} from './sync-store.js';
 import {dedupingShieldedBuilder, dedupingDustBuilder} from './sdk-dedup.js';
 import {largestDustCoinFirst} from './dust-coin-selection.js';
 import {spendableDust, summarizeDustGeneration, type DustGeneration} from './dust-generation.js';
@@ -497,7 +497,10 @@ export async function startWalletSync(
     unshielded: await loadCachedState(store, name, network.id, 'unshielded'),
     dust: await loadCachedState(store, name, network.id, 'dust'),
   };
-  const missingParts = partsToSeed(cached);
+  // The reference wallet is what pre-seeding copies from, so it never pre-seeds
+  // itself: buildEmptyRefCache syncs it from here while its own build is the
+  // in-flight reference, and looking one up would await that build forever.
+  const missingParts: SeedablePart[] = name === EMPTY_REF_WALLET ? [] : partsToSeed(cached);
 
   if (missingParts.length > 0) {
     onProgress?.('Pre-seed: looking for a reference...');
@@ -701,6 +704,9 @@ export async function startWalletSync(
     .subscribe({
       next: (s: FacadeState) => {
         emissionCount++;
+        // Captured before lastProgressPct is overwritten below; comparing against
+        // the updated value made the percent-change branch always false.
+        const prevPct = Math.round(lastProgressPct * 100);
         const balances = extractBalancesPartial(s, syncStartTime, lastProgressPct, progressBaseline, latestBalances);
         latestBalances = balances;
         lastProgressPct = balances.syncProgress.percentage;
@@ -716,7 +722,7 @@ export async function startWalletSync(
           emissionCount % 50 === 0 ||
           emissionCount <= 3 ||
           balances.synced ||
-          pct !== Math.round(lastProgressPct * 100)
+          pct !== prevPct
         ) {
           // DUST is denominated in SPECKS (10^15 per DUST); NIGHT in STARS
           // (10^6). formatNight was being applied to both, so every DUST figure
@@ -1214,8 +1220,11 @@ export async function removeWalletSyncArtifacts(
   try {
     const {rmSync, unlinkSync} = await import(/* @vite-ignore */ 'node:fs');
     const {join} = await import(/* @vite-ignore */ 'node:path');
-    const {homedir} = await import(/* @vite-ignore */ 'node:os');
-    const cacheBase = join(homedir(), '.moth', 'sync');
+    // Same root as the daemon's socket path (daemon/index.ts). Through a variable
+    // for the same reason as node-sync-store below: home.ts imports node:os.
+    const homeSpecifier = '../storage/home.js';
+    const {mothHome} = await import(/* @vite-ignore */ homeSpecifier);
+    const cacheBase = join(mothHome(), 'sync');
     try {
       rmSync(join(cacheBase, networkId, walletName), {recursive: true, force: true});
     } catch {

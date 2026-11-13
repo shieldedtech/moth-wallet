@@ -116,8 +116,8 @@ export function Approval({
             </div>
           </div>
           <PermissionList
-            can={[t('approval_canSeeAddresses'), t('approval_canAskApprove')]}
-            cant={[t('approval_cantMoveMoney'), t('approval_cantSeeBalances')]}
+            can={CONNECT_CAN.map((key) => t(key))}
+            cant={CONNECT_CANT.map((key) => t(key))}
           />
           {shownName && (
             <div className="flex items-center gap-3 px-1">
@@ -249,23 +249,7 @@ export function Approval({
             <h1 className="m-0 font-display text-[26px] font-extrabold leading-tight">{t('approval_approveTitle')}</h1>
             <p className="m-0 pt-1.5 text-[13.5px] text-muted-foreground">{t('approval_transferSubtitle')}</p>
           </div>
-          <Card className="p-0">
-            {(approval.payload as TransferApprovalPayload).outputs.map((out, index) => (
-              <div key={index}>
-                {index > 0 && <Separator />}
-                <div className="flex items-center gap-3 px-4 py-[15px]">
-                  <TokenIcon kind={out.type === NIGHT_ID ? 'night' : 'shielded'} />
-                  <span className="flex-1">
-                    <span className="block text-[12px] text-muted-foreground">{t('approval_youSend')}</span>
-                    <span className="block text-[15px] font-bold">
-                      {formatRaw(out.value)} {out.type === NIGHT_ID ? labels.night : truncateAddress(out.type, 6, 0)}
-                    </span>
-                  </span>
-                  <span className="font-mono text-xs text-muted-foreground">{truncateAddress(out.recipient)}</span>
-                </div>
-              </div>
-            ))}
-          </Card>
+          <TransferRows payload={approval.payload as TransferApprovalPayload} nightLabel={labels.night} />
           <DetailCard
             rows={[
               {
@@ -403,6 +387,55 @@ function ApprovalUnlock({ walletName, onUnlocked }: { walletName: string | null;
     </div>
   );
 }
+
+/**
+ * The token rows of a transfer approval. For `makeTransfer` the outputs are what
+ * the user sends. For `makeIntent` the inputs are what the wallet gives up, so
+ * they are what the user sends, and the outputs are listed as payments out with
+ * their recipients — never under "You send", which would hide the inputs.
+ */
+export function TransferRows({ payload, nightLabel }: { payload: TransferApprovalPayload; nightLabel: string }) {
+  const amount = (type: string, value: string) =>
+    `${formatRaw(value)} ${type === NIGHT_ID ? nightLabel : truncateAddress(type, 6, 0)}`;
+  const intent = payload.inputs !== undefined;
+  const rows = [
+    ...(payload.inputs ?? []).map((input) => ({
+      label: t('approval_youSend'), type: input.type, value: input.value, recipient: null as string | null,
+    })),
+    ...payload.outputs.map((out) => ({
+      label: intent ? t('approval_intentPaysOut') : t('approval_youSend'),
+      type: out.type,
+      value: out.value,
+      recipient: out.recipient,
+    })),
+  ];
+  return (
+    <Card className="p-0">
+      {rows.map((row, index) => (
+        <div key={index}>
+          {index > 0 && <Separator />}
+          <div className="flex items-center gap-3 px-4 py-[15px]">
+            <TokenIcon kind={row.type === NIGHT_ID ? 'night' : 'shielded'} />
+            <span className="flex-1">
+              <span className="block text-[12px] text-muted-foreground">{row.label}</span>
+              <span className="block text-[15px] font-bold">{amount(row.type, row.value)}</span>
+            </span>
+            {row.recipient && (
+              <span className="font-mono text-xs text-muted-foreground">{truncateAddress(row.recipient)}</span>
+            )}
+          </div>
+        </div>
+      ))}
+    </Card>
+  );
+}
+
+/**
+ * What the connect screen says a granted site can and cannot do. It must match
+ * what the connector serves without a further prompt; a test holds it to that.
+ */
+export const CONNECT_CAN = ['approval_canSeeAddresses', 'approval_canSeeBalances', 'approval_canAskApprove'] as const;
+export const CONNECT_CANT = ['approval_cantMoveMoney'] as const;
 
 /** Which key, on which network, a CIP-30 request would sign with. */
 export function cardanoSignRows(payload: Partial<CardanoSignApprovalPayload>) {

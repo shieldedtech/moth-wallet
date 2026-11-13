@@ -245,14 +245,14 @@
   "approval_canSeeAddresses": {
     "message": "Deine Adressen sehen"
   },
+  "approval_canSeeBalances": {
+    "message": "Deine Guthaben und deinen Transaktionsverlauf sehen"
+  },
   "approval_canAskApprove": {
     "message": "Dich um Genehmigung von Transaktionen bitten"
   },
   "approval_cantMoveMoney": {
     "message": "Geld ohne dein OK bewegen"
-  },
-  "approval_cantSeeBalances": {
-    "message": "Deine Shielded-Guthaben oder deinen Verlauf sehen"
   },
   "approval_connectingAs": {
     "message": "Verbinden als"
@@ -335,11 +335,14 @@
   "approval_youSend": {
     "message": "Du sendest"
   },
+  "approval_intentPaysOut": {
+    "message": "Ausgezahlt"
+  },
   "approval_usingLabel": {
     "message": "Mit"
   },
   "approval_transferNote": {
-    "message": "Durch einen Zero-Knowledge-Beweis belegt, die Seite sieht deine Guthaben nie."
+    "message": "Vor dem Absenden durch einen Zero-Knowledge-Beweis belegt."
   },
   "approval_unlockToContinue": {
     "message": "Zum Fortfahren entsperren"
@@ -1197,7 +1200,7 @@
     "message": "Die Wallet sperrt sich nie von selbst."
   },
   "settings_autoLockDescription": {
-    "message": "Lock and require your password after inactivity."
+    "message": "Lock and require your password after inactivity. A sync you are watching can delay this by up to 30 minutes."
   },
   "settings_autoLockAria": {
     "message": "Zeitlimit für automatische Sperre"
@@ -1654,6 +1657,39 @@
   },
   "accounts_revealNoPhraseReason": {
     "message": "Dieses Konto wurde aus einem Hex-Seed wiederhergestellt und hat daher keine Wiederherstellungsphrase — eine Phrase lässt sich aus einem Seed nicht ermitteln. Der Seed ist das Backup."
+  },
+  "status_provingLocal": {
+    "message": "Proving on this device — a few minutes is normal."
+  },
+  "status_provingLocalDetail": {
+    "message": "Your transaction details never leave this browser."
+  },
+  "status_provingServer": {
+    "message": "Läuft auf deinem Proof-Server, Details verlassen ihn nie"
+  },
+  "status_provingLoading": {
+    "message": "Beweismethode wird geladen…"
+  },
+  "status_pendingLocalTime": {
+    "message": "Local proving usually takes a few minutes."
+  },
+  "status_elapsed": {
+    "message": "$1 vergangen"
+  },
+  "status_backgroundTitle": {
+    "message": "Transaktion in Arbeit"
+  },
+  "status_backgroundBuilding": {
+    "message": "Transaktion wird erstellt…"
+  },
+  "status_backgroundProving": {
+    "message": "Beweis wird erzeugt…"
+  },
+  "status_backgroundSubmitting": {
+    "message": "Wird ans Netzwerk gesendet…"
+  },
+  "status_backgroundHint": {
+    "message": "Läuft weiter, auch wenn du dieses Panel schließt."
   },
   "syncStatus_etaSeconds": {
     "message": "noch ca. $1 s"

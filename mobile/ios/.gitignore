@@ -1,0 +1,5 @@
+target/
+build/
+vendor/
+engine/dist/
+xcuserdata/

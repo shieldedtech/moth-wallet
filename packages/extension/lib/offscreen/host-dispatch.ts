@@ -34,7 +34,7 @@ export const hostDispatch: Dispatch = {
   'os/walletSetActive': (host, d) => host.walletSetActive(d.name, d.network),
   'os/walletSetLabel': (host, d) => host.walletSetLabel(d.name, d.label, d.network),
   'os/walletExportPhrase': (host, d) => host.walletExportPhrase(d.name, d.passphrase, d.network, d.as),
-  'os/walletSetNetwork': (host, d) => host.walletSetNetwork(d.name, d.fromNetwork, d.network, d.seedHex),
+  'os/walletSetNetwork': (host, d) => host.walletSetNetwork(d.name, d.fromNetwork, d.network, d.seedHex, d.birthday),
   'os/cardanoAccountList': (host, d) => host.cardanoAccountList(d.network, d.walletName),
   'os/cardanoAccountAdd': (host, d) => host.cardanoAccountAdd(d.network, d.walletName, d.label),
   'os/cardanoAccountImport': (host, d) =>
@@ -114,3 +114,14 @@ export const hostDispatch: Dispatch = {
 };
 
 export const HOST_METHODS = Object.keys(hostDispatch) as HostMethod[];
+
+/**
+ * Which worker answers a method. The sync engine's cache restore blocks its thread for
+ * a minute or more, so the panel's first paint and a dApp approval's summary go to a
+ * second instance of the worker. Fast-lane methods must touch no sync-session state.
+ */
+export type HostLane = 'sync' | 'fast';
+export const FAST_LANE_METHODS: ReadonlySet<HostMethod> = new Set<HostMethod>(['os/walletList', 'os/txSummary']);
+export function laneFor(method: HostMethod): HostLane {
+  return FAST_LANE_METHODS.has(method) ? 'fast' : 'sync';
+}

@@ -2,9 +2,8 @@
 // browser.storage.session: memory-backed, survives service-worker restarts,
 // cleared when the browser exits. Locking happens explicitly (lock button,
 // account removal, network switch) and via an inactivity auto-lock (see
-// auto-lock.ts). The auto-lock defers while work is in flight
-// (hasWorkInFlight), so it no longer tears the sync stack down mid-sync
-// under an open panel.
+// auto-lock.ts). The auto-lock defers while an operation is in flight
+// (hasOpsInFlight), so it does not tear the sync stack down mid-operation.
 
 import { browser } from 'wxt/browser';
 import type { WalletInfo } from '@shieldedtech/moth-browser';

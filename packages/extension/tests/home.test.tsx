@@ -129,3 +129,37 @@ describe('Home with DUST but nothing else', () => {
     expect(html).toContain('Pays your fees');
   });
 });
+
+// A transaction that runs with no screen of its own — a dApp's request after its
+// approval closed, a send whose screen was left — surfaces on Home, with the
+// stage, the clock, and (for local proving) the expectation that it takes minutes.
+describe('Home background activity', () => {
+  const base = { walletName: 'Sable', network: 'preprod', balances: null, syncMessage: '', relayState: null, navigate: () => {} };
+
+  it('shows the running stage with elapsed time', () => {
+    const html = renderToStaticMarkup(
+      <Home {...base} txStage="proving" txStageSince={Date.now() - 125_000} proverType="wasm" />,
+    );
+
+    expect(html).toContain('Working on a transaction');
+    expect(html).toContain('Generating the proof…');
+    expect(html).toContain('2:05 elapsed');
+    expect(html).toContain('Proving on this device — a few minutes is normal.');
+  });
+
+  it('keeps the generic hint when the proof comes from a server', () => {
+    const html = renderToStaticMarkup(
+      <Home {...base} txStage="submitting" txStageSince={Date.now()} proverType="server" />,
+    );
+
+    expect(html).toContain('Submitting to the network…');
+    expect(html).toContain('It keeps going if you close this panel.');
+    expect(html).not.toContain('Proving on this device');
+  });
+
+  it('shows nothing when no transaction is in flight', () => {
+    const html = renderToStaticMarkup(<Home {...base} />);
+
+    expect(html).not.toContain('Working on a transaction');
+  });
+});

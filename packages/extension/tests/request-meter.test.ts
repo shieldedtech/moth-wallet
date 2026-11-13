@@ -523,14 +523,14 @@ describe('asCurl', () => {
       WebSocket: class {} as never,
     };
     installRequestMeter(m, target);
-    await target.fetch('https://rpc.preprod.midnight.network/', {
+    await target.fetch('https://rpc.preprod.shielded.tools/', {
       method: 'POST',
       body: '{"jsonrpc":"2.0"}',
       headers: { 'content-type': 'application/json' },
     });
     await flush();
     const cmd = asCurl(m.snapshot().failures[0]!);
-    expect(cmd).toContain("curl -i -X POST 'https://rpc.preprod.midnight.network/'");
+    expect(cmd).toContain("curl -i -X POST 'https://rpc.preprod.shielded.tools/'");
     expect(cmd).toContain("-H 'content-type: application/json'");
     expect(cmd).toContain('{"jsonrpc":"2.0"}');
   });
@@ -544,7 +544,7 @@ describe('asCurl', () => {
       WebSocket: class {} as never,
     };
     installRequestMeter(m, target);
-    await target.fetch('https://rpc.preprod.midnight.network/');
+    await target.fetch('https://rpc.preprod.shielded.tools/');
     await flush();
     const cmd = asCurl(m.snapshot().failures[0]!);
     expect(cmd).toContain('$MOTH_NODE_AUTH');

@@ -12,8 +12,8 @@ import {
 
 const endpoints = {
   id: 'devnet',
-  nodeUrl: 'https://rpc.devnet.midnight.network',
-  indexerUrl: 'https://indexer.devnet.midnight.network/api/v4/graphql',
+  nodeUrl: 'https://rpc.devnet.shielded.tools',
+  indexerUrl: 'https://indexer.devnet.shielded.tools/api/v4/graphql',
 };
 
 describe('prover network configuration', () => {
@@ -98,5 +98,20 @@ describe('canonicalNetworkId', () => {
     expect(canonicalNetworkId('stagenet')).toBe('stagenet');
     expect(canonicalNetworkId('some-future-net')).toBe('some-future-net');
     expect(canonicalNetworkId('')).toBe('');
+  });
+});
+
+describe('hosted network presets', () => {
+  // Written out rather than read from the presets, so a mistyped or retired host
+  // fails here instead of being copied in. preview stays on midnight.network
+  // because its shielded.tools hosts have no DNS records yet.
+  it.each([
+    ['mainnet', 'https://rpc.mainnet.shielded.tools', 'https://indexer.mainnet.shielded.tools/api/v4/graphql'],
+    ['preprod', 'https://rpc.preprod.shielded.tools', 'https://indexer.preprod.shielded.tools/api/v4/graphql'],
+    ['preview', 'https://rpc.preview.midnight.network', 'https://indexer.preview.midnight.network/api/v4/graphql'],
+    ['qanet', 'https://rpc.qanet.shielded.tools', 'https://indexer.qanet.shielded.tools/api/v4/graphql'],
+    ['devnet', 'https://rpc.devnet.shielded.tools', 'https://indexer.devnet.shielded.tools/api/v4/graphql'],
+  ] as const)("points %s at that network's published node and indexer", (id, nodeUrl, indexerUrl) => {
+    expect(DEFAULT_NETWORKS[id]).toMatchObject({id, nodeUrl, indexerUrl});
   });
 });

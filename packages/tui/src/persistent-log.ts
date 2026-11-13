@@ -1,26 +1,27 @@
 import { appendFileSync, statSync, writeFileSync, mkdirSync, existsSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { homedir } from 'node:os';
+import { mothHome } from '@shieldedtech/moth-wallet';
 
-const LOG_DIR = join(homedir(), '.moth');
-const LOG_FILE = join(LOG_DIR, 'moth.log');
+// Resolved per call, like the rest of moth's on-disk state, so MOTH_HOME applies.
+const logDir = (): string => mothHome();
+const logFile = (): string => join(logDir(), 'moth.log');
 const MAX_SIZE = 1_048_576; // 1 MB
 
 function ensureDir(): void {
-  if (!existsSync(LOG_DIR)) {
-    mkdirSync(LOG_DIR, { recursive: true });
+  if (!existsSync(logDir())) {
+    mkdirSync(logDir(), { recursive: true });
   }
 }
 
 function rotateIfNeeded(): void {
   try {
-    const stat = statSync(LOG_FILE);
+    const stat = statSync(logFile());
     if (stat.size >= MAX_SIZE) {
       // Keep the last half of the file
-      const content = readFileSync(LOG_FILE, 'utf-8');
+      const content = readFileSync(logFile(), 'utf-8');
       const lines = content.split('\n');
       const halfIndex = Math.floor(lines.length / 2);
-      writeFileSync(LOG_FILE, lines.slice(halfIndex).join('\n'));
+      writeFileSync(logFile(), lines.slice(halfIndex).join('\n'));
     }
   } catch {
     // File doesn't exist yet — fine
@@ -32,12 +33,12 @@ export function appendLog(level: string, message: string): void {
   rotateIfNeeded();
   const ts = new Date().toISOString();
   const line = `${ts} [${level.toUpperCase().padEnd(5)}] ${message}\n`;
-  appendFileSync(LOG_FILE, line);
+  appendFileSync(logFile(), line);
 }
 
 export function readLogTail(lines = 200): string[] {
   try {
-    const content = readFileSync(LOG_FILE, 'utf-8');
+    const content = readFileSync(logFile(), 'utf-8');
     const allLines = content.split('\n').filter(l => l.length > 0);
     return allLines.slice(-lines);
   } catch {
@@ -47,12 +48,12 @@ export function readLogTail(lines = 200): string[] {
 
 export function clearLog(): void {
   try {
-    writeFileSync(LOG_FILE, '');
+    writeFileSync(logFile(), '');
   } catch {
     // Ignore
   }
 }
 
 export function getLogPath(): string {
-  return LOG_FILE;
+  return logFile();
 }
