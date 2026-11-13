@@ -2,18 +2,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Regression guard for the "correct password not recognized" bug. Under Option A
 // core's unlock() is seed-free (it derives walletKeys and drops the seed), so
-// the offscreen must recover a serializable seed via exportSeedHex — reading the
+// the offscreen must recover a serializable seed separately — reading the
 // now-undefined unlocked.seedHex threw during unlock and surfaced in the UI as a
-// wrong password. Mock the browser layer so unlock() returns NO seedHex (like
-// real core) and assert walletUnlock still wires seedHex from exportSeedHex.
+// wrong password. Core now hands both back from one decrypt (unlockWithSeedHex;
+// unlock() + exportSeedHex() ran the KDF twice). Mock the browser layer so the
+// unlocked bundle carries NO seedHex (like real core) and assert walletUnlock
+// wires seedHex from the value returned beside it.
 
-const { unlock, exportSeedHex } = vi.hoisted(() => ({
-  unlock: vi.fn(),
-  exportSeedHex: vi.fn(),
+const { unlockWithSeedHex } = vi.hoisted(() => ({
+  unlockWithSeedHex: vi.fn(),
 }));
 
 vi.mock('@shieldedtech/moth-browser', () => ({
-  createMothBrowser: () => ({ wallets: { unlock, exportSeedHex } }),
+  createMothBrowser: () => ({ wallets: { unlockWithSeedHex } }),
   deriveShieldedPublicKeys: (seedHex: string) => ({
     coinPublicKey: `coin:${seedHex}`,
     encryptionPublicKey: `enc:${seedHex}`,
@@ -58,29 +59,28 @@ const seedFreeUnlocked = (lock = vi.fn()) => ({
 
 describe('offscreen walletUnlock (Option A key-holder)', () => {
   beforeEach(() => {
-    unlock.mockReset();
-    exportSeedHex.mockReset();
+    unlockWithSeedHex.mockReset();
   });
 
-  it('sources seedHex from exportSeedHex, not the seed-free unlock() result', async () => {
-    unlock.mockResolvedValue(seedFreeUnlocked());
-    exportSeedHex.mockResolvedValue('deadbeef');
+  it('sources seedHex from the single-decrypt unlock, not the seed-free bundle', async () => {
+    unlockWithSeedHex.mockResolvedValue({ unlocked: seedFreeUnlocked(), seedHex: 'deadbeef' });
 
     const unlocked = await walletUnlock('alice', 'pw', 'devnet');
 
     // The core regression: reading unlocked.seedHex (undefined) would leave this
     // undefined and break every downstream op / show a bogus wrong-password.
     expect(unlocked.seedHex).toBe('deadbeef');
-    expect(exportSeedHex).toHaveBeenCalledWith('alice', 'pw');
-    // Shielded public keys are derived from the recovered seed, not from unlock().
+    // One core call — one scrypt derivation — per password entry.
+    expect(unlockWithSeedHex).toHaveBeenCalledTimes(1);
+    expect(unlockWithSeedHex).toHaveBeenCalledWith('alice', 'pw');
+    // Shielded public keys are derived from the recovered seed, not from the bundle.
     expect(unlocked.shieldedCoinPublicKey).toBe('coin:deadbeef');
     expect(unlocked.shieldedEncryptionPublicKey).toBe('enc:deadbeef');
   });
 
   it('releases the core-unlocked WASM handle after recovering the seed', async () => {
     const lock = vi.fn();
-    unlock.mockResolvedValue(seedFreeUnlocked(lock));
-    exportSeedHex.mockResolvedValue('cafe');
+    unlockWithSeedHex.mockResolvedValue({ unlocked: seedFreeUnlocked(lock), seedHex: 'cafe' });
 
     await walletUnlock('alice', 'pw', 'devnet');
 

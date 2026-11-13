@@ -9,7 +9,7 @@ export interface SyncStateStore {
   delete(key: string): Promise<void>;
 }
 
-export type WalletPart = 'shielded' | 'unshielded' | 'dust' | 'history';
+export type WalletPart = 'shielded' | 'unshielded' | 'dust' | 'history' | 'pending';
 
 export function syncStateKey(networkId: string, walletName: string, part: WalletPart): string {
   return `sync/${networkId}/${walletName}/${part}.dat`;

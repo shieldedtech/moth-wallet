@@ -73,7 +73,7 @@ async function callViaSDK(options: CallOptions): Promise<TransactionResult> {
   const {pathToFileURL} = await import('node:url');
   const {createRequire} = await import('node:module');
   const {existsSync} = await import('node:fs');
-  const {homedir} = await import('node:os');
+  const {mothHome} = await import('../storage/home.js');
   const {levelPrivateStateProvider} = await import('@midnight-ntwrk/midnight-js-level-private-state-provider');
 
   // Resolve the typed key bundle: prefer the pre-derived walletKeys
@@ -216,7 +216,7 @@ async function callViaSDK(options: CallOptions): Promise<TransactionResult> {
     },
   };
 
-  const levelDbDir = join(homedir(), '.moth', 'level-db', network.id, encPublicKey.slice(0, 16));
+  const levelDbDir = join(mothHome(), 'level-db', network.id, encPublicKey.slice(0, 16));
 
   const providers = {
     zkConfigProvider: zkConfigProvider as any,
