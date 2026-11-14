@@ -2,8 +2,8 @@
 // transaction's proofs concurrently, so each gets its own thread instead of queueing
 // on the in-thread prover. Key material stays here, fetched and cached once.
 
-import type { ProvingProvider } from '@midnight-ntwrk/ledger-v8';
-import type { WasmKeyMaterialProvider } from '@shieldedtech/moth-browser';
+import type { ProvingProvider } from '@midnightntwrk/ledger-v8';
+import type { WasmKeyMaterialProvider, ZkirVersion } from '@shieldedtech/moth-browser';
 import { deserializeHostError, serializeHostError } from './worker-rpc';
 import { isKeyRequest, type KeyRequest, type PoolToWorker, type ProofJobResult, type ProofOp, type WorkerToPool } from './proof-rpc';
 // No `?worker` import here: the caller (wallet-host.ts) supplies `spawn`, so this
@@ -27,8 +27,8 @@ export interface ProofPoolOptions {
 }
 
 export interface ProofPool {
-  /** A ledger ProvingProvider whose proofs run on the pool with this key source. */
-  provider(keyMaterial: WasmKeyMaterialProvider): ProvingProvider;
+  /** A ledger ProvingProvider whose proofs run on the pool with this key source and zkir. */
+  provider(keyMaterial: WasmKeyMaterialProvider, zkir: ZkirVersion): ProvingProvider;
   /** Terminate every worker; queued and running jobs reject. */
   close(): void;
   readonly size: number;
@@ -49,6 +49,7 @@ export function defaultPoolSize(hardwareConcurrency: number = globalThis.navigat
 interface Job {
   id: number;
   op: ProofOp;
+  zkir: ZkirVersion;
   preimage: Uint8Array;
   overwriteBindingInput?: bigint;
   keyMaterial: WasmKeyMaterialProvider;
@@ -140,7 +141,13 @@ export function createProofPool(options: ProofPoolOptions): ProofPool {
       if (slot.idleTimer !== null) clearTimeout(slot.idleTimer);
       slot.idleTimer = null;
       slot.job = job;
-      slot.worker.postMessage({ id: job.id, op: job.op, preimage: job.preimage, overwriteBindingInput: job.overwriteBindingInput });
+      slot.worker.postMessage({
+        id: job.id,
+        op: job.op,
+        zkir: job.zkir,
+        preimage: job.preimage,
+        overwriteBindingInput: job.overwriteBindingInput,
+      });
     }
     // Whatever is idle now gets its retirement clock.
     for (const slot of slots) {
@@ -152,20 +159,26 @@ export function createProofPool(options: ProofPoolOptions): ProofPool {
     }
   }
 
-  function submit(op: ProofOp, preimage: Uint8Array, keyMaterial: WasmKeyMaterialProvider, overwriteBindingInput?: bigint): Promise<unknown> {
+  function submit(
+    op: ProofOp,
+    zkir: ZkirVersion,
+    preimage: Uint8Array,
+    keyMaterial: WasmKeyMaterialProvider,
+    overwriteBindingInput?: bigint,
+  ): Promise<unknown> {
     if (closed) return Promise.reject(new Error('Proof pool is closed'));
     return new Promise((resolve, reject) => {
-      queue.push({ id: nextId++, op, preimage, overwriteBindingInput, keyMaterial, resolve, reject });
+      queue.push({ id: nextId++, op, zkir, preimage, overwriteBindingInput, keyMaterial, resolve, reject });
       pump();
     });
   }
 
   return {
-    provider(keyMaterial) {
+    provider(keyMaterial, zkir) {
       return {
-        check: (preimage) => submit('check', preimage, keyMaterial) as Promise<(bigint | undefined)[]>,
+        check: (preimage) => submit('check', zkir, preimage, keyMaterial) as Promise<(bigint | undefined)[]>,
         prove: (preimage, _keyLocation, overwriteBindingInput) =>
-          submit('prove', preimage, keyMaterial, overwriteBindingInput) as Promise<Uint8Array>,
+          submit('prove', zkir, preimage, keyMaterial, overwriteBindingInput) as Promise<Uint8Array>,
       };
     },
     close() {

@@ -7,7 +7,9 @@ import {
   offscreenSend,
   type TransferRequestDTO,
   type SwapInputDTO,
+  type ProverKeyPutPayload,
   type ProvingKeyMaterialDTO,
+  type ProvingKeyMaterialRefDTO,
   type ProvingProviderCheckPayload,
   type ProvingProviderProvePayload,
 } from '../offscreen/messaging';
@@ -325,6 +327,10 @@ export const offscreen = {
     await ensureOffscreen();
     return offscreenSend('os/requestStats', undefined);
   },
+  async protocolStatus() {
+    await ensureOffscreen();
+    return offscreenSend('os/protocolStatus', undefined);
+  },
   async resetRequestStats() {
     await ensureOffscreen();
     return offscreenSend('os/requestStatsReset', undefined);
@@ -363,9 +369,10 @@ export const offscreen = {
   },
   async provingProviderCheck(data: {
     network: NetworkConfig;
+    origin: string;
     serializedPreimage: Uint8Array;
     keyLocation: string;
-    keyMaterial: ProvingKeyMaterialDTO;
+    keyMaterial: ProvingKeyMaterialDTO | ProvingKeyMaterialRefDTO | null;
   }) {
     await ensureOffscreen();
     const {network, ...payload} = data;
@@ -377,9 +384,10 @@ export const offscreen = {
   },
   async provingProviderProve(data: {
     network: NetworkConfig;
+    origin: string;
     serializedPreimage: Uint8Array;
     keyLocation: string;
-    keyMaterial: ProvingKeyMaterialDTO;
+    keyMaterial: ProvingKeyMaterialDTO | ProvingKeyMaterialRefDTO | null;
     overwriteBindingInput?: bigint;
   }) {
     await ensureOffscreen();
@@ -389,6 +397,10 @@ export const offscreen = {
       payloadJson: encodeBigintJson(payload satisfies ProvingProviderProvePayload),
     });
     return decodeBigintJson<Uint8Array>(resultJson);
+  },
+  async proverKeyPut(data: ProverKeyPutPayload) {
+    await ensureOffscreen();
+    return offscreenSend('os/proverKeyPut', { payloadJson: encodeBigintJson(data) });
   },
   async txSummary(data: { network: NetworkConfig; txHex: string; sealed: boolean }) {
     await ensureOffscreen();

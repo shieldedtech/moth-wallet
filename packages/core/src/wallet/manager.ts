@@ -128,10 +128,9 @@ interface WalletMeta {
 /**
  * Re-key per-network birthdays onto the ids in use today.
  *
- * Colliding keys keep the LOWER height. Both `local` and `undeployed` were
- * offered at once, so a wallet can hold a birthday under each — created on one
- * name, switched to the other — and letting insertion order decide would pick
- * either. Lower is the safe direction: a birthday below the wallet's true
+ * Colliding keys keep the LOWER height. A wallet can hold a birthday under both
+ * a renamed id and its new name — created on one, switched to the other — and
+ * letting insertion order decide would pick either. Lower is the safe direction: a birthday below the wallet's true
  * first-existence height only costs scanning, while one above it lets the
  * pre-seed guard (`reference.height <= birthday`) accept a reference newer than
  * the wallet's own history, skipping transactions it needs to see.
@@ -521,10 +520,9 @@ export class WalletManager {
     seedHex = '';
 
     let locked = false;
-    // Actually scrub key material — not just flip a flag. Zero the raw
-    // byte arrays and clear() the WASM-held secret keys so a compromised
-    // process can't recover them after lock. Best-effort and idempotent:
-    // a clear() throw (e.g. already freed) must not stop the rest.
+    // Actually scrub key material — not just flip a flag. Zero every byte array
+    // so a compromised process can't recover them after lock. Best-effort and
+    // idempotent: a throw on one buffer must not stop the rest.
     const lock = (): void => {
       if (locked) return;
       locked = true;
@@ -534,23 +532,15 @@ export class WalletManager {
         keys.dust,
         keys.zswap,
         keys.metadata,
-        walletKeys.nightExternalKey,
+        walletKeys.shielded,
+        walletKeys.unshielded,
+        walletKeys.dust,
       ]) {
         try {
           b.fill(0);
         } catch {
           /* not a writable view — ignore */
         }
-      }
-      try {
-        walletKeys.shieldedSecretKeys.clear();
-      } catch {
-        /* already cleared/freed */
-      }
-      try {
-        walletKeys.dustSecretKey.clear();
-      } catch {
-        /* already cleared/freed */
       }
     };
     return {

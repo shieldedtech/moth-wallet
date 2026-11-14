@@ -30,6 +30,8 @@ vi.mock('@shieldedtech/moth-browser', () => ({
   designateForDust: vi.fn(),
   dedesignateFromDust: vi.fn(),
   submitFinalizedTransaction: vi.fn(),
+  transactionHashOf: vi.fn(),
+  activeProtocolVersion: vi.fn(),
   deriveWalletKeys: vi.fn(),
   clearSyncCache: vi.fn(),
   clearDustSyncCache: vi.fn(),

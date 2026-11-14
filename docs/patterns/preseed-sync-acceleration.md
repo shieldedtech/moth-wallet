@@ -38,7 +38,7 @@ Dust walked 1,382,732 events at roughly 293 events/sec. Every new account paid
 this, on every device.
 
 The instinct is to look for a birthday or start-index to skip ahead. **There isn't
-one.** All three sub-wallets expose only `startWithSeed` / `startWithSecretKeys`
+one.** All three sub-wallets expose only `startWithSeed` / `startWithKeys`
 (or `startWithPublicKey`) and `restore`; `DefaultSyncConfiguration` is just
 `{ indexerClientConnection, batchUpdates }`. The indexer's subscriptions *do* take
 resume cursors, but the wallet API does not surface them.

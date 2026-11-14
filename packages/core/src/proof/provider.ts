@@ -1,67 +1,147 @@
-import * as ledger from '@midnight-ntwrk/ledger-v8';
+import * as ledger from '@midnightntwrk/ledger-v8';
 import {httpClientProvingProvider, httpClientProofProvider} from '@midnight-ntwrk/midnight-js-http-client-proof-provider';
-import {ZKConfigProvider, type KeyMaterialProvider} from '@midnight-ntwrk/midnight-js/types';
 import {
-  provingProvider as wasmProvingProvider,
+  createProofProviderFromProvingProviders,
+  parseContractKeyLocation,
+  ZKConfigProvider,
+  ZKConfigRegistry,
+  type KeyMaterialProvider,
+  type ProofProvider,
+} from '@midnight-ntwrk/midnight-js/types';
+import {
+  provingProvider as zkirV2ProvingProvider,
   type KeyMaterialProvider as WasmKeyMaterialProvider,
-} from '@midnight-ntwrk/zkir-v2';
+} from '@midnightntwrk/zkir-v2';
+import {ProtocolVersion} from '@midnightntwrk/wallet-sdk';
+import * as ledgerV9 from '@midnightntwrk/wallet-sdk/ledger/v9';
 import {
-  makeServerProvingService,
-  makeWasmProvingService,
+  fromV8ProvingProvider,
+  fromV9ProvingProvider,
+  makeDefaultVersionedProvingService,
+  makeVersionedProvingServiceEffect,
+  ProvingEpochMismatchError,
+  wrapVersionedEffectService,
+  type AnyVersionUnboundTransaction,
+  type AnyVersionUnprovenTransaction,
+  type ProvingServiceEffect,
+  type V8UnprovenTransaction,
+  type V9UnprovenTransaction,
+  type VersionedProvingService,
+  type VersionProvingServiceEffect,
 } from '@midnightntwrk/wallet-sdk/capabilities/proving';
+import {Effect} from 'effect';
 import {WasmProver} from '@midnightntwrk/wallet-sdk/prover-client/effect';
 import {ProofClient} from './client.js';
 import type {ProverConfig} from '../types/network.js';
 
-/** Adapter from the connector/Midnight.js key interface to ZKConfigProvider. */
+/** The facade's proving service: routes each transaction to the backend for the ledger version that authored it. */
+export type WalletProvingService = VersionedProvingService<AnyVersionUnboundTransaction, AnyVersionUnprovenTransaction>;
+
+/**
+ * Adapter from the connector's key interface to ZKConfigProvider, for proving at one key location.
+ * The connector serves keys under the location the ledger names, while midnight-js's proof-server
+ * client parses a `contract:<address>/<circuit>?vk=<hash>` location and asks by its bare circuit.
+ */
 class KeyMaterialZkConfigProvider extends ZKConfigProvider<string> {
-  constructor(private readonly source: KeyMaterialProvider) {
+  private readonly circuitId: string | undefined;
+
+  constructor(
+    private readonly source: KeyMaterialProvider,
+    private readonly keyLocation: string,
+  ) {
     super();
+    this.circuitId = parseContractKeyLocation(keyLocation)?.circuitId;
+  }
+
+  private at(circuitId: string): string {
+    return circuitId === this.circuitId ? this.keyLocation : circuitId;
   }
 
   getZKIR(circuitId: string) {
-    return this.source.getZKIR(circuitId) as ReturnType<ZKConfigProvider<string>['getZKIR']>;
+    return this.source.getZKIR(this.at(circuitId)) as ReturnType<ZKConfigProvider<string>['getZKIR']>;
   }
 
   getProverKey(circuitId: string) {
-    return this.source.getProverKey(circuitId) as ReturnType<ZKConfigProvider<string>['getProverKey']>;
+    return this.source.getProverKey(this.at(circuitId)) as ReturnType<ZKConfigProvider<string>['getProverKey']>;
   }
 
   getVerifierKey(circuitId: string) {
-    return this.source.getVerifierKey(circuitId) as ReturnType<ZKConfigProvider<string>['getVerifierKey']>;
+    return this.source.getVerifierKey(this.at(circuitId)) as ReturnType<ZKConfigProvider<string>['getVerifierKey']>;
   }
 }
 
 export type {WasmKeyMaterialProvider};
 
 /**
- * Builds the local (WASM) prover over a key-material source. Injectable because the
- * ledger requests a transaction's proofs concurrently while zkir's in-thread prover
- * serialises them; a host with spare threads (the extension) installs a parallel one.
+ * The ZKIR version a circuit is written in, which picks the zkir package that proves it:
+ * compactc 0.31 and the SDK's own circuits emit ZKIR v2, compactc 0.36 emits ZKIR v3.
  */
-export type WasmProvingProviderFactory = (keyMaterial: WasmKeyMaterialProvider) => ledger.ProvingProvider;
+export type ZkirVersion = 'v2' | 'v3';
 
-let wasmProvingFactory: WasmProvingProviderFactory = wasmProvingProvider;
+// The serialization header zkir-v3 requires of a circuit's IR. zkir-v2 accepts only
+// `ir-source[v2]` and `ir-source[v2-generic]`, so the header alone names the reader.
+const ZKIR_V3_HEADER = new TextEncoder().encode('midnight:ir-source[v3-generic]:');
+
+/** The ZKIR version of a circuit's binary IR (`.bzkir`), read from its header. */
+export function zkirVersionOf(ir: Uint8Array): ZkirVersion {
+  return ir.length >= ZKIR_V3_HEADER.length && ZKIR_V3_HEADER.every((byte, i) => ir[i] === byte) ? 'v3' : 'v2';
+}
+
+/**
+ * Builds the local (WASM) prover for one ZKIR version over a key-material source. Injectable
+ * because the ledger requests a transaction's proofs concurrently while zkir's in-thread
+ * prover serialises them; a host with spare threads (the extension) installs a parallel one.
+ */
+export type WasmProvingProviderFactory = (keyMaterial: WasmKeyMaterialProvider, zkir: ZkirVersion) => ledger.ProvingProvider;
+
+// zkir-v3 instantiates its WASM on import, so a process that never proves a ZKIR v3
+// circuit never loads it.
+let zkirV3: Promise<typeof import('@midnightntwrk/zkir-v3')> | undefined;
+
+const zkirProvingProvider: WasmProvingProviderFactory = (keyMaterial, zkir) => {
+  if (zkir === 'v2') return zkirV2ProvingProvider(keyMaterial);
+  const provider = (zkirV3 ??= import('@midnightntwrk/zkir-v3')).then((module) => module.provingProvider(keyMaterial));
+  return {
+    check: async (preimage, keyLocation) => (await provider).check(preimage, keyLocation),
+    prove: async (preimage, keyLocation, overwriteBindingInput) =>
+      (await provider).prove(preimage, keyLocation, overwriteBindingInput),
+  };
+};
+
+let wasmProvingFactory: WasmProvingProviderFactory = zkirProvingProvider;
 
 /** Replace the local prover for this process; `null` restores zkir's default. */
 export function setWasmProvingProviderFactory(factory: WasmProvingProviderFactory | null): void {
-  wasmProvingFactory = factory ?? wasmProvingProvider;
+  wasmProvingFactory = factory ?? zkirProvingProvider;
 }
 
-let defaultWasmKeys: WasmKeyMaterialProvider | undefined;
+const sdkKeys: Partial<Record<'v8' | 'v9', WasmKeyMaterialProvider>> = {};
 
-function defaultWasmKeyMaterialProvider(): WasmKeyMaterialProvider {
-  return (defaultWasmKeys ??= WasmProver.makeDefaultKeyMaterialProvider());
+/**
+ * The SDK's key material for one ledger version's own circuits: generation 9 for ledger-v8 and
+ * 10 for ledger-v9. Their zswap circuits are the same bytes, but a node rejects a DUST spend
+ * proved with the other version's keys.
+ */
+function sdkKeyMaterial(version: 'v8' | 'v9'): WasmKeyMaterialProvider {
+  return (sdkKeys[version] ??=
+    version === 'v8' ? WasmProver.makeV8KeyMaterialProvider() : WasmProver.makeV9KeyMaterialProvider());
 }
 
-function wasmKeyMaterialProvider(source: KeyMaterialProvider): WasmKeyMaterialProvider {
-  const defaults = defaultWasmKeyMaterialProvider();
+// Contract and connector proofs read only zswap circuits from it, which both generations share.
+const defaultWasmKeyMaterialProvider = () => sdkKeyMaterial('v9');
+
+type ProvingKeyMaterial = NonNullable<Awaited<ReturnType<WasmKeyMaterialProvider['lookupKey']>>>;
+
+/** Where a local prover reads a contract circuit's keys, by the key location the ledger names it with. */
+interface ContractKeys {
+  lookup(keyLocation: string): Promise<ProvingKeyMaterial>;
+  /** The circuit's IR alone: a contract's prover key runs to tens of MB, and zkir reads it once itself. */
+  ir(keyLocation: string): Promise<Uint8Array>;
+}
+
+function keysFrom(source: KeyMaterialProvider): ContractKeys {
   return {
-    async lookupKey(keyLocation) {
-      // Native wallet circuits come from the SDK-maintained key source. Contract
-      // circuits fall through to the dApp/artifact provider supplied by callers.
-      const builtIn = await defaults.lookupKey(keyLocation);
-      if (builtIn) return builtIn;
+    async lookup(keyLocation) {
       const [ir, proverKey, verifierKey] = await Promise.all([
         source.getZKIR(keyLocation),
         source.getProverKey(keyLocation),
@@ -69,7 +149,47 @@ function wasmKeyMaterialProvider(source: KeyMaterialProvider): WasmKeyMaterialPr
       ]);
       return {ir, proverKey, verifierKey};
     },
+    ir: (keyLocation) => source.getZKIR(keyLocation),
+  };
+}
+
+/** A key source for zkir that can also name the ZKIR version of a circuit without reading its keys. */
+interface CircuitKeySource extends WasmKeyMaterialProvider {
+  zkirVersion(keyLocation: string): Promise<ZkirVersion>;
+}
+
+function wasmKeyMaterialProvider(contract: ContractKeys): CircuitKeySource {
+  const defaults = defaultWasmKeyMaterialProvider();
+  return {
+    // Native wallet circuits come from the SDK-maintained key source. Contract
+    // circuits fall through to the dApp/artifact keys supplied by callers.
+    lookupKey: async (keyLocation) => (await defaults.lookupKey(keyLocation)) ?? contract.lookup(keyLocation),
     getParams: (k) => defaults.getParams(k),
+    async zkirVersion(keyLocation) {
+      const builtIn = await defaults.lookupKey(keyLocation);
+      return zkirVersionOf(builtIn ? builtIn.ir : await contract.ir(keyLocation));
+    },
+  };
+}
+
+/**
+ * A local prover that hands each circuit to the zkir for its IR's version. The circuit, not the
+ * transaction, decides: a ledger-8 contract called after the fork puts ZKIR v2 circuits in a
+ * ledger-9 transaction.
+ */
+function zkirDispatchingProvider(keys: CircuitKeySource): ledger.ProvingProvider & Pick<CircuitKeySource, 'lookupKey'> {
+  const provers = new Map<ZkirVersion, ledger.ProvingProvider>();
+  const proverFor = async (keyLocation: string) => {
+    const zkir = await keys.zkirVersion(keyLocation);
+    let prover = provers.get(zkir);
+    if (!prover) provers.set(zkir, (prover = wasmProvingFactory(keys, zkir)));
+    return prover;
+  };
+  return {
+    check: async (preimage, keyLocation) => (await proverFor(keyLocation)).check(preimage, keyLocation),
+    prove: async (preimage, keyLocation, overwriteBindingInput) =>
+      (await proverFor(keyLocation)).prove(preimage, keyLocation, overwriteBindingInput),
+    lookupKey: (keyLocation) => keys.lookupKey(keyLocation),
   };
 }
 
@@ -79,51 +199,175 @@ export function createProvingProvider(
   keyMaterialProvider: KeyMaterialProvider,
 ): ledger.ProvingProvider {
   if (config.type === 'server') {
-    return httpClientProvingProvider(config.url, new KeyMaterialZkConfigProvider(keyMaterialProvider));
+    // A client per key location, since each answers its circuit from that location's keys.
+    const clients = new Map<string, ledger.ProvingProvider>();
+    const clientFor = (keyLocation: string) => {
+      let client = clients.get(keyLocation);
+      if (!client) {
+        client = httpClientProvingProvider(config.url, new KeyMaterialZkConfigProvider(keyMaterialProvider, keyLocation));
+        clients.set(keyLocation, client);
+      }
+      return client;
+    };
+    return {
+      check: (preimage, keyLocation) => clientFor(keyLocation).check(preimage, keyLocation),
+      prove: (preimage, keyLocation, overwriteBindingInput) =>
+        clientFor(keyLocation).prove(preimage, keyLocation, overwriteBindingInput),
+    };
   }
-  return wasmProvingFactory(wasmKeyMaterialProvider(keyMaterialProvider));
+  return zkirDispatchingProvider(wasmKeyMaterialProvider(keysFrom(keyMaterialProvider)));
 }
 
-/** Build the transaction-level Midnight.js proof provider. */
-export function createProofProvider(
-  config: ProverConfig,
-  keyMaterialProvider: KeyMaterialProvider,
-) {
-  if (config.type === 'server') {
-    // Delegate to the SDK's proof provider rather than re-implementing
-    // proveTx. This keeps payload versioning (ledger-v8 8.1.0 rejects
-    // unversioned circuit-call proofs) and any future proveTx behavior —
-    // e.g. partialProveTxConfig — tracking the SDK instead of drifting from
-    // a hand-rolled copy of the same call.
-    return httpClientProofProvider(config.url, new KeyMaterialZkConfigProvider(keyMaterialProvider));
-  }
-  // WASM path: no SDK proof-provider equivalent, so drive prove() directly
-  // over the local zkir provider.
-  const provingProvider = createProvingProvider(config, keyMaterialProvider);
+/**
+ * The midnight-js pieces a contract proof provider is built from. midnight-js
+ * takes a transaction handle only from its own installed copy, so a contract
+ * that runs on its project's midnight-js is proved with that copy's.
+ */
+export interface ProofProviderKit {
+  readonly httpClientProofProvider: typeof httpClientProofProvider;
+  readonly createProofProviderFromProvingProviders: typeof createProofProviderFromProvingProviders;
+  readonly ZKConfigRegistry: typeof ZKConfigRegistry;
+  readonly parseContractKeyLocation: typeof parseContractKeyLocation;
+}
+
+const ownProofProviderKit: ProofProviderKit = {
+  httpClientProofProvider,
+  createProofProviderFromProvingProviders,
+  ZKConfigRegistry,
+  parseContractKeyLocation,
+};
+
+/**
+ * A contract's keys under the locations the ledger names them with. midnight-js 5 names a call's
+ * circuit `contract:<address>/<circuit>?vk=<hash>` in both eras, which resolves through its
+ * verifier-key join as its proof-server client does; a bare circuit name is read as it stands.
+ */
+function keysFromZkConfig(zkConfigProvider: ZKConfigProvider<string>, kit: ProofProviderKit): ContractKeys {
+  const registry = new kit.ZKConfigRegistry([zkConfigProvider]);
+  const bare = keysFrom(zkConfigProvider.asKeyMaterialProvider());
   return {
-    proveTx: (transaction: ledger.UnprovenTransaction) =>
-      transaction.prove(provingProvider, ledger.CostModel.initialCostModel()),
+    async lookup(keyLocation) {
+      const config = await registry.resolveKeyLocation(keyLocation);
+      return config ? {ir: config.zkir, proverKey: config.proverKey, verifierKey: config.verifierKey} : bare.lookup(keyLocation);
+    },
+    ir: (keyLocation) => bare.ir(kit.parseContractKeyLocation(keyLocation)?.circuitId ?? keyLocation),
   };
 }
 
-/** Build the wallet facade service. WASM follows the SDK's documented setup. */
-export function createWalletProvingService(config: ProverConfig) {
+/**
+ * Build the Midnight.js proof provider for contracts of both ledger eras. In process, each
+ * circuit is proved by the zkir for its IR: zkir-v2 for compactc 0.31, zkir-v3 for compactc 0.36.
+ */
+export function createProofProvider(
+  config: ProverConfig,
+  zkConfigProvider: ZKConfigProvider<string>,
+  kit: ProofProviderKit = ownProofProviderKit,
+): ProofProvider {
   if (config.type === 'server') {
-    return makeServerProvingService({provingServerUrl: new URL(config.url)});
+    return kit.httpClientProofProvider({url: config.url, zkConfigProvider});
+  }
+  const provider = zkirDispatchingProvider(wasmKeyMaterialProvider(keysFromZkConfig(zkConfigProvider, kit)));
+  return kit.createProofProviderFromProvingProviders({v8: provider, v9: provider});
+}
+
+type EitherLike<R> = {readonly _tag: 'Left'; readonly left: unknown} | {readonly _tag: 'Right'; readonly right: R};
+
+/** The SDK reports a configuration it cannot honour as an Either; here that is a thrown error. */
+function orThrow<R>(either: EitherLike<R>): R {
+  if (either._tag === 'Left') {
+    throw either.left instanceof Error ? either.left : new Error(String((either.left as {message?: string})?.message ?? either.left));
+  }
+  return either.right;
+}
+
+/**
+ * Build the wallet facade's proving service, with a backend per ledger version.
+ * A transaction is proved by the backend for the ledger version that authored
+ * its bytes, and the boundary between the two is the chain's fork schedule.
+ */
+export function createWalletProvingService(config: ProverConfig, forks: ProtocolVersion.ForkSchedule): WalletProvingService {
+  if (config.type === 'server') {
+    // One proof server under every key: the SDK drives it with each ledger
+    // version on its own side of the fork.
+    return orThrow(makeDefaultVersionedProvingService({provingServerUrl: new URL(config.url)}, forks));
   }
 
-  // This is the SDK-documented path and works in Node, where the package's
-  // proof-worker.js is addressable from node_modules.
+  // The SDK's in-process prover works on bytes and serves both ledger versions
+  // with the same published circuits. It spawns the package's proof-worker.js,
+  // which Node resolves from node_modules.
   if (typeof process !== 'undefined' && process.versions?.node) {
-    return makeWasmProvingService();
+    return orThrow(makeDefaultVersionedProvingService({provers: {v8: {kind: 'wasm'}, v9: {kind: 'wasm'}}}, forks));
   }
 
   // Browser bundles do not emit the SDK's proof-worker.js, so prove through the
-  // installed factory instead (the extension plugs its proof-worker pool in there).
-  const provider = wasmProvingFactory(defaultWasmKeyMaterialProvider());
+  // installed factory instead (the extension plugs its proof-worker pool in there),
+  // framed by each ledger version on its own side of the fork, with that version's
+  // key material. The SDK publishes its circuits as ZKIR v2 for both versions.
+  const v9Keys = sdkKeyMaterial('v9');
+  const v9Provider = wasmProvingFactory(v9Keys, 'v2');
+  const v8Epoch = ProtocolVersion.epochOf(ProtocolVersion.MinSupportedVersion, forks.v9);
+  const v9Epoch = ProtocolVersion.epochOf(forks.v9, forks.v9);
+  const services = orThrow(
+    ProtocolVersion.makeRegistry<VersionProvingServiceEffect>([
+      // A chain born on ledger-v9 has no ledger-v8 epoch to register.
+      ...(forks.v9 > ProtocolVersion.MinSupportedVersion
+        ? [
+            {
+              range: v8Epoch,
+              value: onlyFrom(
+                fromV8ProvingProvider(wasmProvingFactory(sdkKeyMaterial('v8'), 'v2')),
+                isV8Transaction,
+                v8Epoch,
+              ),
+            },
+          ]
+        : []),
+      {
+        range: v9Epoch,
+        value: onlyFrom(
+          // Delegated, not spread: zkir's default provider is a wasm-bindgen class
+          // whose check/prove live on its prototype.
+          fromV9ProvingProvider({
+            check: (preimage, keyLocation) => v9Provider.check(preimage, keyLocation),
+            prove: (preimage, keyLocation, overwriteBindingInput) =>
+              v9Provider.prove(preimage, keyLocation, overwriteBindingInput),
+            lookupKey: (keyLocation) => v9Keys.lookupKey(keyLocation),
+          }),
+          isV9Transaction,
+          v9Epoch,
+        ),
+      },
+    ]),
+  );
+  return wrapVersionedEffectService(makeVersionedProvingServiceEffect(services));
+}
+
+const isV8Transaction = (transaction: AnyVersionUnprovenTransaction): transaction is V8UnprovenTransaction =>
+  transaction instanceof ledger.Transaction;
+
+const isV9Transaction = (transaction: AnyVersionUnprovenTransaction): transaction is V9UnprovenTransaction =>
+  transaction instanceof ledgerV9.Transaction;
+
+/**
+ * Admits only its own ledger version's transactions, as the SDK's registry entries
+ * do: one whose stamp and bytes disagree is refused, never handed to a ledger that
+ * cannot read it.
+ */
+function onlyFrom<TProven extends AnyVersionUnboundTransaction, TUnproven extends AnyVersionUnprovenTransaction>(
+  service: ProvingServiceEffect<TProven, TUnproven>,
+  isOwn: (transaction: AnyVersionUnprovenTransaction) => transaction is TUnproven,
+  epoch: ProtocolVersion.ProtocolVersion.Range,
+): VersionProvingServiceEffect {
   return {
-    prove: (transaction: ledger.UnprovenTransaction) =>
-      transaction.prove(provider, ledger.CostModel.initialCostModel()),
+    prove: (transaction) =>
+      isOwn(transaction)
+        ? service.prove(transaction)
+        : Effect.fail(
+            new ProvingEpochMismatchError({
+              message: `The proving backend registered for protocol versions [${epoch[0]}, ${epoch[1]}) was handed a transaction built by the other ledger version.`,
+              epoch,
+            }),
+          ),
   };
 }
 

@@ -2,12 +2,15 @@
 // the worker asks the pool for key material while it runs, then posts its result.
 // No runtime imports: this module is evaluated inside the proof workers.
 
+import type { ZkirVersion } from '@shieldedtech/moth-browser';
+
 export type ProofOp = 'prove' | 'check';
 
-/** pool → worker: run one proof (or preimage check). */
+/** pool → worker: run one proof (or preimage check) with the zkir for the circuit's IR. */
 export interface ProofJobRequest {
   id: number;
   op: ProofOp;
+  zkir: ZkirVersion;
   preimage: Uint8Array;
   overwriteBindingInput?: bigint;
 }
