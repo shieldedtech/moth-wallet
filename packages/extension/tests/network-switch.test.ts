@@ -219,9 +219,6 @@ describe('saveNetworkConfig', () => {
     await expect(
       saveNetworkConfig({ network: 'stagenet', endpoints: endpoints('devnet'), resyncApproved: true }),
     ).rejects.toThrow('Unsupported network');
-    await expect(
-      saveNetworkConfig({ network: 'local', endpoints: endpoints('undeployed'), resyncApproved: true }),
-    ).rejects.toThrow('Unsupported network');
     await fakeBrowser.storage.session.clear();
     await expect(
       saveNetworkConfig({ network: 'preview', endpoints: endpoints('preview'), resyncApproved: true }),

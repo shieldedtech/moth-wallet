@@ -77,10 +77,33 @@ function isCloneable(value: unknown): boolean {
   }
 }
 
+// Effect's registered key for the Cause a FiberFailure wraps (`Runtime.FiberFailureCauseId`).
+const FIBER_FAILURE_CAUSE = Symbol.for('effect/Runtime/FiberFailure/Cause');
+
+/**
+ * The typed failure inside an Effect FiberFailure, else the value. The SDK rejects with that
+ * wrapper, which hides its error's `_tag` and fields behind a symbol; a defect stays wrapped.
+ */
+function unwrapFiberFailure(value: unknown): unknown {
+  if (!(value instanceof Error)) return value;
+  const failure = firstFailure((value as unknown as Record<symbol, unknown>)[FIBER_FAILURE_CAUSE], 0);
+  return failure instanceof Error ? failure : value;
+}
+
+/** The first `Fail` in a Cause tree, read through Effect's public Cause shape. */
+function firstFailure(cause: unknown, depth: number): unknown {
+  if (cause == null || typeof cause !== 'object' || depth > 8) return undefined;
+  const node = cause as { _tag?: unknown; error?: unknown; left?: unknown; right?: unknown };
+  if (node._tag === 'Fail') return node.error;
+  if (node._tag !== 'Sequential' && node._tag !== 'Parallel') return undefined;
+  return firstFailure(node.left, depth + 1) ?? firstFailure(node.right, depth + 1);
+}
+
 /** Turn a thrown value into a postMessage-safe payload. Errors become the plain
  *  `{name, message, stack, cause?, ...own enumerable props}` shape; other throws
  *  pass through when structured-cloneable, else degrade to `String(value)`. */
-export function serializeHostError(value: unknown): unknown {
+export function serializeHostError(thrown: unknown): unknown {
+  const value = unwrapFiberFailure(thrown);
   if (value instanceof Error) {
     const serialized: SerializedError = {
       name: value.name,
@@ -111,7 +134,9 @@ export function serializeHostError(value: unknown): unknown {
  * cannot arrive. Bigints become decimal strings, the same way every other
  * bigint crosses this channel (TransferRequestDTO.amount and friends).
  */
-export function jsonSafeError(value: unknown, depth = 0): unknown {
+export function jsonSafeError(thrown: unknown, depth = 0): unknown {
+  // The inline dev host skips serializeHostError, so this hop unwraps as well.
+  const value = unwrapFiberFailure(thrown);
   if (!(value instanceof Error) || depth > 3) return jsonSafeValue(value, depth);
   const safe = new Error(value.message, value.cause != null ? { cause: jsonSafeError(value.cause, depth + 1) } : undefined);
   safe.name = value.name;

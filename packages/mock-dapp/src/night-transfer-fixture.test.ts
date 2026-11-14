@@ -1,4 +1,4 @@
-import { Transaction, nativeToken } from '@midnight-ntwrk/ledger-v8';
+import { Transaction, nativeToken } from '@midnightntwrk/ledger-v8';
 import { describe, expect, it } from 'vitest';
 import { NIGHT_TRANSFER_FIXTURE, createUnbalancedNightTransfer } from './night-transfer-fixture';
 

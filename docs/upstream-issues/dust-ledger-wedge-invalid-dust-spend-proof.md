@@ -236,9 +236,10 @@ default 90s; set to `2340000` for the exact 39-minute occurrence above),
 registers, then attempts one spend from the freshly registered wallet and one
 from genesis, and fails loudly — printing a full evidence report — only if
 both spends show the `InvalidDustSpendProof` signature while the indexer
-confirms blocks kept advancing. It has not (yet) reproduced the wedge on
-demand within a short wait; the 39-minute case is the one worth running it
-against.
+confirms blocks kept advancing. Because a positive result leaves the chain
+unusable, it is skipped unless `MOTH_TEST_WEDGE_REPRO=1` is set. It has not
+(yet) reproduced the wedge on demand within a short wait; the 39-minute case
+is the one worth running it against.
 
 ## What Moth changed on the client side in the meantime
 

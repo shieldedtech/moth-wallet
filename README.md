@@ -672,7 +672,7 @@ const prover = new ProofClient('http://localhost:6300');
 | qanet | `https://rpc.qanet.shielded.tools` | `https://indexer.qanet.shielded.tools/api/v4/graphql` | `http://localhost:6300` |
 | undeployed | `ws://localhost:9944` | `http://localhost:8088/api/v4/graphql` | `http://localhost:6300` |
 
-`undeployed` is the local devnet stack — see [§2. Fund the Wallet](#2-fund-the-wallet-local-devnet-only) for bringing one up.
+`local` is midnight-node's [local-env](https://github.com/midnightntwrk/midnight-node/tree/main/local-environment). `undeployed` is the local devnet stack — see [§2. Fund the Wallet](#2-fund-the-wallet-local-devnet-only) for bringing one up.
 
 Mainnet is deliberately absent. Moth is an unaudited reference wallet for development and testing, so it is not a network to use it on: the CLI refuses to run against mainnet, and the extension keeps it out of the picker.
 
