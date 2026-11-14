@@ -15,6 +15,7 @@ const txSummary = vi.fn();
 const makeIntent = vi.fn();
 const provingProviderCheck = vi.fn();
 const provingProviderProve = vi.fn();
+const proverKeyPut = vi.fn();
 vi.mock('../lib/background/offscreen-client', () => ({
   offscreen: {
     balancesGet: (...a: unknown[]) => balancesGet(...(a as [])),
@@ -27,6 +28,7 @@ vi.mock('../lib/background/offscreen-client', () => ({
     makeIntent: (...a: unknown[]) => makeIntent(...(a as [])),
     provingProviderCheck: (...a: unknown[]) => provingProviderCheck(...(a as [])),
     provingProviderProve: (...a: unknown[]) => provingProviderProve(...(a as [])),
+    proverKeyPut: (...a: unknown[]) => proverKeyPut(...(a as [])),
   },
 }));
 
@@ -126,6 +128,7 @@ describe('connector dispatch', () => {
     makeIntent.mockReset();
     provingProviderCheck.mockReset();
     provingProviderProve.mockReset();
+    proverKeyPut.mockReset();
     requestApproval.mockReset();
     prepareApprovalPanel.mockClear();
     beginOp.mockReset();
@@ -237,6 +240,83 @@ describe('connector dispatch', () => {
     expect(provingProviderProve).toHaveBeenCalledWith(expect.objectContaining({overwriteBindingInput: 42n}));
   });
 
+  // A midnight-js 5 dApp's key provider serves its contract's circuits only; the page leaves the
+  // ledger's own circuits (a shielded output the contract creates, say) to the wallet.
+  it("proves the ledger's own circuits without key material from the dApp", async () => {
+    await connect();
+    const serializedPreimage = new Uint8Array([1, 2, 3]);
+    provingProviderProve.mockResolvedValue(new Uint8Array([8, 9]));
+
+    await expect(
+      dispatch(ORIGIN, 'provingProviderProve', [serializedPreimage, 'midnight/zswap/output', null]),
+    ).resolves.toEqual(new Uint8Array([8, 9]));
+    expect(provingProviderProve).toHaveBeenCalledWith(
+      expect.objectContaining({keyLocation: 'midnight/zswap/output', keyMaterial: null}),
+    );
+  });
+
+  it("refuses a contract circuit sent without the dApp's key material", async () => {
+    await connect();
+    const contractCircuit = `contract:${'ab'.repeat(32)}/mint?vk=${'cd'.repeat(32)}`;
+
+    await expect(
+      dispatch(ORIGIN, 'provingProviderProve', [new Uint8Array([1]), contractCircuit, null]),
+    ).rejects.toMatchObject({code: 'InvalidRequest'});
+    expect(provingProviderProve).not.toHaveBeenCalled();
+  });
+
+  // A prover key the page has sent before travels as its hash, scoped to the page's origin.
+  it('forwards a prover key named by its hash, with the origin that sent it', async () => {
+    await connect();
+    const keyMaterial = {zkir: new Uint8Array([4]), verifierKey: new Uint8Array([6]), proverKeySha256: 'ef'.repeat(32)};
+    provingProviderProve.mockResolvedValue(new Uint8Array([8, 9]));
+
+    await dispatch(ORIGIN, 'provingProviderProve', [new Uint8Array([1]), 'counter.increment', keyMaterial]);
+
+    expect(provingProviderProve).toHaveBeenCalledWith(expect.objectContaining({origin: ORIGIN, keyMaterial}));
+  });
+
+  it('forwards a chunk of a prover key with the origin that sent it', async () => {
+    await connect();
+    proverKeyPut.mockResolvedValue(true);
+    const chunk = new Uint8Array([1, 2, 3]);
+
+    await expect(dispatch(ORIGIN, 'proverKeyPut', ['ef'.repeat(32), 'upload-1', 0, 1, chunk])).resolves.toBe(true);
+
+    expect(proverKeyPut).toHaveBeenCalledWith({
+      origin: ORIGIN,
+      sha256: 'ef'.repeat(32),
+      uploadId: 'upload-1',
+      index: 0,
+      count: 1,
+      chunk,
+    });
+  });
+
+  it('refuses a prover key hash that is not a lowercase hex SHA-256', async () => {
+    await connect();
+
+    await expect(
+      dispatch(ORIGIN, 'proverKeyPut', ['EF'.repeat(32), 'upload-1', 0, 1, new Uint8Array([1])]),
+    ).rejects.toMatchObject({code: 'InvalidRequest'});
+    await expect(
+      dispatch(ORIGIN, 'provingProviderProve', [
+        new Uint8Array([1]),
+        'counter.increment',
+        {zkir: new Uint8Array([4]), verifierKey: new Uint8Array([6]), proverKeySha256: 'nope'},
+      ]),
+    ).rejects.toMatchObject({code: 'InvalidRequest'});
+    expect(proverKeyPut).not.toHaveBeenCalled();
+    expect(provingProviderProve).not.toHaveBeenCalled();
+  });
+
+  it('refuses a prover key chunk from an origin that is not connected', async () => {
+    await expect(
+      dispatch(ORIGIN, 'proverKeyPut', ['ef'.repeat(32), 'upload-1', 0, 1, new Uint8Array([1])]),
+    ).rejects.toBeTruthy();
+    expect(proverKeyPut).not.toHaveBeenCalled();
+  });
+
   it('exposes the shielded public keys from the session', async () => {
     await connect();
     const res = (await dispatch(ORIGIN, 'getShieldedAddresses', [])) as {
@@ -339,10 +419,10 @@ describe('connector dispatch', () => {
     expect(txHistoryGet).not.toHaveBeenCalled();
   });
 
-  it('signs data after approval', async () => {
+  it('signs data after approval, naming the scheme', async () => {
     await connect();
     requestApproval.mockResolvedValue(true);
-    const signed = { data: 'hi', signature: 'ab', verifyingKey: 'cd' };
+    const signed = { data: 'hi', scheme: 'schnorr_bip340', signature: 'ab', verifyingKey: 'cd' };
     signData.mockResolvedValue(signed);
     const res = await dispatch(ORIGIN, 'signData', ['hi', { encoding: 'text', keyType: 'unshielded' }]);
     expect(res).toEqual(signed);

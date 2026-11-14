@@ -46,7 +46,7 @@ Every command accepts these. Defaults shown.
 | Flag | Short | Default | Purpose |
 |---|---|---|---|
 | `--output` | `-o` | `text` | `text` or `json` |
-| `--network` | `-n` | `devnet` | One of `devnet`, `preview`, `preprod`, `qanet`, `undeployed`. `undeployed` is the local devnet stack (node on `9944`, indexer on `8088`). Not restricted to that list — endpoints are overridable, so a custom id is a valid target and gets the localhost defaults. `local` was an earlier name for `undeployed` and still resolves to it. `mainnet` parses but every command refuses it: Moth is unaudited and not for real funds. |
+| `--network` | `-n` | `devnet` | One of `devnet`, `preview`, `preprod`, `qanet`, `local`, `undeployed`. `local` is midnight-node's local-env (node on `9933`), `undeployed` the local devnet stack (node on `9944`); both use the indexer on `8088`. Not restricted to that list — endpoints are overridable, so a custom id is a valid target and gets the localhost defaults. `mainnet` parses but every command refuses it: Moth is unaudited and not for real funds. |
 | `--wallet` | `-w` | active | Wallet name from `~/.moth/wallets/` |
 | `--verbose` | `-v` | off | Debug output to stderr |
 | `--timeout` | `-t` | varies | Per-op timeout (seconds) |
@@ -337,6 +337,7 @@ sequenceDiagram
 | `INVALID_PARAMS` | Params didn't pass the verb's parser. |
 | `INVALID_INPUT` | Params parsed but semantically wrong (`--night` without NIGHT, etc.). |
 | `UNAUTHORIZED` | User denied the L3 modal, or auto-approve was disabled. |
+| `PROTOCOL_VERSION_MISMATCH` | The transaction was built for the other side of a ledger fork than the wallet is acting at (`submitTransaction`). Rebuild it for the current version. |
 | `TIMEOUT` | Operation didn't finish within `timeoutSec`. |
 | `INTERNAL_ERROR` | Unhandled exception in the handler. |
 | `CLOSED` | Connection closed mid-call. |

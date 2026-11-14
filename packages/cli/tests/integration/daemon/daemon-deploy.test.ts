@@ -16,9 +16,12 @@ import {
   cleanupTestWallet,
   waitForSynced,
   waitForDust,
+  registerDust,
+  DEPLOY_DUST,
+  FEE_PAYER_NIGHT,
   waitForDaemonStderr,
   runMoth,
-  runMothJson,
+  runFeePaying,
   type DaemonHandle,
 } from './helpers.js';
 const COUNTER_ARTIFACT = process.env.COUNTER_ARTIFACT_PATH;
@@ -30,22 +33,16 @@ describe.skipIf(!DEVNET_URL || !COUNTER_AVAILABLE)('moth daemon deploy — round
   let daemon: DaemonHandle;
 
   beforeAll(async () => {
-    wallet = await setupTestWallet('daemon-deploy', NETWORK);
+    // A deploy's fee outruns what the default airdrop generates in a test's time.
+    wallet = await setupTestWallet('daemon-deploy', NETWORK, FEE_PAYER_NIGHT);
     daemon = await startDaemon(wallet, NETWORK);
     await waitForSynced(wallet, NETWORK);
 
     // Deploy needs DUST to pay its tx fee. Register the wallet's
     // freshly-airdropped NIGHT for dust generation, then wait for
     // accrual before the test runs.
-    const reg = runMothJson([
-      'daemon', 'dust', 'register',
-      '--wallet', wallet,
-      '--network', NETWORK,
-    ]);
-    if (reg.exitCode !== 0) {
-      throw new Error(`dust register failed: ${reg.raw.stderr || reg.raw.stdout}`);
-    }
-    await waitForDust(wallet, NETWORK);
+    await registerDust(wallet, NETWORK);
+    await waitForDust(wallet, NETWORK, 300_000, DEPLOY_DUST);
   }, 900_000);
 
   afterAll(async () => {
@@ -59,7 +56,7 @@ describe.skipIf(!DEVNET_URL || !COUNTER_AVAILABLE)('moth daemon deploy — round
     // the stub fixture below provides them with passthrough
     // implementations that satisfy the constructor's typecheck
     // but never get invoked at deploy time.
-    const deploy = runMothJson<{txHash?: string; contractAddress?: string; status?: string}>([
+    const deploy = await runFeePaying<{txHash?: string; contractAddress?: string; status?: string}>([
       'daemon', 'deploy', COUNTER_ARTIFACT!,
       '--wallet', wallet,
       '--network', NETWORK,

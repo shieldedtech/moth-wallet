@@ -1,3 +1,5 @@
+import {Cause, Option, Runtime} from 'effect';
+
 export type WalletErrorCategory =
   | 'NETWORK_ERROR'
   | 'WALLET_ERROR'
@@ -79,7 +81,9 @@ export class TransactionSubmissionError extends WalletError {
  * the whole chain instead, which is what this returns.
  *
  * `failure` is followed alongside `cause` because Effect's fiber wrappers
- * carry the underlying error under that name.
+ * carry the underlying error under that name, and a `FiberFailure` — what
+ * `Effect.runPromise` rejects with, and what the facade's `submitTransaction`
+ * rethrows — is opened through its own symbol key, since it exposes neither.
  */
 export function errorChainMessages(error: unknown, maxDepth = 8): string[] {
   const messages: string[] = [];
@@ -91,9 +95,23 @@ export function errorChainMessages(error: unknown, maxDepth = 8): string[] {
     // re-flattening an already-flattened error does not stutter.
     if (message && !messages.some((seen) => seen.includes(message))) messages.push(message);
     const wrapper = current as {cause?: unknown; failure?: unknown};
-    current = wrapper.cause ?? wrapper.failure;
+    current = wrapper.cause ?? wrapper.failure ?? fiberFailureError(current);
   }
   return messages;
+}
+
+/**
+ * The error a FiberFailure wraps, or undefined for anything else. Its message
+ * is already the wrapped error's, so the walk continues from the error itself
+ * and the only thing gained is its `cause` chain.
+ */
+function fiberFailureError(value: unknown): unknown {
+  if (!Runtime.isFiberFailure(value)) return undefined;
+  const cause = value[Runtime.FiberFailureCauseId];
+  const failure = Cause.failureOption(cause);
+  if (Option.isSome(failure)) return failure.value;
+  const defect = Cause.dieOption(cause);
+  return Option.isSome(defect) ? defect.value : undefined;
 }
 
 /**

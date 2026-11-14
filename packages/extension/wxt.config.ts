@@ -63,20 +63,23 @@ export default defineConfig({
       ...(browser === 'firefox' ? [] : ['sidePanel', 'offscreen']),
     ],
     host_permissions: [
+      // The hosted presets: preview is still on midnight.network, the rest are on
+      // shielded.tools. Drop midnight.network only once no preset uses it.
       'https://*.midnight.network/*',
+      'https://*.shielded.tools/*',
       'https://midnight-s3-fileshare-dev-eu-west-1.s3.eu-west-1.amazonaws.com/*',
       'http://localhost/*',
     ],
     web_accessible_resources: [{ resources: ['injected.js'], matches: ['<all_urls>'] }],
     content_security_policy: {
-      // wasm-unsafe-eval: ledger-v8 loads its WASM in the offscreen document's
-      // dedicated worker (an extension page context, so extension_pages applies).
+      // wasm-unsafe-eval: the ledger packages load their WASM in the offscreen
+      // document's dedicated worker (an extension page context, so extension_pages applies).
       extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'",
     },
   }),
   vite: () => ({
     plugins: [
-      // ledger-v8 ships WASM via the ESM-integration proposal, which emits a
+      // The ledger packages ship WASM via the ESM-integration proposal, which emits a
       // top-level await. A Chrome MV3 service worker cannot have TLA in its
       // module graph, so the WASM runs in the offscreen document's worker
       // instead; the background stays a classic (WASM-free) service worker.
