@@ -18,9 +18,11 @@ A prompt raised by a page that was then reloaded, navigated away or closed
 stayed queued ahead of every later request. The content script now holds a port
 for the life of its document, and when it closes the background rejects that
 document's pending approvals, closes their popup windows and surfaces the next
-request. The approval screen also answers the request it is displaying rather
-than the id the panel last sent, so a decision can never land on a request that
-replaced the one on screen.
+request. A prompt the page asked for before it went away, but which was still
+being prepared (a transaction summary loading, the panel opening), is refused
+rather than queued. The approval screen also answers the request it is
+displaying rather than the id the panel last sent, so a decision can never land
+on a request that replaced the one on screen.
 
 Opening another extension's side panel covers Moth's panel without closing it,
 so the panel kept its port and the background took a prompt sent there as shown

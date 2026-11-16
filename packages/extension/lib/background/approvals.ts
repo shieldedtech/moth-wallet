@@ -30,6 +30,11 @@ const resolvers = new Map<
 >();
 let activeApprovalId: string | null = null;
 
+/** Connector requests each page document has in flight (see trackRequester). */
+const requestsInFlight = new Map<string, number>();
+/** Documents that went away while a request of theirs was still in flight. */
+const goneRequesters = new Set<string>();
+
 function sessionStore(): Browser.storage.StorageArea {
   return browser.storage.session as Browser.storage.StorageArea;
 }
@@ -91,6 +96,9 @@ export async function requestApproval(
   preparedPanel?: Promise<boolean>,
   requester?: string,
 ): Promise<boolean> {
+  // The page can go away during the caller's own awaits, before this prompt exists to be dropped.
+  if (requester !== undefined && goneRequesters.has(requester)) return false;
+
   const id = crypto.randomUUID();
   const approval: PendingApproval = { id, kind, origin, payload, createdAt: Date.now(), requester };
 
@@ -122,11 +130,13 @@ export async function requestApproval(
         requester,
       });
     });
+    // The page may also have gone during the awaits above.
+    if (requester !== undefined && goneRequesters.has(requester)) resolveApproval(id, false);
     // A dApp can request several approvals at once (e.g. deriveAppSecret for
     // multiple domains). Surface only when nothing else is mid-decision —
     // preempting would blank the approval the user is looking at and orphan the
     // others. Queued approvals drain FIFO as each resolves (see finally).
-    if (activeApprovalId === null) surfaceApproval(id);
+    if (activeApprovalId === null && !decided) surfaceApproval(id);
     if (heldOp) endOp();
     return await decision;
   } finally {
@@ -174,9 +184,32 @@ export function requesterKey(
 
 /** Drop every prompt a page document raised: nothing is left to deliver its answer to. */
 export function rejectApprovalsFrom(requester: string): void {
+  if (requestsInFlight.has(requester)) goneRequesters.add(requester);
   for (const [, entry] of resolvers) {
     if (entry.requester === requester) entry.resolve(false);
   }
+}
+
+/**
+ * Count a connector request from a page document until the returned release runs, so
+ * a prompt it raises after its page is gone is refused. Only a Chrome document id is
+ * tracked: without one (Firefox) a reloaded page reuses the key.
+ */
+export function trackRequester(requester: string | undefined): () => void {
+  if (requester === undefined || requester.endsWith('/')) return () => {};
+  requestsInFlight.set(requester, (requestsInFlight.get(requester) ?? 0) + 1);
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    const left = (requestsInFlight.get(requester) ?? 1) - 1;
+    if (left > 0) {
+      requestsInFlight.set(requester, left);
+    } else {
+      requestsInFlight.delete(requester);
+      goneRequesters.delete(requester);
+    }
+  };
 }
 
 /** A page that calls the connector holds this port for the life of its document;

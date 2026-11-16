@@ -44,6 +44,7 @@ import {
   getPendingApproval,
   resolveApproval,
   requesterKey,
+  trackRequester,
 } from './approvals';
 import { beginOp, endOp } from './sync-service';
 import { recordActivity } from './auto-lock';
@@ -273,6 +274,7 @@ export async function dispatch(
   requester?: string,
 ): Promise<unknown> {
   const preparedPanel = APPROVAL_METHODS.has(method) ? prepareApprovalPanel(senderTabId) : undefined;
+  const releaseRequester = trackRequester(requester);
   beginOp();
   try {
     const result = await dispatchMethod(origin, method, params, senderTabId, preparedPanel, requester);
@@ -282,6 +284,7 @@ export async function dispatch(
     return result;
   } finally {
     endOp();
+    releaseRequester();
   }
 }
 

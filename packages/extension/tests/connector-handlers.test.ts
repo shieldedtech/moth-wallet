@@ -35,6 +35,8 @@ vi.mock('../lib/background/offscreen-client', () => ({
 const deriveAppSecret = vi.fn();
 
 const requestApproval = vi.fn<() => Promise<boolean>>();
+const releaseRequester = vi.fn();
+const trackRequester = vi.fn<(requester?: string) => () => void>(() => releaseRequester);
 const preparedPanel = Promise.resolve(true);
 const prepareApprovalPanel = vi.fn<(tabId?: number) => Promise<boolean>>(() => preparedPanel);
 vi.mock('../lib/background/approvals', () => ({
@@ -44,6 +46,7 @@ vi.mock('../lib/background/approvals', () => ({
   getPendingApproval: vi.fn(),
   resolveApproval: vi.fn(),
   hasPendingApproval: vi.fn(() => false),
+  trackRequester: (requester?: string) => trackRequester(requester),
 }));
 
 // beginOp/endOp only bracket in-flight ops (keepalive + idle teardown); stub
@@ -131,6 +134,8 @@ describe('connector dispatch', () => {
     makeIntent.mockReset();
     provingProviderCheck.mockReset();
     provingProviderProve.mockReset();
+    trackRequester.mockClear();
+    releaseRequester.mockReset();
     proverKeyPut.mockReset();
     requestApproval.mockReset();
     prepareApprovalPanel.mockClear();
@@ -458,6 +463,24 @@ describe('connector dispatch', () => {
     );
     // The origin the secret is bound to is the sender's, never a parameter.
     expect(deriveAppSecret).toHaveBeenCalledWith({ seedHex: SESSION.seedHex, origin: ORIGIN, domain: 'dust-dice-seat:1' });
+  });
+
+  // A page that goes away while its request awaits other work (here the summary shown
+  // on the prompt) must still have that prompt refused, so the page counts until the end.
+  it('counts a page\'s request as in flight from entry until it settles', async () => {
+    await connect();
+    let finishSummary!: (summary: unknown) => void;
+    txSummary.mockReturnValue(new Promise((resolve) => (finishSummary = resolve)));
+    requestApproval.mockResolvedValue(false);
+
+    const pending = dispatch(ORIGIN, 'balanceSealedTransaction', ['abcd'], 7, '7/0/doc-1');
+    expect(trackRequester).toHaveBeenCalledWith('7/0/doc-1');
+    await vi.waitFor(() => expect(txSummary).toHaveBeenCalled());
+    expect(releaseRequester).not.toHaveBeenCalled();
+
+    finishSummary(NIGHT_SPEND);
+    await expect(pending).rejects.toMatchObject({ code: 'Rejected' });
+    expect(releaseRequester).toHaveBeenCalledTimes(1);
   });
 
   it('rejects deriveAppSecret when the user declines, without deriving', async () => {

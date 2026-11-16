@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing';
 
 const hasVisiblePanel = vi.fn(() => false);
@@ -28,6 +28,7 @@ import {
   requestApproval,
   requesterKey,
   resolveApproval,
+  trackRequester,
   watchRequester,
 } from '../lib/background/approvals';
 
@@ -45,6 +46,17 @@ describe('approval surfaces', () => {
     // Approval state is module-level; a test that leaves one pending must not
     // hold the next test's prompt in the queue.
     rejectPendingApprovals();
+  });
+
+  // Requests in flight are module-level too; a failed test must not leave its page tracked.
+  const releases: Array<() => void> = [];
+  const track = (requester: string | undefined) => {
+    const release = trackRequester(requester);
+    releases.push(release);
+    return release;
+  };
+  afterEach(() => {
+    for (const release of releases.splice(0)) release();
   });
 
   // A dApp once held the wallet unlocked by leaving an approval unanswered:
@@ -203,6 +215,79 @@ describe('approval surfaces', () => {
     onDisconnect!();
     await expect(pending).resolves.toBe(false);
     expect(hasPendingApproval()).toBe(false);
+  });
+
+  // The prompt is registered only after its storage write and panel open settle; a
+  // port closing before then found nothing to drop and the prompt stranded the queue.
+  it('drops a prompt whose page goes away while it is still being raised', async () => {
+    const ID1 = '00000000-0000-4000-8000-000000000001';
+    vi.spyOn(crypto, 'randomUUID').mockReturnValueOnce(ID1);
+    hasVisiblePanel.mockReturnValue(true);
+    let onDisconnect: (() => void) | undefined;
+    const port = {
+      sender: { tab: { id: 7 }, frameId: 0, documentId: 'doc-1' },
+      onDisconnect: { addListener: (listener: () => void) => void (onDisconnect = listener) },
+    };
+    watchRequester(port as never);
+    track(requesterKey(port.sender));
+
+    const pending = requestApproval('connect', 'https://dapp.example', {}, 7, undefined, requesterKey(port.sender));
+    onDisconnect!();
+    await expect(pending).resolves.toBe(false);
+    expect(hasPendingApproval()).toBe(false);
+    expect(broadcastApproval).not.toHaveBeenCalledWith(ID1);
+  });
+
+  // A handler can await other work first (a balance request's summary takes up to a
+  // minute), so the page may be gone before the prompt is even asked for.
+  it('raises nothing for a page that went away before the prompt was asked for', async () => {
+    const create = vi.spyOn(fakeBrowser.windows, 'create');
+    track('7/0/doc-1');
+    rejectApprovalsFrom('7/0/doc-1');
+
+    await expect(requestApproval('balance', 'https://dapp.example', {}, 7, undefined, '7/0/doc-1')).resolves.toBe(false);
+    expect(hasPendingApproval()).toBe(false);
+    expect(create).not.toHaveBeenCalled();
+    expect(broadcastApproval).not.toHaveBeenCalled();
+    expect(await fakeBrowser.storage.session.get()).toEqual({});
+  });
+
+  it('forgets a gone page once its last request finishes', async () => {
+    hasVisiblePanel.mockReturnValue(true);
+    const first = track('7/0/doc-1');
+    const second = track('7/0/doc-1');
+    rejectApprovalsFrom('7/0/doc-1');
+    first();
+    first();
+    await expect(requestApproval('connect', 'https://dapp.example', {}, 7, undefined, '7/0/doc-1')).resolves.toBe(false);
+
+    second();
+    const pending = requestApproval('connect', 'https://dapp.example', {}, 7, undefined, '7/0/doc-1');
+    await vi.waitFor(() => expect(hasPendingApproval()).toBe(true));
+    rejectPendingApprovals();
+    await expect(pending).resolves.toBe(false);
+  });
+
+  it('remembers no page that went away with nothing in flight', async () => {
+    hasVisiblePanel.mockReturnValue(true);
+    rejectApprovalsFrom('7/0/doc-1');
+    track('7/0/doc-1');
+    const pending = requestApproval('connect', 'https://dapp.example', {}, 7, undefined, '7/0/doc-1');
+    await vi.waitFor(() => expect(hasPendingApproval()).toBe(true));
+    rejectPendingApprovals();
+    await expect(pending).resolves.toBe(false);
+  });
+
+  // Without a document id a reload reuses the tab-and-frame key, so a mark left by the
+  // old page would refuse the new page's prompts.
+  it('does not mark a page that has no document id', async () => {
+    hasVisiblePanel.mockReturnValue(true);
+    track('7/0/');
+    rejectApprovalsFrom('7/0/');
+    const pending = requestApproval('connect', 'https://dapp.example', {}, 7, undefined, '7/0/');
+    await vi.waitFor(() => expect(hasPendingApproval()).toBe(true));
+    rejectPendingApprovals();
+    await expect(pending).resolves.toBe(false);
   });
 });
 
