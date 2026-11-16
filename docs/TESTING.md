@@ -540,6 +540,8 @@ In terminal A:
 
 Beyond manual smokes, the daemon has a vitest integration suite at `packages/cli/tests/integration/daemon/`. Eight test files, 20 tests total.
 
+A ninth file in that directory, `dust-wedge-repro.test.ts`, is not part of the suite. A positive result leaves the chain unusable, so it is skipped unless `MOTH_TEST_WEDGE_REPRO=1` is set. Its header says when to run it.
+
 ### Setup
 
 ```bash

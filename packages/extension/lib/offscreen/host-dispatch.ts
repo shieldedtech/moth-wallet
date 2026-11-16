@@ -13,14 +13,19 @@
 import type { HostMethod, MethodData, MethodResult } from './worker-rpc';
 import { decodeBigintJson, encodeBigintJson } from '../messaging/bigint-json';
 import type {
+  ProverKeyPutPayload,
   ProvingProviderCheckPayload,
   ProvingProviderProvePayload,
 } from './messaging';
+import { ProverKeyCache } from './prover-key-cache';
 // Safe to import for real, unlike `wallet-host`: every Cardano entry point in
 // there imports Lucid dynamically, so this module still loads no WASM.
 import * as cardano from './cardano-host';
 
 type Host = typeof import('./wallet-host');
+
+/** One per wallet host, so a key a page sent once serves every later proof of its circuit. */
+export const proverKeys = new ProverKeyCache();
 type Dispatch = {
   [M in HostMethod]: (host: Host, data: MethodData<M>) => Promise<MethodResult<M>> | MethodResult<M>;
 };
@@ -92,7 +97,7 @@ export const hostDispatch: Dispatch = {
       d.network,
       payload.serializedPreimage,
       payload.keyLocation,
-      payload.keyMaterial,
+      proverKeys.resolve(payload.origin, payload.keyMaterial),
     );
     return encodeBigintJson(result);
   },
@@ -102,10 +107,14 @@ export const hostDispatch: Dispatch = {
       d.network,
       payload.serializedPreimage,
       payload.keyLocation,
-      payload.keyMaterial,
+      proverKeys.resolve(payload.origin, payload.keyMaterial),
       payload.overwriteBindingInput,
     );
     return encodeBigintJson(result);
+  },
+  'os/proverKeyPut': async (_host, d) => {
+    const { origin, ...part } = decodeBigintJson<ProverKeyPutPayload>(d.payloadJson);
+    return proverKeys.put(origin, part);
   },
   'os/balanceTransaction': (host, d) =>
     host.balanceTransaction(d.seedHex, d.walletName, d.network, d.txHex, d.sealed, d.payFees),

@@ -27,7 +27,13 @@ import {
   serializeError,
 } from '../connector/errors';
 import { NOT_IMPLEMENTED_METHODS, isProtocolKeyLocation, type ConnectorMethod } from '../connector/constants';
-import type { TransferRequestDTO, SwapInputDTO, ProvingKeyMaterialDTO, TxSummaryDTO } from '../offscreen/messaging';
+import type {
+  TransferRequestDTO,
+  SwapInputDTO,
+  ProvingKeyMaterialDTO,
+  ProvingKeyMaterialRefDTO,
+  TxSummaryDTO,
+} from '../offscreen/messaging';
 import { getSettings, getNetworkConfig } from './settings';
 import { getSession, type Session } from './session';
 import { isAllowed, grant, revoke, listAll } from './permissions';
@@ -62,9 +68,11 @@ const APPROVAL_METHODS = new Set<ConnectorMethod>([
 // unlocked wallet instead of starting parallel offscreen sync requests.
 const pendingBalanceSnapshots = new Map<string, Promise<WalletBalances>>();
 
+// Rejects an empty transaction here, before it can reach an approval prompt or
+// start a wallet sync, rather than letting the ledger fail on it later.
 function assertTxHex(hex: string): string {
-  if (!/^[0-9a-fA-F]*$/.test(hex) || hex.length % 2 !== 0) {
-    throw connectorError('InvalidRequest', 'Transaction must be a hex string');
+  if (!/^[0-9a-fA-F]+$/.test(hex) || hex.length % 2 !== 0) {
+    throw connectorError('InvalidRequest', 'Transaction must be a non-empty hex string');
   }
   return hex;
 }
@@ -76,18 +84,30 @@ function assertBytes(value: unknown, label: string): Uint8Array {
   return value;
 }
 
-function assertKeyMaterial(value: unknown, keyLocation: string): ProvingKeyMaterialDTO | null {
+function assertSha256(value: unknown, label: string): string {
+  if (typeof value !== 'string' || !/^[0-9a-f]{64}$/.test(value)) {
+    throw connectorError('InvalidRequest', `${label} must be a lowercase hex SHA-256`);
+  }
+  return value;
+}
+
+function assertKeyMaterial(
+  value: unknown,
+  keyLocation: string,
+): ProvingKeyMaterialDTO | ProvingKeyMaterialRefDTO | null {
   // The wallet supplies the ledger's own circuits; a dApp sends the keys of its contract's.
   if (value === null && isProtocolKeyLocation(keyLocation)) return null;
   if (!value || typeof value !== 'object') {
     throw connectorError('InvalidRequest', 'Proving key material is required');
   }
-  const material = value as Partial<ProvingKeyMaterialDTO>;
-  return {
-    zkir: assertBytes(material.zkir, 'ZKIR'),
-    proverKey: assertBytes(material.proverKey, 'Prover key'),
-    verifierKey: assertBytes(material.verifierKey, 'Verifier key'),
-  };
+  const material = value as Partial<ProvingKeyMaterialDTO & ProvingKeyMaterialRefDTO>;
+  const zkir = assertBytes(material.zkir, 'ZKIR');
+  const verifierKey = assertBytes(material.verifierKey, 'Verifier key');
+  // A prover key the page has sent before travels as its hash only.
+  if (material.proverKey === undefined && material.proverKeySha256 !== undefined) {
+    return { zkir, verifierKey, proverKeySha256: assertSha256(material.proverKeySha256, 'Prover key hash') };
+  }
+  return { zkir, verifierKey, proverKey: assertBytes(material.proverKey, 'Prover key') };
 }
 
 function toWsUrl(url: string): string {
@@ -346,7 +366,7 @@ async function dispatchMethod(
       const keyMaterial = assertKeyMaterial(params[2], keyLocation);
       const network = await getNetworkConfig();
       if (method === 'provingProviderCheck') {
-        return offscreen.provingProviderCheck({network, serializedPreimage, keyLocation, keyMaterial});
+        return offscreen.provingProviderCheck({network, origin, serializedPreimage, keyLocation, keyMaterial});
       }
       const overwriteBindingInput = params[3];
       if (overwriteBindingInput !== undefined && typeof overwriteBindingInput !== 'bigint') {
@@ -354,10 +374,30 @@ async function dispatchMethod(
       }
       return offscreen.provingProviderProve({
         network,
+        origin,
         serializedPreimage,
         keyLocation,
         keyMaterial,
         overwriteBindingInput,
+      });
+    }
+
+    case 'proverKeyPut': {
+      await requireConnected(origin);
+      const [sha256, uploadId, index, count, chunk] = params;
+      if (typeof uploadId !== 'string' || uploadId === '' || uploadId.length > 64) {
+        throw connectorError('InvalidRequest', 'Prover key upload needs an upload id');
+      }
+      if (!Number.isInteger(index) || !Number.isInteger(count)) {
+        throw connectorError('InvalidRequest', 'Prover key upload needs an integer chunk index and count');
+      }
+      return offscreen.proverKeyPut({
+        origin,
+        sha256: assertSha256(sha256, 'Prover key hash'),
+        uploadId,
+        index: index as number,
+        count: count as number,
+        chunk: assertBytes(chunk, 'Prover key chunk'),
       });
     }
 

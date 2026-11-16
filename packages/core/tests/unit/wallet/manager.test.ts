@@ -271,16 +271,14 @@ describe('WalletManager keystore KDF upgrade', () => {
     });
 });
 
-// `local` was a duplicate preset for the same local devnet stack as `undeployed`,
-// on a node port the stack does not listen on. Wallets created while it was
-// offered still carry it, and on unlock a wallet's own network becomes the
-// wallet-wide selection — so a stale id here reasserts itself over a migrated
-// selection every time the wallet is opened.
-describe('WalletManager legacy network ids', () => {
+// `local` (midnight-node local-env) and `undeployed` (the dev stack) are separate
+// chains. `local` was once folded into `undeployed`, which put local-env wallets
+// on the wrong address prefix — nothing may merge the two again.
+describe('WalletManager local network', () => {
   const encoder = new TextEncoder();
   const decoder = new TextDecoder();
 
-  async function storageWithLegacyWallet(meta: Record<string, unknown> = {}): Promise<MemoryStorage> {
+  async function storageWithLocalWallet(meta: Record<string, unknown> = {}): Promise<MemoryStorage> {
     const storage = new MemoryStorage();
     await storage.write(
       'config.json',
@@ -304,93 +302,32 @@ describe('WalletManager legacy network ids', () => {
     return storage;
   }
 
-  it('reports a wallet stored on local as being on undeployed', async () => {
-    const manager = new WalletManager(await storageWithLegacyWallet());
+  it('reports a wallet stored on local as being on local, with its address', async () => {
+    const manager = new WalletManager(await storageWithLocalWallet());
 
     const [wallet] = await manager.list();
 
-    expect(wallet!.network).toBe('undeployed');
+    expect(wallet!.network).toBe('local');
+    expect(wallet!.address).toBe('mn_addr_local1example');
   });
 
-  it('carries the birthday across the rename', async () => {
-    // Birthdays are keyed by network id and gate the pre-seed shortcut
-    // (`reference.height <= birthday`). Left under the old key, the wallet has
-    // no birthday on the network it now reports, and every sync walks genesis.
-    const storage = await storageWithLegacyWallet({ birthdays: { local: 4200 } });
+  it('keeps local and undeployed birthdays apart', async () => {
+    const storage = await storageWithLocalWallet({ birthdays: { local: 100, undeployed: 5000 } });
     const manager = new WalletManager(storage);
 
     await manager.setNetwork('bob', 'preprod');
 
     const stored = JSON.parse(decoder.decode((await storage.read('wallets/bob.meta'))!));
-    expect(stored.birthdays.undeployed).toBe(4200);
-    expect(stored.birthdays.local).toBeUndefined();
+    expect(stored.birthdays).toMatchObject({ local: 100, undeployed: 5000 });
   });
 
-  it('treats a switch to the retired id as staying put', async () => {
-    // Migration is lazy: the record on disk is rewritten only when something
-    // else is already saving it, so the stored bytes keep the old id and the
-    // wallet is still reported on the new one. What must NOT happen is the
-    // switch being taken as a real network change, which discards the address
-    // and the birthday.
-    const storage = await storageWithLegacyWallet({ birthdays: { local: 4200 } });
-    const manager = new WalletManager(storage);
-
-    await manager.setNetwork('bob', 'local');
-
-    const stored = JSON.parse(decoder.decode((await storage.read('wallets/bob.meta'))!));
-    expect(stored.birthdays).toEqual({ local: 4200 });
-    expect((await manager.list())[0]!.network).toBe('undeployed');
-  });
-
-  it('re-keys a birthday held by a wallet that has since moved elsewhere', async () => {
-    // The re-key must not be gated on the wallet's OWN network having been
-    // renamed. This wallet was created on the local stack and has since moved to
-    // preprod, so it still holds the old key while reporting preprod. Left
-    // there, the return trip below looks like a first arrival and gets stamped
-    // with the tip passed in — a birthday far above the truth, which lets the
-    // pre-seed guard accept a reference newer than the wallet's own history.
-    const storage = await storageWithLegacyWallet({ network: 'preprod', birthdays: { local: 100 } });
-    const manager = new WalletManager(storage);
-
-    await manager.setNetwork('bob', 'undeployed', 'addr', 5000);
-
-    const stored = JSON.parse(decoder.decode((await storage.read('wallets/bob.meta'))!));
-    expect(stored.birthdays).toEqual({ undeployed: 100 });
-  });
-
-  it('keeps the lower height when both names carry a birthday', async () => {
-    // Both `local` and `undeployed` were offered at once, so a wallet can hold a
-    // birthday under each. Insertion order deciding it would pick either; lower
-    // is the safe direction, because too low only costs scanning.
-    const storage = await storageWithLegacyWallet({ birthdays: { local: 100, undeployed: 5000 } });
-    const manager = new WalletManager(storage);
-
-    await manager.setNetwork('bob', 'preprod');
-
-    const stored = JSON.parse(decoder.decode((await storage.read('wallets/bob.meta'))!));
-    expect(stored.birthdays.undeployed).toBe(100);
-  });
-
-  it('does not report an address whose prefix names the old network', async () => {
-    // `mn_addr_local1…` shown against a wallet reported on `undeployed` is an
-    // invitation to receive on the wrong encoding. "(locked)" is honest and is
-    // already what the list renders for a wallet with no stored address.
-    const manager = new WalletManager(await storageWithLegacyWallet());
-
-    const [wallet] = await manager.list();
-
-    expect(wallet!.network).toBe('undeployed');
-    expect(wallet!.address).not.toContain('local');
-    expect(wallet!.address).toBe('(locked)');
-  });
-
-  it('never persists the retired id for a newly created wallet', async () => {
+  it('persists local for a newly created wallet', async () => {
     const storage = new MemoryStorage();
     const manager = new WalletManager(storage);
 
     await manager.generate('carol', 'passphrase-long-enough', 'local');
 
     const stored = JSON.parse(decoder.decode((await storage.read('wallets/carol.meta'))!));
-    expect(stored.network).toBe('undeployed');
+    expect(stored.network).toBe('local');
   });
 });

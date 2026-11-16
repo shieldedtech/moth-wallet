@@ -1535,6 +1535,9 @@
   "network_authHeaderValue": {
     "message": "Valor de la cabecera"
   },
+  "network_descLocal": {
+    "message": "local-env de midnight-node en esta máquina"
+  },
   "network_descUndeployed": {
     "message": "Stack devnet local en este equipo"
   },

@@ -108,12 +108,19 @@ describe('HOST_METHODS', () => {
     'os/deriveAppSecret',
     'os/provingProviderCheck',
     'os/provingProviderProve',
+    'os/proverKeyPut',
     'os/balanceTransaction',
     'os/makeIntent',
   ];
 
   it('covers every request method exactly once', () => {
     expect([...HOST_METHODS].sort()).toEqual([...EXPECTED].sort());
+  });
+
+  // Each worker holds its own prover keys, so a key must reach the worker that proves with it.
+  it('sends prover keys to the worker that proves', () => {
+    expect(laneFor('os/proverKeyPut')).toBe(laneFor('os/provingProviderCheck'));
+    expect(laneFor('os/proverKeyPut')).toBe(laneFor('os/provingProviderProve'));
   });
 
   it('excludes the ping and the events', () => {

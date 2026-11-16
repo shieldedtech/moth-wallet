@@ -15,6 +15,7 @@ const txSummary = vi.fn();
 const makeIntent = vi.fn();
 const provingProviderCheck = vi.fn();
 const provingProviderProve = vi.fn();
+const proverKeyPut = vi.fn();
 vi.mock('../lib/background/offscreen-client', () => ({
   offscreen: {
     balancesGet: (...a: unknown[]) => balancesGet(...(a as [])),
@@ -27,6 +28,7 @@ vi.mock('../lib/background/offscreen-client', () => ({
     makeIntent: (...a: unknown[]) => makeIntent(...(a as [])),
     provingProviderCheck: (...a: unknown[]) => provingProviderCheck(...(a as [])),
     provingProviderProve: (...a: unknown[]) => provingProviderProve(...(a as [])),
+    proverKeyPut: (...a: unknown[]) => proverKeyPut(...(a as [])),
   },
 }));
 
@@ -59,8 +61,22 @@ import { saveSession, type Session } from '../lib/background/session';
 import { updateSettings } from '../lib/background/settings';
 import { serializeBalances } from '../lib/messaging/protocol';
 import { CONNECT_CAN, CONNECT_CANT } from '../components/screens/Approval';
+import {
+  EXTENSION_METHODS,
+  IMPLEMENTED_METHODS,
+  PROVING_PROVIDER_METHODS,
+  type ConnectorMethod,
+} from '../lib/connector/constants';
 
 const ORIGIN = 'https://dapp.example';
+
+// Every method a page can reach except the two that work before a grant:
+// hintUsage asks for one, and getConnectionStatus reports whether there is one.
+// Derived from the constants so a newly added method is gated by default.
+const UNGATED = new Set<ConnectorMethod>(['hintUsage', 'getConnectionStatus']);
+const GATED_METHODS = [...IMPLEMENTED_METHODS, ...EXTENSION_METHODS, ...PROVING_PROVIDER_METHODS].filter(
+  (method) => !UNGATED.has(method),
+);
 
 const SESSION: Session = {
   walletName: 'alice',
@@ -112,6 +128,7 @@ describe('connector dispatch', () => {
     makeIntent.mockReset();
     provingProviderCheck.mockReset();
     provingProviderProve.mockReset();
+    proverKeyPut.mockReset();
     requestApproval.mockReset();
     prepareApprovalPanel.mockClear();
     beginOp.mockReset();
@@ -162,11 +179,6 @@ describe('connector dispatch', () => {
     requestApproval.mockResolvedValue(false);
     await expect(dispatch(ORIGIN, 'hintUsage', [['getShieldedBalances']])).rejects.toMatchObject({ code: 'Rejected' });
     expect(await isAllowed(ORIGIN)).toBe(false);
-  });
-
-  it('gates data methods on prior connect (permission)', async () => {
-    await saveSession(SESSION); // unlocked but not granted
-    await expect(dispatch(ORIGIN, 'getShieldedBalances', [])).rejects.toMatchObject({ code: 'PermissionRejected' });
   });
 
   it('reports connection status', async () => {
@@ -251,6 +263,58 @@ describe('connector dispatch', () => {
       dispatch(ORIGIN, 'provingProviderProve', [new Uint8Array([1]), contractCircuit, null]),
     ).rejects.toMatchObject({code: 'InvalidRequest'});
     expect(provingProviderProve).not.toHaveBeenCalled();
+  });
+
+  // A prover key the page has sent before travels as its hash, scoped to the page's origin.
+  it('forwards a prover key named by its hash, with the origin that sent it', async () => {
+    await connect();
+    const keyMaterial = {zkir: new Uint8Array([4]), verifierKey: new Uint8Array([6]), proverKeySha256: 'ef'.repeat(32)};
+    provingProviderProve.mockResolvedValue(new Uint8Array([8, 9]));
+
+    await dispatch(ORIGIN, 'provingProviderProve', [new Uint8Array([1]), 'counter.increment', keyMaterial]);
+
+    expect(provingProviderProve).toHaveBeenCalledWith(expect.objectContaining({origin: ORIGIN, keyMaterial}));
+  });
+
+  it('forwards a chunk of a prover key with the origin that sent it', async () => {
+    await connect();
+    proverKeyPut.mockResolvedValue(true);
+    const chunk = new Uint8Array([1, 2, 3]);
+
+    await expect(dispatch(ORIGIN, 'proverKeyPut', ['ef'.repeat(32), 'upload-1', 0, 1, chunk])).resolves.toBe(true);
+
+    expect(proverKeyPut).toHaveBeenCalledWith({
+      origin: ORIGIN,
+      sha256: 'ef'.repeat(32),
+      uploadId: 'upload-1',
+      index: 0,
+      count: 1,
+      chunk,
+    });
+  });
+
+  it('refuses a prover key hash that is not a lowercase hex SHA-256', async () => {
+    await connect();
+
+    await expect(
+      dispatch(ORIGIN, 'proverKeyPut', ['EF'.repeat(32), 'upload-1', 0, 1, new Uint8Array([1])]),
+    ).rejects.toMatchObject({code: 'InvalidRequest'});
+    await expect(
+      dispatch(ORIGIN, 'provingProviderProve', [
+        new Uint8Array([1]),
+        'counter.increment',
+        {zkir: new Uint8Array([4]), verifierKey: new Uint8Array([6]), proverKeySha256: 'nope'},
+      ]),
+    ).rejects.toMatchObject({code: 'InvalidRequest'});
+    expect(proverKeyPut).not.toHaveBeenCalled();
+    expect(provingProviderProve).not.toHaveBeenCalled();
+  });
+
+  it('refuses a prover key chunk from an origin that is not connected', async () => {
+    await expect(
+      dispatch(ORIGIN, 'proverKeyPut', ['ef'.repeat(32), 'upload-1', 0, 1, new Uint8Array([1])]),
+    ).rejects.toBeTruthy();
+    expect(proverKeyPut).not.toHaveBeenCalled();
   });
 
   it('exposes the shielded public keys from the session', async () => {
@@ -355,11 +419,6 @@ describe('connector dispatch', () => {
     expect(txHistoryGet).not.toHaveBeenCalled();
   });
 
-  it('gates getTxHistory on prior connect (permission)', async () => {
-    await saveSession(SESSION); // unlocked but not granted
-    await expect(dispatch(ORIGIN, 'getTxHistory', [0, 10])).rejects.toMatchObject({ code: 'PermissionRejected' });
-  });
-
   it('signs data after approval, naming the scheme', async () => {
     await connect();
     requestApproval.mockResolvedValue(true);
@@ -405,13 +464,6 @@ describe('connector dispatch', () => {
     await expect(
       dispatch(ORIGIN, 'signData', ['zz', { encoding: 'hex', keyType: 'unshielded' }]),
     ).rejects.toMatchObject({ code: 'InvalidRequest', reason: 'Invalid hex data' });
-  });
-
-  it('gates signData on prior connect (permission)', async () => {
-    await saveSession(SESSION); // unlocked but not granted
-    await expect(
-      dispatch(ORIGIN, 'signData', ['hi', { encoding: 'text', keyType: 'unshielded' }]),
-    ).rejects.toMatchObject({ code: 'PermissionRejected' });
   });
 
   it('balances a sealed transaction after approval', async () => {
@@ -518,13 +570,6 @@ describe('connector dispatch', () => {
     });
   });
 
-  it('gates balanceSealedTransaction on prior connect (permission)', async () => {
-    await saveSession(SESSION); // unlocked but not granted
-    await expect(dispatch(ORIGIN, 'balanceSealedTransaction', ['abcd'])).rejects.toMatchObject({
-      code: 'PermissionRejected',
-    });
-  });
-
   it('balances an unsealed transaction after approval (sealed: false)', async () => {
     await connect();
     requestApproval.mockResolvedValue(true);
@@ -540,13 +585,6 @@ describe('connector dispatch', () => {
       preparedPanel,
     );
     expect(balanceTransaction).toHaveBeenCalledWith(expect.objectContaining({ txHex: 'abcd', sealed: false }));
-  });
-
-  it('gates balanceUnsealedTransaction on prior connect (permission)', async () => {
-    await saveSession(SESSION); // unlocked but not granted
-    await expect(dispatch(ORIGIN, 'balanceUnsealedTransaction', ['abcd'])).rejects.toMatchObject({
-      code: 'PermissionRejected',
-    });
   });
 
   it('builds a swap intent after approval', async () => {
@@ -644,13 +682,6 @@ describe('connector dispatch', () => {
     expect(makeIntent).not.toHaveBeenCalled();
   });
 
-  it('gates makeIntent on prior connect (permission)', async () => {
-    await saveSession(SESSION); // unlocked but not granted
-    await expect(dispatch(ORIGIN, 'makeIntent', [[], [], { payFees: true }])).rejects.toMatchObject({
-      code: 'PermissionRejected',
-    });
-  });
-
   // Fix 1: dispatch must bracket EVERY request (incl. read-only ones like the
   // balance getters, which recreate the offscreen doc + start sync) so teardown
   // always gets rescheduled and can't fire mid-request.
@@ -698,4 +729,106 @@ describe('connector dispatch', () => {
     });
     expect(await getLastActivity()).toBeNull();
   });
+
+  function expectNoWalletWork() {
+    for (const offscreenCall of [
+      balancesGet,
+      transferBuild,
+      transferSubmit,
+      txHistoryGet,
+      signData,
+      balanceTransaction,
+      txSummary,
+      makeIntent,
+      provingProviderCheck,
+      provingProviderProve,
+    ]) {
+      expect(offscreenCall).not.toHaveBeenCalled();
+    }
+    expect(requestApproval).not.toHaveBeenCalled();
+  }
+
+  it.each(GATED_METHODS)('refuses %s from an origin that never connected', async (method) => {
+    await saveSession(SESSION); // unlocked but not granted
+    await expect(dispatch(ORIGIN, method, [])).rejects.toMatchObject({
+      type: 'DAppConnectorAPIError',
+      code: 'PermissionRejected',
+    });
+    expectNoWalletWork();
+  });
+
+  // A grant outlives the session: the origin stays allowed after the wallet
+  // locks, so the lock itself has to stop the request.
+  it.each(GATED_METHODS)('refuses %s from a granted origin while the wallet is locked', async (method) => {
+    await grant(ORIGIN, 'devnet'); // granted, no session
+    await expect(dispatch(ORIGIN, method, [])).rejects.toMatchObject({
+      type: 'DAppConnectorAPIError',
+      code: 'Disconnected',
+    });
+    expectNoWalletWork();
+  });
+
+  it.each([
+    ['connect', ['devnet']],
+    ['hintUsage', [['getShieldedBalances']]],
+  ] as const)('%s from a granted origin while locked asks the user to unlock first', async (method, params) => {
+    await grant(ORIGIN, 'devnet');
+    requestApproval.mockResolvedValue(true); // approved, but the wallet stayed locked
+
+    await expect(dispatch(ORIGIN, method, [...params])).rejects.toMatchObject({ code: 'Disconnected' });
+    expect(requestApproval).toHaveBeenCalledWith('connect', ORIGIN, { networkId: 'devnet' }, undefined, preparedPanel);
+  });
+
+  it('connect from a granted origin succeeds once the approval unlocks the wallet', async () => {
+    await grant(ORIGIN, 'devnet');
+    requestApproval.mockImplementation(async () => {
+      await saveSession(SESSION);
+      return true;
+    });
+
+    await expect(dispatch(ORIGIN, 'connect', ['devnet'])).resolves.toBe(true);
+    expect(requestApproval).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns the unshielded address for the wallet network', async () => {
+    await connect();
+    await expect(dispatch(ORIGIN, 'getUnshieldedAddress', [])).resolves.toEqual({
+      unshieldedAddress: 'mn_unshield_devnet',
+    });
+  });
+
+  it('returns the dust address for the wallet network', async () => {
+    await connect();
+    await expect(dispatch(ORIGIN, 'getDustAddress', [])).resolves.toEqual({ dustAddress: 'mn_dust_devnet' });
+  });
+
+  it('submits a transaction through the offscreen host', async () => {
+    await connect();
+    transferSubmit.mockResolvedValue(undefined);
+    await expect(dispatch(ORIGIN, 'submitTransaction', ['abcd'])).resolves.toBeUndefined();
+    expect(transferSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ txHex: 'abcd', walletName: 'alice', seedHex: SESSION.seedHex }),
+    );
+  });
+
+  // A missing argument becomes '' before the check, so the '' rows cover it too.
+  it.each(['zzzz', 'abc', ''])('rejects submitTransaction with %j as InvalidRequest', async (tx) => {
+    await connect();
+    await expect(dispatch(ORIGIN, 'submitTransaction', [tx])).rejects.toMatchObject({ code: 'InvalidRequest' });
+    expect(transferSubmit).not.toHaveBeenCalled();
+  });
+
+  // The spec names a malformed transaction as an InvalidRequest. An empty one
+  // used to pass the hex check, show the user an approval with unknown amounts,
+  // and only fail in the ledger after a prover check and a wallet sync.
+  it.each(['balanceSealedTransaction', 'balanceUnsealedTransaction'] as const)(
+    'rejects an empty transaction in %s before prompting',
+    async (method) => {
+      await connect();
+      await expect(dispatch(ORIGIN, method, [''])).rejects.toMatchObject({ code: 'InvalidRequest' });
+      expect(txSummary).not.toHaveBeenCalled();
+      expect(requestApproval).not.toHaveBeenCalled();
+      expect(balanceTransaction).not.toHaveBeenCalled();
+    },
+  );
 });

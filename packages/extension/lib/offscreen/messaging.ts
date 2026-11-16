@@ -97,11 +97,29 @@ export interface ProvingKeyMaterialDTO {
   verifierKey: Uint8Array;
 }
 
+/** Key material whose prover key the wallet already holds, named by its SHA-256 (lowercase hex). */
+export interface ProvingKeyMaterialRefDTO {
+  zkir: Uint8Array;
+  verifierKey: Uint8Array;
+  proverKeySha256: string;
+}
+
 export interface ProvingProviderCheckPayload {
+  /** The dApp's origin, which scopes the prover keys it has sent. */
+  origin: string;
   serializedPreimage: Uint8Array;
   keyLocation: string;
   /** `null` for the ledger's own circuits, whose keys the wallet holds. */
-  keyMaterial: ProvingKeyMaterialDTO | null;
+  keyMaterial: ProvingKeyMaterialDTO | ProvingKeyMaterialRefDTO | null;
+}
+
+export interface ProverKeyPutPayload {
+  origin: string;
+  sha256: string;
+  uploadId: string;
+  index: number;
+  count: number;
+  chunk: Uint8Array;
 }
 
 export interface ProvingProviderProvePayload extends ProvingProviderCheckPayload {
@@ -443,6 +461,11 @@ export interface OffscreenProtocol {
     /** Tagged JSON: Chrome runtime messaging does not clone binary/bigint. */
     payloadJson: string;
   }): string;
+  /** One chunk of a prover key a dApp sends once; `true` when the key is complete and held. */
+  'os/proverKeyPut'(data: {
+    /** Tagged JSON of a {@link ProverKeyPutPayload}. */
+    payloadJson: string;
+  }): boolean;
 
   /** Clear the relay backoff so the next dial reaches the wire immediately
    *  ("Retry now"). Returns the state as of that reset. */

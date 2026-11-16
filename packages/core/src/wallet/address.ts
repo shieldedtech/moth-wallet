@@ -18,11 +18,9 @@ import type {WalletAddresses} from '../types/wallet.js';
  * Every bech32m prefix a wallet may hold an address for.
  *
  * Deliberately WIDER than `SUPPORTED_NETWORKS` in types/network.ts, and not to
- * be narrowed to match it. Two kinds of id live here without being a network the
- * wallet offers: `stagenet`, which has no preset, and `local`, which was renamed
- * to `undeployed`. Dropping either would take its key out of every bundle
- * derived from then on, so a stored address a dApp or an address book still
- * refers to would resolve to nothing.
+ * be narrowed to match it: `stagenet` has no preset, yet dropping it would take
+ * its key out of every bundle derived from then on, so a stored address a dApp
+ * or an address book still refers to would resolve to nothing.
  */
 const ALL_NETWORKS = ['mainnet', 'devnet', 'preview', 'preprod', 'qanet', 'stagenet', 'local', 'undeployed'] as const;
 
