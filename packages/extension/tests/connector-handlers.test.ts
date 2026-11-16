@@ -816,7 +816,7 @@ describe('connector dispatch', () => {
     requestApproval.mockResolvedValue(true); // approved, but the wallet stayed locked
 
     await expect(dispatch(ORIGIN, method, [...params])).rejects.toMatchObject({ code: 'Disconnected' });
-    expect(requestApproval).toHaveBeenCalledWith('connect', ORIGIN, { networkId: 'devnet' }, undefined, preparedPanel);
+    expect(requestApproval).toHaveBeenCalledWith('connect', ORIGIN, { networkId: 'devnet' }, undefined, preparedPanel, undefined);
   });
 
   it('connect from a granted origin succeeds once the approval unlocks the wallet', async () => {

@@ -138,6 +138,7 @@ describe('host lanes', () => {
   it('routes exactly the sync-independent methods to the fast lane', () => {
     expect([...FAST_LANE_METHODS].sort()).toEqual([
       'os/deriveAppSecret',
+      'os/proverKeyPut',
       'os/provingProviderCheck',
       'os/provingProviderProve',
       'os/signData',
