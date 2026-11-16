@@ -10,7 +10,7 @@
 import { describe, expect, it } from 'vitest';
 import { validatorToAddress, validatorToRewardAddress, validatorToScriptHash } from '@lucid-evolution/lucid';
 import {
-  CNIGHT_GENERATES_DUST_HASH,
+  CNIGHT_GENERATES_DUST,
   cnightGeneratesDustScript,
   dustAuthPolicyId,
   dustAuthUnit,
@@ -18,6 +18,8 @@ import {
   dustValidatorRewardAddress,
   LOVELACE_FOR_REGISTRATION,
 } from '../../../src/cardano/blueprint.js';
+import * as mainnetData from '../../../src/cardano/blueprint-data-mainnet.js';
+import * as testnetData from '../../../src/cardano/blueprint-data-testnet.js';
 import {
   buildDustMappingDatum,
   datumStakeKeyHash,
@@ -42,58 +44,83 @@ const STAKE_KEY_HASH = '070c2f801567402df8e4e630ed3819e1c29219d1d918266758e3a063
 const DUST_ADDRESS_BYTES =
   '738d7ea6be572e69fd7d6f943d86f4521a1ca7ddf1160f1d93c820a86712692422';
 
+const TESTNET_HASH = '7e69087d98fac5869eac14e13dfb6f98228c41e638aa2a59d1f85e9c';
+const MAINNET_HASH = '73e4aea31b5b51d9b0ca386196fc6a4c422f74c5aea011e4b8bdf4e5';
+
 describe('compiled validator', () => {
-  it('is the contract the Midnight bridge actually reads', () => {
-    // The literal matters. moth once shipped the dApp's
-    // contracts-new-aiken/plutus.json (5027bb76…): it compiled, it hashed
-    // consistently, it built transactions the node accepted — and it is not
-    // the deployment the bridge watches. Registrations confirmed on Cardano
-    // and generated nothing, with no error anywhere to read.
-    //
-    // The test below could not catch that, because it compares the bytes to a
-    // hash generated from the same file. This one compares them to the
-    // contract observed to be live: the Midnight indexer reports
-    // `registered: true` with real generation rates for registrations at this
-    // script address, and reports nothing at all for the other one.
-    expect(validatorToScriptHash(cnightGeneratesDustScript)).toBe(
-      '7e69087d98fac5869eac14e13dfb6f98228c41e638aa2a59d1f85e9c',
+  const preprod = resolveCardanoNetwork('preprod');
+  const preview = resolveCardanoNetwork('preview');
+  const mainnet = resolveCardanoNetwork('mainnet');
+
+  it('is the contract the Midnight bridge actually reads, on every network', () => {
+    // Pinned as literals against deployments observed to be live: the Midnight
+    // indexer reports registrations at these script addresses as valid, with
+    // real generation rates. A hash recomputed from the same file cannot catch
+    // bytes from the wrong deployment.
+    expect(validatorToScriptHash(cnightGeneratesDustScript(preprod))).toBe(TESTNET_HASH);
+    expect(validatorToScriptHash(cnightGeneratesDustScript(preview))).toBe(TESTNET_HASH);
+    expect(validatorToScriptHash(cnightGeneratesDustScript(mainnet))).toBe(MAINNET_HASH);
+  });
+
+  it('registers on mainnet at the address the Midnight bridge watches', async () => {
+    // The testnet bytes derive addr1w9lxjzr…, which the bridge ignores.
+    await expect(dustValidatorAddress(mainnet)).resolves.toBe(
+      'addr1w9e7ft4rrdd4rkdseguxr9hudfxyytm5ckh2qy0yhz7lfeg9lvhq7',
     );
   });
 
-  it('hashes to the value blueprint-data declares', () => {
-    // Self-consistent by construction, so it proves only that the generated
-    // file is internally coherent — a truncated or corrupted paste of the
-    // 6358-character CBOR. The pin above is what proves it is the right file.
-    expect(validatorToScriptHash(cnightGeneratesDustScript)).toBe(CNIGHT_GENERATES_DUST_HASH);
+  it('compiles in the cNIGHT policy of the network it is used on', () => {
+    // The validator rejects any other policy, so this ties each script to its
+    // network and catches a mainnet/testnet swap of the generated files.
+    for (const config of [preprod, preview, mainnet]) {
+      expect(cnightGeneratesDustScript(config).script).toContain(config.cnightPolicyId);
+    }
+    expect(cnightGeneratesDustScript(mainnet).script).not.toContain(preprod.cnightPolicyId);
+  });
+
+  it('hashes to the value each blueprint-data file declares', () => {
+    // Self-consistent by construction: this proves only that a generated file
+    // is not truncated or corrupted. The pins above prove it is the right one.
+    expect(CNIGHT_GENERATES_DUST.Preprod.hash).toBe(testnetData.CNIGHT_GENERATES_DUST_HASH);
+    expect(CNIGHT_GENERATES_DUST.Mainnet.hash).toBe(mainnetData.CNIGHT_GENERATES_DUST_HASH);
+    for (const config of [preprod, preview, mainnet]) {
+      expect(validatorToScriptHash(cnightGeneratesDustScript(config))).toBe(
+        CNIGHT_GENERATES_DUST[config.network].hash,
+      );
+    }
   });
 
   it('is PlutusV3, as the blueprint preamble says', () => {
-    expect(cnightGeneratesDustScript.type).toBe('PlutusV3');
+    for (const config of [preprod, preview, mainnet]) {
+      expect(cnightGeneratesDustScript(config).type).toBe('PlutusV3');
+    }
   });
 
   it('uses its own hash as the auth token policy, with an empty asset name', () => {
     // Not an oversight in the contract: the minted NFT has no asset name, so
     // its unit is the bare policy id.
-    expect(dustAuthPolicyId).toBe(CNIGHT_GENERATES_DUST_HASH);
-    expect(dustAuthUnit).toBe(CNIGHT_GENERATES_DUST_HASH);
+    expect(dustAuthPolicyId(preview)).toBe(TESTNET_HASH);
+    expect(dustAuthUnit(preview)).toBe(TESTNET_HASH);
+    expect(dustAuthPolicyId(mainnet)).toBe(MAINNET_HASH);
+    expect(dustAuthUnit(mainnet)).toBe(MAINNET_HASH);
   });
 
   it('derives the mapping validator address from the network, not from config', async () => {
-    const preview = resolveCardanoNetwork('preview');
-    const mainnet = resolveCardanoNetwork('mainnet');
     await expect(dustValidatorAddress(preview)).resolves.toBe(
-      validatorToAddress('Preview', cnightGeneratesDustScript),
+      validatorToAddress('Preview', cnightGeneratesDustScript(preview)),
     );
     await expect(dustValidatorAddress(preview)).resolves.toMatch(/^addr_test1/);
     await expect(dustValidatorAddress(mainnet)).resolves.toMatch(/^addr1/);
   });
 
   it('derives the validator reward address the update path withdraws from', async () => {
-    const preview = resolveCardanoNetwork('preview');
     await expect(dustValidatorRewardAddress(preview)).resolves.toBe(
-      validatorToRewardAddress('Preview', cnightGeneratesDustScript),
+      validatorToRewardAddress('Preview', cnightGeneratesDustScript(preview)),
     );
     await expect(dustValidatorRewardAddress(preview)).resolves.toMatch(/^stake_test1/);
+    await expect(dustValidatorRewardAddress(mainnet)).resolves.toBe(
+      validatorToRewardAddress('Mainnet', cnightGeneratesDustScript(mainnet)),
+    );
   });
 
   it('locks the dApp min-UTXO amount in the registration output', () => {
