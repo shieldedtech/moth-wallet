@@ -2,8 +2,8 @@
 // (packages/extension/lib/background/connector-handlers.ts) with approvals answered by Swift.
 //
 // The origin is supplied by Swift from the requesting frame's security origin, never by the page.
-import type { ConnectionStatus, Configuration, DesiredInput, DesiredOutput, ErrorCode } from '@midnight-ntwrk/dapp-connector-api';
-import type { APIError } from '@midnight-ntwrk/dapp-connector-api';
+import type { ConnectionStatus, Configuration, DesiredInput, DesiredOutput, ErrorCode } from '@midnightntwrk/dapp-connector-api';
+import type { APIError } from '@midnightntwrk/dapp-connector-api';
 import { connectorError, describeErrorFields } from 'moth-ext/connector/errors';
 import { encodeBigintJson, decodeBigintJson } from 'moth-ext/messaging/bigint-json';
 import { isProtocolKeyLocation } from 'moth-ext/connector/constants';

@@ -6,7 +6,7 @@ import type {
   KeyMaterialProvider,
   SignDataOptions,
   WalletConnectedAPI,
-} from '@midnight-ntwrk/dapp-connector-api';
+} from '@midnightntwrk/dapp-connector-api';
 import './styles.css';
 
 type ProviderEntry = {
