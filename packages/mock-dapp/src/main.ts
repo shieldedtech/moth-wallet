@@ -422,10 +422,19 @@ byId<HTMLFormElement>('hint-form').addEventListener('submit', (event) => {
 byId<HTMLFormElement>('sign-form').addEventListener('submit', (event) => {
   event.preventDefault();
   const submitEvent = event as SubmitEvent;
-  void runRequest('signData', submitButton(submitEvent), () => {
-    const encoding = byId<HTMLSelectElement>('sign-encoding').value as SignDataOptions['encoding'];
-    return requireConnected().signData(inputValue('sign-data'), { encoding, keyType: 'unshielded' });
-  });
+  void runRequest(
+    'signData',
+    submitButton(submitEvent),
+    () => {
+      const encoding = byId<HTMLSelectElement>('sign-encoding').value as SignDataOptions['encoding'];
+      return requireConnected().signData(inputValue('sign-data'), { encoding, keyType: 'unshielded' });
+    },
+    {
+      // 4.1.0 lets a wallet omit the scheme, which then means schnorr_bip340; say which case this was.
+      successMessage: (signature, durationMs) =>
+        `Signed with ${signature.scheme ?? 'schnorr_bip340 (scheme omitted)'} in ${durationMs} ms.`,
+    },
+  );
 });
 
 // deriveAppSecret is a wallet EXTENSION method — not in the typed

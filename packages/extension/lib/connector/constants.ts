@@ -2,7 +2,23 @@ export const WALLET_ID = 'moth';
 export const WALLET_RDNS = 'io.shielded.moth';
 export const WALLET_NAME = 'Moth Wallet';
 /** Version of the @midnight-ntwrk/dapp-connector-api standard implemented. */
-export const API_VERSION = '4.0.1';
+export const API_VERSION = '4.1.0';
+
+/** The ledger's own circuits (`midnight/zswap/...`, `midnight/dust/...`), whose keys the wallet holds. */
+export function isProtocolKeyLocation(keyLocation: string): boolean {
+  return keyLocation.startsWith('midnight/');
+}
+
+/** midnight-js 5's name for a contract circuit, `contract:<address>/<circuit>?vk=<hash>`: the hash pins its keys. */
+export function isContractKeyLocation(keyLocation: string): boolean {
+  return /^contract:[0-9a-fA-F]{64}\/[A-Za-z0-9_]+\?vk=[0-9a-f]{64}$/.test(keyLocation);
+}
+
+/** Opens the failure of a proof that names a prover key the wallet does not hold; the page sends the key then. */
+export const PROVER_KEY_NOT_HELD = 'Prover key not held by the wallet';
+
+/** Bytes of prover key per upload message: about 11 MiB once base64-encoded, far under Chrome's 64 MiB cap. */
+export const PROVER_KEY_CHUNK_BYTES = 8 * 1024 * 1024;
 
 /** The Moth mark, inlined so the page never fetches from the extension.
  *
@@ -42,7 +58,7 @@ export const IMPLEMENTED_METHODS = [
 export const NOT_IMPLEMENTED_METHODS = [] as const;
 
 /** Non-standard wallet extension methods — NOT in @midnight-ntwrk/dapp-connector-api
- *  v4.0.1. Exposed on the injected API so DApps can call them (via a TS cast),
+ *  v4.1.0. Exposed on the injected API so DApps can call them (via a TS cast),
  *  and proposed upstream separately. See specs/003-derive-app-secret. */
 export const EXTENSION_METHODS = [
   'deriveAppSecret',
@@ -52,6 +68,7 @@ export const EXTENSION_METHODS = [
 export const PROVING_PROVIDER_METHODS = [
   'provingProviderCheck',
   'provingProviderProve',
+  'proverKeyPut',
 ] as const;
 
 export type ConnectorMethod =

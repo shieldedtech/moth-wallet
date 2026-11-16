@@ -124,23 +124,23 @@ Internal testers (members of the App Store Connect team) can install a build as 
 
 ## DUST restore time
 
-On every launch, moth restores the wallet's cached DUST state with `DustLocalState.deserialize`. With the published `@midnight-ntwrk/ledger-v8` WASM, that one call takes about a minute on preprod. It now runs in the worker, so the UI stays responsive, but sync waits for it.
+On every launch, moth restores the wallet's cached DUST state with `DustLocalState.deserialize`. With the published `@midnightntwrk/ledger-v8` WASM, that one call takes about a minute on preprod. It now runs in the worker, so the UI stays responsive, but sync waits for it.
 
-The cause is in the ledger. Its deserializer cloned a map with one entry per node, once for every node it loaded, so the cost grew quadratically. Upstream fixed it in midnight-ledger `bccf2210` ("wrap IrLoader key_to_child_repr in Rc"), but no published 8.x release includes that commit. Ledger 9.1 and 10.1 pre-releases do.
+The cause is in the ledger. Its deserializer cloned a map with one entry per node, once for every node it loaded, so the cost grew quadratically. Upstream fixed it in midnight-ledger `bccf2210` ("wrap IrLoader key_to_child_repr in Rc"), but no published 8.x release includes that commit, up to and including 8.1.3. `ledger-9.1.0.0`, which moth runs from the v9 fork, does.
 
 Measured with the same 6.9 MB preprod DUST state on an M5 Max:
 
 | Build | Deserialize |
 |---|---|
-| npm `@midnight-ntwrk/ledger-v8@8.1.0` (WASM, what moth ships) | 115.5 s |
+| npm `@midnight-ntwrk/ledger-v8@8.1.0` (WASM) | 115.5 s |
 | `ledger-8.1.0` tag built from source with wasm-pack (WASM) | 19.1 s |
 | `ledger-8.1.0` tag plus the `bccf2210` fix (WASM) | 0.59 s |
 | Native Rust, `ledger-8.1.3` | 13.5 s |
 | Native Rust, with the fix | 0.34 s |
 
-The patched build re-serializes the state to identical bytes and has the same exports and typings as npm 8.1.0. Why the npm build is so much slower than a plain source build of the same tag isn't known; build settings are the likeliest cause.
+The patched build re-serializes the state to identical bytes and has the same exports and typings as the npm package it replaces. Why the npm build is so much slower than a plain source build of the same tag isn't known; build settings are the likeliest cause.
 
-`../shared/scripts/build-ledger-wasm.sh` builds the `ledger-8.1.0` tag with the fix applied (`../shared/scripts/ledger-irloader-rc.patch`, the upstream diff unchanged) into `../shared/vendor/`, and `LEDGER=src ../shared/scripts/build-engine.sh` uses it instead of the npm package. That's a stopgap until a published ledger-v8 includes the fix. The extension, TUI and CLI are affected in the same way.
+`../shared/scripts/build-ledger-wasm.sh` builds the `ledger-8.1.3` tag, the release `@midnightntwrk/ledger-v8` 8.1.3 is built from, with the fix applied (`../shared/scripts/ledger-irloader-rc.patch`, the upstream diff unchanged) into `../shared/vendor/`, and `LEDGER=src ../shared/scripts/build-engine.sh` uses it instead of the npm package. That's a stopgap until a published ledger-v8 includes the fix. The extension, TUI and CLI are affected in the same way.
 
 ## Known gaps
 

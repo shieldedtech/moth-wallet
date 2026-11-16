@@ -2,7 +2,7 @@
 // offscreen document. Kept separate (own namespace) from the UI protocol so
 // the two never cross-handle each other's messages.
 //
-// Why an offscreen document at all: `@midnight-ntwrk/ledger-v8` initializes its
+// Why an offscreen document at all: `@midnightntwrk/ledger-v8` initializes its
 // WASM with a top-level `await`, which a Chrome MV3 service worker cannot have
 // in its module graph (registration fails). The offscreen document is a normal
 // extension page with no such restriction, so all WASM/sync/tx work lives there
@@ -77,16 +77,49 @@ export interface TxSummaryDTO {
 }
 
 /** Contract circuit material supplied by a connected dApp for one proof call. */
+/** Where the synced wallets stand on the protocol version line, as the wallet SDK
+ *  reports it. Versions travel as numbers: they are small (a 2.x node reports
+ *  2000000) and only ever displayed here. */
+export interface ProtocolStatusDTO {
+  /** The version the facade builds transactions for: the lowest of the three wallets'. */
+  version: number;
+  /** The ledger that version puts the wallet on. */
+  ledger: 'v8' | 'v9';
+  phase:
+    | { kind: 'settled' }
+    | { kind: 'crossing'; from: number; to: number; behind: Array<'shielded' | 'unshielded' | 'dust'> };
+  wallets: { shielded: number; unshielded: number; dust: number };
+}
+
 export interface ProvingKeyMaterialDTO {
   zkir: Uint8Array;
   proverKey: Uint8Array;
   verifierKey: Uint8Array;
 }
 
+/** Key material whose prover key the wallet already holds, named by its SHA-256 (lowercase hex). */
+export interface ProvingKeyMaterialRefDTO {
+  zkir: Uint8Array;
+  verifierKey: Uint8Array;
+  proverKeySha256: string;
+}
+
 export interface ProvingProviderCheckPayload {
+  /** The dApp's origin, which scopes the prover keys it has sent. */
+  origin: string;
   serializedPreimage: Uint8Array;
   keyLocation: string;
-  keyMaterial: ProvingKeyMaterialDTO;
+  /** `null` for the ledger's own circuits, whose keys the wallet holds. */
+  keyMaterial: ProvingKeyMaterialDTO | ProvingKeyMaterialRefDTO | null;
+}
+
+export interface ProverKeyPutPayload {
+  origin: string;
+  sha256: string;
+  uploadId: string;
+  index: number;
+  count: number;
+  chunk: Uint8Array;
 }
 
 export interface ProvingProviderProvePayload extends ProvingProviderCheckPayload {
@@ -372,6 +405,8 @@ export interface OffscreenProtocol {
    *  wallet once balanced, for the approval prompt. Needs no keys and no sync.
    *  `sealed` selects the deserialization stage, exactly as os/balanceTransaction does. */
   'os/txSummary'(data: { network: NetworkConfig; txHex: string; sealed: boolean }): TxSummaryDTO;
+  /** The live sync session's protocol status; null when no wallet is synced. */
+  'os/protocolStatus'(): ProtocolStatusDTO | null;
 
   /** Build, prove and seal a swap intent (`makeIntent`); returns hex. */
   'os/makeIntent'(data: {
@@ -426,6 +461,11 @@ export interface OffscreenProtocol {
     /** Tagged JSON: Chrome runtime messaging does not clone binary/bigint. */
     payloadJson: string;
   }): string;
+  /** One chunk of a prover key a dApp sends once; `true` when the key is complete and held. */
+  'os/proverKeyPut'(data: {
+    /** Tagged JSON of a {@link ProverKeyPutPayload}. */
+    payloadJson: string;
+  }): boolean;
 
   /** Clear the relay backoff so the next dial reaches the wire immediately
    *  ("Retry now"). Returns the state as of that reset. */

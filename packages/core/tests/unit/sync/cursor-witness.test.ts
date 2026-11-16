@@ -1,5 +1,6 @@
 import {describe, expect, it} from 'vitest';
 import {compareWitness, type CursorWitness} from '../../../src/sync/cursor-witness.js';
+import {witnessStreamFor} from '../../../src/sync/preseed.js';
 
 const witness = (id: number, digest: string): CursorWitness => ({stream: 'dustLedgerEvents', id, digest});
 
@@ -32,5 +33,33 @@ describe('compareWitness', () => {
     const verdict = compareWitness(witness(99_999_999, 'aaaa'), null);
     expect(verdict.kind).toBe('unknown');
     expect(verdict.kind === 'unknown' && verdict.reason).toMatch(/shorter than this cursor/);
+  });
+});
+
+// Only cursors that index an event stream can be renumbered under a reference.
+// A DUST snapshot the projections sync wrote saves a block height instead, so it
+// has nothing to witness.
+describe('witnessStreamFor', () => {
+  const snapshot = (syncKind?: string) => JSON.stringify({version: 'v2', offset: '42', ...(syncKind && {syncKind})});
+
+  it('witnesses a dust cursor that event replay wrote against the dust events', () => {
+    expect(witnessStreamFor('dust', snapshot('events'))).toBe('dustLedgerEvents');
+  });
+
+  it('witnesses a dust snapshot that names no sync, since only event replay wrote those', () => {
+    expect(witnessStreamFor('dust', snapshot())).toBe('dustLedgerEvents');
+  });
+
+  it('witnesses nothing for a dust state the projections sync wrote', () => {
+    expect(witnessStreamFor('dust', snapshot('projections'))).toBeNull();
+  });
+
+  it('keeps witnessing a dust snapshot it cannot read', () => {
+    expect(witnessStreamFor('dust', 'not-json')).toBe('dustLedgerEvents');
+  });
+
+  it('witnesses shielded, and never unshielded', () => {
+    expect(witnessStreamFor('shielded', snapshot())).toBe('zswapLedgerEvents');
+    expect(witnessStreamFor('unshielded', snapshot())).toBeNull();
   });
 });

@@ -9,6 +9,28 @@ export interface SyncStatusView {
   unshielded: number;
   dust: number;
   /**
+   * Overall percent 0-100: core's `syncProgress.percentage`, the SLOWEST
+   * sub-wallet, which core holds below 100 until the wallet is synced.
+   *
+   * Not an average of the rows. The ETA beside it is computed against the
+   * slowest sub-wallet, so an average read "67% · ~5 min left" where the five
+   * minutes belonged to a row at 25% — and 100, 100 and 99 average to 99.67,
+   * which rounds to a "100%" the wallet has not reached.
+   */
+  overall: number;
+  /**
+   * Every sub-wallet has been strictly complete this session: the same
+   * per-sub-wallet flags the rows and the DUST panel read, so the three
+   * surfaces cannot disagree.
+   *
+   * Deliberately not the facade's live `isSynced`. That also requires the
+   * indexer connection, while core carries the per-sub-wallet flags forward
+   * for the session — so a dropped connection read "Syncing, 99%" with a
+   * spinner that never finished, above rows at 100 and a synced DUST panel.
+   * A lost connection wants a state of its own, not a spinner.
+   */
+  synced: boolean;
+  /**
    * Estimated seconds remaining, or null when not yet estimable.
    *
    * Computed in core against the SLOWEST sub-wallet with a baseline correction
@@ -202,8 +224,8 @@ export function SyncStatus({
   const shielded = clamp(view.shielded);
   const unshielded = clamp(view.unshielded);
   const dust = clamp(view.dust);
-  const rawOverall = Math.round((shielded + unshielded + dust) / 3);
-  const rawSynced = rawOverall >= 100;
+  const rawSynced = view.synced;
+  const rawOverall = rawSynced ? 100 : clamp(view.overall);
   // Pass the raw fraction so a rebuild's large drop bypasses the grace instead
   // of being smoothed into a false "Synced · 100%".
   const synced = useSyncRegressionGrace(rawSynced, true, rawOverall / 100);

@@ -10,6 +10,7 @@ import type {
   ProvingProvider,
 } from '@midnight-ntwrk/dapp-connector-api';
 import { encodeBigintJson, decodeBigintJson } from '../lib/messaging/bigint-json';
+import { createProvingProxy } from '../lib/connector/proving-proxy';
 import { createPageClient, type PageClient } from '../lib/messaging/page-transport';
 import { connectorError, type SerializedConnectorError } from '../lib/connector/errors';
 import {
@@ -47,35 +48,7 @@ function buildConnectedApi(client: PageClient): ConnectedAPI {
       throw connectorError('InvalidRequest', 'getProvingProvider requires a KeyMaterialProvider');
     }
     await client.request('getProvingProvider', encodeBigintJson([]));
-
-    const materialFor = async (keyLocation: string) => {
-      const [zkir, proverKey, verifierKey] = await Promise.all([
-        keys.getZKIR!(keyLocation),
-        keys.getProverKey!(keyLocation),
-        keys.getVerifierKey!(keyLocation),
-      ]);
-      return { zkir, proverKey, verifierKey };
-    };
-
-    return Object.freeze({
-      async check(serializedPreimage: Uint8Array, keyLocation: string) {
-        const params = [serializedPreimage, keyLocation, await materialFor(keyLocation)];
-        return decodeBigintJson<(bigint | undefined)[]>(
-          await client.request('provingProviderCheck', encodeBigintJson(params)),
-        );
-      },
-      async prove(serializedPreimage: Uint8Array, keyLocation: string, overwriteBindingInput?: bigint) {
-        const params = [
-          serializedPreimage,
-          keyLocation,
-          await materialFor(keyLocation),
-          overwriteBindingInput,
-        ];
-        return decodeBigintJson<Uint8Array>(
-          await client.request('provingProviderProve', encodeBigintJson(params)),
-        );
-      },
-    });
+    return createProvingProxy(client, keys as KeyMaterialProvider, { subtle: globalThis.crypto?.subtle });
   };
   return Object.freeze(api) as unknown as ConnectedAPI;
 }

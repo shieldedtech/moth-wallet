@@ -1,5 +1,10 @@
 # Wallet SDK sync `applyUpdate` lets re-sent boundary events trip the WASM tree
 
+> **Status: fixed upstream in `@midnightntwrk/wallet-sdk` 2.0.** Both wallet
+> variants' `applyUpdate` now filter already-applied events before replay, and
+> moth removed its `sync/sdk-dedup.ts` workaround when it upgraded. Kept as the
+> record of the defect and of how the workaround proved the fix.
+
 Target: `@midnight-ntwrk/wallet-sdk-shielded` and `@midnight-ntwrk/wallet-sdk-dust-wallet`.
 
 Tested against `wallet-sdk@1.1.0`, `ledger-v8@8.1.0`.

@@ -1,7 +1,7 @@
 # Connector Lab
 
 A standalone mock dapp for testing a wallet's implementation of
-`@midnight-ntwrk/dapp-connector-api` 4.0.1. It discovers providers through
+`@midnight-ntwrk/dapp-connector-api` 4.1.0. It discovers providers through
 `window.midnight` and does not import code, components, or styles from the Moth
 extension. The UI mirrors the extension's design language (the Milk/Ink/Moonlime
 palette, Bricolage Grotesque and Instrument Sans) recreated in plain CSS, so the
@@ -32,10 +32,11 @@ approval UI.
 ## API coverage
 
 The workbench covers provider metadata and `connect`, plus every method on the
-4.0.1 `ConnectedAPI`:
+4.1.0 `ConnectedAPI`:
 
 - connection status, configuration, balances, addresses, and paginated history;
-- `hintUsage` and `signData`;
+- `hintUsage` and `signData`, whose status line names the signature `scheme`
+  (or says the wallet omitted it, which 4.1.0 reads as `schnorr_bip340`);
 - `makeTransfer`, `makeIntent`, sealed/unsealed balancing, and submission;
 - `getProvingProvider`; the dapp supplies circuit key material while the wallet
   executes `check` and `prove` with its selected server or WASM backend.
@@ -43,7 +44,7 @@ The workbench covers provider metadata and `connect`, plus every method on the
 Transfer and intent results are copied into the shared transaction field so a
 build → balance → submit flow can be tested without moving hex manually. The
 request log preserves bigint values, durations, and connector `code`/`reason`
-fields and can be copied as JSON.
+fields (including 4.1.0's `InsufficientFunds`) and can be copied as JSON.
 
 The Balance or submit panel also includes a local Ledger v8 fixture generator.
 It creates a proof-stage, unsealed preprod transaction with no inputs and one
