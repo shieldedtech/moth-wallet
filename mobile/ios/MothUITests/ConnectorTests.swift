@@ -85,20 +85,27 @@ func reveal(_ element: XCUIElement, in app: XCUIApplication, up: Bool = true) ->
 
 /// Opens `menu` and taps `item` in it. An item can't be hit while its menu is still opening,
 /// and in CI a redraw behind the menu has closed it before the tap, so wait until the item has
-/// settled in place and reopen the menu if it never does. Then tap the middle of where it sits:
-/// on CI, XCTest can fail to find a hit point on an iOS 26 menu item that has been open and still
-/// for seconds, and a coordinate tap doesn't ask it for one.
+/// settled in place and reopen the menu if it never does.
 func choose(_ item: XCUIElement, fromMenu menu: XCUIElement, attempts: Int = 3) {
     for _ in 0..<attempts {
-        menu.tap()
-        if item.waitForSettledFrame(timeout: 5) {
-            let frame = item.frame
-            XCUIApplication().coordinate(withNormalizedOffset: .zero)
-                .withOffset(CGVector(dx: frame.midX, dy: frame.midY)).tap()
-            return
-        }
+        tapWhereItSits(menu)
+        if tapWhereItSits(item) { return }
     }
     XCTFail("\(item) never settled after opening \(menu) \(attempts) times")
+}
+
+/// Taps the middle of `element` once its frame has settled. On CI, XCTest's own tap can fail to
+/// find a hit point for an iOS 26 menu or menu item that is plainly on screen ("Not hittable",
+/// hit point {-1, -1}); a coordinate tap doesn't ask for one. Off screen, it falls back to `tap()`,
+/// which scrolls first.
+@discardableResult
+func tapWhereItSits(_ element: XCUIElement, timeout: TimeInterval = 5) -> Bool {
+    guard element.waitForSettledFrame(timeout: timeout) else { return false }
+    let app = XCUIApplication()
+    let frame = element.frame
+    guard app.frame.contains(frame) else { element.tap(); return true }
+    app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: frame.midX, dy: frame.midY)).tap()
+    return true
 }
 
 extension XCUIElement {

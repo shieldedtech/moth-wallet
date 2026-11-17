@@ -44,7 +44,12 @@ struct RootView: View {
 
 private struct EngineView: UIViewRepresentable {
     let engine: Engine
-    func makeUIView(context: Context) -> UIView { engine.webView }
+    func makeUIView(context: Context) -> UIView {
+        // Never shown, so keep it from assistive tech: its page otherwise reports a focused element
+        // over the middle of the screen, which VoiceOver can land on and XCTest hit-tests against.
+        engine.webView.accessibilityElementsHidden = true
+        return engine.webView
+    }
     func updateUIView(_ view: UIView, context: Context) {}
 }
 

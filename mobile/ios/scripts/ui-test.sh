@@ -33,6 +33,18 @@ trap 'kill $MATCHER $SERVER 2>/dev/null' EXIT
 
 DEST="platform=iOS Simulator,id=$SIM"
 xcodebuild build-for-testing -project Moth.xcodeproj -scheme Moth -configuration Debug -destination "$DEST" -derivedDataPath build/DerivedData
+
+# The first launch after the simulator boots is the slow one: on CI the first class waited ~30 s
+# for its first screen against 12-23 s for the others, and once more than 3 minutes. Take that
+# launch here instead of in a test, until the engine page is ready (-MothProbeProver logs it then).
+xcrun simctl install "$SIM" build/DerivedData/Build/Products/Debug-iphonesimulator/Moth.app
+xcrun simctl launch "$SIM" bob.shielded.moth -MothProbeProver >/dev/null
+LOG="$(xcrun simctl get_app_container "$SIM" bob.shielded.moth data)/Documents/moth-debug.log"
+waited=0
+until grep -q "probe prover" "$LOG" 2>/dev/null || [ $waited -ge 300 ]; do sleep 1; waited=$((waited + 1)); done
+grep -q "probe prover" "$LOG" 2>/dev/null && echo "warm-up: engine ready after ${waited}s" || echo "warning: warm-up: engine not ready after ${waited}s" >&2
+xcrun simctl terminate "$SIM" bob.shielded.moth 2>/dev/null || true
+
 # One result bundle per class (screenshots, logs), which CI uploads when a test fails.
 RESULTS=build/TestResults
 rm -rf "$RESULTS"
