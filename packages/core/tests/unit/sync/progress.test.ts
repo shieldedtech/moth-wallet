@@ -6,7 +6,7 @@
 // slowest sub-wallet — it is not; dust is, by two orders of magnitude.
 
 import {describe, expect, it} from 'vitest';
-import {overallSyncProgress} from '../../../src/sync/progress.js';
+import {dustProgressFor, overallSyncProgress} from '../../../src/sync/progress.js';
 
 const complete = {applied: 1_395_558, total: 1_395_558};
 
@@ -216,5 +216,54 @@ describe('ETA on a resumed sync', () => {
       synced: true, elapsedMs: 5_000, baseline: {fraction: 0.9, elapsedMs: 0},
     });
     expect(r.etaSeconds).toBe(0);
+  });
+});
+
+// A projections pass applies nothing to the wallet until it ends, so the wallet
+// reports no DUST total while one runs. The pass's own position stands in.
+describe('dustProgressFor', () => {
+  const silent = {applied: 0, total: 0};
+
+  it('shows the pass position while the wallet reports no total', () => {
+    expect(dustProgressFor(silent, {resolvedThrough: 3_400_000, tip: 3_500_000})).toEqual({
+      applied: 3_400_000,
+      total: 3_500_000,
+    });
+  });
+
+  it('replaces a cursor left without a total, such as the one a hand-over parks', () => {
+    expect(dustProgressFor({applied: 1_623_186, total: 0}, {resolvedThrough: 0, tip: 3_500_000})).toEqual({
+      applied: 0,
+      total: 3_500_000,
+    });
+  });
+
+  it("keeps the wallet's own figures once it reports a total", () => {
+    const reported = {applied: 700, total: 752_061};
+    expect(dustProgressFor(reported, {resolvedThrough: 3_400_000, tip: 3_500_000})).toBe(reported);
+  });
+
+  it('reports nothing new before a pass has said where it is', () => {
+    expect(dustProgressFor(silent, null)).toBe(silent);
+    expect(dustProgressFor(silent, {resolvedThrough: 0, tip: 0})).toBe(silent);
+  });
+
+  it('never shows a position beyond the tip', () => {
+    expect(dustProgressFor(silent, {resolvedThrough: 120, tip: 100})).toEqual({applied: 100, total: 100});
+  });
+
+  it('feeds the overall figure, so a running pass no longer reads as 99%', () => {
+    const {percentage, slowest} = overallSyncProgress({
+      shielded: complete,
+      unshielded: silent,
+      dust: dustProgressFor(silent, {resolvedThrough: 1_750_000, tip: 3_500_000}),
+      shieldedSynced: true,
+      unshieldedSynced: true,
+      dustSynced: false,
+      synced: false,
+      elapsedMs: 60_000,
+    });
+    expect(slowest).toBe('dust');
+    expect(percentage).toBeCloseTo(0.5, 5);
   });
 });
