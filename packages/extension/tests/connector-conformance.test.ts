@@ -1,13 +1,13 @@
 // What the connector promises a dApp before any request is made: the error
 // shape the spec mandates, the method list it implements, and the API version it
-// claims. A dApp written against @midnight-ntwrk/dapp-connector-api relies on
+// claims. A dApp written against @midnightntwrk/dapp-connector-api relies on
 // all three, and none of them can be checked from the page without a wallet.
 
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
-import type { ConnectedAPI } from '@midnight-ntwrk/dapp-connector-api';
+import type { ConnectedAPI } from '@midnightntwrk/dapp-connector-api';
 import { connectorError } from '../lib/connector/errors';
 import { API_VERSION, IMPLEMENTED_METHODS } from '../lib/connector/constants';
 
@@ -55,12 +55,12 @@ describe('announced connector surface', () => {
   // that leaves the constant behind would announce a version the wallet does
   // not implement.
   it('announces the installed dapp-connector-api version', () => {
-    const entry = fileURLToPath(import.meta.resolve('@midnight-ntwrk/dapp-connector-api'));
+    const entry = fileURLToPath(import.meta.resolve('@midnightntwrk/dapp-connector-api'));
     const pkg = JSON.parse(readFileSync(join(dirname(entry), '..', 'package.json'), 'utf8')) as {
       name: string;
       version: string;
     };
-    expect(pkg.name).toBe('@midnight-ntwrk/dapp-connector-api');
+    expect(pkg.name).toBe('@midnightntwrk/dapp-connector-api');
     expect(API_VERSION).toBe(pkg.version);
   });
 });

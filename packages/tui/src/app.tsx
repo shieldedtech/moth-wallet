@@ -559,6 +559,20 @@ export function App({ networkId: networkIdProp }: AppProps) {
                 logs.error(`Clear cache failed: ${err instanceof Error ? err.message : String(err)}`);
               });
             }}
+            onRevealPhrase={async (name, passphrase) => {
+              // The event, never the value: moth.log is a file on disk, and a
+              // phrase written there outlives the screen it was shown on. Error
+              // messages are safe to log: they name the wallet or the failure,
+              // never the passphrase or the secret.
+              try {
+                const secret = await wallet.exportPhrase(name, passphrase);
+                logs.info(`Recovery ${secret.kind} revealed for wallet: ${name}`);
+                return secret;
+              } catch (err) {
+                logs.warn(`Recovery phrase reveal failed for wallet: ${name}: ${err instanceof Error ? err.message : String(err)}`);
+                throw err;
+              }
+            }}
             onCreateNew={() => {
               nav.push('onboarding-network', { onComplete: onboardingCompleteStable, partial: {} });
             }}

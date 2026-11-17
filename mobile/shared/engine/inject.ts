@@ -1,7 +1,7 @@
 // Injected into DApp pages in Moth's in-app browser: installs `window.midnight.moth`, the
 // dapp-connector-api InitialAPI, as packages/extension/entrypoints/injected.ts does in a tab.
 // Calls go to Swift over the `mothConnector` reply handler, which adds the frame's origin.
-import type { ConnectedAPI, InitialAPI, KeyMaterialProvider, ProvingProvider } from '@midnight-ntwrk/dapp-connector-api';
+import type { ConnectedAPI, InitialAPI, KeyMaterialProvider, ProvingProvider } from '@midnightntwrk/dapp-connector-api';
 import { decodeBigintJson, encodeBigintJson } from 'moth-ext/messaging/bigint-json';
 import { connectorError } from 'moth-ext/connector/errors';
 import {

@@ -12,7 +12,7 @@ import type {
   Configuration,
   ConnectionStatus,
   Signature,
-} from '@midnight-ntwrk/dapp-connector-api';
+} from '@midnightntwrk/dapp-connector-api';
 import type { WalletBalances } from '@shieldedtech/moth-browser';
 import { resolveProverConfig } from '@shieldedtech/moth-wallet/types/network';
 import { onMessage, deserializeBalances } from '../messaging/protocol';
