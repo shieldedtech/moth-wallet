@@ -457,6 +457,15 @@ export async function startWalletSync(
     // Shared transaction history storage for all sub-wallets.
     txHistoryStorage,
     costParameters: DUST_COST_PARAMETERS,
+    // A fresh DUST wallet starts at the ledger-v9 fork instead of replaying the
+    // ledger-v8 DUST history: about 8x faster on preprod (29 min to under 4 for
+    // a funded wallet), with an identical end state. Networks restarted DUST at
+    // that fork, so no pre-fork DUST UTXO survives it; what is lost is only the
+    // DUST side of pre-fork transaction history (the fee rows of a restored
+    // wallet's old contract calls). A restore from a cached state, a chain
+    // without the fork, or a failed timeline search starts as it would without
+    // this. Shielded and unshielded still read ledger-v8.
+    skipLedgerV8DustHistory: true,
     batchUpdates: {
       size: options?.batchUpdates?.size ?? 500,
       timeout: options?.batchUpdates?.timeout ?? 500,
