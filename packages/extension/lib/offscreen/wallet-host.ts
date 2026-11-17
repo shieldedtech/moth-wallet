@@ -63,7 +63,7 @@ import {
   setActiveCardanoAccount,
   type CardanoAccountList,
 } from '@shieldedtech/moth-wallet/cardano/accounts';
-import type { HistoryEntry } from '@midnight-ntwrk/dapp-connector-api';
+import type { HistoryEntry } from '@midnightntwrk/dapp-connector-api';
 import { serializeBalances } from '../messaging/balances-json';
 import { serializeActivity } from '../messaging/activity-json';
 import { waitForSyncedBalances } from './wait-synced';

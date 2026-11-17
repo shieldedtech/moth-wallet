@@ -8,7 +8,7 @@ import type {
   ConnectedAPI,
   KeyMaterialProvider,
   ProvingProvider,
-} from '@midnight-ntwrk/dapp-connector-api';
+} from '@midnightntwrk/dapp-connector-api';
 import { encodeBigintJson, decodeBigintJson } from '../lib/messaging/bigint-json';
 import { createProvingProxy } from '../lib/connector/proving-proxy';
 import { createPageClient, type PageClient } from '../lib/messaging/page-transport';
