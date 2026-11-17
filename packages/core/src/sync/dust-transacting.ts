@@ -23,7 +23,7 @@
 // dust-transacting.test.ts pins those so a version bump fails loudly rather
 // than silently reverting to the SDK loop.
 
-import {Effect, Either} from 'effect';
+import {Effect, Either, Layer, Stream} from 'effect';
 import type * as ledger from '@midnightntwrk/ledger-v8';
 import * as ledgerV9 from '@midnightntwrk/wallet-sdk/ledger/v9';
 import {
@@ -44,12 +44,14 @@ import {
   type ForkingDustWalletClass,
 } from '@midnightntwrk/wallet-sdk/dust';
 import {makeIndexerChainVersionProbe} from '@midnightntwrk/wallet-sdk/capabilities';
+import {DustNullifierTransactions} from '@midnightntwrk/wallet-sdk/indexer-client';
 import {
   getBalanceRecipe,
   Imbalances,
   InsufficientFundsError as BalancingInsufficientFundsError,
 } from '@midnightntwrk/wallet-sdk/capabilities/balancer';
 import {largestDustCoinFirst} from './dust-coin-selection.js';
+import {nullifierLeHex, resumingFromLastSpend} from './dust-nullifier-walk.js';
 
 /** The smallest coin shape the loop needs; the SDK's `CoinWithValue<Dust>` satisfies it. */
 export interface FeeCoin {
@@ -361,6 +363,45 @@ export const terminatingDustTransactingV2 =
   (config: V2Configuration, getContext: () => V2Context): TerminatingDustTransactingV2 =>
     new TerminatingDustTransactingV2(config, getContext, options.onPass);
 
+type ProjectionsSyncConfiguration = Parameters<typeof V2.SyncService.makeEventLessSyncService>[0];
+
+/** The SDK's own default for `anonymityLevel`, which `doEventlessSync` takes as an argument. */
+const DEFAULT_ANONYMITY_LEVEL = 7;
+
+/**
+ * The SDK's projections sync service, with each pass's nullifier lookups
+ * resumed from the previous one's earliest match instead of from block zero.
+ * Unbounded, a pass costs one whole-chain lookup per spend the wallet ever made.
+ */
+export const makeProjectionsSyncService = (
+  configuration: ProjectionsSyncConfiguration,
+): ReturnType<typeof V2.SyncService.makeEventLessSyncService> => {
+  const indexer = V2.SyncService.makeIndexerSyncService(configuration);
+  const lookup = (nullifiers: ReadonlyArray<bigint>, fromBlock: number, toBlock: number | null, prefixLength: number) => {
+    const wanted = new Set(nullifiers.map(nullifierLeHex));
+    return DustNullifierTransactions.run({
+      nullifierLeBytesPrefixes: [...new Set([...wanted].map((hex) => hex.substring(0, prefixLength)))],
+      fromBlock,
+      toBlock,
+    }).pipe(
+      Stream.map(({dustNullifierTransactions}) => dustNullifierTransactions),
+      Stream.filter(({nullifierLeBytes}) => wanted.has(nullifierLeBytes)),
+      Stream.mapError((cause) => new V2.WalletError.SyncWalletError({message: 'DUST nullifier lookup failed', cause})),
+    );
+  };
+  return {
+    ...V2.SyncService.makeEventLessSyncService(configuration),
+    updates: (state, secretKey) =>
+      V2.SyncService.doEventlessSync(
+        state,
+        secretKey,
+        configuration.anonymityLevel ?? DEFAULT_ANONYMITY_LEVEL,
+        {...indexer, subscribeDustNullifierTransactions: resumingFromLastSpend(lookup)},
+        configuration.ledgerParametersCodecs,
+      ).pipe(Stream.provideSomeLayer(Layer.merge(indexer.connectionLayer(), indexer.queryClient()))),
+  };
+};
+
 /** The DUST wallet moth runs: event replay below `forks.v9`, projections from it. */
 export type MothDustWallet = ForkingDustWallet<V1SyncService.WalletSyncUpdate, V2.SyncService.DustProjectionsUpdate>;
 
@@ -410,7 +451,7 @@ export function TerminatingDustWallet(
     {
       builder: new V2.V2Builder()
         .withDefaults()
-        .withSync(V2.SyncService.makeEventLessSyncService, V2.SyncService.makeEventLessSyncCapability)
+        .withSync(makeProjectionsSyncService, V2.SyncService.makeEventLessSyncCapability)
         // `withSync` drops the key derivation a seed start needs, so restate it.
         .withStartAuxDefaults()
         .withMigration(migration)
