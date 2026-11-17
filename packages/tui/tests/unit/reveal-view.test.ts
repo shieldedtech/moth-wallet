@@ -8,7 +8,13 @@
 // they will later try to restore as words.
 
 import { describe, expect, it } from 'vitest';
-import { buildRevealView, WORDS_PER_ROW } from '../../src/screens/reveal-view.js';
+import {
+  buildRevealView,
+  createRevealAttempts,
+  revealErrorMessage,
+  WORD_CELL_WIDTH,
+  WORDS_PER_ROW,
+} from '../../src/screens/reveal-view.js';
 
 const words = (n: number) => Array.from({ length: n }, (_, i) => `word${i + 1}`).join(' ');
 
@@ -23,11 +29,18 @@ describe('buildRevealView — mnemonic', () => {
     expect(flat.map(w => w.index)).toEqual(Array.from({ length: 24 }, (_, i) => i + 1));
   });
 
-  it('lays 24 words out six to a row', () => {
+  it('lays 24 words out four to a row', () => {
     const view = buildRevealView({ kind: 'mnemonic', value: words(24) });
 
-    expect(view.rows).toHaveLength(4);
+    expect(view.rows).toHaveLength(6);
     expect(view.rows.every(r => r.length === WORDS_PER_ROW)).toBe(true);
+  });
+
+  // keys.tsx renders each row as WORDS_PER_ROW cells of WORD_CELL_WIDTH inside
+  // padding 1, paddingLeft 2, a single border and paddingX 1: 8 columns besides
+  // the cells. Wider than the terminal and Ink wraps a word mid-way.
+  it('fits a row in an 80-column terminal', () => {
+    expect(WORDS_PER_ROW * WORD_CELL_WIDTH + 8).toBeLessThanOrEqual(80);
   });
 
   it('keeps every word when the count is not a multiple of the row width', () => {
@@ -75,5 +88,63 @@ describe('buildRevealView — hex-imported wallet', () => {
     const view = buildRevealView({ kind: 'seed', value: SEED });
 
     expect(view.note).toMatch(/no recovery phrase/i);
+  });
+});
+
+describe('revealErrorMessage', () => {
+  it('blames the passphrase only when decryption failed', () => {
+    const err = new Error('Decryption failed: invalid passphrase or corrupted keystore');
+
+    expect(revealErrorMessage(err)).toBe('Wrong passphrase or corrupted keystore');
+  });
+
+  it('says what happened for anything else, so a right passphrase is not retyped', () => {
+    expect(revealErrorMessage(new Error('Wallet "alice" not found'))).toBe(
+      'Could not read the recovery phrase: Wallet "alice" not found',
+    );
+    expect(revealErrorMessage('storage unavailable')).toBe(
+      'Could not read the recovery phrase: storage unavailable',
+    );
+  });
+});
+
+describe('createRevealAttempts', () => {
+  it('drops a result that arrives after the user cancelled', () => {
+    const attempts = createRevealAttempts();
+    const id = attempts.begin()!;
+
+    attempts.cancel(); // ESC while scrypt is still running
+
+    expect(attempts.isCurrent(id)).toBe(false);
+  });
+
+  it('keeps a result nothing cancelled', () => {
+    const attempts = createRevealAttempts();
+    const id = attempts.begin()!;
+
+    expect(attempts.isCurrent(id)).toBe(true);
+  });
+
+  it('refuses a second submit while the first is still decrypting', () => {
+    const attempts = createRevealAttempts();
+    const first = attempts.begin()!;
+
+    expect(attempts.begin()).toBeNull();
+
+    attempts.settle(first);
+    expect(attempts.begin()).not.toBeNull();
+  });
+
+  it('lets a new attempt start after a cancel, and still drops the old one', () => {
+    const attempts = createRevealAttempts();
+    const old = attempts.begin()!;
+    attempts.cancel();
+
+    const fresh = attempts.begin()!;
+    attempts.settle(old); // the cancelled decrypt finishes late
+
+    expect(attempts.isCurrent(old)).toBe(false);
+    expect(attempts.isCurrent(fresh)).toBe(true);
+    expect(attempts.begin()).toBeNull(); // the fresh one is still in flight
   });
 });

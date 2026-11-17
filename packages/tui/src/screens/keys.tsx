@@ -1,10 +1,17 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
 import type { WalletInfo } from '@shieldedtech/moth-wallet';
 import { SectionHeader } from '../components/SectionHeader.js';
 import { HelpFooter, type HelpHint } from '../components/HelpFooter.js';
-import { buildRevealView, type RevealedSecret, type RevealView } from './reveal-view.js';
+import {
+  buildRevealView,
+  createRevealAttempts,
+  revealErrorMessage,
+  WORD_CELL_WIDTH,
+  type RevealedSecret,
+  type RevealView,
+} from './reveal-view.js';
 
 interface KeysProps {
   wallets: WalletInfo[];
@@ -17,7 +24,8 @@ interface KeysProps {
   onClearCache: (name: string) => void;
   /**
    * Recover the wallet's backup secret from the keystore. Takes a passphrase
-   * because it must NOT read the unlocked session — see the reveal flow below.
+   * because revealing always goes through the keystore (D-KM-2), never the
+   * unlocked session — see the reveal flow below.
    */
   onRevealPhrase: (name: string, passphrase: string) => Promise<RevealedSecret>;
   onCreateNew: () => void;
@@ -42,6 +50,8 @@ export function Keys({
   const [revealTarget, setRevealTarget] = useState('');
   const [revealPass, setRevealPass] = useState('');
   const [revealed, setRevealed] = useState<RevealView | null>(null);
+  const [decrypting, setDecrypting] = useState(false);
+  const revealAttempts = useRef(createRevealAttempts()).current;
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
@@ -54,10 +64,39 @@ export function Keys({
   // Drop the secret and the passphrase together. Called on every exit from the
   // reveal flow, so walking away from the screen does not leave a phrase in
   // component state waiting to be painted again on the next render.
+  // It also voids any decrypt still running, so ESC while scrypt works means the
+  // phrase never appears.
   const clearReveal = () => {
+    revealAttempts.cancel();
+    setDecrypting(false);
     setRevealed(null);
     setRevealPass('');
     setRevealTarget('');
+  };
+
+  // Leaving the Keys screen mid-decrypt is a cancel too.
+  useEffect(() => () => revealAttempts.cancel(), [revealAttempts]);
+
+  const submitReveal = async () => {
+    const attempt = revealAttempts.begin();
+    if (attempt === null) return; // still decrypting the last submit
+    setDecrypting(true);
+    setError('');
+    try {
+      const secret = await onRevealPhrase(revealTarget, revealPass);
+      if (!revealAttempts.isCurrent(attempt)) return; // cancelled while decrypting
+      setRevealed(buildRevealView(secret));
+      // The passphrase has done its job; nothing below this point
+      // needs it, so it does not stay in state while the secret is up.
+      setRevealPass('');
+      setMode('reveal-show');
+    } catch (err) {
+      if (!revealAttempts.isCurrent(attempt)) return;
+      setError(revealErrorMessage(err));
+    } finally {
+      if (revealAttempts.isCurrent(attempt)) setDecrypting(false);
+      revealAttempts.settle(attempt);
+    }
   };
 
   const hints = (): HelpHint[] => {
@@ -93,6 +132,9 @@ export function Keys({
       onBack();
       return;
     }
+    // Meta-key chords belong to the app (Meta+P pauses sync). Without this, the
+    // pause shortcut would also open the recovery-phrase prompt here.
+    if (key.meta) return;
     // Confirm before the passphrase prompt, the way the CLI's `wallet
     // export-phrase` confirms before printing: the failure mode is a phrase put
     // on a screen someone else can see, and that is decided before typing, not
@@ -216,27 +258,18 @@ export function Keys({
       <Box flexDirection="column" padding={1}>
         <SectionHeader title={`Reveal Recovery Phrase · ${revealTarget}`} />
         <Box flexDirection="column" paddingLeft={2}>
-          {/* Asked for even when the wallet is already unlocked. The unlocked
-              session holds derived keys and no seed (D-KM-3), so there is
-              nothing in it to reveal — the secret comes from the keystore, and
-              that needs the passphrase. Say so, or this reads as a bug. */}
+          {/* Asked for even when the wallet is already unlocked: revealing
+              always goes through the keystore (D-KM-2), so whoever is at the
+              keyboard must know the passphrase, not just find an unlocked
+              session. (The session does hold the mnemonic, for Cardano — see
+              useWallet's UnlockedEntry — but reading it from there would skip
+              that check.) Say so, or this reads as a bug. */}
           <Text dimColor>The keystore is decrypted again for this. An unlocked wallet is not enough.</Text>
           <Box marginTop={1}>
             <Text>Passphrase: </Text>
-            <TextInput value={revealPass} onChange={setRevealPass} mask="*" onSubmit={async () => {
-              try {
-                const secret = await onRevealPhrase(revealTarget, revealPass);
-                setRevealed(buildRevealView(secret));
-                // The passphrase has done its job; nothing below this point
-                // needs it, so it does not stay in state while the secret is up.
-                setRevealPass('');
-                setError('');
-                setMode('reveal-show');
-              } catch {
-                setError('Wrong passphrase or corrupted keystore');
-              }
-            }} placeholder="********" />
+            <TextInput value={revealPass} onChange={setRevealPass} mask="*" onSubmit={submitReveal} placeholder="********" />
           </Box>
+          {decrypting && <Text dimColor>Decrypting the keystore…</Text>}
           {error && <Text color="red">{error}</Text>}
           <HelpFooter hints={[{ key: 'ESC', label: 'cancel' }]} />
         </Box>
@@ -264,7 +297,7 @@ export function Keys({
               : revealed.rows.map((row, r) => (
                 <Box key={r}>
                   {row.map(({ index, word }) => (
-                    <Box key={index} width={14}>
+                    <Box key={index} width={WORD_CELL_WIDTH}>
                       <Text dimColor>{String(index).padStart(2, ' ')}.</Text>
                       <Text> {word}</Text>
                     </Box>
