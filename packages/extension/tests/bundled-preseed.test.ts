@@ -29,24 +29,41 @@ async function gzip(text: string): Promise<ArrayBuffer> {
   return new Response(stream).arrayBuffer();
 }
 
+const SHIELDED_WITNESS = { stream: 'zswapLedgerEvents', id: 1_431_228, digest: 'aaaaaaaaaaaaaaaa' };
+const DUST_WITNESS = { stream: 'dustLedgerEvents', id: 1_431_375, digest: 'bbbbbbbbbbbbbbbb' };
+
+/** A DUST snapshot as the projections sync writes it from the v9 fork on: its
+ *  offset is a block height, not an event id. */
+const PROJECTIONS_DUST = JSON.stringify({ protocolVersion: '2001100', offset: '97209', syncKind: 'projections' });
+
 /** Serve the package assets a real export would produce. `missing` omits one,
- *  to exercise the all-or-nothing rule. */
-async function serveAssets(options: { height?: number; missing?: string; witnesses?: boolean } = {}) {
+ *  to exercise the all-or-nothing rule. `witnesses` picks which witnesses the
+ *  manifest carries (default: both); `dustState` replaces the dust blob. */
+async function serveAssets(
+  options: {
+    height?: number;
+    missing?: string;
+    witnesses?: false | { shielded?: boolean; dust?: boolean };
+    dustState?: string;
+  } = {},
+) {
   const height = options.height ?? 1985914;
   const assets = new Map<string, BodyInit>();
-  // Witnesses are required: a bundle whose cursors cannot be checked against the
-  // serving indexer is refused. `witnesses: false` exercises that refusal.
+  // Witnesses are required for event-id cursors: a bundle whose cursors cannot be
+  // checked against the serving indexer is refused. `witnesses: false` exercises that refusal.
+  const pick = options.witnesses === false ? { shielded: false, dust: false } : { shielded: true, dust: true, ...options.witnesses };
   const witnesses =
     options.witnesses === false
       ? undefined
       : {
-          shielded: { stream: 'zswapLedgerEvents', id: 1_431_228, digest: 'aaaaaaaaaaaaaaaa' },
-          dust: { stream: 'dustLedgerEvents', id: 1_431_375, digest: 'bbbbbbbbbbbbbbbb' },
+          ...(pick.shielded ? { shielded: SHIELDED_WITNESS } : {}),
+          ...(pick.dust ? { dust: DUST_WITNESS } : {}),
         };
   assets.set('manifest.json', JSON.stringify({ network: NETWORK, height, parts: {}, witnesses }));
   for (const part of ['shielded', 'unshielded', 'dust']) {
     if (part === options.missing) continue;
-    assets.set(`${part}.dat.gz`, await gzip(`${part}-state-blob`));
+    const blob = part === 'dust' && options.dustState !== undefined ? options.dustState : `${part}-state-blob`;
+    assets.set(`${part}.dat.gz`, await gzip(blob));
   }
   vi.stubGlobal('fetch', async (input: string | URL) => {
     const file = String(input).split('/').pop()!;
@@ -125,6 +142,37 @@ describe('installBundledReference', () => {
   // the cost of refusing is one slower first sync.
   it('refuses a bundle with no witnesses rather than installing an unverifiable one', async () => {
     await serveAssets({ witnesses: false });
+    const store = recordingStore();
+
+    await expect(installBundledReference(NETWORK, store)).resolves.toBe(false);
+    expect(store.writes).toEqual([]);
+  });
+
+  // From the v9 fork on the projections sync writes dust with a block height as
+  // its offset. There is no event id to witness, so the export records none, and
+  // a bundle that requires one would be refused by every new wallet.
+  it('installs a bundle whose projections-synced dust has no witness', async () => {
+    await serveAssets({ witnesses: { dust: false }, dustState: PROJECTIONS_DUST });
+    const store = recordingStore();
+
+    await expect(installBundledReference(NETWORK, store)).resolves.toBe(true);
+
+    expect(store.entries.get(stateKey('dust'))).toBe(PROJECTIONS_DUST);
+    expect(store.entries.get(HEIGHT_KEY)).toBe('1985914');
+    expect(store.entries.has(`witness/${NETWORK}/__empty_ref__/dust.json`)).toBe(false);
+    expect(store.entries.has(`witness/${NETWORK}/__empty_ref__/shielded.json`)).toBe(true);
+  });
+
+  it('still refuses event-replayed dust that arrives without a witness', async () => {
+    await serveAssets({ witnesses: { dust: false } });
+    const store = recordingStore();
+
+    await expect(installBundledReference(NETWORK, store)).resolves.toBe(false);
+    expect(store.writes).toEqual([]);
+  });
+
+  it('still requires the shielded witness when dust needs none', async () => {
+    await serveAssets({ witnesses: { shielded: false, dust: false }, dustState: PROJECTIONS_DUST });
     const store = recordingStore();
 
     await expect(installBundledReference(NETWORK, store)).resolves.toBe(false);
