@@ -13,6 +13,10 @@ export function syncStatusView(balances: WalletBalances): SyncStatusView {
     shielded: percent(sub.shielded.applied, sub.shielded.total, progress.shieldedSynced),
     unshielded: percent(sub.unshielded.applied, sub.unshielded.total, progress.unshieldedSynced),
     dust: percent(sub.dust.applied, sub.dust.total, progress.dustSynced),
+    overall: Math.round(progress.percentage * 100),
+    // The flags the rows above and the DUST panel read, not `balances.synced`:
+    // see SyncStatusView.synced.
+    synced: progress.shieldedSynced && progress.unshieldedSynced && progress.dustSynced,
     etaSeconds: progress.etaSeconds,
   };
 }

@@ -1,13 +1,13 @@
-// Execution harness for moth-ft: runs both mint circuits through
-// @midnight-ntwrk/compact-runtime (no chain, no proof server) and observes
-// the results. Verification-by-execution, not just compilation.
+// Execution harness for moth-ft: runs both mint circuits of the ledger-8 build
+// through compact-runtime 0.16 (no chain, no proof server) and observes the
+// results. Verification-by-execution, not just compilation.
 
-import { Contract, ledger, pureCircuits } from './managed/contract/index.js';
+import { Contract, ledger, pureCircuits } from './ledger8/managed/contract/index.js';
 import {
   createConstructorContext,
   createCircuitContext,
   toHex,
-} from '@midnight-ntwrk/compact-runtime';
+} from 'compact-runtime-ledger8';
 import {
   sampleContractAddress,
   rawTokenType,

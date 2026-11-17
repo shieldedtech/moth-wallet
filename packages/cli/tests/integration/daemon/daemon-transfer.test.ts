@@ -16,6 +16,7 @@ import {
   getReceiveAddress,
   waitForSynced,
   waitForDust,
+  registerDust,
   waitForDaemonStderr,
   runMoth,
   runMothJson,
@@ -45,14 +46,7 @@ describe.skipIf(!DEVNET_URL)('moth daemon transfer — fresh wallet round-trip',
     // freshly-airdropped NIGHT for dust generation, then wait until
     // dust has actually accrued. Without this the transfer fails
     // with `Insufficient Funds: could not balance dust`.
-    const reg = runMothJson([
-      'daemon', 'dust', 'register',
-      '--wallet', aliceWallet,
-      '--network', NETWORK,
-    ]);
-    if (reg.exitCode !== 0) {
-      throw new Error(`alice dust register failed: ${reg.raw.stderr || reg.raw.stdout}`);
-    }
+    await registerDust(aliceWallet, NETWORK);
     await waitForDust(aliceWallet, NETWORK);
   }, 900_000);
 

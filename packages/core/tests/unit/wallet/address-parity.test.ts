@@ -78,7 +78,7 @@ describe('Address Derivation Parity', () => {
   it('should produce valid bech32m with mn_ prefix for all networks and roles', () => {
     for (const role of ['nightExternal', 'nightInternal', 'dust', 'zswap', 'metadata'] as const) {
       for (const network of [
-        'mainnet', 'devnet', 'preview', 'preprod', 'qanet', 'stagenet', 'undeployed',
+        'mainnet', 'devnet', 'preview', 'preprod', 'qanet', 'stagenet', 'local', 'undeployed',
       ] as const) {
         const addr = addresses[role].bech32m[network];
         expect(addr).toMatch(/^mn_/);
@@ -91,5 +91,11 @@ describe('Address Derivation Parity', () => {
     expect(addresses.nightExternal.bech32m.undeployed).toMatch(/^mn_addr_undeployed1/);
     expect(addresses.dust.bech32m.undeployed).toMatch(/^mn_dust_undeployed1/);
     expect(addresses.zswap.bech32m.undeployed).toMatch(/^mn_shield-addr_undeployed1/);
+  });
+
+  it('should encode midnight-node local-env under its own prefix', () => {
+    expect(addresses.nightExternal.bech32m.local).toMatch(/^mn_addr_local1/);
+    expect(addresses.dust.bech32m.local).toMatch(/^mn_dust_local1/);
+    expect(addresses.zswap.bech32m.local).toMatch(/^mn_shield-addr_local1/);
   });
 });

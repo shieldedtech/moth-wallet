@@ -1,7 +1,7 @@
 // Injected into DApp pages in Moth's in-app browser: installs `window.midnight.moth`, the
 // dapp-connector-api InitialAPI, as packages/extension/entrypoints/injected.ts does in a tab.
 // Calls go to Swift over the `mothConnector` reply handler, which adds the frame's origin.
-import type { ConnectedAPI, InitialAPI, KeyMaterialProvider, ProvingProvider } from '@midnight-ntwrk/dapp-connector-api';
+import type { ConnectedAPI, InitialAPI, KeyMaterialProvider, ProvingProvider } from '@midnightntwrk/dapp-connector-api';
 import { decodeBigintJson, encodeBigintJson } from 'moth-ext/messaging/bigint-json';
 import { connectorError } from 'moth-ext/connector/errors';
 import {
@@ -12,6 +12,7 @@ import {
   WALLET_ID,
   WALLET_NAME,
   WALLET_RDNS,
+  isProtocolKeyLocation,
 } from 'moth-ext/connector/constants';
 
 type Reply = { ok: true; resultJson: string } | { ok: false; error: { code: never; reason: string } };
@@ -42,7 +43,10 @@ function buildConnectedApi(): ConnectedAPI {
       throw connectorError('InvalidRequest', 'getProvingProvider requires a KeyMaterialProvider');
     }
     await request('getProvingProvider', []);
+    // A dApp serves its own contracts' keys only (midnight-js 5's registry refuses any other
+    // location), and the wallet holds the ledger's own circuits, so those are never asked for.
     const materialFor = async (keyLocation: string) => {
+      if (isProtocolKeyLocation(keyLocation)) return null;
       const [zkir, proverKey, verifierKey] = await Promise.all([
         keys.getZKIR!(keyLocation),
         keys.getProverKey!(keyLocation),

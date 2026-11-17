@@ -91,7 +91,7 @@ describe('classifyProbe', () => {
 
 // The whole mechanism hinges on RECOGNISING the relay socket. Core builds the
 // SDK's relay URL as `new URL(toWsUrl(nodeUrl))`, which normalises
-// "https://rpc.preprod.midnight.network" to "wss://rpc.preprod.midnight.network/"
+// "https://rpc.preprod.shielded.tools" to "wss://rpc.preprod.shielded.tools/"
 // — WITH a trailing slash. A caller mirroring that with a plain string replace
 // stores it WITHOUT one. When those failed to compare equal every relay socket
 // was passed straight through and the backoff did nothing at all, silently,
@@ -152,27 +152,27 @@ describe('relay URL matching', () => {
 
   it('recognises the SDK dial form when configured from the slash-less form', () => {
     // What wallet-host derives from network.nodeUrl by string replace...
-    setRelayUrl('wss://rpc.preprod.midnight.network');
+    setRelayUrl('wss://rpc.preprod.shielded.tools');
     const Wrapped = globalThis.WebSocket;
 
     // ...against what WsProvider actually dials, via core's `new URL(...)`.
-    new Wrapped('wss://rpc.preprod.midnight.network/');
+    new Wrapped('wss://rpc.preprod.shielded.tools/');
     expect(realDials).toHaveLength(1);
 
     // Fail it: a RECOGNISED endpoint now opens a backoff window.
     constructed[0]!.fail();
 
     // The next construction must be a stub — no second dial reaches the wire.
-    new Wrapped('wss://rpc.preprod.midnight.network/');
+    new Wrapped('wss://rpc.preprod.shielded.tools/');
     expect(realDials).toHaveLength(1);
   });
 
   it('never throttles a different socket, however similar', () => {
-    setRelayUrl('wss://rpc.preprod.midnight.network');
+    setRelayUrl('wss://rpc.preprod.shielded.tools');
     const Wrapped = globalThis.WebSocket;
 
     // The indexer's socket must always dial: throttling it would stall sync.
-    const indexer = 'wss://indexer.preprod.midnight.network/api/v4/graphql/ws';
+    const indexer = 'wss://indexer.preprod.shielded.tools/api/v4/graphql/ws';
     new Wrapped(indexer);
     constructed[0]!.fail();
     new Wrapped(indexer);

@@ -2,7 +2,7 @@
 // with type/code/reason fields (deliberately not a class — `instanceof`
 // doesn't cross the page boundary).
 
-import type { APIError, ErrorCode } from '@midnight-ntwrk/dapp-connector-api';
+import type { APIError, ErrorCode } from '@midnightntwrk/dapp-connector-api';
 
 export type { APIError, ErrorCode };
 
@@ -82,6 +82,31 @@ export function connectorError(code: ErrorCode, reason: string): APIError {
 
 export function serializeError(code: ErrorCode, reason: string): SerializedConnectorError {
   return { code, reason };
+}
+
+/** SDK tags for a shortfall: any wallet's balancing (DUST fees too) and the DUST registration fee. */
+const INSUFFICIENT_FUNDS_TAGS: ReadonlySet<string> = new Set([
+  'Wallet.InsufficientFunds',
+  'Wallet.InsufficientDustForFee',
+]);
+
+/**
+ * Whether a failure or its `cause` chain is the wallet lacking funds. Matched by tag, not
+ * class, because each hop out of the offscreen worker rebuilds the error as a plain Error.
+ */
+function isInsufficientFunds(err: unknown, depth = 0): boolean {
+  if (!(err instanceof Error) || depth > 3) return false;
+  const tag = (err as { _tag?: unknown })._tag;
+  if (typeof tag === 'string' && INSUFFICIENT_FUNDS_TAGS.has(tag)) return true;
+  // A FiberFailure that was never unwrapped still carries the tag in its name.
+  if (INSUFFICIENT_FUNDS_TAGS.has(err.name.replace(/^\(FiberFailure\) /, ''))) return true;
+  return isInsufficientFunds(err.cause, depth + 1);
+}
+
+/** The connector code a failure reaches the dApp with. */
+export function errorCodeFor(err: unknown): ErrorCode {
+  if (isInsufficientFunds(err)) return 'InsufficientFunds';
+  return (err as { code?: ErrorCode } | null | undefined)?.code ?? 'InternalError';
 }
 
 /**
