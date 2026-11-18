@@ -1581,7 +1581,10 @@
     "message": "El registro paga su propia comisión con el $1 que genera su $2, y este saldo es demasiado pequeño para cubrirla. Añada más $2 e inténtelo de nuevo."
   },
   "network_mainnetHidden": {
-    "message": "Las redes con valor real están ocultas. Esta cartera no está auditada ni cuenta con soporte: active el modo de desarrollador en Ajustes para mostrarlas."
+    "message": "Las redes con valor real están ocultas. Esta cartera no está auditada ni cuenta con soporte: active el modo de desarrollador para mostrarlas."
+  },
+  "network_enableDeveloperMode": {
+    "message": "Activar el modo de desarrollador"
   },
   "network_valueWarningTitle": {
     "message": "¿Cambiar a $1 — fondos reales?"

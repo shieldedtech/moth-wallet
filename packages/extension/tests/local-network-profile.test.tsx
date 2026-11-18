@@ -57,6 +57,7 @@ async function openNetworkPanel() {
     setProverType: vi.fn(),
     editProverUrl: vi.fn(),
     resetEndpoints: vi.fn(),
+    enableDeveloperMode: vi.fn(),
     save: vi.fn(),
   };
   return { settings, state, html: renderToStaticMarkup(<NetworkFields state={state} />) };

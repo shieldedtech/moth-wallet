@@ -156,6 +156,9 @@ export interface NetworkConfigState {
   setProverType: (type: ProverConfig['type']) => void;
   editProverUrl: (value: string) => void;
   resetEndpoints: () => void;
+  /** Turn developer mode on from the picker itself, which setup needs: before
+   *  the first account exists there is no Settings screen to do it from. */
+  enableDeveloperMode: () => Promise<void>;
   /** Save the selection as the default used by setup/new accounts. */
   save: () => Promise<void>;
 }
@@ -224,6 +227,11 @@ export function useNetworkConfig(fallback: SupportedNetwork = 'mainnet'): Networ
     });
   };
 
+  const enableDeveloperMode = async () => {
+    const saved = await sendMessage('settingsSet', { developerMode: true });
+    setDeveloperMode(saved.developerMode);
+  };
+
   const save = async () => {
     await sendMessage('settingsSet', {
       network,
@@ -262,6 +270,7 @@ export function useNetworkConfig(fallback: SupportedNetwork = 'mainnet'): Networ
     setProverType,
     editProverUrl,
     resetEndpoints: () => setUrls(presetFor(network)),
+    enableDeveloperMode,
     save,
   };
 }
@@ -270,12 +279,23 @@ export function useNetworkConfig(fallback: SupportedNetwork = 'mainnet'): Networ
 export function NetworkFields({ state }: { state: NetworkConfigState }) {
   return (
     <>
-      <div role="radiogroup" aria-label={t('network_groupAria')} className="flex flex-col gap-2.5">
-        {state.available.map((id) => (
-          <NetworkOption key={id} id={id} active={state.network === id} onPick={() => state.pick(id)} />
-        ))}
+      <div className="flex flex-col gap-2.5">
+        <div role="radiogroup" aria-label={t('network_groupAria')} className="flex flex-col gap-2.5">
+          {state.available.map((id) => (
+            <NetworkOption key={id} id={id} active={state.network === id} onPick={() => state.pick(id)} />
+          ))}
+        </div>
         {!state.developerMode && state.available.length < SUPPORTED_NETWORKS.length && (
-          <p className="m-0 px-1 text-[12.5px] text-muted-foreground">{t('network_mainnetHidden')}</p>
+          <div className="flex flex-col items-start gap-1.5 px-1">
+            <p className="m-0 text-[12.5px] text-muted-foreground">{t('network_mainnetHidden')}</p>
+            <button
+              type="button"
+              onClick={() => void state.enableDeveloperMode()}
+              className="cursor-pointer border-0 bg-transparent p-0 text-[12.5px] font-semibold text-link hover:underline"
+            >
+              {t('network_enableDeveloperMode')}
+            </button>
+          </div>
         )}
       </div>
 
