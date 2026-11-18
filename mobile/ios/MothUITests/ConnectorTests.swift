@@ -97,10 +97,21 @@ func choose(_ item: XCUIElement, fromMenu menu: XCUIElement, attempts: Int = 3) 
             let frame = item.frame
             XCUIApplication().coordinate(withNormalizedOffset: .zero)
                 .withOffset(CGVector(dx: frame.midX, dy: frame.midY)).tap()
-            return
+            // The menu closes once the item is chosen; if it is still open, the tap missed.
+            if item.waitForNonExistence(timeout: 3) { return }
         }
     }
     XCTFail("\(item) never settled after opening \(menu) \(attempts) times")
+}
+
+/// Taps `button` until `result` appears. On CI a tap on a list row has been lost while the list
+/// redrew for sync progress; tap again only if nothing opened and the button is still clear.
+func tap(_ button: XCUIElement, until result: XCUIElement, attempts: Int = 3) {
+    for attempt in 0..<attempts {
+        if attempt == 0 || (!result.exists && button.isHittable) { button.tap() }
+        if result.waitForExistence(timeout: 5) { return }
+    }
+    XCTFail("\(result) never appeared after tapping \(button) \(attempts) times")
 }
 
 extension XCUIElement {
@@ -109,16 +120,18 @@ extension XCUIElement {
         return XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: predicate, object: self)], timeout: timeout) == .completed
     }
 
-    /// Waits until the element has a real frame that is the same on two checks in a row, which a
-    /// menu item has once its menu has finished opening. Not `hittable`: asking that of an item
-    /// whose menu is still opening fails the test instead of answering false.
+    /// Waits until the element has a real frame that is the same on two real readings in a row,
+    /// which a menu item has once its menu has finished opening. An open iOS 26 menu can report
+    /// an infinite frame between real ones, so those readings are skipped, not counted as a move.
+    /// Not `hittable`: asking that of an item whose menu is still opening fails the test.
     func waitForSettledFrame(timeout: TimeInterval) -> Bool {
         var last: CGRect?
         let settled = NSPredicate { object, _ in
             guard let element = object as? XCUIElement, element.exists else { last = nil; return false }
             let frame = element.frame
+            guard frame.minX.isFinite, frame.minY.isFinite, !frame.isEmpty else { return false }
             defer { last = frame }
-            return frame.minX.isFinite && frame.minY.isFinite && !frame.isEmpty && frame == last
+            return frame == last
         }
         return XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: settled, object: self)], timeout: timeout) == .completed
     }

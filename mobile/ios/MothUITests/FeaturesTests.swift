@@ -12,7 +12,7 @@ final class FeaturesTests: XCTestCase {
         unlockOrCreate(app)
 
         // Receive: the DUST tab shows this account's DUST address.
-        app.buttons["Receive"].tap()
+        tap(app.buttons["Receive"], until: app.buttons["DUST"])
         app.buttons["DUST"].tap()
         let dust = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'mn_dust'")).firstMatch
         XCTAssertTrue(dust.waitForExistence(timeout: 10), "DUST address shown")
@@ -26,7 +26,7 @@ final class FeaturesTests: XCTestCase {
         app.buttons["Done"].tap()
 
         // Send covers Cardano too.
-        app.buttons["Send"].tap()
+        tap(app.buttons["Send"], until: app.buttons["Cardano"])
         app.buttons["Cardano"].tap()
         XCTAssertTrue(app.textFields["ADA"].waitForExistence(timeout: 10), "Cardano send form")
         XCTAssertTrue(app.textFields["cNIGHT"].exists)
