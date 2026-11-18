@@ -1,6 +1,13 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { Edit, FeeEstimateCard, Review, Pending, type OutputSummary } from '../components/screens/SendFlow';
+import {
+  Edit,
+  FeeEstimateCard,
+  Review,
+  Pending,
+  type FeeEstimateState,
+  type OutputSummary,
+} from '../components/screens/SendFlow';
 import { buildBatch, type OutputDraft } from '../lib/ui/send-batch';
 import type { SendableToken } from '../lib/ui/token-list';
 
@@ -43,6 +50,39 @@ describe('transfer fee estimate UI', () => {
     const html = renderToStaticMarkup(<FeeEstimateCard estimate={{ status: 'unavailable' }} dustLabel="DUST" />);
     expect(html).toContain('Unavailable right now');
     expect(html).toContain('You can still send');
+  });
+
+  // Submitting while an earlier transaction holds the coins fails the same way
+  // the estimate did, so this state must not repeat "You can still send".
+  it('says an earlier transaction is holding the coins, not that sending will work', () => {
+    const html = renderToStaticMarkup(<FeeEstimateCard estimate={{ status: 'waiting' }} dustLabel="tDUST" />);
+    expect(html).toContain('Waiting for previous transaction');
+    expect(html).toContain('such as the tDUST for the fee');
+    expect(html).not.toContain('You can still send');
+  });
+
+  it('holds Send on review until the earlier transaction confirms', () => {
+    const review = (feeEstimate: FeeEstimateState) =>
+      renderToStaticMarkup(
+        <Review
+          outputs={[{ symbol: 'tNIGHT', amount: '1', to: address, kind: 'unshielded' }]}
+          from="Account-1"
+          dustLabel="tDUST"
+          feeEstimate={feeEstimate}
+          onBack={() => {}}
+          onSend={() => {}}
+        />,
+      );
+    const sendButton = (html: string) => html.match(/<button[^>]*>[^<]*(Send now|Waiting for previous transaction…)/)?.[0] ?? '';
+
+    const waiting = sendButton(review({ status: 'waiting' }));
+    expect(waiting).toContain('Waiting for previous transaction…');
+    expect(waiting).toMatch(/disabled=""/);
+
+    // "Unavailable" still lets the user try, as before.
+    const unavailable = sendButton(review({ status: 'unavailable' }));
+    expect(unavailable).toContain('Send now');
+    expect(unavailable).not.toMatch(/disabled=""/);
   });
 
   it('shows the estimate treatment on the edit step', () => {

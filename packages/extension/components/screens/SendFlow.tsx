@@ -6,7 +6,7 @@
 // never a transferable token here; it only pays the fee.
 
 import { useEffect, useRef, useState } from 'react';
-import { Calculator, Check, ChevronDown, Eye, LoaderCircle, Moon, Plus, Search, TriangleAlert, X } from 'lucide-react';
+import { Calculator, Check, ChevronDown, Eye, Hourglass, LoaderCircle, Moon, Plus, Search, TriangleAlert, X } from 'lucide-react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { NIGHT_TOKEN_ID } from '@shieldedtech/moth-wallet/types/tokens';
 import type { WalletBalances, TxStage } from '@shieldedtech/moth-browser';
@@ -39,6 +39,9 @@ export type FeeEstimateState =
   | { status: 'idle' }
   | { status: 'loading' }
   | { status: 'ready'; fee: string }
+  /** An earlier transaction still holds coins this one needs; it cannot be
+   *  priced or sent until that one confirms. */
+  | { status: 'waiting' }
   | { status: 'unavailable' };
 
 /** A committed output, frozen at Review so later screens keep naming what was
@@ -235,8 +238,13 @@ export function SendFlow({
   );
 }
 
+/** How often to re-check while an earlier transaction holds the coins. Nothing
+ *  the panel receives announces their release, so it asks again. */
+const IN_FLIGHT_RETRY_MS = 3_000;
+
 function useBatchFeeEstimate(requests: SendTokensRequest[] | null): FeeEstimateState {
   const [estimate, setEstimate] = useState<FeeEstimateState>({ status: 'idle' });
+  const [attempt, setAttempt] = useState(0);
   const requestId = useRef(0);
   const requestKey =
     requests && requests.length > 0
@@ -250,11 +258,13 @@ function useBatchFeeEstimate(requests: SendTokensRequest[] | null): FeeEstimateS
       return;
     }
 
-    setEstimate({ status: 'loading' });
+    // A re-check while waiting keeps saying so rather than flashing "Calculating".
+    setEstimate((previous) => (previous.status === 'waiting' ? previous : { status: 'loading' }));
     const timer = setTimeout(() => {
       void sendMessage('estimateTransferFee', { outputs: requests }).then(
-        ({ fee }) => {
-          if (requestId.current === id) setEstimate({ status: 'ready', fee });
+        (result) => {
+          if (requestId.current !== id) return;
+          setEstimate(result.fee === null ? { status: 'waiting' } : { status: 'ready', fee: result.fee });
         },
         () => {
           if (requestId.current === id) setEstimate({ status: 'unavailable' });
@@ -268,7 +278,13 @@ function useBatchFeeEstimate(requests: SendTokensRequest[] | null): FeeEstimateS
       // an unmounted flow can never receive a late state update.
       if (requestId.current === id) requestId.current += 1;
     };
-  }, [requestKey]);
+  }, [requestKey, attempt]);
+
+  useEffect(() => {
+    if (estimate.status !== 'waiting') return;
+    const timer = setTimeout(() => setAttempt((n) => n + 1), IN_FLIGHT_RETRY_MS);
+    return () => clearTimeout(timer);
+  }, [estimate]);
 
   return estimate;
 }
@@ -674,6 +690,9 @@ export function Review({
   onSend: () => void;
 }) {
   const waitingForEstimate = feeEstimate.status === 'idle' || feeEstimate.status === 'loading';
+  // Submitting now would fail exactly as the estimate did, so hold Send until
+  // the earlier transaction confirms and the estimate comes back.
+  const waitingForPrevious = feeEstimate.status === 'waiting';
   const single = outputs.length === 1 ? outputs[0] : null;
   const feeLine = feeEstimate.status === 'ready'
     ? t('send_feeReady', [formatDustFee(BigInt(feeEstimate.fee)), dustLabel])
@@ -683,8 +702,12 @@ export function Review({
     <PanelScreen
       cta={
         <div className="flex flex-col gap-1">
-          <Button size="lg" disabled={waitingForEstimate} onClick={onSend}>
-            {waitingForEstimate ? t('send_estimatingFee') : t('send_sendNow')}
+          <Button size="lg" disabled={waitingForEstimate || waitingForPrevious} onClick={onSend}>
+            {waitingForEstimate
+              ? t('send_estimatingFee')
+              : waitingForPrevious
+                ? t('send_waitingForPrevious')
+                : t('send_sendNow')}
           </Button>
           <Button variant="ghost" onClick={onBack}>{t('common_back')}</Button>
         </div>
@@ -744,16 +767,20 @@ export function FeeEstimateCard({
     ? t('send_feeReady', [formatDustFee(BigInt(estimate.fee)), dustLabel])
     : estimate.status === 'loading'
       ? t('send_feeCalculating')
-      : estimate.status === 'unavailable'
-        ? t('send_feeUnavailable')
-        : t('send_feeIdle');
+      : estimate.status === 'waiting'
+        ? t('send_feeWaiting')
+        : estimate.status === 'unavailable'
+          ? t('send_feeUnavailable')
+          : t('send_feeIdle');
   const note = ready
     ? t('send_feeNoteReady')
     : estimate.status === 'loading'
       ? t('send_feeNoteLoading', [dustLabel])
-      : estimate.status === 'unavailable'
-        ? t('send_feeNoteUnavailable', [dustLabel])
-        : t('send_feeNoteIdle');
+      : estimate.status === 'waiting'
+        ? t('send_feeNoteWaiting', [dustLabel])
+        : estimate.status === 'unavailable'
+          ? t('send_feeNoteUnavailable', [dustLabel])
+          : t('send_feeNoteIdle');
 
   return (
     <div
@@ -771,7 +798,9 @@ export function FeeEstimateCard({
         )}>
           {estimate.status === 'loading'
             ? <LoaderCircle size={17} strokeWidth={2.25} className="animate-spin" />
-            : <Calculator size={17} strokeWidth={2.25} />}
+            : estimate.status === 'waiting'
+              ? <Hourglass size={17} strokeWidth={2.25} />
+              : <Calculator size={17} strokeWidth={2.25} />}
         </span>
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-2">
@@ -782,7 +811,7 @@ export function FeeEstimateCard({
           </span>
           <span className={cn(
             'mt-0.5 block text-[15px] font-bold tabular-nums',
-            estimate.status === 'unavailable' && 'text-muted-foreground',
+            (estimate.status === 'unavailable' || estimate.status === 'waiting') && 'text-muted-foreground',
           )}>
             {value}
           </span>
