@@ -1019,6 +1019,23 @@ export function extractBalancesPartial(
     /* dust not ready */
   }
 
+  // Carry forward progress this emission did not report. Progress within a
+  // session only moves forward, so a part that reported 498,519/498,519 a second
+  // ago has not become 0/0 — the emission simply said nothing about it. Applied
+  // per part, because emissions are routinely partial in exactly this way, and
+  // before the overall figure is taken, so the percentage and the ETA's samples
+  // never see the gap.
+  if (previous) {
+    for (const part of ['shielded', 'unshielded', 'dust'] as const) {
+      const now = subProgress[part];
+      const before = previous.subProgress[part];
+      if (now.total === 0 && before.total > 0) subProgress[part] = before;
+      else if (now.applied === 0 && before.applied > now.applied && now.total === before.total) {
+        subProgress[part] = {applied: before.applied, total: now.total};
+      }
+    }
+  }
+
   // Overall progress: the slowest sub-wallet, clamped below 100% until actually
   // synced. Arithmetic lives in ./progress.ts so it is unit-testable without WASM.
   const {percentage, etaSeconds, slowest} = overallSyncProgress({
@@ -1063,19 +1080,9 @@ export function extractBalancesPartial(
     /* dust generation info not available */
   }
 
-  // Carry forward anything this emission did not report. Progress within a
-  // session only moves forward, so a part that reported 498,519/498,519 a second
-  // ago has not become 0/0 — the emission simply said nothing about it. Applied
-  // per part, because emissions are routinely partial in exactly this way.
+  // Carry forward the rest of what this emission did not report, for the same
+  // reason as the progress above.
   if (previous) {
-    for (const part of ['shielded', 'unshielded', 'dust'] as const) {
-      const now = subProgress[part];
-      const before = previous.subProgress[part];
-      if (now.total === 0 && before.total > 0) subProgress[part] = before;
-      else if (now.applied === 0 && before.applied > now.applied && now.total === before.total) {
-        subProgress[part] = {applied: before.applied, total: now.total};
-      }
-    }
     // Same reasoning for the balances themselves: an empty map here means this
     // emission carried none, not that the wallet was emptied.
     if (Object.keys(shielded).length === 0 && Object.keys(previous.shielded).length > 0) shielded = previous.shielded;

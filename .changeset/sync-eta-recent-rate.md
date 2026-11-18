@@ -30,3 +30,8 @@ estimate is stretched by half before it becomes the deadline, and the deadline
 only moves earlier freely: it moves later only when the fresh estimate exceeds
 what is shown by a wide margin for half a minute. On a mainnet sync it showed
 282 s where 273 remained and 38 s where 33 did, never rising in between.
+
+A state update that says nothing about a sub-wallet no longer reaches the
+progress figure as "nothing left to do": the last reading is carried forward
+first. The percentage used to jump to 99% for that update, and the estimate
+would have started over.
