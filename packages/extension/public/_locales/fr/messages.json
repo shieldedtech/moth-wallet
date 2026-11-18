@@ -1590,7 +1590,10 @@
     "message": "L’enregistrement paie ses propres frais avec le $1 que génère votre $2, et ce solde est trop faible pour les couvrir. Ajoutez davantage de $2, puis réessayez."
   },
   "network_mainnetHidden": {
-    "message": "Les réseaux à valeur réelle sont masqués. Ce portefeuille n’est ni audité ni pris en charge — activez le mode développeur dans les Réglages pour les afficher."
+    "message": "Les réseaux à valeur réelle sont masqués. Ce portefeuille n’est ni audité ni pris en charge — activez le mode développeur pour les afficher."
+  },
+  "network_enableDeveloperMode": {
+    "message": "Activer le mode développeur"
   },
   "network_valueWarningTitle": {
     "message": "Passer à $1 — fonds réels ?"

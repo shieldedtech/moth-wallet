@@ -1590,7 +1590,10 @@
     "message": "Die Registrierung zahlt ihre Gebühr aus dem $1, das Ihr $2 erwirtschaftet, und dieses Guthaben ist zu klein, um sie jemals zu decken. Fügen Sie mehr $2 hinzu und versuchen Sie es erneut."
   },
   "network_mainnetHidden": {
-    "message": "Netzwerke mit echtem Wert sind ausgeblendet. Diese Wallet ist nicht auditiert und wird nicht unterstützt — aktivieren Sie den Entwicklermodus in den Einstellungen, um sie anzuzeigen."
+    "message": "Netzwerke mit echtem Wert sind ausgeblendet. Diese Wallet ist nicht auditiert und wird nicht unterstützt — aktivieren Sie den Entwicklermodus, um sie anzuzeigen."
+  },
+  "network_enableDeveloperMode": {
+    "message": "Entwicklermodus aktivieren"
   },
   "network_valueWarningTitle": {
     "message": "Zu $1 wechseln — echte Gelder?"
