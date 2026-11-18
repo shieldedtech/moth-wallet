@@ -866,7 +866,8 @@ export interface ProgressBaseline {
   value: {fraction: number; elapsedMs: number} | null;
 }
 
-function extractBalancesPartial(
+/** Exported for tests. */
+export function extractBalancesPartial(
   state: FacadeState,
   syncStartTime = 0,
   prevPct = 0,
@@ -1038,6 +1039,31 @@ function extractBalancesPartial(
     /* dust not ready */
   }
 
+  // Carry forward progress this emission did not report. Progress within a
+  // session only moves forward, so a part that reported 498,519/498,519 a second
+  // ago has not become 0/0 — the emission simply said nothing about it. Applied
+  // per part, because emissions are routinely partial in exactly this way, and
+  // before the overall figure is taken, so the percentage never sees the gap.
+  if (previous) {
+    const carried = new Set<SubWallet>();
+    for (const part of ['shielded', 'unshielded', 'dust'] as const) {
+      const now = subProgress[part];
+      const before = previous.subProgress[part];
+      if (now.total === 0 && before.total > 0) {
+        subProgress[part] = before;
+        carried.add(part);
+      } else if (now.applied === 0 && before.applied > now.applied && now.total === before.total) {
+        subProgress[part] = {applied: before.applied, total: now.total};
+        carried.add(part);
+      }
+    }
+    // An emission that said nothing about a part's progress has no verdict on
+    // it either: a connected 0/0 reads as strictly complete.
+    if (carried.has('shielded')) shieldedSynced = false;
+    if (carried.has('unshielded')) unshieldedSynced = false;
+    if (carried.has('dust')) dustSynced = false;
+  }
+
   // Overall progress: the slowest sub-wallet, clamped below 100% until actually
   // synced. Arithmetic lives in ./progress.ts so it is unit-testable without WASM.
   const {percentage, etaSeconds, slowest} = overallSyncProgress({
@@ -1082,19 +1108,9 @@ function extractBalancesPartial(
     /* dust generation info not available */
   }
 
-  // Carry forward anything this emission did not report. Progress within a
-  // session only moves forward, so a part that reported 498,519/498,519 a second
-  // ago has not become 0/0 — the emission simply said nothing about it. Applied
-  // per part, because emissions are routinely partial in exactly this way.
+  // Carry forward the rest of what this emission did not report, for the same
+  // reason as the progress above.
   if (previous) {
-    for (const part of ['shielded', 'unshielded', 'dust'] as const) {
-      const now = subProgress[part];
-      const before = previous.subProgress[part];
-      if (now.total === 0 && before.total > 0) subProgress[part] = before;
-      else if (now.applied === 0 && before.applied > now.applied && now.total === before.total) {
-        subProgress[part] = {applied: before.applied, total: now.total};
-      }
-    }
     // Same reasoning for the balances themselves: an empty map here means this
     // emission carried none, not that the wallet was emptied.
     if (Object.keys(shielded).length === 0 && Object.keys(previous.shielded).length > 0) shielded = previous.shielded;
