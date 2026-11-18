@@ -986,6 +986,9 @@
   "send_sendNow": {
     "message": "Enviar ahora"
   },
+  "send_waitingForPrevious": {
+    "message": "Esperando la transacción anterior…"
+  },
   "send_irreversibleNote": {
     "message": "Las transferencias no se pueden revertir. Revisa la dirección antes de enviar."
   },
@@ -1007,6 +1010,9 @@
   "send_feeUnavailable": {
     "message": "No disponible por ahora"
   },
+  "send_feeWaiting": {
+    "message": "Esperando la transacción anterior"
+  },
   "send_feeIdle": {
     "message": "Ingresa los datos de la transferencia"
   },
@@ -1018,6 +1024,9 @@
   },
   "send_feeNoteUnavailable": {
     "message": "Aún puedes enviar. La comisión de red final se pagará en $1."
+  },
+  "send_feeNoteWaiting": {
+    "message": "Tu transacción anterior aún se está confirmando y, hasta entonces, retiene monedas que esta necesita, como el $1 de la comisión. Esto se actualiza solo en cuanto se confirme."
   },
   "send_feeNoteIdle": {
     "message": "Agrega un monto y una dirección válidos para calcular la comisión."

@@ -26,6 +26,14 @@ export interface DustNotYet {
   availableSpecks: string;
   secondsUntilAffordable: number | null;
 }
+
+/**
+ * A transfer's fee estimate: raw SPECK as a decimal string, or null when it
+ * cannot be built yet because a transaction this wallet already submitted
+ * still holds coins it would need. Returned rather than thrown, because an
+ * Error crossing the channel arrives as a bare string.
+ */
+export type FeeEstimate = { fee: string } | { fee: null; reason: 'in-flight' };
 import type { RelayState } from '../offscreen/relay-socket';
 
 export type { RelayState };
@@ -357,8 +365,8 @@ interface ProtocolMap {
    *  over the port. */
   sendTokens(data: { outputs: SendTokensRequest[] }): { txHash: string };
 
-  /** Complete estimated fee in raw SPECK for the whole batch, as a decimal string. */
-  estimateTransferFee(data: { outputs: SendTokensRequest[] }): { fee: string };
+  /** Complete estimated fee for the whole batch; see FeeEstimate. */
+  estimateTransferFee(data: { outputs: SendTokensRequest[] }): FeeEstimate;
 
   /** Register the wallet's unshielded NIGHT for DUST generation. Stage updates
    *  stream over the port. `txHash` is null when nothing needed registering.
