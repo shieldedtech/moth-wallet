@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds @midnight-ntwrk/ledger-v8 from the midnight-ledger `ledger-8.1.0` tag (the release the
+# Builds @midnightntwrk/ledger-v8 from the midnight-ledger `ledger-8.1.3` tag (the release the
 # npm package was built from) plus one upstream fix, into vendor/ledger-v8 in the same layout as
 # the npm package, for `LEDGER=src scripts/build-engine.sh`.
 #
@@ -13,9 +13,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 REPO=$(cd ../.. && pwd)
-TAG=${LEDGER_TAG:-ledger-8.1.0}
+TAG=${LEDGER_TAG:-ledger-8.1.3}
 LLVM=${LLVM_BIN:-$(brew --prefix llvm 2>/dev/null)/bin}
-NPM_PKG=$REPO/node_modules/@midnight-ntwrk/ledger-v8
+NPM_PKG=$REPO/node_modules/@midnightntwrk/ledger-v8
 SRC=vendor/ledger-src
 
 [ -x "$LLVM/clang" ] || { echo "no wasm-capable clang at $LLVM (set LLVM_BIN)" >&2; exit 1; }

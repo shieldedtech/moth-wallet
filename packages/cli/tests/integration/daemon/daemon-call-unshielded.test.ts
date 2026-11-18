@@ -11,7 +11,7 @@
 
 import {describe, it, expect, beforeAll, afterAll} from 'vitest';
 import {existsSync} from 'node:fs';
-import {resolve} from 'node:path';
+import {bundledContractForDeploy, DEFAULT_NETWORKS} from '@shieldedtech/moth-wallet';
 import {
   DEVNET_URL,
   NETWORK,
@@ -19,62 +19,38 @@ import {
   setupTestWallet,
   cleanupTestWallet,
   waitForSynced,
-  waitForDust,
+  prepareFeePayer,
   runMothJson,
+  FEE_PAYER_NIGHT,
   type DaemonHandle,
 } from './helpers.js';
 
-const ARTIFACT = resolve(
-  __dirname,
-  '../../../../core/contracts/receive-unshielded/managed',
-);
 describe.skipIf(!DEVNET_URL)(
   'contract call with unshielded inputs — signatures must reach the node (#119)',
   () => {
     let wallet: string;
     let daemon: DaemonHandle;
     let contractAddress: string;
+    let artifact: string;
 
     beforeAll(async () => {
-      // The fixture is committed, so a missing one is a repo error, not a reason
-      // to skip: this is the regression test for error 192 and must fail loudly.
-      expect(existsSync(ARTIFACT), `missing fixture: ${ARTIFACT}`).toBe(true);
+      // The fixture ships one build per ledger era, and only the one for the
+      // stack's current era deploys. It is committed, so a missing one is a repo
+      // error, not a reason to skip: this regression test must fail loudly.
+      const indexerUrl = process.env.MOTH_INDEXER_URL ?? DEFAULT_NETWORKS[NETWORK].indexerUrl;
+      artifact = (await bundledContractForDeploy('receive-unshielded', {indexerUrl})).artifactPath;
+      expect(existsSync(artifact), `missing fixture: ${artifact}`).toBe(true);
 
-      // Bigger than the harness default: this suite makes two contract calls
-      // plus a deploy, and DUST generation is proportional to the NIGHT held.
-      // With the default airdrop the second call fails to balance its fee.
-      wallet = await setupTestWallet('daemon-call-unshielded', NETWORK, '10000');
+      wallet = await setupTestWallet('daemon-call-unshielded', NETWORK, FEE_PAYER_NIGHT);
       daemon = await startDaemon(wallet, NETWORK);
       await waitForSynced(wallet, NETWORK);
 
-      // DUST registration pays its own fee out of the DUST the airdropped NIGHT
-      // has generated so far, so straight after an airdrop it legitimately fails
-      // with "about N seconds to go". Retry rather than treat that as an error.
-      let registered = false;
-      let lastFailure = '';
-      for (let attempt = 0; attempt < 12 && !registered; attempt++) {
-        const reg = runMothJson([
-          'daemon', 'dust', 'register',
-          '--wallet', wallet,
-          '--network', NETWORK,
-        ]);
-        if (reg.exitCode === 0) {
-          registered = true;
-          break;
-        }
-        lastFailure = reg.raw.stderr || reg.raw.stdout;
-        if (!/needs .* DUST and has/.test(lastFailure)) {
-          throw new Error(`dust register failed: ${lastFailure}`);
-        }
-        await new Promise((r) => setTimeout(r, 15_000));
-      }
-      if (!registered) {
-        throw new Error(`dust register never accrued enough DUST: ${lastFailure}`);
-      }
-      await waitForDust(wallet, NETWORK);
+      // One coin each for the deploy and the two calls, which follow one another
+      // faster than a transaction's change comes back.
+      await prepareFeePayer(wallet, NETWORK, 3);
 
       const deploy = runMothJson<{contractAddress?: string}>([
-        'daemon', 'deploy', ARTIFACT,
+        'daemon', 'deploy', artifact,
         '--wallet', wallet,
         '--network', NETWORK,
       ]);
@@ -94,7 +70,7 @@ describe.skipIf(!DEVNET_URL)(
         '--wallet', wallet,
         '--network', NETWORK,
         '--address', contractAddress,
-        '--artifact', ARTIFACT,
+        '--artifact', artifact,
       ]);
 
       // Before the fix this failed with Custom error: 192.
@@ -108,16 +84,15 @@ describe.skipIf(!DEVNET_URL)(
     // Guards the DUST wait: a resident daemon has just spent DUST, and the old
     // guard made every call after the first wait a full emission cycle.
     it('stays fast on a second call through the same daemon', async () => {
-      // The first call spent DUST; wait for the fee to be affordable again so
-      // this measures the guard, not DUST accrual.
-      await waitForDust(wallet, NETWORK);
+      // The wallet holds a coin the first call did not spend, so this measures
+      // the guard, not DUST accrual.
       const started = Date.now();
       const call = runMothJson<{status?: string}>([
         'daemon', 'call', 'takeNight',
         '--wallet', wallet,
         '--network', NETWORK,
         '--address', contractAddress,
-        '--artifact', ARTIFACT,
+        '--artifact', artifact,
       ]);
       expect(call.exitCode, call.raw.stderr || call.raw.stdout).toBe(0);
       expect(call.data?.status).toBe('SUCCESS');

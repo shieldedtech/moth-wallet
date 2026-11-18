@@ -116,7 +116,7 @@ export abstract class BaseCommand extends Command {
       // Deliberately not an `options` list: endpoints are overridable, so a
       // network this build has never heard of is a legitimate target. Mainnet is
       // the one id that is not, and `parse` below is what refuses it.
-      description: 'Target network: devnet, preview, preprod, qanet, undeployed (local stack), or a custom id',
+      description: 'Target network: devnet, preview, preprod, qanet, local (midnight-node local-env), undeployed (dev stack), or a custom id',
       // Refused here, not in getNetworkConfig: twelve commands never resolve a
       // network config, including the two that create wallets, so a guard there
       // is bypassed by exactly the commands where it matters most (#25).
@@ -471,6 +471,8 @@ export abstract class BaseCommand extends Command {
       case 'INVALID_REQUEST':
       case 'METHOD_NOT_FOUND':
         return {category: 'INVALID_INPUT', message: msg};
+      case 'PROTOCOL_VERSION_MISMATCH':
+        return {category: 'INVALID_INPUT', message: `Protocol version mismatch: ${msg}`};
       case 'TIMEOUT':
         return {category: 'TIMEOUT', message: msg};
       case 'CLOSED':

@@ -1,11 +1,16 @@
 import {describe, it, expect, vi} from 'vitest';
 import {Either} from 'effect';
 import {Transacting, WalletError, CoinsAndBalances} from '@midnightntwrk/wallet-sdk/dust/v1';
+import * as V2 from '@midnightntwrk/wallet-sdk/dust/v2';
+import {DustWallet} from '@midnightntwrk/wallet-sdk/dust';
 import {
   balanceDustFee,
   distributeFeeAcrossInputs,
   TerminatingDustTransacting,
+  TerminatingDustTransactingV2,
+  TerminatingDustWallet,
   terminatingDustTransacting,
+  terminatingDustTransactingV2,
   type DustFeePass,
   type FeeCoin,
 } from '../../../src/sync/dust-transacting.js';
@@ -221,17 +226,24 @@ const fakeTransaction = (): unknown => ({
   imbalances: (_segment: number, fee: bigint) => new Map([[{tag: 'dust'}, -fee]]),
 });
 
-// Test double over the real class: swaps the two WASM-backed methods for the
-// analytic fee model and leaves everything else — including the override under
-// test and its error mapping — exactly as shipped.
-class TestableTransacting extends TerminatingDustTransacting {
-  override calculateFee(): bigint {
-    return feeFor([]);
-  }
-  override dryRunFee(recipeInputs: ReadonlyArray<FeeCoin>): bigint {
-    return feeFor(recipeInputs);
-  }
-}
+// wallet-sdk 2.0 ships the same loop in both dust variants, so each variant's
+// override is held to the same behaviour and the same SDK surface.
+const variants = [
+  {
+    name: 'V1 (ledger-v8)',
+    Terminating: TerminatingDustTransacting,
+    factory: terminatingDustTransacting,
+    Transacting,
+    WalletError,
+  },
+  {
+    name: 'V2 (ledger-v9)',
+    Terminating: TerminatingDustTransactingV2,
+    factory: terminatingDustTransactingV2,
+    Transacting: V2.Transacting,
+    WalletError: V2.WalletError,
+  },
+] as const;
 
 const context = (coins: ReadonlyArray<Coin>, coinSelection: CoinsAndBalances.CoinSelection = smallestFirst) =>
   () =>
@@ -239,14 +251,26 @@ const context = (coins: ReadonlyArray<Coin>, coinSelection: CoinsAndBalances.Coi
       coinSelection,
       coinsAndBalancesCapability: {getAvailableCoinsWithGeneratedDust: () => coins},
       keysCapability: {},
-    }) as unknown as Transacting.DefaultTransactingContext;
+    }) as never;
 
-const config = {networkId: 'undeployed', costParameters: {feeBlocksMargin: 5}} as unknown as Transacting.DefaultTransactingConfiguration;
+const config = {networkId: 'undeployed', costParameters: {feeBlocksMargin: 5}} as never;
 const ledgerArgs = [undefined, undefined, [fakeTransaction()], new Date(), new Date(), undefined] as unknown as Parameters<
   TerminatingDustTransacting['computeBalancingRecipe']
 >;
 
-describe('TerminatingDustTransacting', () => {
+describe.each(variants)('Terminating dust transacting, $name', (variant) => {
+  // Test double over the real class: swaps the two WASM-backed methods for the
+  // analytic fee model and leaves everything else — including the override under
+  // test and its error mapping — exactly as shipped.
+  class TestableTransacting extends (variant.Terminating as typeof TerminatingDustTransacting) {
+    override calculateFee(): bigint {
+      return feeFor([]);
+    }
+    override dryRunFee(recipeInputs: ReadonlyArray<FeeCoin>): bigint {
+      return feeFor(recipeInputs);
+    }
+  }
+
   it('returns a recipe whose distributed inputs sum exactly to the fee', () => {
     const passes: DustFeePass[] = [];
     const cap = new TestableTransacting(config, context([...drained, ...full]), (p) => passes.push(p));
@@ -259,12 +283,12 @@ describe('TerminatingDustTransacting', () => {
     expect(result.right.recipeInputs.reduce((s, c) => s + c.value, 0n)).toBe(result.right.fee);
   });
 
-  it('maps an uncoverable fee to the SDK InsufficientFundsError, not a hang', () => {
+  it("maps an uncoverable fee to the variant's InsufficientFundsError, not a hang", () => {
     const cap = new TestableTransacting(config, context([coin(1n, 0)]));
     const result = cap.computeBalancingRecipe(...ledgerArgs);
     expect(Either.isLeft(result)).toBe(true);
     if (!Either.isLeft(result)) return;
-    expect(result.left).toBeInstanceOf(WalletError.InsufficientFundsError);
+    expect(result.left).toBeInstanceOf(variant.WalletError.InsufficientFundsError);
     expect(result.left).toMatchObject({tokenType: 'dust'});
   });
 
@@ -277,7 +301,7 @@ describe('TerminatingDustTransacting', () => {
     const result = new Exploding(config, context([...full])).computeBalancingRecipe(...ledgerArgs);
     expect(Either.isLeft(result)).toBe(true);
     if (!Either.isLeft(result)) return;
-    expect(result.left).toBeInstanceOf(WalletError.OtherWalletError);
+    expect(result.left).toBeInstanceOf(variant.WalletError.OtherWalletError);
     expect(result.left.message).toBe('ledger exploded');
   });
 
@@ -291,27 +315,45 @@ describe('TerminatingDustTransacting', () => {
     expect(Either.isRight(estimate)).toBe(true);
     // balanceTransactions goes on to build a real ledger intent; a rejected
     // Either from the spy is enough to prove the routing without WASM.
-    spy.mockReturnValueOnce(Either.left(new WalletError.OtherWalletError({message: 'routed', cause: undefined})));
+    spy.mockReturnValueOnce(Either.left(new variant.WalletError.OtherWalletError({message: 'routed', cause: undefined})));
     const balanced = cap.balanceTransactions(...(ledgerArgs as unknown as Parameters<typeof cap.balanceTransactions>));
     expect(spy).toHaveBeenCalledTimes(2);
     expect(Either.isLeft(balanced) && balanced.left.message).toBe('routed');
   });
 
-  it('builds through the factory shape V1Builder.withTransacting expects', () => {
-    const cap = terminatingDustTransacting()(config, context([...full]));
-    expect(cap).toBeInstanceOf(TerminatingDustTransacting);
-    expect(cap).toBeInstanceOf(Transacting.TransactingCapabilityImplementation);
+  it("builds through the factory shape the variant's builder withTransacting expects", () => {
+    const cap = variant.factory()(config, context([...full]));
+    expect(cap).toBeInstanceOf(variant.Terminating);
+    expect(cap).toBeInstanceOf(variant.Transacting.TransactingCapabilityImplementation);
   });
-});
 
-describe('SDK surface this module depends on', () => {
   // These are the internals the override reaches for. If an SDK bump removes
   // or renames one, this fails here instead of at a user's first transfer.
-  it('still exposes the implementation class and the members the override uses', () => {
-    const proto = Transacting.TransactingCapabilityImplementation.prototype as Record<string, unknown>;
+  it('still has the SDK implementation class and the members the override uses', () => {
+    const proto = variant.Transacting.TransactingCapabilityImplementation.prototype as unknown as Record<string, unknown>;
     for (const member of ['computeBalancingRecipe', 'dryRunFee', 'calculateFee', 'estimateFee', 'balanceTransactions']) {
       expect(typeof proto[member], member).toBe('function');
     }
-    expect(Transacting.TransactingCapabilityImplementation.length).toBe(5);
+    expect(variant.Transacting.TransactingCapabilityImplementation.length).toBe(5);
+  });
+});
+
+describe('TerminatingDustWallet', () => {
+  it("offers the same class API as the SDK's DustWallet it rebuilds", () => {
+    const configuration = {
+      networkId: 'undeployed',
+      costParameters: {feeBlocksMargin: 5},
+      txHistoryStorage: {},
+      indexerClientConnection: {indexerHttpUrl: 'http://127.0.0.1:1'},
+      forks: {v9: 9_000_000n},
+    } as unknown as Parameters<typeof DustWallet>[0];
+    const ours = TerminatingDustWallet(configuration) as unknown as Record<string, unknown>;
+    const sdk = DustWallet(configuration) as unknown as Record<string, unknown>;
+    const statics = (cls: Record<string, unknown>) =>
+      Object.getOwnPropertyNames(cls).filter((key) => typeof cls[key] === 'function').sort();
+    expect(statics(ours)).toEqual(statics(sdk));
+    for (const start of ['startWithSeed', 'restore']) {
+      expect(typeof ours[start], start).toBe('function');
+    }
   });
 });

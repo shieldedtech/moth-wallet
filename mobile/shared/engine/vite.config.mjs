@@ -14,7 +14,7 @@ const LEDGER_SRC = process.env.LEDGER === 'src';
 const alias = {
   '@shieldedtech/moth-browser': `${REPO}/packages/browser/dist/index.js`,
   'moth-ext': `${REPO}/packages/extension/lib`,
-  ...(LEDGER_SRC ? { '@midnight-ntwrk/ledger-v8': `${import.meta.dirname}/../vendor/ledger-v8/midnight_ledger_wasm.js` } : {}),
+  ...(LEDGER_SRC ? { '@midnightntwrk/ledger-v8': `${import.meta.dirname}/../vendor/ledger-v8/midnight_ledger_wasm.js` } : {}),
 };
 
 export default defineConfig({

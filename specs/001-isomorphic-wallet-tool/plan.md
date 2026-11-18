@@ -25,9 +25,8 @@ adapter package.
 **Language/Version**: TypeScript 5.5+ / Node.js 22+
 **Primary Dependencies**: `@scure/bip39` + `@scure/bip32` (audited HD key
 derivation), `@noble/ciphers` (authenticated encryption), `graphql-request`
-(indexer queries), `@midnight-ntwrk/compact-js`, `@midnight-ntwrk/compact-runtime`,
-`@midnight-ntwrk/ledger-v8`, `@midnight-ntwrk/midnight-js-types`,
-`@midnight-ntwrk/midnight-js-contracts`, `@midnight-ntwrk/midnight-js-network-id`
+(indexer queries), `@midnightntwrk/wallet-sdk`, `@midnightntwrk/ledger-v8`,
+`@midnight-ntwrk/compact-runtime`, `@midnight-ntwrk/midnight-js` 5
 (transaction construction and contract execution), `ink` + `react` (TUI),
 `oclif` (CLI framework)
 **Storage**: Filesystem with encrypted JSON files (CLI); IndexedDB with Web

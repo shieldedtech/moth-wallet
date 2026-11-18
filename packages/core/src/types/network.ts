@@ -129,6 +129,16 @@ export const DEFAULT_NETWORKS: Record<string, NetworkConfig> = {
     indexerUrl: 'http://localhost:8088/api/v4/graphql',
     prover: serverProver(),
   },
+  // midnight-node's local-env (CFG_PRESET=local): a separate chain from the
+  // `undeployed` dev stack, not an alias for it. Its network id reaches the
+  // addresses (`mn_addr_local1…`), so serving it as `undeployed` derives the
+  // wrong HRP and reads every unshielded balance as zero. Node-1 serves 9933.
+  local: {
+    id: 'local',
+    nodeUrl: 'ws://localhost:9933',
+    indexerUrl: 'http://localhost:8088/api/v4/graphql',
+    prover: serverProver(),
+  },
 };
 
 /**
@@ -144,18 +154,16 @@ export const DEFAULT_NETWORKS: Record<string, NetworkConfig> = {
  * bech32m prefixes a wallet may hold an address for, which includes retired and
  * unoffered ids. Do not narrow it to match this list.
  */
-export const SUPPORTED_NETWORKS = ['mainnet', 'devnet', 'preview', 'preprod', 'qanet', 'undeployed'] as const;
+export const SUPPORTED_NETWORKS = ['mainnet', 'devnet', 'preview', 'preprod', 'qanet', 'local', 'undeployed'] as const;
 
 /**
  * Network ids that were renamed, mapped to what they are now called.
  *
- * `local` was a second preset for the same local devnet stack as `undeployed`,
- * pointing at a node port nothing in that stack listens on. It reached storage
- * as a wallet's network and as the extension's selected network, so read paths
- * canonicalise rather than leaving a stored `local` to miss every preset and
- * fall through to a localhost guess.
+ * Empty today. `local` was once mapped to `undeployed`, but it is midnight-node's
+ * local-env — a chain of its own (see DEFAULT_NETWORKS) — and the rename sent
+ * its wallets to the wrong address prefix.
  */
-const RENAMED_NETWORK_IDS = new Map<string, string>([['local', 'undeployed']]);
+const RENAMED_NETWORK_IDS = new Map<string, string>();
 
 /**
  * Resolve a stored or user-supplied network id to the id in use today.
@@ -168,7 +176,7 @@ const RENAMED_NETWORK_IDS = new Map<string, string>([['local', 'undeployed']]);
  * ids are not restricted to a known list (endpoints are overridable, so a custom
  * id is a legitimate target), and an object lookup answers `toString` and
  * `constructor` from `Object.prototype` — returning a function where a string is
- * declared, which would then reach setNetworkId(), socket paths and JSON output.
+ * declared, which would then reach the providers' network id, socket paths and JSON output.
  */
 export function canonicalNetworkId(id: string): string {
   return RENAMED_NETWORK_IDS.get(id) ?? id;
