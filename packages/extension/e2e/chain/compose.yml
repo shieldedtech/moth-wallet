@@ -5,6 +5,10 @@
 # endpoint overrides. Image tags can be overridden per run with NODE_TAG,
 # INDEXER_TAG and PROOF_TAG.
 #
+# The defaults are a ledger-v9 stack, which the wallet SDK the extension ships
+# needs: against the earlier ledger-v8 stack (node 1.0.300, indexer 4.3.7) the
+# wallet stalls at 99% and never reports Synced.
+#
 # Start it through stack.sh, which supplies the indexer's credentials:
 #
 #   packages/extension/e2e/chain/stack.sh up -d --wait
@@ -14,7 +18,7 @@ name: moth-e2e-chain
 
 services:
   proof-server:
-    image: 'midnightntwrk/proof-server:${PROOF_TAG:-8.1.3}'
+    image: 'midnightntwrk/proof-server:${PROOF_TAG:-9.0.0}'
     cap_drop:
       - ALL
     security_opt:
@@ -28,7 +32,7 @@ services:
     # The chain test waits on its /ready endpoint instead.
 
   indexer:
-    image: 'midnightntwrk/indexer-standalone:${INDEXER_TAG:-4.3.7}'
+    image: 'midnightntwrk/indexer-standalone:${INDEXER_TAG:-4.4.101}'
     cap_drop:
       - ALL
     security_opt:
@@ -63,7 +67,7 @@ services:
         condition: service_healthy
 
   node:
-    image: 'midnightntwrk/midnight-node:${NODE_TAG:-1.0.300}'
+    image: 'midnightntwrk/midnight-node:${NODE_TAG:-2.1.101}'
     cap_drop:
       - ALL
     cap_add:

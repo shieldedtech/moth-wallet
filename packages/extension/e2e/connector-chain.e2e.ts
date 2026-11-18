@@ -18,6 +18,7 @@ import {
   launchExtension,
   startMockDapp,
   startRefusingProxy,
+  teardownList,
   waitForSynced,
   type Extension,
 } from './harness';
@@ -29,7 +30,7 @@ const AMOUNT = 1_000_000n;
 const NIGHT = '0'.repeat(64);
 const INDEXER = DEFAULT_NETWORKS.undeployed!.indexerUrl;
 
-test.skip(!process.env.MOTH_E2E_CHAIN, 'needs the local chain stack; set MOTH_E2E_CHAIN=1');
+test.skip(process.env.MOTH_E2E_CHAIN !== '1', 'needs the local chain stack; set MOTH_E2E_CHAIN=1');
 test.describe.configure({ timeout: 300_000 });
 
 let proxy: Awaited<ReturnType<typeof startRefusingProxy>>;
@@ -58,19 +59,20 @@ test.beforeAll(async () => {
     .toBe(true);
 });
 
+const teardown = teardownList();
+
 test.beforeEach(async () => {
   // The stack is on loopback, which Chrome sends direct; anything else is still refused.
   proxy = await startRefusingProxy();
+  teardown.add(() => proxy.close());
   dappServer = await startMockDapp();
+  teardown.add(() => dappServer.close());
   ext = await launchExtension(proxy.url);
+  teardown.add(() => ext.context.close());
   await importWallet(ext, { seed: GENESIS_SEED, network: 'Undeployed' });
 });
 
-test.afterEach(async () => {
-  await ext.context.close();
-  await dappServer.close();
-  await proxy.close();
-});
+test.afterEach(() => teardown.closeAll());
 
 const requestLog = (dapp: Page) => dapp.locator('#request-log');
 

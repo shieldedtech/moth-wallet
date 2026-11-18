@@ -24,6 +24,7 @@ import {
   runAutoLockCheck,
   startMockDapp,
   startRefusingProxy,
+  teardownList,
   type Extension,
 } from './harness';
 
@@ -36,18 +37,19 @@ let ext: Extension;
 
 test.beforeAll(() => assertBuilt());
 
+const teardown = teardownList();
+
 test.beforeEach(async () => {
   proxy = await startRefusingProxy();
+  teardown.add(() => proxy.close());
   dappServer = await startMockDapp();
+  teardown.add(() => dappServer.close());
   ext = await launchExtension(proxy.url);
+  teardown.add(() => ext.context.close());
   await importWallet(ext);
 });
 
-test.afterEach(async () => {
-  await ext.context.close();
-  await dappServer.close();
-  await proxy.close();
-});
+test.afterEach(() => teardown.closeAll());
 
 const dappHost = () => new URL(dappServer.url).host;
 
@@ -183,6 +185,9 @@ test('auto-lock locks a connected wallet, and unlocking restores the dApp', asyn
 
   await dapp.getByRole('button', { name: 'All addresses' }).click();
   await expect(requestLog(dapp)).toContainText('"code": "Disconnected"');
+  // A locked wallet keeps the grant but must not tell the dApp it is connected.
+  await dapp.getByRole('button', { name: 'Connection status' }).click();
+  await expect(requestLog(dapp)).toContainText('"status": "disconnected"');
 
   const unlock = await ext.page('sidepanel.html');
   await unlock.getByPlaceholder('Password').fill(PASSWORD);
@@ -192,4 +197,6 @@ test('auto-lock locks a connected wallet, and unlocking restores the dApp', asyn
   // The grant survives the lock, so the dApp's existing connection works again.
   await dapp.getByRole('button', { name: 'All addresses' }).click();
   await expect(requestLog(dapp)).toContainText('mn_addr_preprod');
+  await dapp.getByRole('button', { name: 'Connection status' }).click();
+  await expect(requestLog(dapp)).toContainText('"status": "connected"');
 });

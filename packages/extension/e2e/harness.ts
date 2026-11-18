@@ -1,13 +1,15 @@
 // Shared harness for extension E2E tests that drive the built extension and
-// the built mock-dapp without a chain.
+// the built mock-dapp, either with no chain at all or against a local chain
+// stack on loopback.
 //
 // Offline is enforced, not assumed: every request Chrome would send off this
 // machine goes to a proxy that refuses it and records where it was going.
 // `page.route` cannot do this job, because the offscreen document's sync
 // traffic never passes through Playwright's routing. Chrome sends loopback
 // traffic direct, which is what lets the page reach the local mock-dapp server
-// — and why the wallet must be on a hosted network such as Preprod rather than
-// Undeployed, whose localhost endpoints would bypass the proxy.
+// and a local chain stack — and why the offline tests must put the wallet on a
+// hosted network such as Preprod rather than Undeployed, whose localhost
+// endpoints would bypass the proxy.
 
 import fs from 'node:fs';
 import http from 'node:http';
@@ -47,6 +49,32 @@ export function assertBuilt(): void {
 interface Server {
   url: string;
   close(): Promise<void>;
+}
+
+/**
+ * Closes per-test resources in reverse order of starting them. Register each one
+ * as soon as it has started: a setup step that throws then still leaves everything
+ * before it closed, and every closer runs even when an earlier one fails.
+ */
+export function teardownList(): { add(close: () => Promise<void>): void; closeAll(): Promise<void> } {
+  const closers: Array<() => Promise<void>> = [];
+  return {
+    add: (close) => {
+      closers.push(close);
+    },
+    closeAll: async () => {
+      const errors: unknown[] = [];
+      for (let close = closers.pop(); close; close = closers.pop()) {
+        try {
+          await close();
+        } catch (error) {
+          errors.push(error);
+        }
+      }
+      if (errors.length === 1) throw errors[0];
+      if (errors.length > 1) throw new AggregateError(errors, 'Several E2E resources failed to close');
+    },
+  };
 }
 
 function listen(server: http.Server): Promise<number> {
