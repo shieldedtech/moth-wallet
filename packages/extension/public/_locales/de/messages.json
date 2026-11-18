@@ -986,6 +986,9 @@
   "send_sendNow": {
     "message": "Jetzt senden"
   },
+  "send_waitingForPrevious": {
+    "message": "Warte auf vorherige Transaktion…"
+  },
   "send_irreversibleNote": {
     "message": "Transfers lassen sich nicht rückgängig machen. Prüfe die Adresse, bevor du sendest."
   },
@@ -1007,6 +1010,9 @@
   "send_feeUnavailable": {
     "message": "Gerade nicht verfügbar"
   },
+  "send_feeWaiting": {
+    "message": "Warte auf vorherige Transaktion"
+  },
   "send_feeIdle": {
     "message": "Transferdetails eingeben"
   },
@@ -1018,6 +1024,9 @@
   },
   "send_feeNoteUnavailable": {
     "message": "Du kannst trotzdem senden. Die endgültige Netzwerkgebühr wird in $1 bezahlt."
+  },
+  "send_feeNoteWaiting": {
+    "message": "Deine vorherige Transaktion wird noch bestätigt und hält bis dahin Coins, die diese hier braucht, etwa das $1 für die Gebühr. Das aktualisiert sich von selbst, sobald sie bestätigt ist."
   },
   "send_feeNoteIdle": {
     "message": "Gib einen gültigen Betrag und eine Adresse ein, um die Gebühr zu berechnen."
@@ -1581,7 +1590,10 @@
     "message": "Die Registrierung zahlt ihre Gebühr aus dem $1, das Ihr $2 erwirtschaftet, und dieses Guthaben ist zu klein, um sie jemals zu decken. Fügen Sie mehr $2 hinzu und versuchen Sie es erneut."
   },
   "network_mainnetHidden": {
-    "message": "Netzwerke mit echtem Wert sind ausgeblendet. Diese Wallet ist nicht auditiert und wird nicht unterstützt — aktivieren Sie den Entwicklermodus in den Einstellungen, um sie anzuzeigen."
+    "message": "Netzwerke mit echtem Wert sind ausgeblendet. Diese Wallet ist nicht auditiert und wird nicht unterstützt — aktivieren Sie den Entwicklermodus, um sie anzuzeigen."
+  },
+  "network_enableDeveloperMode": {
+    "message": "Entwicklermodus aktivieren"
   },
   "network_valueWarningTitle": {
     "message": "Zu $1 wechseln — echte Gelder?"
