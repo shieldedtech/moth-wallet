@@ -1026,14 +1026,23 @@ export function extractBalancesPartial(
   // before the overall figure is taken, so the percentage and the ETA's samples
   // never see the gap.
   if (previous) {
+    const carried = new Set<SubWallet>();
     for (const part of ['shielded', 'unshielded', 'dust'] as const) {
       const now = subProgress[part];
       const before = previous.subProgress[part];
-      if (now.total === 0 && before.total > 0) subProgress[part] = before;
-      else if (now.applied === 0 && before.applied > now.applied && now.total === before.total) {
+      if (now.total === 0 && before.total > 0) {
+        subProgress[part] = before;
+        carried.add(part);
+      } else if (now.applied === 0 && before.applied > now.applied && now.total === before.total) {
         subProgress[part] = {applied: before.applied, total: now.total};
+        carried.add(part);
       }
     }
+    // An emission that said nothing about a part's progress has no verdict on
+    // it either: a connected 0/0 reads as strictly complete.
+    if (carried.has('shielded')) shieldedSynced = false;
+    if (carried.has('unshielded')) unshieldedSynced = false;
+    if (carried.has('dust')) dustSynced = false;
   }
 
   // Overall progress: the slowest sub-wallet, clamped below 100% until actually

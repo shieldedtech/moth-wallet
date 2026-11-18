@@ -18,9 +18,9 @@ where the rate jumps. While two sub-wallets replay at once no ETA is shown: the
 one behind is starved, and its rate predicts nothing about how fast it will run
 once the other finishes. A sub-wallet that has finished stays out of that set:
 it reads as incomplete again for a moment whenever a new event is indexed before
-it is applied, and that is the tip moving, not a second replay. A sync that genuinely starts from zero likewise shows no
-estimate until it has a few seconds of rate to measure, where it previously
-extrapolated from its first percent.
+it is applied, and that is the tip moving, not a second replay. A sync that
+genuinely starts from zero likewise shows no estimate until it has half a minute
+of rate to measure, where it previously extrapolated from its first percent.
 
 The estimate is also a countdown now, not a reading. Within a phase the pace is
 uneven — the DUST walk arrives in bursts and slows over the sync — and an

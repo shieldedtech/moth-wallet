@@ -18,7 +18,7 @@ const progress = (applied: bigint, total: bigint) => ({
   isStrictlyComplete: () => applied === total,
 });
 
-type Gap = 'shielded-dips' | 'dust-progress-missing' | 'dust-balance-throws' | 'dust-applied-zero';
+type Gap = 'shielded-dips' | 'dust-progress-missing' | 'dust-balance-throws' | 'dust-applied-zero' | 'dust-zero-of-zero';
 
 // Shielded finished, DUST replaying alone at 1,000 events/s.
 const emission = (second: number, gap?: Gap): FacadeState =>
@@ -35,7 +35,11 @@ const emission = (second: number, gap?: Gap): FacadeState =>
         return 0n;
       },
       availableCoins: [], pendingCoins: [],
-      progress: gap === 'dust-progress-missing' ? undefined : progress(gap === 'dust-applied-zero' ? 0n : BigInt(second) * 1_000n, DUST_TOTAL),
+      progress:
+        gap === 'dust-progress-missing' ? undefined
+        // Connected with nothing known yet: strictly complete, at 0 of 0.
+        : gap === 'dust-zero-of-zero' ? progress(0n, 0n)
+        : progress(gap === 'dust-applied-zero' ? 0n : BigInt(second) * 1_000n, DUST_TOTAL),
     },
   }) as unknown as FacadeState;
 
@@ -83,7 +87,7 @@ describe('extractBalancesPartial and the ETA tracker', () => {
   // An emission that says nothing about the sub-wallet still replaying is a
   // gap in the report, not in the replay: the snapshot carries the last
   // reading forward, and the ETA's samples must see that reading too.
-  describe.each<Gap>(['dust-progress-missing', 'dust-balance-throws', 'dust-applied-zero'])('through a %s emission every 20s', (gap) => {
+  describe.each<Gap>(['dust-progress-missing', 'dust-balance-throws', 'dust-applied-zero', 'dust-zero-of-zero'])('through a %s emission every 20s', (gap) => {
     it('keeps the estimate, within the one stale second each gap contributes', () => {
       const steady = etas(session(none, new ProgressRateTracker()));
       const gappy = etas(session(every20s(gap), new ProgressRateTracker()));
@@ -97,6 +101,17 @@ describe('extractBalancesPartial and the ETA tracker', () => {
       const shown = session(every20s(gap), new ProgressRateTracker()).map((b) => b.syncProgress.percentage);
       shown.forEach((pct, i) => expect(pct).toBeGreaterThanOrEqual(shown[i - 1] ?? 0));
       expect(shown[19]).toBeCloseTo(0.019, 6);
+    });
+
+    it('does not take the gap for the sub-wallet finishing', () => {
+      const snapshots = session(every20s(gap), new ProgressRateTracker());
+      expect(snapshots.some((b) => b.syncProgress.dustSynced)).toBe(false);
+    });
+
+    it('recovers the estimate after a single gap', () => {
+      const steady = etas(session(none, new ProgressRateTracker()));
+      const once = etas(session((second) => (second === 20 ? gap : undefined), new ProgressRateTracker()));
+      expect(once.filter((eta) => eta !== null).length).toBe(steady.filter((eta) => eta !== null).length);
     });
   });
 });
