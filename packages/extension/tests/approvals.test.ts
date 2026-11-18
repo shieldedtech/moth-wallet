@@ -1,14 +1,14 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing';
 
-const hasOpenPorts = vi.fn(() => false);
+const hasVisiblePanel = vi.fn(() => false);
 const broadcastApproval = vi.fn();
 const beginOp = vi.fn();
 const endOp = vi.fn();
 const hasOpsInFlight = vi.fn(() => true);
 vi.mock('../lib/background/sync-service', () => ({
   hasOpsInFlight: () => hasOpsInFlight(),
-  hasOpenPorts: () => hasOpenPorts(),
+  hasVisiblePanel: () => hasVisiblePanel(),
   broadcastApproval: (id: string | null) => broadcastApproval(id),
   beginOp: () => beginOp(),
   endOp: () => endOp(),
@@ -21,25 +21,48 @@ vi.mock('../lib/background/keepalive', () => ({
   releaseKeepalive: () => releaseKeepalive(),
 }));
 
-import { hasPendingApproval, rejectPendingApprovals, requestApproval, resolveApproval } from '../lib/background/approvals';
+import {
+  hasPendingApproval,
+  rejectApprovalsFrom,
+  rejectPendingApprovals,
+  requestApproval,
+  requesterKey,
+  resolveApproval,
+  trackRequester,
+  watchRequester,
+} from '../lib/background/approvals';
 
 describe('approval surfaces', () => {
   beforeEach(() => {
     fakeBrowser.reset();
     vi.restoreAllMocks();
-    hasOpenPorts.mockReset().mockReturnValue(false);
+    hasVisiblePanel.mockReset().mockReturnValue(false);
     broadcastApproval.mockReset();
     acquireKeepalive.mockReset();
     releaseKeepalive.mockReset();
     beginOp.mockReset();
     endOp.mockReset();
     hasOpsInFlight.mockReset().mockReturnValue(true);
+    // Approval state is module-level; a test that leaves one pending must not
+    // hold the next test's prompt in the queue.
+    rejectPendingApprovals();
+  });
+
+  // Requests in flight are module-level too; a failed test must not leave its page tracked.
+  const releases: Array<() => void> = [];
+  const track = (requester: string | undefined) => {
+    const release = trackRequester(requester);
+    releases.push(release);
+    return release;
+  };
+  afterEach(() => {
+    for (const release of releases.splice(0)) release();
   });
 
   // A dApp once held the wallet unlocked by leaving an approval unanswered:
   // waiting on the user no longer counts as work in flight, and auto-lock rejects it.
   it('does not count as work in flight while waiting, and auto-lock can reject it', async () => {
-    hasOpenPorts.mockReturnValue(true);
+    hasVisiblePanel.mockReturnValue(true);
     const decision = requestApproval('connect', 'https://dapp.example', {});
     await vi.waitFor(() => expect(endOp).toHaveBeenCalledTimes(1));
     expect(hasPendingApproval()).toBe(true);
@@ -50,7 +73,7 @@ describe('approval surfaces', () => {
   });
 
   it('resumes the op in the same step as the decision', async () => {
-    hasOpenPorts.mockReturnValue(true);
+    hasVisiblePanel.mockReturnValue(true);
     vi.spyOn(crypto, 'randomUUID').mockReturnValue('00000000-0000-4000-8000-000000000002');
     const decision = requestApproval('connect', 'https://dapp.example', {});
     await vi.waitFor(() => expect(endOp).toHaveBeenCalledTimes(1));
@@ -63,7 +86,7 @@ describe('approval surfaces', () => {
   // endOp clamps at zero, so pairing it with beginOp outside an op would leave
   // one counted for good and disable auto-lock.
   it('leaves the op count alone when the caller holds no op', async () => {
-    hasOpenPorts.mockReturnValue(true);
+    hasVisiblePanel.mockReturnValue(true);
     hasOpsInFlight.mockReturnValue(false);
     const decision = requestApproval('connect', 'https://dapp.example', {});
     await vi.waitFor(() => expect(hasPendingApproval()).toBe(true));
@@ -117,5 +140,170 @@ describe('approval surfaces', () => {
 
     resolveApproval(ID2, true);
     await expect(second).resolves.toBe(true);
+  });
+
+  // A page reloaded or closed with its prompt open used to leave that prompt at the
+  // head of the queue: every later request waited behind a decision nobody could
+  // deliver, and the prompt the user then answered was not the one they had just made.
+  it('drops a pending approval when its page goes away and surfaces the next one', async () => {
+    const ID1 = '00000000-0000-4000-8000-000000000001';
+    const ID2 = '00000000-0000-4000-8000-000000000002';
+    vi.spyOn(crypto, 'randomUUID').mockReturnValueOnce(ID1).mockReturnValueOnce(ID2);
+    hasVisiblePanel.mockReturnValue(true);
+
+    const first = requestApproval('deriveAppSecret', 'https://dapp.example', { domain: 'a' }, 7, undefined, '7/0/doc-1');
+    await vi.waitFor(() => expect(broadcastApproval).toHaveBeenCalledWith(ID1));
+    const second = requestApproval('deriveAppSecret', 'https://dapp.example', { domain: 'a' }, 7, undefined, '7/0/doc-2');
+    await vi.waitFor(() => expect(hasPendingApproval()).toBe(true));
+    expect(broadcastApproval).not.toHaveBeenCalledWith(ID2);
+
+    rejectApprovalsFrom('7/0/doc-1');
+    await expect(first).resolves.toBe(false);
+    await vi.waitFor(() => expect(broadcastApproval).toHaveBeenCalledWith(ID2));
+
+    resolveApproval(ID2, true);
+    await expect(second).resolves.toBe(true);
+  });
+
+  it('leaves approvals from other pages alone', async () => {
+    const ID1 = '00000000-0000-4000-8000-000000000001';
+    vi.spyOn(crypto, 'randomUUID').mockReturnValueOnce(ID1);
+    hasVisiblePanel.mockReturnValue(true);
+
+    const pending = requestApproval('connect', 'https://dapp.example', {}, 7, undefined, '7/0/doc-1');
+    await vi.waitFor(() => expect(broadcastApproval).toHaveBeenCalledWith(ID1));
+
+    rejectApprovalsFrom('7/0/doc-2');
+    rejectApprovalsFrom('8/0/doc-1');
+    expect(hasPendingApproval()).toBe(true);
+
+    resolveApproval(ID1, true);
+    await expect(pending).resolves.toBe(true);
+  });
+
+  it('closes the popup window of a dropped approval', async () => {
+    vi.spyOn(crypto, 'randomUUID').mockReturnValueOnce('00000000-0000-4000-8000-000000000003');
+    // No user gesture (Dust Dice derives on page arrival): the panel cannot open.
+    const open = vi.fn().mockRejectedValue(new Error('sidePanel.open() may only be called in response to a user gesture'));
+    (fakeBrowser as typeof fakeBrowser & { sidePanel: { open: typeof open } }).sidePanel = { open };
+    const create = vi.spyOn(fakeBrowser.windows, 'create').mockResolvedValue({ id: 55 } as never);
+    const remove = vi.spyOn(fakeBrowser.windows, 'remove').mockResolvedValue(undefined);
+
+    const pending = requestApproval('deriveAppSecret', 'https://dapp.example', { domain: 'a' }, 7, undefined, '7/0/doc-1');
+    await vi.waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+
+    rejectApprovalsFrom('7/0/doc-1');
+    await expect(pending).resolves.toBe(false);
+    expect(remove).toHaveBeenCalledWith(55);
+  });
+
+  it('drops a page\'s approvals when its connector port disconnects', async () => {
+    const ID1 = '00000000-0000-4000-8000-000000000001';
+    vi.spyOn(crypto, 'randomUUID').mockReturnValueOnce(ID1);
+    hasVisiblePanel.mockReturnValue(true);
+
+    let onDisconnect: (() => void) | undefined;
+    const port = {
+      sender: { tab: { id: 7 }, frameId: 0, documentId: 'doc-1' },
+      onDisconnect: { addListener: (listener: () => void) => void (onDisconnect = listener) },
+    };
+    watchRequester(port as never);
+
+    const pending = requestApproval('connect', 'https://dapp.example', {}, 7, undefined, requesterKey(port.sender));
+    await vi.waitFor(() => expect(broadcastApproval).toHaveBeenCalledWith(ID1));
+
+    onDisconnect!();
+    await expect(pending).resolves.toBe(false);
+    expect(hasPendingApproval()).toBe(false);
+  });
+
+  // The prompt is registered only after its storage write and panel open settle; a
+  // port closing before then found nothing to drop and the prompt stranded the queue.
+  it('drops a prompt whose page goes away while it is still being raised', async () => {
+    const ID1 = '00000000-0000-4000-8000-000000000001';
+    vi.spyOn(crypto, 'randomUUID').mockReturnValueOnce(ID1);
+    hasVisiblePanel.mockReturnValue(true);
+    let onDisconnect: (() => void) | undefined;
+    const port = {
+      sender: { tab: { id: 7 }, frameId: 0, documentId: 'doc-1' },
+      onDisconnect: { addListener: (listener: () => void) => void (onDisconnect = listener) },
+    };
+    watchRequester(port as never);
+    track(requesterKey(port.sender));
+
+    const pending = requestApproval('connect', 'https://dapp.example', {}, 7, undefined, requesterKey(port.sender));
+    onDisconnect!();
+    await expect(pending).resolves.toBe(false);
+    expect(hasPendingApproval()).toBe(false);
+    expect(broadcastApproval).not.toHaveBeenCalledWith(ID1);
+  });
+
+  // A handler can await other work first (a balance request's summary takes up to a
+  // minute), so the page may be gone before the prompt is even asked for.
+  it('raises nothing for a page that went away before the prompt was asked for', async () => {
+    const create = vi.spyOn(fakeBrowser.windows, 'create');
+    track('7/0/doc-1');
+    rejectApprovalsFrom('7/0/doc-1');
+
+    await expect(requestApproval('balance', 'https://dapp.example', {}, 7, undefined, '7/0/doc-1')).resolves.toBe(false);
+    expect(hasPendingApproval()).toBe(false);
+    expect(create).not.toHaveBeenCalled();
+    expect(broadcastApproval).not.toHaveBeenCalled();
+    expect(await fakeBrowser.storage.session.get()).toEqual({});
+  });
+
+  it('forgets a gone page once its last request finishes', async () => {
+    hasVisiblePanel.mockReturnValue(true);
+    const first = track('7/0/doc-1');
+    const second = track('7/0/doc-1');
+    rejectApprovalsFrom('7/0/doc-1');
+    first();
+    first();
+    await expect(requestApproval('connect', 'https://dapp.example', {}, 7, undefined, '7/0/doc-1')).resolves.toBe(false);
+
+    second();
+    const pending = requestApproval('connect', 'https://dapp.example', {}, 7, undefined, '7/0/doc-1');
+    await vi.waitFor(() => expect(hasPendingApproval()).toBe(true));
+    rejectPendingApprovals();
+    await expect(pending).resolves.toBe(false);
+  });
+
+  it('remembers no page that went away with nothing in flight', async () => {
+    hasVisiblePanel.mockReturnValue(true);
+    rejectApprovalsFrom('7/0/doc-1');
+    track('7/0/doc-1');
+    const pending = requestApproval('connect', 'https://dapp.example', {}, 7, undefined, '7/0/doc-1');
+    await vi.waitFor(() => expect(hasPendingApproval()).toBe(true));
+    rejectPendingApprovals();
+    await expect(pending).resolves.toBe(false);
+  });
+
+  // Without a document id a reload reuses the tab-and-frame key, so a mark left by the
+  // old page would refuse the new page's prompts.
+  it('does not mark a page that has no document id', async () => {
+    hasVisiblePanel.mockReturnValue(true);
+    track('7/0/');
+    rejectApprovalsFrom('7/0/');
+    const pending = requestApproval('connect', 'https://dapp.example', {}, 7, undefined, '7/0/');
+    await vi.waitFor(() => expect(hasPendingApproval()).toBe(true));
+    rejectPendingApprovals();
+    await expect(pending).resolves.toBe(false);
+  });
+});
+
+describe('requesterKey', () => {
+  it('names a document on Chrome, so a reload is a new requester', () => {
+    expect(requesterKey({ tab: { id: 7 }, frameId: 0, documentId: 'abc' })).toBe('7/0/abc');
+    expect(requesterKey({ tab: { id: 7 }, frameId: 0, documentId: 'def' })).not.toBe('7/0/abc');
+  });
+
+  it('falls back to the tab and frame where there is no document id', () => {
+    expect(requesterKey({ tab: { id: 7 } })).toBe('7/0/');
+    expect(requesterKey({ tab: { id: 7 }, frameId: 3 })).toBe('7/3/');
+  });
+
+  it('has nothing to say for a sender that is not a tab', () => {
+    expect(requesterKey(undefined)).toBeUndefined();
+    expect(requesterKey({ frameId: 0 })).toBeUndefined();
   });
 });

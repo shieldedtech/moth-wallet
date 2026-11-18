@@ -31,7 +31,8 @@ export const network = {
   network_saveError: 'The network configuration could not be saved.',
   network_saving: 'Saving…',
   network_mainnetHidden:
-    'Networks with real value are hidden. This wallet is unaudited and unsupported — turn on Developer mode in Settings to show them.',
+    'Networks with real value are hidden. This wallet is unaudited and unsupported — turn on Developer mode to show them.',
+  network_enableDeveloperMode: 'Turn on Developer mode',
   network_valueWarningTitle: 'Switch to $1 — real funds?',
   network_valueWarningBody:
     '$1 carries real value. This wallet is experimental, unaudited and comes with no support or warranty — it is intended for development and testing. Anything you lose here is unrecoverable. Do not use it to hold funds you care about.',

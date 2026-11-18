@@ -15,6 +15,6 @@ concurrency:
 jobs:
   apply:
     name: Set native Priority from form dropdown
-    uses: shieldedtech/.github/.github/workflows/apply-priority-from-form.yml@bd9b405ee1f7f86ff67861a4172347faf3c981ec # shieldedtech/.github#40 (native-only)
+    uses: shieldedtech/workflows/.github/workflows/apply-priority-from-form.yml@431a4f88f5d8a5a0eca55e429f5f12c8d2b69095 # native-only impl; public home per shielded-iac#3001
     secrets:
       PROJECT_TOKEN: ${{ secrets.PROJECT_TOKEN }}

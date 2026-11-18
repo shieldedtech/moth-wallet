@@ -63,15 +63,16 @@ import {
   setActiveCardanoAccount,
   type CardanoAccountList,
 } from '@shieldedtech/moth-wallet/cardano/accounts';
-import type { HistoryEntry } from '@midnight-ntwrk/dapp-connector-api';
+import type { HistoryEntry } from '@midnightntwrk/dapp-connector-api';
 import { serializeBalances } from '../messaging/balances-json';
 import { serializeActivity } from '../messaging/activity-json';
 import { waitForSyncedBalances } from './wait-synced';
 import { createProofPool, type ProofPool } from './proof-pool';
 import { dustHealKey } from './dust-heal';
 import { logDustFeeEstimate, logDustFeePass } from './dust-fee-log';
+import { estimateUnlessInFlight } from './fee-estimate';
 import { NIGHT_TOKEN_ID } from '@shieldedtech/moth-wallet/types/tokens';
-import type { NightCoinRow } from '../messaging/protocol';
+import type { FeeEstimate, NightCoinRow } from '../messaging/protocol';
 import {
   loadSubmissions,
   mergeSubmissions,
@@ -774,17 +775,19 @@ export function estimateTransferFee(
   walletName: string,
   network: NetworkConfig,
   requests: TransferRequestDTO[],
-): Promise<{ fee: string }> {
+): Promise<FeeEstimate> {
   return enqueueTransferOperation(() => trackOp(async () => {
     const wallet = await syncEnsure(seedHex, walletName, network);
-    const fee = await coreEstimateTransferFee(
-      wallet.facade,
-      activeWalletKeys(),
-      network.id,
-      toRequests(requests),
-    );
-    logDustFeeEstimate(fee, requests.length);
-    return { fee: fee.toString() };
+    return estimateUnlessInFlight(wallet.balances.coins, async () => {
+      const fee = await coreEstimateTransferFee(
+        wallet.facade,
+        activeWalletKeys(),
+        network.id,
+        toRequests(requests),
+      );
+      logDustFeeEstimate(fee, requests.length);
+      return fee;
+    });
   }));
 }
 

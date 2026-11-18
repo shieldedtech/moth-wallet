@@ -28,11 +28,15 @@ vi.mock('../lib/background/offscreen-client', () => ({
     makeIntent: (...a: unknown[]) => makeIntent(...(a as [])),
     provingProviderCheck: (...a: unknown[]) => provingProviderCheck(...(a as [])),
     provingProviderProve: (...a: unknown[]) => provingProviderProve(...(a as [])),
+    deriveAppSecret: (...a: unknown[]) => deriveAppSecret(...(a as [])),
     proverKeyPut: (...a: unknown[]) => proverKeyPut(...(a as [])),
   },
 }));
+const deriveAppSecret = vi.fn();
 
 const requestApproval = vi.fn<() => Promise<boolean>>();
+const releaseRequester = vi.fn();
+const trackRequester = vi.fn<(requester?: string) => () => void>(() => releaseRequester);
 const preparedPanel = Promise.resolve(true);
 const prepareApprovalPanel = vi.fn<(tabId?: number) => Promise<boolean>>(() => preparedPanel);
 vi.mock('../lib/background/approvals', () => ({
@@ -42,6 +46,7 @@ vi.mock('../lib/background/approvals', () => ({
   getPendingApproval: vi.fn(),
   resolveApproval: vi.fn(),
   hasPendingApproval: vi.fn(() => false),
+  trackRequester: (requester?: string) => trackRequester(requester),
 }));
 
 // beginOp/endOp only bracket in-flight ops (keepalive + idle teardown); stub
@@ -123,11 +128,14 @@ describe('connector dispatch', () => {
     transferSubmit.mockReset();
     txHistoryGet.mockReset();
     signData.mockReset();
+    deriveAppSecret.mockReset();
     balanceTransaction.mockReset();
     txSummary.mockReset();
     makeIntent.mockReset();
     provingProviderCheck.mockReset();
     provingProviderProve.mockReset();
+    trackRequester.mockClear();
+    releaseRequester.mockReset();
     proverKeyPut.mockReset();
     requestApproval.mockReset();
     prepareApprovalPanel.mockClear();
@@ -432,8 +440,56 @@ describe('connector dispatch', () => {
       { encoding: 'text', message: 'hi' },
       undefined,
       preparedPanel,
+      undefined,
     );
     expect(signData).toHaveBeenCalledWith(expect.objectContaining({ data: 'hi', encoding: 'text' }));
+  });
+
+  // Dust Dice asks for a seat secret on every table page. The prompt must be tied
+  // to the page document that asked, so a reload or close can drop it.
+  it('derives an app secret after approval, naming the requesting page on the prompt', async () => {
+    await connect();
+    requestApproval.mockResolvedValue(true);
+    deriveAppSecret.mockResolvedValue({ secret: 'ab'.repeat(32) });
+    const res = await dispatch(ORIGIN, 'deriveAppSecret', ['dust-dice-seat:1'], 7, '7/0/doc-1');
+    expect(res).toEqual({ secret: 'ab'.repeat(32) });
+    expect(requestApproval).toHaveBeenCalledWith(
+      'deriveAppSecret',
+      ORIGIN,
+      { domain: 'dust-dice-seat:1' },
+      7,
+      preparedPanel,
+      '7/0/doc-1',
+    );
+    // The origin the secret is bound to is the sender's, never a parameter.
+    expect(deriveAppSecret).toHaveBeenCalledWith({ seedHex: SESSION.seedHex, origin: ORIGIN, domain: 'dust-dice-seat:1' });
+  });
+
+  // A page that goes away while its request awaits other work (here the summary shown
+  // on the prompt) must still have that prompt refused, so the page counts until the end.
+  it('counts a page\'s request as in flight from entry until it settles', async () => {
+    await connect();
+    let finishSummary!: (summary: unknown) => void;
+    txSummary.mockReturnValue(new Promise((resolve) => (finishSummary = resolve)));
+    requestApproval.mockResolvedValue(false);
+
+    const pending = dispatch(ORIGIN, 'balanceSealedTransaction', ['abcd'], 7, '7/0/doc-1');
+    expect(trackRequester).toHaveBeenCalledWith('7/0/doc-1');
+    await vi.waitFor(() => expect(txSummary).toHaveBeenCalled());
+    expect(releaseRequester).not.toHaveBeenCalled();
+
+    finishSummary(NIGHT_SPEND);
+    await expect(pending).rejects.toMatchObject({ code: 'Rejected' });
+    expect(releaseRequester).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects deriveAppSecret when the user declines, without deriving', async () => {
+    await connect();
+    requestApproval.mockResolvedValue(false);
+    await expect(dispatch(ORIGIN, 'deriveAppSecret', ['dust-dice-seat:1'], 7, '7/0/doc-1')).rejects.toMatchObject({
+      code: 'Rejected',
+    });
+    expect(deriveAppSecret).not.toHaveBeenCalled();
   });
 
   it('rejects signData when the user declines', async () => {
@@ -479,6 +535,7 @@ describe('connector dispatch', () => {
       { sealed: true, payFees: true, summary: NIGHT_SPEND },
       undefined,
       preparedPanel,
+      undefined,
     );
     expect(balanceTransaction).toHaveBeenCalledWith(
       expect.objectContaining({ txHex: 'abcd', sealed: true, payFees: true }),
@@ -523,6 +580,7 @@ describe('connector dispatch', () => {
       { sealed: true, payFees: true, summary: null },
       undefined,
       preparedPanel,
+      undefined,
     );
   });
 
@@ -551,6 +609,7 @@ describe('connector dispatch', () => {
       { sealed, payFees: false, summary: NIGHT_SPEND },
       undefined,
       preparedPanel,
+      undefined,
     );
     expect(balanceTransaction).toHaveBeenCalledWith(expect.objectContaining({ sealed, payFees: false }));
   });
@@ -583,6 +642,7 @@ describe('connector dispatch', () => {
       { sealed: false, payFees: true, summary: NIGHT_SPEND },
       undefined,
       preparedPanel,
+      undefined,
     );
     expect(balanceTransaction).toHaveBeenCalledWith(expect.objectContaining({ txHex: 'abcd', sealed: false }));
   });
@@ -607,6 +667,7 @@ describe('connector dispatch', () => {
       },
       undefined,
       preparedPanel,
+      undefined,
     );
     // Inputs/outputs reach the offscreen host as decimal-string DTOs.
     expect(makeIntent).toHaveBeenCalledWith(
@@ -630,6 +691,7 @@ describe('connector dispatch', () => {
       expect.objectContaining({ payFees: false }),
       undefined,
       preparedPanel,
+      undefined,
     );
     expect(makeIntent).toHaveBeenCalledWith(expect.objectContaining({ payFees: false }));
   });
@@ -655,6 +717,7 @@ describe('connector dispatch', () => {
       },
       undefined,
       preparedPanel,
+      undefined,
     );
     expect(transferBuild).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -776,7 +839,7 @@ describe('connector dispatch', () => {
     requestApproval.mockResolvedValue(true); // approved, but the wallet stayed locked
 
     await expect(dispatch(ORIGIN, method, [...params])).rejects.toMatchObject({ code: 'Disconnected' });
-    expect(requestApproval).toHaveBeenCalledWith('connect', ORIGIN, { networkId: 'devnet' }, undefined, preparedPanel);
+    expect(requestApproval).toHaveBeenCalledWith('connect', ORIGIN, { networkId: 'devnet' }, undefined, preparedPanel, undefined);
   });
 
   it('connect from a granted origin succeeds once the approval unlocks the wallet', async () => {

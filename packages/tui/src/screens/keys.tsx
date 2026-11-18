@@ -1,9 +1,17 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
 import type { WalletInfo } from '@shieldedtech/moth-wallet';
 import { SectionHeader } from '../components/SectionHeader.js';
 import { HelpFooter, type HelpHint } from '../components/HelpFooter.js';
+import {
+  buildRevealView,
+  createRevealAttempts,
+  revealErrorMessage,
+  WORD_CELL_WIDTH,
+  type RevealedSecret,
+  type RevealView,
+} from './reveal-view.js';
 
 interface KeysProps {
   wallets: WalletInfo[];
@@ -14,14 +22,21 @@ interface KeysProps {
   onSwitch: (name: string) => Promise<void>;
   onRemove: (name: string) => Promise<void>;
   onClearCache: (name: string) => void;
+  /**
+   * Recover the wallet's backup secret from the keystore. Takes a passphrase
+   * because revealing always goes through the keystore (D-KM-2), never the
+   * unlocked session — see the reveal flow below.
+   */
+  onRevealPhrase: (name: string, passphrase: string) => Promise<RevealedSecret>;
   onCreateNew: () => void;
   onBack: () => void;
 }
 
-type Mode = 'list' | 'unlock';
+type Mode = 'list' | 'unlock' | 'reveal-confirm' | 'reveal-unlock' | 'reveal-show';
 
 export function Keys({
-  wallets, isUnlocked, getAddresses, onUnlock, onLock, onSwitch, onRemove, onClearCache, onCreateNew, onBack,
+  wallets, isUnlocked, getAddresses, onUnlock, onLock, onSwitch, onRemove, onClearCache,
+  onRevealPhrase, onCreateNew, onBack,
 }: KeysProps) {
   const [mode, setMode] = useState<Mode>('list');
   const createIndex = wallets.length;
@@ -32,6 +47,11 @@ export function Keys({
   });
   const [unlockTarget, setUnlockTarget] = useState('');
   const [unlockPass, setUnlockPass] = useState('');
+  const [revealTarget, setRevealTarget] = useState('');
+  const [revealPass, setRevealPass] = useState('');
+  const [revealed, setRevealed] = useState<RevealView | null>(null);
+  const [decrypting, setDecrypting] = useState(false);
+  const revealAttempts = useRef(createRevealAttempts()).current;
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
@@ -40,6 +60,44 @@ export function Keys({
       setHighlighted(Math.max(0, itemCount - 1));
     }
   }, [itemCount, highlighted]);
+
+  // Drop the secret and the passphrase together. Called on every exit from the
+  // reveal flow, so walking away from the screen does not leave a phrase in
+  // component state waiting to be painted again on the next render.
+  // It also voids any decrypt still running, so ESC while scrypt works means the
+  // phrase never appears.
+  const clearReveal = () => {
+    revealAttempts.cancel();
+    setDecrypting(false);
+    setRevealed(null);
+    setRevealPass('');
+    setRevealTarget('');
+  };
+
+  // Leaving the Keys screen mid-decrypt is a cancel too.
+  useEffect(() => () => revealAttempts.cancel(), [revealAttempts]);
+
+  const submitReveal = async () => {
+    const attempt = revealAttempts.begin();
+    if (attempt === null) return; // still decrypting the last submit
+    setDecrypting(true);
+    setError('');
+    try {
+      const secret = await onRevealPhrase(revealTarget, revealPass);
+      if (!revealAttempts.isCurrent(attempt)) return; // cancelled while decrypting
+      setRevealed(buildRevealView(secret));
+      // The passphrase has done its job; nothing below this point
+      // needs it, so it does not stay in state while the secret is up.
+      setRevealPass('');
+      setMode('reveal-show');
+    } catch (err) {
+      if (!revealAttempts.isCurrent(attempt)) return;
+      setError(revealErrorMessage(err));
+    } finally {
+      if (revealAttempts.isCurrent(attempt)) setDecrypting(false);
+      revealAttempts.settle(attempt);
+    }
+  };
 
   const hints = (): HelpHint[] => {
     const out: HelpHint[] = [{ key: '↑/↓', label: 'select' }];
@@ -54,6 +112,7 @@ export function Keys({
         } else {
           out.push({ key: 'Enter', label: 'unlock' });
         }
+        out.push({ key: 'p', label: 'reveal phrase' });
         out.push({ key: 'd', label: 'delete' });
         out.push({ key: 'c', label: 'clear cache' });
       }
@@ -64,8 +123,42 @@ export function Keys({
 
   useInput((input, key) => {
     if (key.escape) {
-      if (mode !== 'list') { setMode('list'); setError(''); return; }
+      if (mode !== 'list') {
+        clearReveal();
+        setMode('list');
+        setError('');
+        return;
+      }
       onBack();
+      return;
+    }
+    // Meta-key chords belong to the app (Meta+P pauses sync). Without this, the
+    // pause shortcut would also open the recovery-phrase prompt here.
+    if (key.meta) return;
+    // Confirm before the passphrase prompt, the way the CLI's `wallet
+    // export-phrase` confirms before printing: the failure mode is a phrase put
+    // on a screen someone else can see, and that is decided before typing, not
+    // after.
+    if (mode === 'reveal-confirm') {
+      if (input === 'y' || input === 'Y') {
+        setRevealPass('');
+        setError('');
+        setMode('reveal-unlock');
+      } else if (input === 'n' || input === 'N') {
+        clearReveal();
+        setMode('list');
+      }
+      return;
+    }
+    if (mode === 'reveal-show') {
+      // Enter, q or ESC (handled above) take it back off the screen. Nothing
+      // else does anything here, so a stray keystroke cannot navigate away and
+      // leave the phrase rendered behind another view.
+      if (key.return || input === 'q') {
+        clearReveal();
+        setMode('list');
+        setMessage('Recovery phrase hidden');
+      }
       return;
     }
     if (mode !== 'list') return;
@@ -101,6 +194,15 @@ export function Keys({
       }
       return;
     }
+    if (input === 'p') {
+      setRevealTarget(w.name);
+      setRevealed(null);
+      setRevealPass('');
+      setMessage('');
+      setError('');
+      setMode('reveal-confirm');
+      return;
+    }
     if (input === 'd') {
       onRemove(w.name).then(() => setMessage(`Removed ${w.name}`));
       return;
@@ -131,6 +233,83 @@ export function Keys({
           </Box>
           {error && <Text color="red">{error}</Text>}
           <HelpFooter hints={[{ key: 'ESC', label: 'cancel' }]} />
+        </Box>
+      </Box>
+    );
+  }
+
+  if (mode === 'reveal-confirm') {
+    return (
+      <Box flexDirection="column" padding={1}>
+        <SectionHeader title={`Reveal Recovery Phrase · ${revealTarget}`} />
+        <Box flexDirection="column" paddingLeft={2}>
+          <Text>Show the recovery phrase for <Text bold>{revealTarget}</Text> on this screen?</Text>
+          <Box marginTop={1}>
+            <Text color="yellow">Anyone who sees it controls the wallet.</Text>
+          </Box>
+          <HelpFooter hints={[{ key: 'y', label: 'show' }, { key: 'n', label: 'cancel' }, { key: 'ESC', label: 'back' }]} />
+        </Box>
+      </Box>
+    );
+  }
+
+  if (mode === 'reveal-unlock') {
+    return (
+      <Box flexDirection="column" padding={1}>
+        <SectionHeader title={`Reveal Recovery Phrase · ${revealTarget}`} />
+        <Box flexDirection="column" paddingLeft={2}>
+          {/* Asked for even when the wallet is already unlocked: revealing
+              always goes through the keystore (D-KM-2), so whoever is at the
+              keyboard must know the passphrase, not just find an unlocked
+              session. (The session does hold the mnemonic, for Cardano — see
+              useWallet's UnlockedEntry — but reading it from there would skip
+              that check.) Say so, or this reads as a bug. */}
+          <Text dimColor>The keystore is decrypted again for this. An unlocked wallet is not enough.</Text>
+          <Box marginTop={1}>
+            <Text>Passphrase: </Text>
+            <TextInput value={revealPass} onChange={setRevealPass} mask="*" onSubmit={submitReveal} placeholder="********" />
+          </Box>
+          {decrypting && <Text dimColor>Decrypting the keystore…</Text>}
+          {error && <Text color="red">{error}</Text>}
+          <HelpFooter hints={[{ key: 'ESC', label: 'cancel' }]} />
+        </Box>
+      </Box>
+    );
+  }
+
+  if (mode === 'reveal-show' && revealed) {
+    return (
+      <Box flexDirection="column" padding={1}>
+        <SectionHeader title={`Recovery Phrase · ${revealTarget}`} />
+        <Box flexDirection="column" paddingLeft={2}>
+          <Text bold color="yellow">
+            {revealed.kind === 'mnemonic' ? '⚠ Recovery mnemonic' : '⚠ Raw seed'} — anyone who sees this controls the wallet
+          </Text>
+          {revealed.note && (
+            <Box marginTop={1}>
+              <Text dimColor>{revealed.note}</Text>
+            </Box>
+          )}
+
+          <Box marginTop={1} flexDirection="column" borderStyle="single" borderColor="yellow" paddingX={1}>
+            {revealed.kind === 'seed'
+              ? <Text>{revealed.seedHex}</Text>
+              : revealed.rows.map((row, r) => (
+                <Box key={r}>
+                  {row.map(({ index, word }) => (
+                    <Box key={index} width={WORD_CELL_WIDTH}>
+                      <Text dimColor>{String(index).padStart(2, ' ')}.</Text>
+                      <Text> {word}</Text>
+                    </Box>
+                  ))}
+                </Box>
+              ))}
+          </Box>
+
+          <Box marginTop={1}>
+            <Text dimColor>Store it offline, never digitally.</Text>
+          </Box>
+          <HelpFooter hints={[{ key: 'ESC', label: 'hide' }, { key: 'Enter', label: 'hide' }]} />
         </Box>
       </Box>
     );

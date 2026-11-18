@@ -44,6 +44,11 @@ final class Engine: NSObject {
     var onEvent: (EngineEvent) -> Void = { _ in }
     private var loaded: CheckedContinuation<Void, Error>?
     private var isLoaded = false
+    private let page = URLRequest(url: EngineScheme.root.appendingPathComponent("index.html"))
+    private let created = Date()
+    /// The latest load of the page; failures of a load it replaced are not failures.
+    private var navigation: WKNavigation?
+    private var committed = false
 
     override init() {
         let config = WKWebViewConfiguration()
@@ -61,7 +66,29 @@ final class Engine: NSObject {
         #if DEBUG
         webView.isInspectable = true
         #endif
-        webView.load(URLRequest(url: EngineScheme.root.appendingPathComponent("index.html")))
+        load()
+    }
+
+    private func load() {
+        committed = false
+        navigation = webView.load(page)
+        checkCommitted()
+    }
+
+    /// The first launch after a simulator boot has sat on "Starting Moth…" for over three
+    /// minutes with no failure reported, so load the page again if nothing has committed.
+    private func checkCommitted() {
+        let current = navigation
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(30))
+            guard let self, navigation === current, !isLoaded, !committed else { return }
+            log("not committed; loading again")
+            load()
+        }
+    }
+
+    private func log(_ event: String) {
+        DebugLog.write(String(format: "engine %@ at %.1fs", event, Date().timeIntervalSince(created)))
     }
 
     func waitUntilLoaded() async throws {
@@ -110,6 +137,7 @@ final class Engine: NSObject {
         let data = message["data"]
         switch event {
         case "ready":
+            log("ready")
             isLoaded = true
             loaded?.resume()
             loaded = nil
@@ -164,22 +192,35 @@ extension Engine: WKNavigationDelegate {
         action.request.url?.scheme == EngineScheme.scheme && action.request.url?.host == "engine" ? .allow : .cancel
     }
 
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        guard navigation === self.navigation else { return }
+        committed = true
+        log("committed")
+    }
+
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        loaded?.resume(throwing: EngineError.notLoaded)
-        loaded = nil
+        failed(navigation, error)
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        failed(navigation, error)
+    }
+
+    private func failed(_ navigation: WKNavigation?, _ error: Error) {
+        guard navigation === self.navigation else { return }
+        log("failed: \(error.localizedDescription)")
         loaded?.resume(throwing: EngineError.notLoaded)
         loaded = nil
     }
 
     // iOS may kill the web content process under memory pressure; reload it. Sync resumes
     // from the persisted state, but the session is gone, so the wallet must be unlocked again.
+    // `load`, not `reload`: reload does nothing if the page never committed.
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        log("web content process ended")
         isLoaded = false
         onEvent(.workerError("Moth's wallet engine was stopped by iOS. Unlock again to continue."))
-        webView.reload()
+        load()
     }
 }
 

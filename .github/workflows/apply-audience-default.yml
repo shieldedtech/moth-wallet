@@ -1,10 +1,10 @@
 name: Apply audience default
 
-# Dispatcher — calls the reusable workflow in `shieldedtech/.github`.
+# Dispatcher — calls the reusable workflow in `shieldedtech/workflows`.
 # Defaults `audience:shielded` on issue open when no audience:* label is set.
 # Add-only, idempotent, existence-gated (no-op if the label is absent).
 # Implementation:
-# https://github.com/shieldedtech/.github/blob/main/.github/workflows/apply-audience-default.yml
+# https://github.com/shieldedtech/workflows/blob/main/.github/workflows/apply-audience-default.yml
 
 on:
   issues:
@@ -21,4 +21,4 @@ concurrency:
 jobs:
   apply:
     name: Default audience:shielded on open
-    uses: shieldedtech/.github/.github/workflows/apply-audience-default.yml@70648caf313acd9d28e785e69b5841951f122fa1
+    uses: shieldedtech/workflows/.github/workflows/apply-audience-default.yml@431a4f88f5d8a5a0eca55e429f5f12c8d2b69095

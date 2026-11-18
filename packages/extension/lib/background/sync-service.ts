@@ -5,7 +5,7 @@
 
 import { browser, type Browser } from 'wxt/browser';
 import type { NetworkConfig } from '@shieldedtech/moth-browser';
-import { deserializeBalances, type PortEvent } from '../messaging/protocol';
+import { deserializeBalances, type PanelReport, type PortEvent } from '../messaging/protocol';
 import type { TxStage } from '@shieldedtech/moth-browser';
 import { syncHoldsAutoLock } from './auto-lock';
 import { offscreenOn, type RelayState } from '../offscreen/messaging';
@@ -195,10 +195,20 @@ export function endOp(): void {
   maybeScheduleTeardown();
 }
 
+// Another extension's side panel covers Moth's without closing it, so the covered
+// panel keeps its port. Panels report visibility so a prompt is never sent only there.
+const hiddenPorts = new Set<Port>();
+
 export function addPort(port: Port): void {
   lifecycleEpoch++;
   cancelTeardown();
   ports.add(port);
+  port.onMessage.addListener((raw) => {
+    const report = raw as PanelReport;
+    if (report?.kind !== 'visibility') return;
+    if (report.visible) hiddenPorts.delete(port);
+    else hiddenPorts.add(port);
+  });
   // Always send the current setup state. A reconnecting panel may still hold
   // `true` from the service-worker instance that just died, so silence is not
   // equivalent to false here.
@@ -216,6 +226,7 @@ export function addPort(port: Port): void {
   }
   port.onDisconnect.addListener(() => {
     ports.delete(port);
+    hiddenPorts.delete(port);
     maybeScheduleTeardown();
   });
 }
@@ -250,6 +261,12 @@ export function getSetupTabIds(): number[] {
 
 export function hasOpenPorts(): boolean {
   return ports.size > 0;
+}
+
+/** Whether a Moth panel is on screen. A panel that has not reported yet counts as visible. */
+export function hasVisiblePanel(): boolean {
+  for (const port of ports) if (!hiddenPorts.has(port)) return true;
+  return false;
 }
 
 /** Whether a transaction op is running, not counting ops waiting on an approval. */
