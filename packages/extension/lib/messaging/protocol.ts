@@ -26,6 +26,14 @@ export interface DustNotYet {
   availableSpecks: string;
   secondsUntilAffordable: number | null;
 }
+
+/**
+ * A transfer's fee estimate: raw SPECK as a decimal string, or null when it
+ * cannot be built yet because a transaction this wallet already submitted
+ * still holds coins it would need. Returned rather than thrown, because an
+ * Error crossing the channel arrives as a bare string.
+ */
+export type FeeEstimate = { fee: string } | { fee: null; reason: 'in-flight' };
 import type { RelayState } from '../offscreen/relay-socket';
 
 export type { RelayState };
@@ -247,11 +255,18 @@ export type PortEvent =
   /** The session was locked out-of-band (auto-lock); the panel re-reads status. */
   | { kind: 'sessionLocked' };
 
+/** Messages a panel sends to background over the "balances" port. */
+export type PanelReport = { kind: 'visibility'; visible: boolean };
+
 export const BALANCES_PORT = 'balances';
 
 /** Held open by the setup tab while an account is being created/imported —
  *  the panel shows a waiting screen until it closes (or setup completes). */
 export const SETUP_PORT = 'setup';
+
+/** Opened by the content script of a page that calls the connector and held for
+ *  the life of its document, so the background learns when that page is gone. */
+export const CONNECTOR_PORT = 'connector';
 
 // ---------------------------------------------------------------------------
 // Protocol map
@@ -357,8 +372,8 @@ interface ProtocolMap {
    *  over the port. */
   sendTokens(data: { outputs: SendTokensRequest[] }): { txHash: string };
 
-  /** Complete estimated fee in raw SPECK for the whole batch, as a decimal string. */
-  estimateTransferFee(data: { outputs: SendTokensRequest[] }): { fee: string };
+  /** Complete estimated fee for the whole batch; see FeeEstimate. */
+  estimateTransferFee(data: { outputs: SendTokensRequest[] }): FeeEstimate;
 
   /** Register the wallet's unshielded NIGHT for DUST generation. Stage updates
    *  stream over the port. `txHash` is null when nothing needed registering.

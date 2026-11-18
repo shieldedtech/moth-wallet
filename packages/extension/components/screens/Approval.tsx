@@ -57,15 +57,26 @@ export function Approval({
   const { names: tokenNames } = useTokenNames();
   const shownName = walletName ? accountLabel(walletName, walletLabel) : null;
 
+  // The id can move on (a dropped or decided request) while the previous request's
+  // details are still rendered, so nothing is shown until the new one is loaded, and
+  // a decision names the request on screen rather than the id the panel last sent.
   useEffect(() => {
+    let stale = false;
+    setApproval(null);
+    setMissing(false);
     void sendMessage('approvalGet', { id: approvalId }).then(({ approval }) => {
+      if (stale) return;
       setApproval(approval);
       setMissing(!approval);
     });
+    return () => {
+      stale = true;
+    };
   }, [approvalId]);
 
   const decide = async (approved: boolean) => {
-    await sendMessage('approvalResolve', { id: approvalId, approved });
+    if (!approval) return;
+    await sendMessage('approvalResolve', { id: approval.id, approved });
     onResolved();
   };
 
