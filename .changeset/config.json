@@ -7,7 +7,7 @@
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "ignore": [],
+  "ignore": ["@shieldedtech/moth-mock-dapp"],
   "privatePackages": {
     "version": true,
     "tag": false

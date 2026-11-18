@@ -223,7 +223,7 @@ export function isFrom(specifier: string, pkg: string): boolean {
  * True when `specifier` comes from any Midnight package.
  *
  * Deliberately scope-wide rather than a list of package names: the published
- * names carry version suffixes that move (`@midnight-ntwrk/ledger-v8`,
+ * names carry version suffixes that move (`@midnightntwrk/ledger-v8`,
  * `@midnight-ntwrk/compact-js`, `@midnight-ntwrk/onchain-runtime-v3`), and a list
  * that names `@midnight-ntwrk/ledger` matches none of them while looking like it
  * does. Every package under these scopes either carries WASM or pulls in

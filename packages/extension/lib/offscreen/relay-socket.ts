@@ -112,8 +112,8 @@ function toHttpUrl(wsUrl: string): string {
  *
  * This is load-bearing rather than tidy. Core builds the SDK's relay URL as
  * `new URL(toWsUrl(network.nodeUrl))`, and URL normalisation appends the root
- * path: the config's `https://rpc.preprod.midnight.network` becomes
- * `wss://rpc.preprod.midnight.network/`. A caller that mirrors core with a plain
+ * path: the config's `https://rpc.preprod.shielded.tools` becomes
+ * `wss://rpc.preprod.shielded.tools/`. A caller that mirrors core with a plain
  * string replace produces the same endpoint WITHOUT that slash, the two never
  * match, and every relay socket is passed through unthrottled — the backoff
  * silently does nothing, which is exactly what happened before this existed.

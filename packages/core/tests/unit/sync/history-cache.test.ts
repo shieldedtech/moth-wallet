@@ -12,8 +12,14 @@ import { NIGHT_TOKEN_ID } from '../../../src/types/tokens.js';
 
 const HASH = 'f'.repeat(64);
 
-const ENTRY: WalletEntry = {
+// The block the indexer reported the transaction in; storage records it as the
+// entry's finalized lifecycle.
+const FINALIZED_BLOCK = { hash: 'b'.repeat(64), height: 42, timestamp: new Date('2026-07-12T09:12:00Z') };
+
+// What a sync reports to storage: everything but the lifecycle, which storage derives.
+const APPLIED = {
   hash: HASH,
+  identifiers: [],
   protocolVersion: 1,
   status: 'SUCCESS',
   timestamp: new Date('2026-07-12T09:12:00Z'),
@@ -25,6 +31,11 @@ const ENTRY: WalletEntry = {
     ],
     spentUtxos: [],
   },
+} as const;
+
+const ENTRY: WalletEntry = {
+  ...APPLIED,
+  lifecycle: { status: 'finalized', finalizedBlock: FINALIZED_BLOCK },
 } as WalletEntry;
 
 function makeStorage() {
@@ -34,7 +45,7 @@ function makeStorage() {
 describe('transaction history cache', () => {
   it('survives a serialize → store → restore round trip with bigints and dates intact', async () => {
     const storage = makeStorage();
-    await storage.upsert(ENTRY);
+    await storage.gotFinalized({ ...APPLIED, finalizedBlock: FINALIZED_BLOCK });
 
     const store = new InMemorySyncStateStore();
     const key = syncStateKey('devnet', 'alice', 'history');
@@ -49,7 +60,7 @@ describe('transaction history cache', () => {
 
   it('merges re-applied sections after a restore instead of duplicating them', async () => {
     const storage = makeStorage();
-    await storage.upsert(ENTRY);
+    await storage.gotFinalized({ ...APPLIED, finalizedBlock: FINALIZED_BLOCK });
     const restored = InMemoryTransactionHistoryStorage.restore(
       await storage.serialize(),
       WalletEntrySchema,
@@ -58,13 +69,15 @@ describe('transaction history cache', () => {
 
     // Catch-up sync re-reports the same transaction (same section content) and
     // adds the section another sub-wallet contributes.
-    await restored.upsert(ENTRY);
-    await restored.upsert({
+    await restored.gotFinalized({ ...APPLIED, finalizedBlock: FINALIZED_BLOCK });
+    await restored.gotFinalized({
       hash: HASH,
+      identifiers: [],
       protocolVersion: 1,
       status: 'SUCCESS',
+      finalizedBlock: FINALIZED_BLOCK,
       shielded: { receivedCoins: [{ type: 'musd0000', nonce: 'n', value: 5n, mtIndex: 1n }], spentCoins: [] },
-    } as WalletEntry);
+    });
 
     const all = await restored.getAll();
     expect(all).toHaveLength(1);

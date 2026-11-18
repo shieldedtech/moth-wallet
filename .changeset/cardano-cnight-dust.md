@@ -103,7 +103,7 @@ indexer query keyed by Cardano *reward* address and so reported "not registered"
 for every wallet, registered or not.
 
 moth registers against the `cnight_generates_dust` deployment the Midnight
-bridge actually reads: script hash 7e69087d…, the contract the node repo ships
+bridge actually reads on Preprod and Preview: script hash 7e69087d…, the contract the node repo ships
 as `mapping_validator.plutus`. It previously used the compilation in the dApp's
 `contracts-new-aiken/plutus.json` (5027bb76…), which is newer, compiles
 cleanly, and is not deployed. Registrations against it confirmed on Cardano and
