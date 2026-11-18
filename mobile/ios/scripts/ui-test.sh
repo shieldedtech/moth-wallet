@@ -46,6 +46,15 @@ for class in ${TESTS:-OnboardingTests AccountsTests ConnectorTests FeaturesTests
   xcrun simctl keychain "$SIM" reset
   xcodebuild test-without-building -project Moth.xcodeproj -scheme Moth -configuration Debug -destination "$DEST" \
     -derivedDataPath build/DerivedData -only-testing:"MothUITests/$class" \
-    -resultBundlePath "$RESULTS/$class.xcresult" || failed+=("$class")
+    -resultBundlePath "$RESULTS/$class.xcresult" || {
+      failed+=("$class")
+      # Whether WebKit's processes started, for an engine that never loaded.
+      xcrun simctl spawn "$SIM" log show --last 10m --style compact \
+        --predicate 'subsystem BEGINSWITH "com.apple.WebKit" OR process BEGINSWITH "com.apple.WebKit"' \
+        > "$RESULTS/$class.webkit.log" 2>&1 || true
+    }
+  # The app's own log (engine load and failures), kept until the next class uninstalls it.
+  DATA=$(xcrun simctl get_app_container "$SIM" bob.shielded.moth data 2>/dev/null) &&
+    cp "$DATA/Documents/moth-debug.log" "$RESULTS/$class.moth-debug.log" 2>/dev/null || true
 done
 [ ${#failed[@]} -eq 0 ] || { echo "error: failed: ${failed[*]}; results in mobile/ios/$RESULTS" >&2; exit 1; }

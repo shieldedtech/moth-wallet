@@ -16,13 +16,7 @@ final class SecurityTests: XCTestCase {
         XCTAssertTrue(perTransaction.waitForExistence(timeout: 10))
         perTransaction.switches.firstMatch.tap()
 
-        app.switches["Face ID only, no passcode"].switches.firstMatch.tap()
-        let accept = app.buttons["I've written down every phrase — turn on"]
-        XCTAssertTrue(accept.waitForExistence(timeout: 5), "implications shown before turning on")
-        accept.tap()
-        // Re-protecting the keys asks for Face ID once; the script matches it.
-        let faceOnly = app.switches["Face ID only, no passcode"]
-        XCTAssertTrue(NSPredicate(format: "value == '1'").evaluate(with: faceOnly) || faceOnly.waitForValue("1", timeout: 30), "Face ID only is on")
+        XCTAssertTrue(setFaceIDOnly(true, in: app), "Face ID only is on")
 
         // The keys still open after a relaunch, with Face ID.
         app.terminate()
@@ -40,14 +34,30 @@ final class SecurityTests: XCTestCase {
 
         // Turning it off puts the passcode fallback back.
         app.tabBars.buttons["Settings"].tap()
-        app.switches["Face ID only, no passcode"].switches.firstMatch.tap()
-        XCTAssertTrue(app.switches["Face ID only, no passcode"].waitForValue("0", timeout: 30), "Face ID only is off")
+        XCTAssertTrue(setFaceIDOnly(false, in: app), "Face ID only is off")
     }
-}
 
-extension XCUIElement {
-    func waitForValue(_ value: String, timeout: TimeInterval) -> Bool {
-        let predicate = NSPredicate(format: "value == %@", value)
-        return XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: predicate, object: self)], timeout: timeout) == .completed
+    /// Flips "Face ID only" and waits for it to take. Re-protecting the keys asks for Face ID once,
+    /// which the script matches, but the simulator now and then rejects the match anyway (alert
+    /// "Authentication failure.", no Face ID sheet shown), so one rejection is retried.
+    private func setFaceIDOnly(_ on: Bool, in app: XCUIApplication) -> Bool {
+        let toggle = app.switches["Face ID only, no passcode"]
+        let rejected = app.alerts.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Authentication failure'")).firstMatch
+        for _ in 0..<2 {
+            toggle.switches.firstMatch.tap()
+            if on {
+                let accept = app.buttons["I've written down every phrase — turn on"]
+                XCTAssertTrue(accept.waitForExistence(timeout: 5), "implications shown before turning on")
+                accept.tap()
+            }
+            let deadline = Date().addingTimeInterval(30)
+            while Date() < deadline, toggle.value as? String != (on ? "1" : "0"), !rejected.exists {
+                _ = rejected.waitForExistence(timeout: 1)
+            }
+            if toggle.value as? String == (on ? "1" : "0") { return true }
+            guard rejected.exists else { return false }
+            app.alerts.buttons["OK"].tap()
+        }
+        return false
     }
 }

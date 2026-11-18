@@ -1,7 +1,7 @@
 # Connector Lab
 
 A standalone mock dapp for testing a wallet's implementation of
-`@midnight-ntwrk/dapp-connector-api` 4.1.0. It discovers providers through
+`@midnightntwrk/dapp-connector-api` 4.1.0. It discovers providers through
 `window.midnight` and does not import code, components, or styles from the Moth
 extension. The UI mirrors the extension's design language (the Milk/Ink/Moonlime
 palette, Bricolage Grotesque and Instrument Sans) recreated in plain CSS, so the
