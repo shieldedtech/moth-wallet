@@ -88,10 +88,12 @@ func reveal(_ element: XCUIElement, in app: XCUIApplication, up: Bool = true) ->
 /// settled in place and reopen the menu if it never does. Then tap the middle of where it sits:
 /// on CI, XCTest can fail to find a hit point on an iOS 26 menu item that has been open and still
 /// for seconds, and a coordinate tap doesn't ask it for one.
+/// On a busy CI runner the menu has opened after the wait, over its own button, and tapping that
+/// button again then fails the test; so reopen only when the item is gone and the button is clear.
 func choose(_ item: XCUIElement, fromMenu menu: XCUIElement, attempts: Int = 3) {
-    for _ in 0..<attempts {
-        menu.tap()
-        if item.waitForSettledFrame(timeout: 5) {
+    for attempt in 0..<attempts {
+        if attempt == 0 || (!item.exists && menu.isHittable) { menu.tap() }
+        if item.waitForSettledFrame(timeout: 10) {
             let frame = item.frame
             XCUIApplication().coordinate(withNormalizedOffset: .zero)
                 .withOffset(CGVector(dx: frame.midX, dy: frame.midY)).tap()
