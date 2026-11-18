@@ -14,7 +14,7 @@
 
 import { defineExtensionMessaging } from '@webext-core/messaging';
 import type { WalletInfo, TxStage, NetworkConfig, SignEncoding, SignedMessage } from '@shieldedtech/moth-browser';
-import type { HistoryEntry } from '@midnight-ntwrk/dapp-connector-api';
+import type { HistoryEntry } from '@midnightntwrk/dapp-connector-api';
 import type { RelayState } from './relay-socket';
 import type { DustNotYet } from '../messaging/protocol';
 import type { CardanoNetworkConfig } from '@shieldedtech/moth-wallet/cardano/network';

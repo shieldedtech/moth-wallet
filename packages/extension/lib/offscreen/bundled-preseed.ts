@@ -30,13 +30,37 @@ interface Manifest {
   /**
    * Hash of the event each cursor points at, recorded at export time.
    *
-   * Required. A bundle's cursors are indexer-assigned event numbers, so without
-   * these there is no way to tell whether the numbering they were written under
-   * still holds — which is how a stale preprod reference shipped and kept being
-   * installed (#40). Checksums prove the bytes arrived, not that the cursors
-   * still mean what they meant.
+   * Required for every cursor that is an event id. A bundle's event-id cursors
+   * are indexer-assigned numbers, so without these there is no way to tell
+   * whether the numbering they were written under still holds — which is how a
+   * stale preprod reference shipped and kept being installed (#40). Checksums
+   * prove the bytes arrived, not that the cursors still mean what they meant.
+   *
+   * Shielded always has one. Dust has one only when it replayed events: dust the
+   * projections sync wrote (from the v9 fork on) has a block height as its
+   * offset, which no renumbering moves, so there is nothing to witness.
    */
   witnesses?: Record<string, { stream: string; id: number; digest: string }>;
+}
+
+/**
+ * Whether the projections sync wrote this DUST snapshot. The SDK records it in
+ * `syncKind`; a snapshot without it replayed events.
+ *
+ * Mirrors `witnessStreamFor` in packages/core/src/sync/preseed.ts, kept local so
+ * this loader does not pull the wallet SDK in to read one field.
+ */
+function writtenByProjections(snapshot: string): boolean {
+  try {
+    return (JSON.parse(snapshot) as { syncKind?: unknown }).syncKind === 'projections';
+  } catch {
+    return false;
+  }
+}
+
+function isWitness(value: unknown): boolean {
+  const witness = value as { digest?: unknown; id?: unknown } | undefined;
+  return !!witness && typeof witness.digest === 'string' && Number.isFinite(witness.id);
 }
 
 /** Package-relative, so this works in the worker without extension APIs — the
@@ -75,10 +99,12 @@ function parseManifest(text: string | null): Manifest | null {
     // a chain walk on upgrade — this is an artefact we control and can re-cut, so
     // the cost of refusing is one slower first sync, and the cost of trusting is
     // a wallet silently resuming at the wrong event.
-    for (const part of ['shielded', 'dust'] as const) {
-      const witness = manifest.witnesses?.[part];
-      if (!witness || typeof witness.digest !== 'string' || !Number.isFinite(witness.id)) return null;
-    }
+    //
+    // Shielded is checked here. Dust can only be checked once its state is in
+    // hand (installBundledReference), since whether it needs a witness depends
+    // on which sync wrote it; a dust witness that is present must still be well formed.
+    if (!isWitness(manifest.witnesses?.shielded)) return null;
+    if (manifest.witnesses?.dust !== undefined && !isWitness(manifest.witnesses.dust)) return null;
     return manifest;
   } catch {
     return null;
@@ -137,6 +163,9 @@ export async function installBundledReference(networkId: string, store: SyncStat
       if (!value) return false;
       states[part] = value;
     }
+
+    // Event-replayed dust is cursored by event id, so it must arrive witnessed.
+    if (!writtenByProjections(states.dust!) && !manifest.witnesses?.dust) return false;
 
     for (const part of PARTS) await store.put(emptyRefStateKey(networkId, part), states[part]!);
     // Witnesses before the height, for the same reason the height goes last: the

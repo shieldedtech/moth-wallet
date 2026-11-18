@@ -2,7 +2,7 @@
 // the page and asks the wallet to check or prove. A contract's prover key crosses to the wallet
 // once, in chunks; after that each request names it by SHA-256.
 
-import type { KeyMaterialProvider, ProvingProvider } from '@midnight-ntwrk/dapp-connector-api';
+import type { KeyMaterialProvider, ProvingProvider } from '@midnightntwrk/dapp-connector-api';
 import { decodeBigintJson, encodeBigintJson } from '../messaging/bigint-json';
 import type { PageClient } from '../messaging/page-transport';
 import {
