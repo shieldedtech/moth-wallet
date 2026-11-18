@@ -16,7 +16,9 @@ The rate is now measured over a sliding window of about three minutes, which is
 emptied whenever the set of sub-wallets still replaying changes, since that is
 where the rate jumps. While two sub-wallets replay at once no ETA is shown: the
 one behind is starved, and its rate predicts nothing about how fast it will run
-once the other finishes. A sync that genuinely starts from zero likewise shows no
+once the other finishes. A sub-wallet that has finished stays out of that set:
+it reads as incomplete again for a moment whenever a new event is indexed before
+it is applied, and that is the tip moving, not a second replay. A sync that genuinely starts from zero likewise shows no
 estimate until it has a few seconds of rate to measure, where it previously
 extrapolated from its first percent.
 

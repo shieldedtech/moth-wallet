@@ -838,7 +838,8 @@ async function saveCache(
   }
 }
 
-function extractBalancesPartial(
+/** Exported for tests. */
+export function extractBalancesPartial(
   state: FacadeState,
   syncStartTime = 0,
   prevPct = 0,

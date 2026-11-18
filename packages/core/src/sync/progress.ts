@@ -93,6 +93,18 @@ export class ProgressRateTracker {
   private samples: ProgressSample[] = [];
   private deadlineMs: number | null = null;
   private raisePendingSinceMs: number | null = null;
+  private readonly finished = new Set<SubWallet>();
+
+  /**
+   * The sub-wallets still replaying: those behind, less any that already
+   * finished in this session. A finished sub-wallet reads as incomplete again
+   * whenever an event is indexed before it is applied, or the socket
+   * reconnects; that is the tip moving, not a second replay beside this one.
+   */
+  replaying(behind: ReadonlyArray<SubWallet>, finished: ReadonlyArray<SubWallet>): SubWallet[] {
+    for (const sub of finished) this.finished.add(sub);
+    return behind.filter((sub) => !this.finished.has(sub));
+  }
 
   /**
    * Record a sample and return the seconds remaining to show, or null when
@@ -232,7 +244,11 @@ export function overallSyncProgress(input: OverallProgressInput): {
   // (see ProgressRateTracker); the estimate is shown only while a single
   // sub-wallet is replaying, since with two the one behind is starved by the
   // other and its rate says nothing about how fast it will run once alone.
-  const replaying = fractions.filter((f) => f.value < 1).map((f) => f.sub);
+  const behind = fractions.filter((f) => f.value < 1).map((f) => f.sub);
+  // Finished means a replay that ended: complete with nothing to apply is how
+  // a sub-wallet also reads before the indexer has told it what exists.
+  const finished = (['shielded', 'unshielded', 'dust'] as const).filter((sub) => input[`${sub}Synced`] && input[sub].total > 0);
+  const replaying = input.rate?.replaying(behind, finished) ?? behind;
   const remaining = input.rate?.observe(replaying.join('+'), { fraction: percentage, elapsedMs: input.elapsedMs }) ?? null;
   const etaSeconds = replaying.length === 1 ? remaining : null;
 

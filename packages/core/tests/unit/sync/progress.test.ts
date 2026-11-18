@@ -373,6 +373,54 @@ describe('ETA follows the current rate', () => {
   });
 });
 
+// isStrictlyComplete() is "connected and applied === highest relevant", so a
+// sub-wallet that finished reads as incomplete again for an emission whenever
+// an event is indexed before it is applied, or the socket reconnects.
+describe('ETA while a finished sub-wallet dips at the tip', () => {
+  const TOTAL = 1_000_000;
+  // DUST alone at 1,000 events/s, one emission a second for two minutes.
+  const walk = (shieldedDips: (second: number) => boolean) => {
+    const rate = new ProgressRateTracker();
+    const shown: Array<number | null> = [];
+    for (let second = 0; second <= 120; second++) {
+      const dip = shieldedDips(second);
+      shown.push(overallSyncProgress({
+        shielded: {applied: dip ? 184_375 : 184_376, total: 184_376},
+        unshielded: {applied: 0, total: 0},
+        dust: {applied: second * 1_000, total: TOTAL},
+        shieldedSynced: !dip, unshieldedSynced: true, dustSynced: false,
+        synced: false, elapsedMs: second * 1_000, rate,
+      }).etaSeconds);
+    }
+    return shown;
+  };
+
+  it('keeps its samples through a one-emission dip', () => {
+    const steady = walk(() => false);
+    const dipping = walk((second) => second > 0 && second % 20 === 0);
+    expect(steady[30]).not.toBeNull();
+    expect(dipping).toEqual(steady);
+  });
+
+  it('still starts over when a sub-wallet that never finished falls behind', () => {
+    const rate = new ProgressRateTracker();
+    const emit = (shieldedApplied: number, shieldedTotal: number, second: number) =>
+      overallSyncProgress({
+        shielded: {applied: shieldedApplied, total: shieldedTotal},
+        unshielded: {applied: 0, total: 0},
+        dust: {applied: second * 1_000, total: TOTAL},
+        // Complete with nothing to apply: the indexer has not said what exists.
+        shieldedSynced: shieldedTotal === 0, unshieldedSynced: true, dustSynced: false,
+        synced: false, elapsedMs: second * 1_000, rate,
+      }).etaSeconds;
+    for (let second = 0; second <= 40; second++) emit(0, 0, second);
+    expect(emit(0, 0, 41)).not.toBeNull();
+    // Shielded turns out to have a replay of its own: two are replaying now.
+    expect(emit(10_000, 184_376, 42)).toBeNull();
+    expect(emit(20_000, 184_376, 43)).toBeNull();
+  });
+});
+
 describe('ProgressRateTracker', () => {
   const phase = 'dust';
   const at = (fraction: number, elapsedMs: number) => ({fraction, elapsedMs});
