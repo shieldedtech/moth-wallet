@@ -12,6 +12,24 @@ export interface SubProgressSnapshot {
   total: number;
 }
 
+/** How far a DUST projections pass has resolved the wallet's coins, in blocks. */
+export interface DustPassPosition {
+  /** Every spend of the wallet's coins below this block is accounted for. */
+  resolvedThrough: number;
+  /** The block the pass is syncing to. */
+  tip: number;
+}
+
+/**
+ * DUST progress for display: what the wallet reported, or the pass's position
+ * while it has reported no total. A projections pass applies nothing until it
+ * ends, so until then the position is the only measure of how far it has got.
+ */
+export function dustProgressFor(reported: SubProgressSnapshot, position: DustPassPosition | null): SubProgressSnapshot {
+  if (reported.total > 0 || position === null || position.tip <= 0) return reported;
+  return {applied: Math.max(0, Math.min(position.resolvedThrough, position.tip)), total: position.tip};
+}
+
 /** Which sub-wallet the reported percentage belongs to. */
 export type SubWallet = 'shielded' | 'unshielded' | 'dust';
 
