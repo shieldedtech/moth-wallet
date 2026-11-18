@@ -10,7 +10,7 @@ Browser extension for the Moth reference wallet (Midnight Network), built with [
 yarn workspace @shieldedtech/moth-extension dev            # Chrome, HMR, auto-loads the extension
 ```
 
-> **Firefox:** currently blocked. `@midnight-ntwrk/ledger-v8` initializes its WASM with top-level await, which requires an ES-module background; Firefox has no module background scripts ([bug 1803950](https://bugzilla.mozilla.org/show_bug.cgi?id=1803950)). Firefox support needs the WASM loaded via `.wasm?init` (async, no TLA) — tracked as a post-MVP task. The `dev:firefox`/`build:firefox` scripts are kept for when that lands.
+> **Firefox:** currently blocked. `@midnightntwrk/ledger-v8` initializes its WASM with top-level await, which requires an ES-module background; Firefox has no module background scripts ([bug 1803950](https://bugzilla.mozilla.org/show_bug.cgi?id=1803950)). Firefox support needs the WASM loaded via `.wasm?init` (async, no TLA) — tracked as a post-MVP task. The `dev:firefox`/`build:firefox` scripts are kept for when that lands.
 
 Or load manually: `yarn workspace @shieldedtech/moth-extension build`, then chrome://extensions → "Load unpacked" → `packages/extension/.output/chrome-mv3`.
 
@@ -95,6 +95,10 @@ the release tag manually.
   a proof server (default `http://localhost:6300`). WASM parameters and built-in
   keys are fetched on demand from the Midnight SDK's key source.
 - The dApp connector implements the [Midnight dApp connector API](https://docs.midnight.network/api-reference/dapp-connector) as `window.midnight.moth`, including a functional `getProvingProvider` backed by the wallet's selected proving method.
+- A connector request the wallet cannot fund (balancing, `makeTransfer` or
+  `makeIntent` short of a token, or of DUST for the fee) rejects with
+  `InsufficientFunds`, its reason naming the token and the shortfall. `signData`
+  results carry `scheme: 'schnorr_bip340'`.
 - When a dApp asks the wallet to balance a transaction it built
   (`balanceSealedTransaction` / `balanceUnsealedTransaction`), the approval
   screen lists what the transaction takes from the wallet — every token and

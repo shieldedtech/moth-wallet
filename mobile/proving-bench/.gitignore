@@ -1,0 +1,5 @@
+target/
+build/
+params/
+ksweep-keys/
+!results/**/*.log

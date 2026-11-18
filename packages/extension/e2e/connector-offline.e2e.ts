@@ -4,7 +4,7 @@
 // refused, so these flows must work before the wallet has synced at all.
 
 import { test, expect, type Page } from '@playwright/test';
-import * as ledger from '@midnight-ntwrk/ledger-v8';
+import * as ledger from '@midnightntwrk/wallet-sdk/ledger/v8';
 import { DEFAULT_NETWORKS } from '@shieldedtech/moth-wallet/types/network';
 import { signedMessageBytes } from '@shieldedtech/moth-wallet/wallet/sign-message';
 import {

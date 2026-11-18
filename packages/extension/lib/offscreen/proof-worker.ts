@@ -2,7 +2,8 @@
 // pool (proof-pool.ts) can run a transaction's proofs in parallel. It holds no key
 // material; each job asks the pool, which keeps the one cached copy.
 
-import { prove, check, type ProvingKeyMaterial } from '@midnight-ntwrk/zkir-v2';
+import { prove, check, type ProvingKeyMaterial } from '@midnightntwrk/zkir-v2';
+import type { ZkirVersion } from '@shieldedtech/moth-browser';
 import { serializeHostError, deserializeHostError } from './worker-rpc';
 import { isKeyReply, type KeyQuery, type PoolToWorker, type ProofJobRequest, type WorkerToPool } from './proof-rpc';
 
@@ -35,13 +36,22 @@ function remoteKeyMaterial(jobId: number) {
   };
 }
 
+type Zkir = Pick<typeof import('@midnightntwrk/zkir-v2'), 'prove' | 'check'>;
+const zkirV2: Zkir = { prove, check };
+// zkir-v3 instantiates its WASM on import, so only a worker handed a ZKIR v3
+// circuit loads it; the wallet's own circuits are all ZKIR v2.
+let zkirV3: Promise<Zkir> | undefined;
+const zkirFor = (version: ZkirVersion): Promise<Zkir> =>
+  version === 'v3' ? (zkirV3 ??= import('@midnightntwrk/zkir-v3')) : Promise.resolve(zkirV2);
+
 async function run(job: ProofJobRequest): Promise<void> {
   try {
     const keyMaterial = remoteKeyMaterial(job.id);
+    const zkir = await zkirFor(job.zkir);
     const result =
       job.op === 'prove'
-        ? await prove(job.preimage, keyMaterial, job.overwriteBindingInput)
-        : await check(job.preimage, keyMaterial);
+        ? await zkir.prove(job.preimage, keyMaterial, job.overwriteBindingInput)
+        : await zkir.check(job.preimage, keyMaterial);
     workerScope.postMessage({ id: job.id, ok: true, result });
   } catch (err) {
     workerScope.postMessage({ id: job.id, ok: false, error: serializeHostError(err) });

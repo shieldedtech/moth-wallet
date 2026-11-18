@@ -70,9 +70,9 @@ describe('nodeHostFor', () => {
   it('extracts the host, so the rule matches regardless of scheme or path', () => {
     // The node is reached as both wss:// and https:// on one origin; matching
     // the host covers both without depending on how the URL was spelled.
-    expect(nodeHostFor('https://rpc.preprod.midnight.network')).toBe('rpc.preprod.midnight.network');
-    expect(nodeHostFor('wss://rpc.preprod.midnight.network/')).toBe('rpc.preprod.midnight.network');
-    expect(nodeHostFor('https://rpc.preprod.midnight.network:443/path')).toBe('rpc.preprod.midnight.network');
+    expect(nodeHostFor('https://rpc.preprod.shielded.tools')).toBe('rpc.preprod.shielded.tools');
+    expect(nodeHostFor('wss://rpc.preprod.shielded.tools/')).toBe('rpc.preprod.shielded.tools');
+    expect(nodeHostFor('https://rpc.preprod.shielded.tools:443/path')).toBe('rpc.preprod.shielded.tools');
   });
 
   it('handles a local node', () => {
@@ -82,7 +82,7 @@ describe('nodeHostFor', () => {
   it('returns null for an unusable URL rather than guessing', () => {
     // A null host means no rule is installed — the credential is never attached
     // to a host we could not identify.
-    for (const url of ['', 'not-a-url', 'rpc.preprod.midnight.network']) {
+    for (const url of ['', 'not-a-url', 'rpc.preprod.shielded.tools']) {
       expect(nodeHostFor(url)).toBeNull();
     }
   });

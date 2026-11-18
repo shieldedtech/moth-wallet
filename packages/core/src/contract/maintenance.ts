@@ -3,21 +3,20 @@
 // transaction, signs intents, submits.
 
 import {readFileSync} from 'node:fs';
+import {resolve as resolvePath} from 'node:path';
+import * as ledgerV8 from '@midnightntwrk/wallet-sdk/ledger/v8';
+import * as ledgerV9 from '@midnightntwrk/wallet-sdk/ledger/v9';
 import type {TransactionResult} from '../types/transaction.js';
 import {resolveProverConfig, type NetworkConfig} from '../types/network.js';
 import type {DerivedKeys} from '../types/wallet.js';
-import {createProofProvider, ensureProverReady} from '../proof/provider.js';
-import {NodeZkConfigProvider} from '@midnight-ntwrk/midnight-js-node-zk-config-provider';
-import {createMidnightProvider} from '../providers/midnight-provider.js';
-import {indexerPublicDataProvider} from '@midnight-ntwrk/midnight-js-indexer-public-data-provider';
+import {ensureProverReady} from '../proof/provider.js';
 import {WalletError} from '../types/errors.js';
-import {setNetworkId} from '@midnight-ntwrk/midnight-js/network-id';
 import * as Rx from 'rxjs';
-import * as ledger from '@midnight-ntwrk/ledger-v8';
-import {HDWallet, Roles} from '@midnightntwrk/wallet-sdk/hd';
 import {createKeystore} from '@midnightntwrk/wallet-sdk/unshielded';
 import type {SyncedWallet} from '../sync/wallet-sync.js';
 import type {WalletKeys} from '../sync/operations.js';
+import {unshieldedSecretOf} from './wallet-provider.js';
+import {openContract} from './midnight-js.js';
 
 export interface InsertVerifierKeyOptions {
   /** Address of the already-deployed contract */
@@ -70,8 +69,6 @@ export async function insertVerifierKey(options: InsertVerifierKeyOptions): Prom
     );
   }
 
-  setNetworkId(network.id);
-
   await ensureProverReady(resolveProverConfig(network));
 
   return insertViaSDK(options);
@@ -80,39 +77,9 @@ export async function insertVerifierKey(options: InsertVerifierKeyOptions): Prom
 async function insertViaSDK(options: InsertVerifierKeyOptions): Promise<TransactionResult> {
   const {contractAddress, circuitId, verifierKeyPath, walletKeys, seedHex, network, artifactPath, syncedWallet, projectDir} =
     options;
-  const {resolve: resolvePath, join, basename} = await import('node:path');
-  const {pathToFileURL} = await import('node:url');
-  const {createRequire} = await import('node:module');
-  const {existsSync} = await import('node:fs');
-  const {mothHome} = await import('../storage/home.js');
-  const {levelPrivateStateProvider} = await import('@midnight-ntwrk/midnight-js-level-private-state-provider');
-
-  // Resolve typed key bundle: prefer pre-derived walletKeys (daemon
-  // path), fall back to deriving from seedHex (in-process CLI). D-KM-3.
-  let shieldedSecretKeys: ledger.ZswapSecretKeys;
-  let dustSecretKey: ledger.DustSecretKey;
-  let nightExternalKey: Uint8Array;
-  if (walletKeys) {
-    shieldedSecretKeys = walletKeys.shieldedSecretKeys;
-    dustSecretKey = walletKeys.dustSecretKey;
-    nightExternalKey = walletKeys.nightExternalKey;
-  } else {
-    if (!seedHex) {
-      throw new WalletError('WALLET_ERROR', 'insertVerifierKey requires either walletKeys or seedHex');
-    }
-    const hdWallet = HDWallet.fromSeed(Buffer.from(seedHex, 'hex'));
-    if (hdWallet.type !== 'seedOk') throw new WalletError('WALLET_ERROR', 'Invalid seed');
-    const keyResult = hdWallet.hdWallet
-      .selectAccount(0)
-      .selectRoles([Roles.Zswap, Roles.NightExternal, Roles.Dust] as const)
-      .deriveKeysAt(0);
-    if (keyResult.type !== 'keysDerived') throw new WalletError('WALLET_ERROR', 'Key derivation failed');
-    hdWallet.hdWallet.clear();
-    shieldedSecretKeys = ledger.ZswapSecretKeys.fromSeed(keyResult.keys[Roles.Zswap]);
-    dustSecretKey = ledger.DustSecretKey.fromSeed(keyResult.keys[Roles.Dust]);
-    nightExternalKey = keyResult.keys[Roles.NightExternal];
-  }
-  const keystore = createKeystore(nightExternalKey, network.id);
+  // The unshielded signing secret: the pre-derived walletKeys (daemon path), else
+  // derived from seedHex (in-process CLI path). D-KM-3.
+  const keystore = createKeystore({kind: 'schnorr', secret: unshieldedSecretOf(walletKeys, seedHex, 'insertVerifierKey')}, network.id);
 
   // Wait for wallet sync before building the transaction.
   const facade = syncedWallet!.facade;
@@ -134,102 +101,25 @@ async function insertViaSDK(options: InsertVerifierKeyOptions): Promise<Transact
 
   const coinPublicKey = (state as any).shielded.coinPublicKey.toHexString() as string;
   const encPublicKey = (state as any).shielded.encryptionPublicKey.toHexString() as string;
-  const unshieldedAddr = (keystore.getBech32Address() as any).toString() as string;
 
-  // Resolve SDK packages from the project's node_modules — keeps onchain-runtime instance unique.
-  const projRoot = projectDir?.trim() || resolvePath(artifactPath, '..', '..');
-  const projRequire = createRequire(resolvePath(projRoot, 'node_modules', '_virtual.js'));
-
-  let CompiledContract: any;
-  let submitInsertVerifierKeyTx: any;
-  let createVerifierKey: any;
-  try {
-    CompiledContract = projRequire('@midnight-ntwrk/compact-js').CompiledContract;
-    submitInsertVerifierKeyTx = projRequire('@midnight-ntwrk/midnight-js/contracts').submitInsertVerifierKeyTx;
-    createVerifierKey = projRequire('@midnight-ntwrk/midnight-js/types').createVerifierKey;
-  } catch {
-    const cjs: any = await import('@midnight-ntwrk/compact-js');
-    const contracts: any = await import('@midnight-ntwrk/midnight-js/contracts');
-    const types: any = await import('@midnight-ntwrk/midnight-js/types');
-    CompiledContract = cjs.CompiledContract;
-    submitInsertVerifierKeyTx = contracts.submitInsertVerifierKeyTx;
-    createVerifierKey = types.createVerifierKey;
-  }
-
-  // Load the FULL contract module — its TypeScript binding declares the circuit being added.
-  const managedDir = artifactPath;
-  const contractName = basename(managedDir);
-  const contractJs = join(managedDir, 'contract', 'index.js');
-  if (!existsSync(contractJs)) {
-    throw new WalletError('INVALID_INPUT', `No compiled contract at ${contractJs}`);
-  }
-  const contractModule: any = await import(pathToFileURL(contractJs).href);
-
-  // Build CompiledContract (vacant witnesses are fine — maintenance updates don't run circuits)
-  const compiledContract: any = (CompiledContract.make(contractName, contractModule.Contract) as any).pipe(
-    (CompiledContract as any).withVacantWitnesses,
-    (CompiledContract as any).withCompiledFileAssets(managedDir)
-  );
+  // The FULL compile, whose binding declares the circuit being added; an update runs no circuit,
+  // so it needs no witnesses. The signing key lives in the store named after the artifact's
+  // basename, which must therefore match the one the contract was deployed from.
+  const {midnightJs, compiledContract, providers} = await openContract({
+    artifactPath,
+    projectDir,
+    network,
+    facade,
+    keystore,
+    coinPublicKey,
+    encryptionPublicKey: encPublicKey,
+  });
 
   // Load the verifier key bytes from disk and wrap into the SDK type.
   const vkBytes = readFileSync(resolvePath(verifierKeyPath));
-  const verifierKey = createVerifierKey(new Uint8Array(vkBytes));
+  const verifierKey = midnightJs.types.createVerifierKey(new Uint8Array(vkBytes));
 
-  // Providers — same pattern as call.ts
-  const zkConfigProvider = new NodeZkConfigProvider(artifactPath);
-  void createMidnightProvider(network); // currently unused but kept for parity
-  const indexerHttpUrl = network.indexerUrl;
-  const indexerWsUrl = indexerHttpUrl.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:') + '/ws';
-  const publicDataProvider = indexerPublicDataProvider(indexerHttpUrl, indexerWsUrl);
-
-  const proofProvider = createProofProvider(
-    resolveProverConfig(network),
-    zkConfigProvider.asKeyMaterialProvider(),
-  );
-
-  const walletProvider: any = {
-    getCoinPublicKey: () => coinPublicKey,
-    getEncryptionPublicKey: () => encPublicKey,
-    async balanceTx(tx: any, ttl?: Date) {
-      const recipe = await (facade as any).balanceUnboundTransaction(
-        tx,
-        {shieldedSecretKeys, dustSecretKey},
-        {ttl: ttl ?? new Date(Date.now() + 30 * 60_000)}
-      );
-      const signFn = (payload: Uint8Array) => keystore.signData(payload);
-      // `Transaction.intents` is a WASM getter returning a fresh Map per read, so
-      // signing in place loses the signature and the node rejects with error 192.
-      // `signRecipe` returns a new recipe, as moth's transfer path already relies on.
-      const signed = await (facade as any).signRecipe(recipe, signFn);
-      return (facade as any).finalizeRecipe(signed);
-    },
-    submitTx: async (tx: any) => {
-      return (facade as any).submitTransaction(tx);
-    },
-  };
-
-  const levelDbDir = join(mothHome(), 'level-db', network.id, encPublicKey.slice(0, 16));
-
-  // privateStateStoreName matches what the deploy used. The signing key was stored
-  // under the contract NAME the stub was deployed with — which is the deployed
-  // contract's name, NOT necessarily contractName. To be safe, default to deployed
-  // contract's basename derived from artifactPath. Callers can override by ensuring
-  // artifactPath basename matches what moth used at deploy.
-  const providers = {
-    zkConfigProvider: zkConfigProvider as any,
-    proofProvider: proofProvider as any,
-    walletProvider: walletProvider as any,
-    midnightProvider: walletProvider as any,
-    publicDataProvider: publicDataProvider as any,
-    privateStateProvider: (levelPrivateStateProvider as any)({
-      midnightDbName: levelDbDir,
-      privateStateStoreName: contractName + '-state',
-      privateStoragePasswordProvider: () => unshieldedAddr,
-      accountId: unshieldedAddr,
-    }),
-  };
-
-  const result = await (submitInsertVerifierKeyTx as any)(
+  const result = await (midnightJs.contracts.submitInsertVerifierKeyTx as any)(
     providers,
     compiledContract,
     contractAddress,
@@ -304,7 +194,6 @@ export async function insertVerifierKeys(options: InsertVerifierKeysOptions): Pr
     throw new WalletError('WALLET_ERROR', 'Wallet must be synced before maintenance updates.');
   }
 
-  setNetworkId(network.id);
   await ensureProverReady(resolveProverConfig(network));
 
   return insertBatchViaSDK(options);
@@ -313,39 +202,9 @@ export async function insertVerifierKeys(options: InsertVerifierKeysOptions): Pr
 async function insertBatchViaSDK(options: InsertVerifierKeysOptions): Promise<BatchInsertResult> {
   const {contractAddress, entries, walletKeys, seedHex, network, artifactPath, syncedWallet, projectDir, skipExisting, onProgress} =
     options;
-  const {resolve: resolvePath, join, basename} = await import('node:path');
-  const {pathToFileURL} = await import('node:url');
-  const {createRequire} = await import('node:module');
-  const {existsSync} = await import('node:fs');
-  const {mothHome} = await import('../storage/home.js');
-  const {levelPrivateStateProvider} = await import('@midnight-ntwrk/midnight-js-level-private-state-provider');
-
-  // One-time key resolution: prefer pre-derived walletKeys (daemon
-  // path), fall back to deriving from seedHex (in-process CLI). D-KM-3.
-  let shieldedSecretKeys: ledger.ZswapSecretKeys;
-  let dustSecretKey: ledger.DustSecretKey;
-  let nightExternalKey: Uint8Array;
-  if (walletKeys) {
-    shieldedSecretKeys = walletKeys.shieldedSecretKeys;
-    dustSecretKey = walletKeys.dustSecretKey;
-    nightExternalKey = walletKeys.nightExternalKey;
-  } else {
-    if (!seedHex) {
-      throw new WalletError('WALLET_ERROR', 'insertVerifierKeys requires either walletKeys or seedHex');
-    }
-    const hdWallet = HDWallet.fromSeed(Buffer.from(seedHex, 'hex'));
-    if (hdWallet.type !== 'seedOk') throw new WalletError('WALLET_ERROR', 'Invalid seed');
-    const keyResult = hdWallet.hdWallet
-      .selectAccount(0)
-      .selectRoles([Roles.Zswap, Roles.NightExternal, Roles.Dust] as const)
-      .deriveKeysAt(0);
-    if (keyResult.type !== 'keysDerived') throw new WalletError('WALLET_ERROR', 'Key derivation failed');
-    hdWallet.hdWallet.clear();
-    shieldedSecretKeys = ledger.ZswapSecretKeys.fromSeed(keyResult.keys[Roles.Zswap]);
-    dustSecretKey = ledger.DustSecretKey.fromSeed(keyResult.keys[Roles.Dust]);
-    nightExternalKey = keyResult.keys[Roles.NightExternal];
-  }
-  const keystore = createKeystore(nightExternalKey, network.id);
+  // The unshielded signing secret: the pre-derived walletKeys (daemon path), else
+  // derived from seedHex (in-process CLI path). D-KM-3.
+  const keystore = createKeystore({kind: 'schnorr', secret: unshieldedSecretOf(walletKeys, seedHex, 'insertVerifierKeys')}, network.id);
 
   const facade = syncedWallet!.facade;
   const state: any = await Rx.firstValueFrom(
@@ -366,86 +225,16 @@ async function insertBatchViaSDK(options: InsertVerifierKeysOptions): Promise<Ba
 
   const coinPublicKey = (state as any).shielded.coinPublicKey.toHexString() as string;
   const encPublicKey = (state as any).shielded.encryptionPublicKey.toHexString() as string;
-  const unshieldedAddr = (keystore.getBech32Address() as any).toString() as string;
 
-  const projRoot = projectDir?.trim() || resolvePath(artifactPath, '..', '..');
-  const projRequire = createRequire(resolvePath(projRoot, 'node_modules', '_virtual.js'));
-
-  let CompiledContract: any;
-  let submitInsertVerifierKeyTx: any;
-  let createVerifierKey: any;
-  try {
-    CompiledContract = projRequire('@midnight-ntwrk/compact-js').CompiledContract;
-    submitInsertVerifierKeyTx = projRequire('@midnight-ntwrk/midnight-js/contracts').submitInsertVerifierKeyTx;
-    createVerifierKey = projRequire('@midnight-ntwrk/midnight-js/types').createVerifierKey;
-  } catch {
-    const cjs: any = await import('@midnight-ntwrk/compact-js');
-    const contracts: any = await import('@midnight-ntwrk/midnight-js/contracts');
-    const types: any = await import('@midnight-ntwrk/midnight-js/types');
-    CompiledContract = cjs.CompiledContract;
-    submitInsertVerifierKeyTx = contracts.submitInsertVerifierKeyTx;
-    createVerifierKey = types.createVerifierKey;
-  }
-
-  const managedDir = artifactPath;
-  const contractName = basename(managedDir);
-  const contractJs = join(managedDir, 'contract', 'index.js');
-  if (!existsSync(contractJs)) {
-    throw new WalletError('INVALID_INPUT', `No compiled contract at ${contractJs}`);
-  }
-  const contractModule: any = await import(pathToFileURL(contractJs).href);
-
-  const compiledContract: any = (CompiledContract.make(contractName, contractModule.Contract) as any).pipe(
-    (CompiledContract as any).withVacantWitnesses,
-    (CompiledContract as any).withCompiledFileAssets(managedDir)
-  );
-
-  const zkConfigProvider = new NodeZkConfigProvider(artifactPath);
-  void createMidnightProvider(network);
-  const indexerHttpUrl = network.indexerUrl;
-  const indexerWsUrl = indexerHttpUrl.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:') + '/ws';
-  const publicDataProvider = indexerPublicDataProvider(indexerHttpUrl, indexerWsUrl);
-
-  const proofProvider = createProofProvider(
-    resolveProverConfig(network),
-    zkConfigProvider.asKeyMaterialProvider(),
-  );
-
-  const walletProvider: any = {
-    getCoinPublicKey: () => coinPublicKey,
-    getEncryptionPublicKey: () => encPublicKey,
-    async balanceTx(tx: any, ttl?: Date) {
-      const recipe = await (facade as any).balanceUnboundTransaction(
-        tx,
-        {shieldedSecretKeys, dustSecretKey},
-        {ttl: ttl ?? new Date(Date.now() + 30 * 60_000)}
-      );
-      const signFn = (payload: Uint8Array) => keystore.signData(payload);
-      // `Transaction.intents` is a WASM getter returning a fresh Map per read, so
-      // signing in place loses the signature and the node rejects with error 192.
-      // `signRecipe` returns a new recipe, as moth's transfer path already relies on.
-      const signed = await (facade as any).signRecipe(recipe, signFn);
-      return (facade as any).finalizeRecipe(signed);
-    },
-    submitTx: async (tx: any) => {
-      return (facade as any).submitTransaction(tx);
-    },
-  };
-
-  const levelDbDir = join(mothHome(), 'level-db', network.id, encPublicKey.slice(0, 16));
-  const providers = {
-    zkConfigProvider: zkConfigProvider as any,
-    proofProvider: proofProvider as any,
-    walletProvider: walletProvider as any,
-    midnightProvider: walletProvider as any,
-    publicDataProvider: publicDataProvider as any,
-    privateStateProvider: (levelPrivateStateProvider as any)({
-      midnightDbName: levelDbDir,
-      privateStateStoreName: contractName + '-state',
-      privateStoragePasswordProvider: () => unshieldedAddr,
-      accountId: unshieldedAddr,
-    }),
-  };
+  const {midnightJs, compiledContract, providers} = await openContract({
+    artifactPath,
+    projectDir,
+    network,
+    facade,
+    keystore,
+    coinPublicKey,
+    encryptionPublicKey: encPublicKey,
+  });
 
   // ── Per-entry loop ─────────────────────────────────────────────────────
   // The maintenance authority counter is monotonic per contract, so submits
@@ -459,14 +248,12 @@ async function insertBatchViaSDK(options: InsertVerifierKeysOptions): Promise<Ba
   let existingOps = new Set<string>();
   if (skipExisting) {
     try {
-      const state = await publicDataProvider.queryContractState(contractAddress);
-      // ContractState exposes operations as a Map keyed by circuitId — try
-      // both common shapes to be resilient to SDK versions.
-      const ops = (state as any)?.operations;
-      if (ops && typeof ops.keys === 'function') {
-        for (const k of ops.keys()) existingOps.add(String(k));
-      } else if (ops && typeof ops === 'object') {
-        for (const k of Object.keys(ops)) existingOps.add(k);
+      // The state comes back as bytes tagged with the ledger era that wrote
+      // them; either ledger's ContractState lists the circuits it defines.
+      const read = await providers.publicDataProvider.queryContractState(contractAddress);
+      if (read) {
+        const state = read.contractState.deserialize({v8: ledgerV8.ContractState, v9: ledgerV9.ContractState});
+        for (const op of state.operations()) existingOps.add(typeof op === 'string' ? op : new TextDecoder().decode(op));
       }
     } catch (e) {
       // Non-fatal — log and continue without skip filtering.
@@ -489,9 +276,9 @@ async function insertBatchViaSDK(options: InsertVerifierKeysOptions): Promise<Ba
 
     try {
       const vkBytes = readFileSync(resolvePath(verifierKeyPath));
-      const verifierKey = createVerifierKey(new Uint8Array(vkBytes));
+      const verifierKey = midnightJs.types.createVerifierKey(new Uint8Array(vkBytes));
 
-      const result = await (submitInsertVerifierKeyTx as any)(
+      const result = await (midnightJs.contracts.submitInsertVerifierKeyTx as any)(
         providers,
         compiledContract,
         contractAddress,

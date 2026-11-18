@@ -5,19 +5,15 @@ import type {TransactionResult} from '../types/transaction.js';
 import {resolveProverConfig, type NetworkConfig} from '../types/network.js';
 import type {DerivedKeys} from '../types/wallet.js';
 import type {WalletKeys} from '../sync/operations.js';
-import {createProofProvider, ensureProverReady} from '../proof/provider.js';
-import {NodeZkConfigProvider} from '@midnight-ntwrk/midnight-js-node-zk-config-provider';
-import {createMidnightProvider} from '../providers/midnight-provider.js';
-import {indexerPublicDataProvider} from '@midnight-ntwrk/midnight-js-indexer-public-data-provider';
+import {ensureProverReady} from '../proof/provider.js';
 import {WalletError} from '../types/errors.js';
 import {toPositionalArgs} from './args-parser.js';
-import {setNetworkId} from '@midnight-ntwrk/midnight-js/network-id';
 import * as Rx from 'rxjs';
-import * as ledger from '@midnight-ntwrk/ledger-v8';
-import {HDWallet, Roles} from '@midnightntwrk/wallet-sdk/hd';
-import {createKeystore, PublicKey} from '@midnightntwrk/wallet-sdk/unshielded';
+import {createKeystore} from '@midnightntwrk/wallet-sdk/unshielded';
 import type {WitnessProvider} from './witness-loader.js';
 import type {SyncedWallet} from '../sync/wallet-sync.js';
+import {unshieldedSecretOf} from './wallet-provider.js';
+import {openContract} from './midnight-js.js';
 
 export interface CallOptions {
   contractAddress: string;
@@ -59,8 +55,6 @@ export async function callCircuit(options: CallOptions): Promise<TransactionResu
     throw new WalletError('WALLET_ERROR', 'Wallet must be synced before calling circuits. Unlock and wait for sync.');
   }
 
-  setNetworkId(network.id);
-
   await ensureProverReady(resolveProverConfig(network));
 
   return callViaSDK(options);
@@ -69,41 +63,10 @@ export async function callCircuit(options: CallOptions): Promise<TransactionResu
 async function callViaSDK(options: CallOptions): Promise<TransactionResult> {
   const {contractAddress, circuitName, args, walletKeys, seedHex, witnesses, network, artifactPath, syncedWallet, projectDir} =
     options;
-  const {resolve: resolvePath, join, basename} = await import('node:path');
-  const {pathToFileURL} = await import('node:url');
-  const {createRequire} = await import('node:module');
-  const {existsSync} = await import('node:fs');
-  const {mothHome} = await import('../storage/home.js');
-  const {levelPrivateStateProvider} = await import('@midnight-ntwrk/midnight-js-level-private-state-provider');
 
-  // Resolve the typed key bundle: prefer the pre-derived walletKeys
-  // (daemon path) and fall back to deriving from seedHex (existing
-  // in-process CLI path). See
-  // docs/spec/wallet-service/05-key-management.md D-KM-3.
-  let shieldedSecretKeys: ledger.ZswapSecretKeys;
-  let dustSecretKey: ledger.DustSecretKey;
-  let nightExternalKey: Uint8Array;
-  if (walletKeys) {
-    shieldedSecretKeys = walletKeys.shieldedSecretKeys;
-    dustSecretKey = walletKeys.dustSecretKey;
-    nightExternalKey = walletKeys.nightExternalKey;
-  } else {
-    if (!seedHex) {
-      throw new WalletError('WALLET_ERROR', 'callCircuit requires either walletKeys or seedHex');
-    }
-    const hdWallet = HDWallet.fromSeed(Buffer.from(seedHex, 'hex'));
-    if (hdWallet.type !== 'seedOk') throw new WalletError('WALLET_ERROR', 'Invalid seed');
-    const keyResult = hdWallet.hdWallet
-      .selectAccount(0)
-      .selectRoles([Roles.Zswap, Roles.NightExternal, Roles.Dust] as const)
-      .deriveKeysAt(0);
-    if (keyResult.type !== 'keysDerived') throw new WalletError('WALLET_ERROR', 'Key derivation failed');
-    hdWallet.hdWallet.clear();
-    shieldedSecretKeys = ledger.ZswapSecretKeys.fromSeed(keyResult.keys[Roles.Zswap]);
-    dustSecretKey = ledger.DustSecretKey.fromSeed(keyResult.keys[Roles.Dust]);
-    nightExternalKey = keyResult.keys[Roles.NightExternal];
-  }
-  const keystore = createKeystore(nightExternalKey, network.id);
+  // The unshielded signing secret: the pre-derived walletKeys (daemon path), else
+  // derived from seedHex (in-process CLI path). D-KM-3.
+  const keystore = createKeystore({kind: 'schnorr', secret: unshieldedSecretOf(walletKeys, seedHex, 'callCircuit')}, network.id);
 
   // Wait for wallet sync before building the transaction.
   const facade = syncedWallet!.facade;
@@ -125,112 +88,17 @@ async function callViaSDK(options: CallOptions): Promise<TransactionResult> {
 
   const coinPublicKey = (state as any).shielded.coinPublicKey.toHexString() as string;
   const encPublicKey = (state as any).shielded.encryptionPublicKey.toHexString() as string;
-  const unshieldedAddr = (keystore.getBech32Address() as any).toString() as string;
 
-  // Resolve SDK packages from the project's node_modules
-  const projRoot = projectDir?.trim() || resolvePath(artifactPath, '..', '..');
-  const projRequire = createRequire(resolvePath(projRoot, 'node_modules', '_virtual.js'));
-
-  let CompiledContract: any;
-  let findDeployedContract: any;
-  try {
-    CompiledContract = projRequire('@midnight-ntwrk/compact-js').CompiledContract;
-    // findDeployedContract instead of submitCallTx — fixes a bug where
-    // calling a contract moth did not itself deploy throws "No private
-    // state found at private state ID '<contractName>State'".
-    // submitCallTx uses an older code path that doesn't honor
-    // initialPrivateState. findDeployedContract DOES write
-    // initialPrivateState before returning a callTx handle, so the
-    // private state exists by the time the inner submitCallTx runs.
-    findDeployedContract = projRequire('@midnight-ntwrk/midnight-js/contracts').findDeployedContract;
-  } catch {
-    const cjs = await import('@midnight-ntwrk/compact-js');
-    const contracts = await import('@midnight-ntwrk/midnight-js/contracts');
-    CompiledContract = cjs.CompiledContract;
-    findDeployedContract = (contracts as any).findDeployedContract;
-  }
-
-  // Load the contract module
-  const managedDir = artifactPath;
-  const contractName = basename(managedDir);
-  const contractJs = join(managedDir, 'contract', 'index.js');
-  if (!existsSync(contractJs)) {
-    throw new WalletError('INVALID_INPUT', `No compiled contract at ${contractJs}`);
-  }
-  const contractModule: any = await import(pathToFileURL(contractJs).href);
-
-  // Build CompiledContract using the .pipe() pattern (same as deploy)
-  let compiledContract: any;
-  if (witnesses) {
-    compiledContract = (CompiledContract.make(contractName, contractModule.Contract) as any).pipe(
-      (CompiledContract as any).withWitnesses(witnesses),
-      (CompiledContract as any).withCompiledFileAssets(managedDir)
-    );
-  } else {
-    compiledContract = (CompiledContract.make(contractName, contractModule.Contract) as any).pipe(
-      (CompiledContract as any).withVacantWitnesses,
-      (CompiledContract as any).withCompiledFileAssets(managedDir)
-    );
-  }
-
-  // Providers — same pattern as deploy.ts
-  const zkConfigProvider = new NodeZkConfigProvider(artifactPath);
-  const midnightProvider = createMidnightProvider(network);
-  const indexerHttpUrl = network.indexerUrl;
-  const indexerWsUrl = indexerHttpUrl.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:') + '/ws';
-  const publicDataProvider = indexerPublicDataProvider(indexerHttpUrl, indexerWsUrl);
-
-  // Selectable prover (reconcile decision #1: keep EITHER WASM or server).
-  // createProofProvider picks per resolveProverConfig(network). For server mode
-  // it proves through the SDK's httpClientProvingProvider via ledger's
-  // transaction.prove(), which runs the preimage through
-  // createProvingPayload/createCheckPayload — i.e. it versions the payload and
-  // attaches the circuit's wrapped-IR from zkConfigProvider. That is why it does
-  // NOT hit the unversioned "expected proof-preimage-versioned" failure that a
-  // hand-rolled bare-preimage POST would (the fix/tui-circuit-call-proof bug):
-  // the versioning happens inside ledger.prove, not in the provider.
-  const proofProvider = createProofProvider(
-    resolveProverConfig(network),
-    zkConfigProvider.asKeyMaterialProvider(),
-  );
-
-  // Wallet provider with real transaction balancing + signing (same as deploy.ts)
-  const walletProvider: any = {
-    getCoinPublicKey: () => coinPublicKey,
-    getEncryptionPublicKey: () => encPublicKey,
-    async balanceTx(tx: any, ttl?: Date) {
-      const recipe = await (facade as any).balanceUnboundTransaction(
-        tx,
-        {shieldedSecretKeys, dustSecretKey},
-        {ttl: ttl ?? new Date(Date.now() + 30 * 60_000)}
-      );
-      const signFn = (payload: Uint8Array) => keystore.signData(payload);
-      // `Transaction.intents` is a WASM getter returning a fresh Map per read, so
-      // signing in place loses the signature and the node rejects with error 192.
-      // `signRecipe` returns a new recipe, as moth's transfer path already relies on.
-      const signed = await (facade as any).signRecipe(recipe, signFn);
-      return (facade as any).finalizeRecipe(signed);
-    },
-    submitTx: async (tx: any) => {
-      return (facade as any).submitTransaction(tx);
-    },
-  };
-
-  const levelDbDir = join(mothHome(), 'level-db', network.id, encPublicKey.slice(0, 16));
-
-  const providers = {
-    zkConfigProvider: zkConfigProvider as any,
-    proofProvider: proofProvider as any,
-    walletProvider: walletProvider as any,
-    midnightProvider: walletProvider as any,
-    publicDataProvider: publicDataProvider as any,
-    privateStateProvider: (levelPrivateStateProvider as any)({
-      midnightDbName: levelDbDir,
-      privateStateStoreName: contractName + '-state',
-      privateStoragePasswordProvider: () => unshieldedAddr,
-      accountId: unshieldedAddr,
-    }),
-  };
+  const {midnightJs, contractName, compiledContract, providers} = await openContract({
+    artifactPath,
+    projectDir,
+    network,
+    facade,
+    keystore,
+    coinPublicKey,
+    encryptionPublicKey: encPublicKey,
+    witnesses,
+  });
 
   // Normalize user-supplied args into a positional argument array, matching the
   // convention used by `deploy` (see toPositionalArgs):
@@ -242,11 +110,9 @@ async function callViaSDK(options: CallOptions): Promise<TransactionResult> {
   //     take no user args aren't sent a spurious argument ("expected 1 argument,
   //     received 2").
 
-  // findDeployedContract populates private state at `privateStateId` from
-  // `initialPrivateState` BEFORE returning a callTx handle. The inner
-  // submitCallTx (invoked when we call deployed.callTx[circuit]) then
-  // finds the state and proceeds normally.
-  const deployed = await (findDeployedContract as any)(providers, {
+  // findDeployedContract stores initialPrivateState at privateStateId before returning callTx,
+  // so a contract moth did not deploy itself still finds a private state when its circuit runs.
+  const deployed = await (midnightJs.contracts.findDeployedContract as any)(providers, {
     contractAddress,
     compiledContract,
     privateStateId: contractName + 'State',
