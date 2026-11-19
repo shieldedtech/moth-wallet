@@ -1199,6 +1199,22 @@ export async function removeWalletSyncArtifacts(
 }
 
 /**
+ * Clear ONLY the shielded sub-wallet's cached state. The next sync start rescans
+ * shielded coins from the chain and keeps DUST, which is far slower to rebuild.
+ * The repair for a stale shielded view, e.g. a cursor left pointing at a renumbered
+ * event ("values inserted non-linearly into zswap commitment tree"), which retrying
+ * replays forever.
+ */
+export async function clearShieldedSyncCache(
+  walletName: string,
+  networkId: string,
+  store?: SyncStateStore
+): Promise<void> {
+  const resolved = await resolveSyncStore(store);
+  await evictCachedState(resolved, walletName, networkId, 'shielded');
+}
+
+/**
  * Clear ONLY the dust sub-wallet's cached state, keeping the (much larger)
  * shielded/unshielded caches. The next sync start rebuilds the dust view from
  * the chain — the targeted repair for a dust view that stopped ingesting

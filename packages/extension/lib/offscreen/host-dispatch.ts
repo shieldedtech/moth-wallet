@@ -85,6 +85,7 @@ export const hostDispatch: Dispatch = {
   'os/protocolStatus': (host) => host.protocolStatus(),
   'os/requestStatsReset': (host) => host.resetRequestStats(),
   'os/dustRebuild': (host, d) => host.dustRebuild(d.seedHex, d.walletName, d.network),
+  'os/shieldedRebuild': (host, d) => host.shieldedRebuild(d.seedHex, d.walletName, d.network),
   'os/transferBuild': (host, d) => host.transferBuild(d.seedHex, d.walletName, d.network, d.requests, d.payFees),
   'os/transferSubmit': (host, d) => host.transferSubmit(d.seedHex, d.walletName, d.network, d.txHex),
   'os/txHistoryGet': (host, d) => host.txHistoryGet(d.seedHex, d.walletName, d.network, d.pageNumber, d.pageSize),

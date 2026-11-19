@@ -99,6 +99,7 @@ describe('HOST_METHODS', () => {
     'os/cardanoUpdate',
     'os/deregisterDust',
     'os/dustRebuild',
+    'os/shieldedRebuild',
     'os/transferBuild',
     'os/transferSubmit',
     'os/txHistoryGet',

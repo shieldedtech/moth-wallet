@@ -1199,6 +1199,24 @@
   "settings_resyncError": {
     "message": "No se pudo borrar la caché. Inténtalo de nuevo."
   },
+  "settings_rebuildShielded": {
+    "message": "Reconstruir monedas shielded"
+  },
+  "settings_rebuildShieldedDescription": {
+    "message": "Vuelve a escanear la cadena en busca de las monedas shielded de esta cuenta, si un saldo shielded parece incorrecto o desactualizado. El DUST se conserva, así que es mucho más rápido que una resincronización completa."
+  },
+  "settings_rebuildShieldedButton": {
+    "message": "Reconstruir"
+  },
+  "settings_rebuildShieldedWorking": {
+    "message": "Reconstruyendo…"
+  },
+  "settings_rebuildShieldedDeferred": {
+    "message": "Hay una transacción en curso. Vuelve a intentarlo cuando se complete."
+  },
+  "settings_rebuildShieldedError": {
+    "message": "No se pudo reconstruir. Vuelve a intentarlo."
+  },
   "settings_sectionSecurity": {
     "message": "Seguridad"
   },
