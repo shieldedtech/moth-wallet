@@ -70,6 +70,7 @@ describe('HOST_METHODS', () => {
     'os/syncCacheClear',
     'os/syncCacheReset',
     'os/balancesGet',
+    'os/shieldedCoinsGet',
     'os/sendTokens',
     'os/estimateTransferFee',
     'os/preseedStatus',

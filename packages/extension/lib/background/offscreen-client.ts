@@ -295,6 +295,10 @@ export const offscreen = {
     await ensureOffscreen();
     return offscreenSend('os/balancesGet', data);
   },
+  async shieldedCoinsGet(data: SyncTarget) {
+    await ensureOffscreen();
+    return offscreenSend('os/shieldedCoinsGet', data);
+  },
   async sendTokens(data: SyncTarget & { requests: TransferRequestDTO[] }) {
     await ensureOffscreen();
     return offscreenSend('os/sendTokens', data);

@@ -287,6 +287,15 @@
   "approval_deriveNote": {
     "message": "Esto concede un secreto persistente y único para este sitio. No mueve fondos ni puede gastar o revelar tus claves; permítelo solo en sitios de confianza."
   },
+  "approval_shieldedCoinsTitle": {
+    "message": "¿Compartir tus monedas shielded?"
+  },
+  "approval_shieldedCoinsSubtitle": {
+    "message": "$1 quiere ver cada moneda shielded de esta cuenta, con los datos necesarios para gastarla."
+  },
+  "approval_shieldedCoinsNote": {
+    "message": "El sitio ve el valor y el token de cada moneda shielded, y puede reconocer las monedas que te envió. No puede gastarlas: cualquier transacción sigue necesitando tu aprobación. Permítelo solo en sitios de confianza."
+  },
   "approval_approveTitle": {
     "message": "¿Aprobar esta transacción?"
   },

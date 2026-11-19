@@ -217,3 +217,4 @@ export {
   type ApiKeyRecord, type ApiKeyGenerated, type ApiKeyAuthResult,
 } from './daemon/index.js';
 export { unshieldedSplit, describeReservation, type SpendableSplit } from './wallet/spendable.js';
+export { shieldedCoinRows, type ShieldedCoinRow } from './wallet/shielded-coins.js';

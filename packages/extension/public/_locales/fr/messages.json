@@ -287,6 +287,15 @@
   "approval_deriveNote": {
     "message": "Cela accorde un secret persistant propre à ce site. Il ne déplace aucun fonds et ne peut ni dépenser ni révéler vos clés — ne l’autorisez que pour les sites de confiance."
   },
+  "approval_shieldedCoinsTitle": {
+    "message": "Partager vos pièces shielded ?"
+  },
+  "approval_shieldedCoinsSubtitle": {
+    "message": "$1 souhaite voir chaque pièce shielded de ce compte, avec les détails nécessaires pour la dépenser."
+  },
+  "approval_shieldedCoinsNote": {
+    "message": "Le site voit la valeur et le jeton de chaque pièce shielded, et peut reconnaître les pièces qu’il vous a envoyées. Il ne peut pas les dépenser : toute transaction demande toujours votre accord. Ne l’autorisez que pour des sites de confiance."
+  },
   "approval_approveTitle": {
     "message": "Approuver cette transaction ?"
   },

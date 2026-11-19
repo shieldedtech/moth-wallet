@@ -11,6 +11,7 @@ import {BaseCommand} from '../base-command.js';
 import {getPassphrase} from '../adapters/passphrase.js';
 import {
   unshieldedSplit,
+  shieldedCoinRows,
   startWalletSync,
   NIGHT_TOKEN_ID,
   NIGHT_DENOMINATION,
@@ -45,6 +46,19 @@ interface BalanceResult {
       readonly amount: string; // raw smallest units
     }>;
   };
+  /**
+   * Each shielded coin, with --coins. `nonce`, `type`, `value` and `mt_index` are the
+   * QualifiedShieldedCoinInfo a circuit takes to spend it; a pending coin has no
+   * `mt_index` because it is not in the commitment tree yet.
+   */
+  readonly shieldedCoins?: ReadonlyArray<{
+    readonly type: string;
+    readonly value: string; // raw smallest units
+    readonly nonce: string | null;
+    readonly mt_index: string | null;
+    readonly commitment: string | null;
+    readonly status: 'available' | 'pending';
+  }>;
 }
 
 export default class Balance extends BaseCommand {
@@ -57,6 +71,12 @@ export default class Balance extends BaseCommand {
       description:
         'How long to wait for the sync to reach synced=true before reading balances. Default 5 minutes. After timeout the command emits whatever the latest snapshot showed (likely 0s if sync was still catching up) with synced=false.',
       default: 300_000,
+    }),
+    coins: Flags.boolean({
+      description:
+        'Also list each shielded coin with the fields a circuit needs to spend it (nonce, type, value, ' +
+        'Merkle index), as a QualifiedShieldedCoinInfo.',
+      default: false,
     }),
   };
 
@@ -125,6 +145,15 @@ export default class Balance extends BaseCommand {
           dust: b.dust.toString(),
           otherTokens,
         },
+        ...(flags.coins
+          ? {
+              shieldedCoins: shieldedCoinRows(b.coins).map((c) => ({
+                ...c,
+                value: c.value.toString(),
+                mt_index: c.mt_index?.toString() ?? null,
+              })),
+            }
+          : {}),
       };
 
       if (this.outputFormat === 'json') {
@@ -153,6 +182,20 @@ export default class Balance extends BaseCommand {
         this.log('Other tokens:');
         for (const t of otherTokens) {
           this.log(`  ${t.tokenId.slice(0, 16)}…  ${t.type.padEnd(10)}  ${t.amount}`);
+        }
+      }
+      if (result.shieldedCoins) {
+        this.log('');
+        if (result.shieldedCoins.length === 0) {
+          this.log(b.syncProgress.shieldedSynced ? 'Shielded coins: none' : 'Shielded coins: none yet (shielded sync incomplete)');
+        } else {
+          this.log(`Shielded coins (${result.shieldedCoins.length}):`);
+          for (const c of result.shieldedCoins) {
+            this.log(`  ${c.value}  type ${c.type}  ${c.status}`);
+            this.log(`    nonce       ${c.nonce ?? '(not reported)'}`);
+            this.log(`    mt_index    ${c.mt_index ?? '(pending: not in the commitment tree yet)'}`);
+            this.log(`    commitment  ${c.commitment ?? '(not reported)'}`);
+          }
         }
       }
     } finally {
