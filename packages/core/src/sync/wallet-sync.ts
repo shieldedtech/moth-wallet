@@ -27,6 +27,7 @@ import {dustProgressFor, overallSyncProgress, type DustPassPosition, type SubWal
 import {partsToSeed, preSeedPlan, birthdayAdmits, type SeedablePart} from './preseed-parts.js';
 import {dustHistoryBefore} from './dust-history.js';
 import {makeTransactionLifecycleService} from './transaction-lifecycle.js';
+import {notifyOnSubmissionVerdicts} from './history-notify.js';
 import {dustAddressForSeed} from '../wallet/address.js';
 import {IndexerClient} from '../network/indexer-client.js';
 import type {WalletKeys} from './operations.js';
@@ -397,6 +398,12 @@ export interface WalletSyncOptions {
    * otherwise observable only on chain.
    */
   onDustFeePass?: (pass: DustFeePass) => void;
+  /**
+   * Called with a transaction's hash when history records it as submitted and
+   * pending, or as rejected. Sync applies nothing for either, so a host that
+   * re-reads history on sync progress needs this to show them.
+   */
+  onSubmissionVerdict?: (hash: string) => void;
 }
 
 /**
@@ -445,7 +452,10 @@ export async function startWalletSync(
   // Transaction history follows the same cache lifecycle as the sub-wallet
   // states below: restore from the store so history survives restarts, sync
   // only fills in what happened since.
-  const txHistoryStorage = await loadHistoryStorage(store, name, network.id, onProgress);
+  const loadedHistory = await loadHistoryStorage(store, name, network.id, onProgress);
+  const txHistoryStorage = options?.onSubmissionVerdict
+    ? notifyOnSubmissionVerdicts(loadedHistory, options.onSubmissionVerdict)
+    : loadedHistory;
 
   // Resolved once so the wallets built here, outside the facade's factories, are
   // handed the same `forks` the facade presets: where the chain hands over to

@@ -75,11 +75,13 @@ import { estimateUnlessInFlight } from './fee-estimate';
 import { NIGHT_TOKEN_ID } from '@shieldedtech/moth-wallet/types/tokens';
 import type { FeeEstimate, NightCoinRow } from '../messaging/protocol';
 import {
+  connectorSubmission,
+  forgetSubmissions,
   loadSubmissions,
   mergeSubmissions,
   recordSubmission,
-  saveSubmissions,
   submissionsKey,
+  type PreparedSubmission,
   type SubmittedTx,
 } from './submissions';
 import type {
@@ -377,6 +379,10 @@ export async function syncEnsure(
     {
       syncStore: new IdbSyncStateStore(),
       onDustFeePass: logDustFeePass,
+      // The panel re-reads its feed on sync progress, which these entries never move.
+      onSubmissionVerdict: (hash) => {
+        if (current?.key === key) emit('os/eventActivityChanged', hash);
+      },
       ...(ON_MAIN_THREAD ? { batchUpdates: MAIN_THREAD_BATCH } : {}),
     },
   );
@@ -756,6 +762,69 @@ async function noteSubmitted(networkId: string, walletName: string, tx: Submitte
   }
 }
 
+/** The transaction's hash, or null for one the ledger cannot hash; such a transaction is submitted unrecorded. */
+function hashOrNull(transaction: Parameters<typeof transactionHashOf>[0]): string | null {
+  try {
+    return transactionHashOf(transaction);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Submit `transaction` with its feed record written first, so the row carries
+ * its recipient and amount while it is pending and if it is rejected. A
+ * submission that failed before history recorded it was never sent, so its
+ * record is dropped rather than left to show as pending.
+ */
+async function submitRecorded(
+  wallet: SyncedWallet,
+  network: NetworkConfig,
+  walletName: string,
+  transaction: Parameters<typeof submitFinalizedTransaction>[1],
+  record: (hash: string) => SubmittedTx,
+): Promise<string> {
+  const hash = hashOrNull(transaction);
+  if (hash) await noteSubmitted(network.id, walletName, record(hash));
+  try {
+    return await submitTracked(network, walletName, () => submitFinalizedTransaction(wallet.facade, transaction));
+  } catch (error) {
+    if (hash) await forgetIfNeverSent(wallet, network.id, walletName, hash);
+    throw error;
+  }
+}
+
+async function forgetIfNeverSent(
+  wallet: SyncedWallet,
+  networkId: string,
+  walletName: string,
+  hash: string,
+): Promise<void> {
+  try {
+    const entries = await wallet.facade.getAllFromTxHistory();
+    if (entries.some((entry) => entry.hash === hash)) return;
+    await forgetSubmissions(new IdbSyncStateStore(), networkId, walletName, [hash]);
+    emit('os/eventActivityChanged', hash);
+  } catch {
+    /* best effort: a record left behind shows as pending until it goes stale */
+  }
+}
+
+// What balancing or building learned about a connector transaction, kept by its
+// hash until the dApp asks for it to be submitted. Bounded, oldest out first.
+const PREPARED_MAX = 50;
+const preparedSubmissions = new Map<string, PreparedSubmission>();
+function rememberPrepared(transaction: Parameters<typeof transactionHashOf>[0], prepared: PreparedSubmission): void {
+  const hash = hashOrNull(transaction);
+  if (!hash) return;
+  preparedSubmissions.delete(hash);
+  preparedSubmissions.set(hash, prepared);
+  for (const oldest of preparedSubmissions.keys()) {
+    if (preparedSubmissions.size <= PREPARED_MAX) break;
+    preparedSubmissions.delete(oldest);
+  }
+}
+
 export function sendTokens(
   seedHex: string,
   walletName: string,
@@ -773,14 +842,13 @@ export function sendTokens(
       (stage) => emit('os/eventTxStage', stage),
     );
     emit('os/eventTxStage', 'submitting');
-    const txHash = await submitTracked(network, walletName, () => submitFinalizedTransaction(wallet.facade, finalized));
     // The activity feed's pending row is single-output. Record the rich detail
     // only for a lone output; a batch records a plain pending send (the applied
     // chain entry supplies every delta once it lands).
     const single = requests.length === 1 ? requests[0] : undefined;
-    await noteSubmitted(network.id, walletName, {
-      hash: txHash,
-      transactionHash: transactionHashOf(finalized),
+    const txHash = await submitRecorded(wallet, network, walletName, finalized, (hash) => ({
+      hash,
+      transactionHash: hash,
       submittedAt: Date.now(),
       kind: 'send',
       to: single?.to,
@@ -788,7 +856,7 @@ export function sendTokens(
       tokenKind: single?.type,
       amount: single?.amount,
       outputs: requests.length,
-    });
+    }));
     return { txHash };
   }));
 }
@@ -906,6 +974,11 @@ export async function transferBuild(
       (stage) => emit('os/eventTxStage', stage),
       { payFees },
     );
+    const single = requests.length === 1 ? requests[0] : undefined;
+    rememberPrepared(finalized, {
+      spends: single ? [{ kind: single.type, tokenId: single.tokenId, amount: single.amount }] : [],
+      transfer: { to: single?.to, outputs: requests.length },
+    });
     return { txHex: toHex(finalized.serialize()) };
   });
 }
@@ -933,6 +1006,20 @@ export async function txSummary(network: NetworkConfig, txHex: string, sealed: b
   return { spends: dto(summary.spends), receives: dto(summary.receives), contractActions: summary.contractActions };
 }
 
+/** What balancing will take from the wallet, for the feed row; empty when the transaction cannot be read. */
+async function connectorSpends(
+  network: NetworkConfig,
+  txHex: string,
+  sealed: boolean,
+): Promise<PreparedSubmission['spends']> {
+  try {
+    const summary = summarizeConnectorTransaction(fromHex(txHex), sealed, await activeVersionIfSynced(network));
+    return summary.spends.map((spend) => ({ kind: spend.kind, tokenId: spend.tokenId, amount: spend.amount.toString() }));
+  } catch {
+    return [];
+  }
+}
+
 // Balance a dApp-supplied transaction (connector balance*Transaction). Needs a
 // synced wallet (to source balancing inputs) and the proof server (the balancing
 // segment is proven), so it preflights both like the transfer path.
@@ -947,6 +1034,8 @@ export async function balanceTransaction(
   return trackOp(async () => {
     await ensureProver(network);
     const wallet = await syncEnsure(seedHex, walletName, network);
+    // Read before balancing: a balanced transaction has no deficits left to report.
+    const spends = await connectorSpends(network, txHex, sealed);
     const finalized = await coreBalanceTransaction(
       wallet.facade,
       activeWalletKeys(),
@@ -956,6 +1045,7 @@ export async function balanceTransaction(
       (stage) => emit('os/eventTxStage', stage),
       { tokenKindsToBalance: payFees ? 'all' : ['shielded', 'unshielded'] },
     );
+    rememberPrepared(finalized, { spends });
     return { txHex: toHex(finalized.serialize()) };
   });
 }
@@ -996,7 +1086,13 @@ export async function transferSubmit(
     const wallet = await syncEnsure(seedHex, walletName, network);
     // The hex carries no protocol version; the facade reads it with the ledger it is acting at.
     const transaction = wallet.facade.adoptTransaction(fromHex(txHex), 'Finalized');
-    await submitTracked(network, walletName, () => submitFinalizedTransaction(wallet.facade, transaction));
+    try {
+      await submitRecorded(wallet, network, walletName, transaction, (hash) =>
+        connectorSubmission(hash, preparedSubmissions.get(hash), Date.now()));
+    } finally {
+      const hash = hashOrNull(transaction);
+      if (hash) preparedSubmissions.delete(hash);
+    }
   });
 }
 
@@ -1145,8 +1241,7 @@ export async function activityGet(
     Date.now(),
   );
   if (prune.length > 0) {
-    const kept = submissions.filter((tx) => !prune.includes(tx.hash));
-    await saveSubmissions(store, network.id, walletName, kept).catch(() => {});
+    await forgetSubmissions(store, network.id, walletName, prune).catch(() => {});
   }
   return serializeActivity(merged);
 }
