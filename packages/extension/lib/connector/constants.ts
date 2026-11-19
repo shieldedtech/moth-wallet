@@ -62,6 +62,9 @@ export const NOT_IMPLEMENTED_METHODS = [] as const;
  *  and proposed upstream separately. See specs/003-derive-app-secret. */
 export const EXTENSION_METHODS = [
   'deriveAppSecret',
+  // The connector API has no coin enumeration, and a circuit that spends a coin
+  // needs its nonce and Merkle index, which only the wallet tracks.
+  'getShieldedCoins',
 ] as const;
 
 /** Private RPC calls used by the page-local ProvingProvider proxy. */

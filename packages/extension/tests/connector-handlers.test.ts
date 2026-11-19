@@ -1,3 +1,4 @@
+import { encodeBigintJson } from '../lib/messaging/bigint-json';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing';
 import type { WalletBalances } from '@shieldedtech/moth-browser';
@@ -29,10 +30,12 @@ vi.mock('../lib/background/offscreen-client', () => ({
     provingProviderCheck: (...a: unknown[]) => provingProviderCheck(...(a as [])),
     provingProviderProve: (...a: unknown[]) => provingProviderProve(...(a as [])),
     deriveAppSecret: (...a: unknown[]) => deriveAppSecret(...(a as [])),
+    shieldedCoinsGet: (...a: unknown[]) => shieldedCoinsGet(...(a as [])),
     proverKeyPut: (...a: unknown[]) => proverKeyPut(...(a as [])),
   },
 }));
 const deriveAppSecret = vi.fn();
+const shieldedCoinsGet = vi.fn();
 
 const requestApproval = vi.fn<() => Promise<boolean>>();
 const releaseRequester = vi.fn();
@@ -129,6 +132,7 @@ describe('connector dispatch', () => {
     txHistoryGet.mockReset();
     signData.mockReset();
     deriveAppSecret.mockReset();
+    shieldedCoinsGet.mockReset();
     balanceTransaction.mockReset();
     txSummary.mockReset();
     makeIntent.mockReset();
@@ -366,6 +370,39 @@ describe('connector dispatch', () => {
     balancesGet.mockResolvedValue(serializeBalances(sampleBalances()));
     const shielded = (await dispatch(ORIGIN, 'getShieldedBalances', [])) as Record<string, bigint>;
     expect(shielded['0'.repeat(64)]).toBe(500n);
+  });
+
+  // The balances snapshot blanks its coin lists, so the coins come from their own
+  // offscreen call; reading them off the snapshot would always answer "none".
+  it('returns shielded coins with their spend fields, bigints intact', async () => {
+    await connect();
+    requestApproval.mockResolvedValue(true);
+    shieldedCoinsGet.mockResolvedValue(
+      encodeBigintJson({
+        synced: true,
+        coins: [{ type: 'aa', value: 5n, nonce: 'bb', mt_index: 7n, commitment: 'cc', status: 'available' }],
+      }),
+    );
+    const res = (await dispatch(ORIGIN, 'getShieldedCoins', [])) as {
+      synced: boolean;
+      coins: Array<{ value: bigint; mt_index: bigint | null }>;
+    };
+    expect(res.synced).toBe(true);
+    expect(res.coins[0]).toMatchObject({ value: 5n, mt_index: 7n, nonce: 'bb' });
+    expect(balancesGet).not.toHaveBeenCalled();
+    expect(shieldedCoinsGet).toHaveBeenCalledWith(
+      expect.objectContaining({ seedHex: SESSION.seedHex, walletName: SESSION.walletName }),
+    );
+  });
+
+  // The list shows the site every coin, nonces included, so it is asked for each
+  // time and nothing is read until the user allows it.
+  it('asks before sharing shielded coins, and reads none when declined', async () => {
+    await connect();
+    requestApproval.mockResolvedValue(false);
+    await expect(dispatch(ORIGIN, 'getShieldedCoins', [], 7, '7/0/doc-1')).rejects.toMatchObject({ code: 'Rejected' });
+    expect(requestApproval).toHaveBeenCalledWith('shieldedCoins', ORIGIN, {}, 7, preparedPanel, '7/0/doc-1');
+    expect(shieldedCoinsGet).not.toHaveBeenCalled();
   });
 
   it('coalesces concurrent balance methods into one offscreen snapshot', async () => {
