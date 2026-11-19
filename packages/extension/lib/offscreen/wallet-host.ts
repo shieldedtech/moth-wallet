@@ -3,6 +3,8 @@
 // and transaction building/submission. The service worker reaches everything
 // here over the offscreen messaging channel.
 
+import { shieldedCoinRows } from '@shieldedtech/moth-wallet/wallet/shielded-coins';
+import { encodeBigintJson } from '../messaging/bigint-json';
 import { relayRetry, setRelayUrl } from './relay-socket';
 import { installBundledReference, hasBundledReference } from './bundled-preseed';
 import { requestMeter, type MeterSnapshot } from './request-meter';
@@ -675,6 +677,24 @@ export async function balancesGet(
 ): Promise<string> {
   const wallet = await syncEnsure(seedHex, walletName, network);
   return serializeForClients(await waitForSyncedBalances(wallet, SYNC_WAIT_MS));
+}
+
+/**
+ * The shielded coins, with the nonce and Merkle index spending one needs. On demand
+ * and shielded-only, so the balances emission can keep dropping the coin lists.
+ * `synced` tells an empty list from one sync has not filled yet.
+ */
+export async function shieldedCoinsGet(
+  seedHex: string,
+  walletName: string,
+  network: NetworkConfig,
+): Promise<string> {
+  const wallet = await syncEnsure(seedHex, walletName, network);
+  const balances = await waitForSyncedBalances(wallet, SYNC_WAIT_MS);
+  return encodeBigintJson({
+    synced: balances.syncProgress.shieldedSynced,
+    coins: shieldedCoinRows(balances.coins),
+  });
 }
 
 /**
