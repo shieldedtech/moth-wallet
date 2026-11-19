@@ -2,7 +2,7 @@
 // with type/code/reason fields (deliberately not a class — `instanceof`
 // doesn't cross the page boundary).
 
-import type { APIError, ErrorCode } from '@midnight-ntwrk/dapp-connector-api';
+import type { APIError, ErrorCode } from '@midnightntwrk/dapp-connector-api';
 
 export type { APIError, ErrorCode };
 

@@ -28,8 +28,9 @@ export function MnemonicDisplayScreen({ route, nav }: Props) {
       <Text bold color="yellow">⚠ Recovery mnemonic — write this down NOW</Text>
       <Box marginTop={1}>
         <Text dimColor>
-          This is the only time these words will be shown. Anyone with this mnemonic
-          can spend your funds. Store it offline, never digitally.
+          Write these words down now. Anyone with this mnemonic can spend your
+          funds. Store it offline, never digitally. You can show them again later
+          from the Keys screen (p), with your passphrase.
         </Text>
       </Box>
 

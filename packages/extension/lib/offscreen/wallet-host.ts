@@ -24,6 +24,7 @@ import {
   deriveWalletKeys,
   clearSyncCache,
   clearDustSyncCache,
+  clearShieldedSyncCache,
   clearEmptyRefCache,
   warmEmptyRefCache,
   preseedReferenceStatus,
@@ -63,15 +64,16 @@ import {
   setActiveCardanoAccount,
   type CardanoAccountList,
 } from '@shieldedtech/moth-wallet/cardano/accounts';
-import type { HistoryEntry } from '@midnight-ntwrk/dapp-connector-api';
+import type { HistoryEntry } from '@midnightntwrk/dapp-connector-api';
 import { serializeBalances } from '../messaging/balances-json';
 import { serializeActivity } from '../messaging/activity-json';
 import { waitForSyncedBalances } from './wait-synced';
 import { createProofPool, type ProofPool } from './proof-pool';
 import { dustHealKey } from './dust-heal';
 import { logDustFeeEstimate, logDustFeePass } from './dust-fee-log';
+import { estimateUnlessInFlight } from './fee-estimate';
 import { NIGHT_TOKEN_ID } from '@shieldedtech/moth-wallet/types/tokens';
-import type { NightCoinRow } from '../messaging/protocol';
+import type { FeeEstimate, NightCoinRow } from '../messaging/protocol';
 import {
   loadSubmissions,
   mergeSubmissions,
@@ -429,6 +431,7 @@ export async function syncEnsure(
 // the deficit is already displayed; shouldRepairDustView only decides whether to
 // offer it (see dustView().canRebuild).
 let dustRebuildInFlight = false;
+let shieldedRebuildInFlight = false;
 
 // Transaction work in flight (building/proving/balancing/submitting). The
 // rebuild restarts the sync engine, which must NEVER happen underneath one of
@@ -551,6 +554,27 @@ export async function preseedWarm(network: NetworkConfig): Promise<{ started: bo
     return { started: false };
   } finally {
     refWarmInFlight = null;
+  }
+}
+
+/** Evict the shielded cache and restart sync so the shielded sub-wallet rescans,
+ *  keeping DUST, which is far slower to rebuild.
+ *  `started: false` means a transaction was in flight and nothing was touched. */
+export async function shieldedRebuild(
+  seedHex: string,
+  walletName: string,
+  network: NetworkConfig,
+): Promise<{ started: boolean }> {
+  if (shieldedRebuildInFlight || inFlightOps > 0) return { started: false };
+  shieldedRebuildInFlight = true;
+  try {
+    emit('os/eventSyncMessage', 'Rebuilding shielded coins…');
+    await syncStop();
+    await clearShieldedSyncCache(walletName, network.id, new IdbSyncStateStore());
+    await syncEnsure(seedHex, walletName, network);
+    return { started: true };
+  } finally {
+    shieldedRebuildInFlight = false;
   }
 }
 
@@ -774,17 +798,19 @@ export function estimateTransferFee(
   walletName: string,
   network: NetworkConfig,
   requests: TransferRequestDTO[],
-): Promise<{ fee: string }> {
+): Promise<FeeEstimate> {
   return enqueueTransferOperation(() => trackOp(async () => {
     const wallet = await syncEnsure(seedHex, walletName, network);
-    const fee = await coreEstimateTransferFee(
-      wallet.facade,
-      activeWalletKeys(),
-      network.id,
-      toRequests(requests),
-    );
-    logDustFeeEstimate(fee, requests.length);
-    return { fee: fee.toString() };
+    return estimateUnlessInFlight(wallet.balances.coins, async () => {
+      const fee = await coreEstimateTransferFee(
+        wallet.facade,
+        activeWalletKeys(),
+        network.id,
+        toRequests(requests),
+      );
+      logDustFeeEstimate(fee, requests.length);
+      return fee;
+    });
   }));
 }
 

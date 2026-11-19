@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { KeyMaterialProvider } from '@midnight-ntwrk/dapp-connector-api';
+import type { KeyMaterialProvider } from '@midnightntwrk/dapp-connector-api';
 import { decodeBigintJson, encodeBigintJson } from '../lib/messaging/bigint-json';
 import type { PageClient } from '../lib/messaging/page-transport';
 import { createProvingProxy } from '../lib/connector/proving-proxy';

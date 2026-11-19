@@ -88,17 +88,30 @@ func reveal(_ element: XCUIElement, in app: XCUIApplication, up: Bool = true) ->
 /// settled in place and reopen the menu if it never does. Then tap the middle of where it sits:
 /// on CI, XCTest can fail to find a hit point on an iOS 26 menu item that has been open and still
 /// for seconds, and a coordinate tap doesn't ask it for one.
+/// On a busy CI runner the menu has opened after the wait, over its own button, and tapping that
+/// button again then fails the test; so reopen only when the item is gone and the button is clear.
 func choose(_ item: XCUIElement, fromMenu menu: XCUIElement, attempts: Int = 3) {
-    for _ in 0..<attempts {
-        menu.tap()
-        if item.waitForSettledFrame(timeout: 5) {
-            let frame = item.frame
+    for attempt in 0..<attempts {
+        if attempt == 0 || (!item.exists && menu.isHittable) { menu.tap() }
+        // Tap the frame that settled: reading `item.frame` again can return the infinite one.
+        if let frame = item.settledFrame(timeout: 10) {
             XCUIApplication().coordinate(withNormalizedOffset: .zero)
                 .withOffset(CGVector(dx: frame.midX, dy: frame.midY)).tap()
-            return
+            // The menu closes once the item is chosen; if it is still open, the tap missed.
+            if item.waitForNonExistence(timeout: 3) { return }
         }
     }
     XCTFail("\(item) never settled after opening \(menu) \(attempts) times")
+}
+
+/// Taps `button` until `result` appears. On CI a tap on a list row has been lost while the list
+/// redrew for sync progress; tap again only if nothing opened and the button is still clear.
+func tap(_ button: XCUIElement, until result: XCUIElement, attempts: Int = 3) {
+    for attempt in 0..<attempts {
+        if attempt == 0 || (!result.exists && button.isHittable) { button.tap() }
+        if result.waitForExistence(timeout: 5) { return }
+    }
+    XCTFail("\(result) never appeared after tapping \(button) \(attempts) times")
 }
 
 extension XCUIElement {
@@ -107,17 +120,21 @@ extension XCUIElement {
         return XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: predicate, object: self)], timeout: timeout) == .completed
     }
 
-    /// Waits until the element has a real frame that is the same on two checks in a row, which a
-    /// menu item has once its menu has finished opening. Not `hittable`: asking that of an item
-    /// whose menu is still opening fails the test instead of answering false.
-    func waitForSettledFrame(timeout: TimeInterval) -> Bool {
+    /// Waits until the element has a real frame that is the same on two real readings in a row,
+    /// which a menu item has once its menu has finished opening. An open iOS 26 menu can report
+    /// an infinite frame between real ones, so those readings are skipped, not counted as a move.
+    /// Returns that frame, or nil if the element never settles within `timeout`.
+    /// Not `hittable`: asking that of an item whose menu is still opening fails the test.
+    func settledFrame(timeout: TimeInterval) -> CGRect? {
         var last: CGRect?
         let settled = NSPredicate { object, _ in
             guard let element = object as? XCUIElement, element.exists else { last = nil; return false }
             let frame = element.frame
+            guard frame.minX.isFinite, frame.minY.isFinite, !frame.isEmpty else { return false }
             defer { last = frame }
-            return frame.minX.isFinite && frame.minY.isFinite && !frame.isEmpty && frame == last
+            return frame == last
         }
-        return XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: settled, object: self)], timeout: timeout) == .completed
+        let result = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: settled, object: self)], timeout: timeout)
+        return result == .completed ? last : nil
     }
 }

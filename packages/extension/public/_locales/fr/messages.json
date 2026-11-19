@@ -986,6 +986,9 @@
   "send_sendNow": {
     "message": "Envoyer maintenant"
   },
+  "send_waitingForPrevious": {
+    "message": "En attente de la transaction précédente…"
+  },
   "send_irreversibleNote": {
     "message": "Les transferts sont irréversibles. Vérifiez l'adresse avant d'envoyer."
   },
@@ -1007,6 +1010,9 @@
   "send_feeUnavailable": {
     "message": "Indisponible pour le moment"
   },
+  "send_feeWaiting": {
+    "message": "En attente de la transaction précédente"
+  },
   "send_feeIdle": {
     "message": "Saisissez les détails du transfert"
   },
@@ -1018,6 +1024,9 @@
   },
   "send_feeNoteUnavailable": {
     "message": "Vous pouvez quand même envoyer. Les frais de réseau finaux seront payés en $1."
+  },
+  "send_feeNoteWaiting": {
+    "message": "Votre transaction précédente est encore en cours de confirmation et, d’ici là, retient des pièces dont celle-ci a besoin, comme le $1 des frais. Cet affichage se met à jour tout seul dès qu’elle est confirmée."
   },
   "send_feeNoteIdle": {
     "message": "Ajoutez un montant et une adresse valides pour calculer les frais."
@@ -1189,6 +1198,24 @@
   },
   "settings_resyncError": {
     "message": "Impossible de vider le cache. Réessayez."
+  },
+  "settings_rebuildShielded": {
+    "message": "Reconstruire les pièces shielded"
+  },
+  "settings_rebuildShieldedDescription": {
+    "message": "Analyser à nouveau la chaîne pour retrouver les pièces shielded de ce compte, si un solde shielded semble faux ou obsolète. Le DUST est conservé, c’est donc bien plus rapide qu’une resynchronisation complète."
+  },
+  "settings_rebuildShieldedButton": {
+    "message": "Reconstruire"
+  },
+  "settings_rebuildShieldedWorking": {
+    "message": "Reconstruction…"
+  },
+  "settings_rebuildShieldedDeferred": {
+    "message": "Une transaction est en cours. Réessayez une fois qu’elle est réglée."
+  },
+  "settings_rebuildShieldedError": {
+    "message": "Échec de la reconstruction. Réessayez."
   },
   "settings_sectionSecurity": {
     "message": "Sécurité"
@@ -1581,7 +1608,10 @@
     "message": "L’enregistrement paie ses propres frais avec le $1 que génère votre $2, et ce solde est trop faible pour les couvrir. Ajoutez davantage de $2, puis réessayez."
   },
   "network_mainnetHidden": {
-    "message": "Les réseaux à valeur réelle sont masqués. Ce portefeuille n’est ni audité ni pris en charge — activez le mode développeur dans les Réglages pour les afficher."
+    "message": "Les réseaux à valeur réelle sont masqués. Ce portefeuille n’est ni audité ni pris en charge — activez le mode développeur pour les afficher."
+  },
+  "network_enableDeveloperMode": {
+    "message": "Activer le mode développeur"
   },
   "network_valueWarningTitle": {
     "message": "Passer à $1 — fonds réels ?"
