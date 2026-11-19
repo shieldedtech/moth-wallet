@@ -26,6 +26,7 @@ import {
   deriveWalletKeys,
   clearSyncCache,
   clearDustSyncCache,
+  clearShieldedSyncCache,
   clearEmptyRefCache,
   warmEmptyRefCache,
   preseedReferenceStatus,
@@ -432,6 +433,7 @@ export async function syncEnsure(
 // the deficit is already displayed; shouldRepairDustView only decides whether to
 // offer it (see dustView().canRebuild).
 let dustRebuildInFlight = false;
+let shieldedRebuildInFlight = false;
 
 // Transaction work in flight (building/proving/balancing/submitting). The
 // rebuild restarts the sync engine, which must NEVER happen underneath one of
@@ -554,6 +556,27 @@ export async function preseedWarm(network: NetworkConfig): Promise<{ started: bo
     return { started: false };
   } finally {
     refWarmInFlight = null;
+  }
+}
+
+/** Evict the shielded cache and restart sync so the shielded sub-wallet rescans,
+ *  keeping DUST, which is far slower to rebuild.
+ *  `started: false` means a transaction was in flight and nothing was touched. */
+export async function shieldedRebuild(
+  seedHex: string,
+  walletName: string,
+  network: NetworkConfig,
+): Promise<{ started: boolean }> {
+  if (shieldedRebuildInFlight || inFlightOps > 0) return { started: false };
+  shieldedRebuildInFlight = true;
+  try {
+    emit('os/eventSyncMessage', 'Rebuilding shielded coins…');
+    await syncStop();
+    await clearShieldedSyncCache(walletName, network.id, new IdbSyncStateStore());
+    await syncEnsure(seedHex, walletName, network);
+    return { started: true };
+  } finally {
+    shieldedRebuildInFlight = false;
   }
 }
 
