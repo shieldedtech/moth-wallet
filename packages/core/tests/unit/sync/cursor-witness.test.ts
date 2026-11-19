@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest';
-import {compareWitness, type CursorWitness} from '../../../src/sync/cursor-witness.js';
+import {compareWitness, readEventWitnessRetrying, type CursorWitness} from '../../../src/sync/cursor-witness.js';
 import {witnessStreamFor} from '../../../src/sync/preseed.js';
 
 const witness = (id: number, digest: string): CursorWitness => ({stream: 'dustLedgerEvents', id, digest});
@@ -61,5 +61,74 @@ describe('witnessStreamFor', () => {
   it('witnesses shielded, and never unshielded', () => {
     expect(witnessStreamFor('shielded', snapshot())).toBe('zswapLedgerEvents');
     expect(witnessStreamFor('unshielded', snapshot())).toBeNull();
+  });
+});
+
+// The pre-seed re-check. One dropped socket used to refuse a valid reference and
+// send a new wallet to scan from genesis; see readEventWitnessRetrying.
+describe('readEventWitnessRetrying', () => {
+  const stored = witness(24_599, '0452a6bb8302ab69');
+
+  /** A read that plays back `outcomes` in order: a witness, null, or an Error to throw. */
+  function scripted(outcomes: Array<CursorWitness | null | Error>) {
+    const calls: number[] = [];
+    const read = async (_url: string, _stream: unknown, id: number) => {
+      calls.push(id);
+      const next = outcomes.shift();
+      if (next instanceof Error) throw next;
+      return next ?? null;
+    };
+    return {read: read as never, calls};
+  }
+  const sleeps: number[] = [];
+  const sleep = async (ms: number) => void sleeps.push(ms);
+  const run = (read: never, onRetry?: (attempt: number, outcome: string) => void) =>
+    readEventWitnessRetrying('https://indexer.example/api/v4/graphql', 'dustLedgerEvents', stored.id, {
+      read, sleep, onRetry, delaysMs: [2_000, 5_000],
+    });
+
+  it('returns the first event without retrying', async () => {
+    const {read, calls} = scripted([stored]);
+    await expect(run(read)).resolves.toEqual(stored);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('recovers from a socket that errors, waiting between attempts', async () => {
+    sleeps.length = 0;
+    const retries: string[] = [];
+    const {read, calls} = scripted([new Error('Could not reach wss://x/ws'), stored]);
+    await expect(run(read, (n, o) => retries.push(`${n}: ${o}`))).resolves.toEqual(stored);
+    expect(calls).toHaveLength(2);
+    expect(sleeps).toEqual([2_000]);
+    expect(retries).toEqual(['1: Could not reach wss://x/ws']);
+  });
+
+  it('recovers from a read that went quiet', async () => {
+    const {read, calls} = scripted([null, null, stored]);
+    await expect(run(read)).resolves.toEqual(stored);
+    expect(calls).toHaveLength(3);
+  });
+
+  // A different event at the id is a verdict, not a dropped connection: retrying
+  // it would only delay the refusal.
+  it('returns a mismatching event at once, so a renumbering is still caught', async () => {
+    const other = witness(24_599, 'ffffffffffffffff');
+    const {read, calls} = scripted([other, stored]);
+    const observed = await run(read);
+    expect(calls).toHaveLength(1);
+    expect(compareWitness(stored, observed).kind).toBe('renumbered');
+  });
+
+  it('still throws when every attempt fails, so the caller refuses', async () => {
+    const {read, calls} = scripted([new Error('a'), new Error('b'), new Error('c')]);
+    await expect(run(read)).rejects.toThrow('c');
+    expect(calls).toHaveLength(3);
+  });
+
+  it('still yields null when every attempt is silent, which never reads as valid', async () => {
+    const {read} = scripted([null, null, null]);
+    const observed = await run(read);
+    expect(observed).toBeNull();
+    expect(compareWitness(stored, observed).kind).toBe('unknown');
   });
 });
