@@ -257,7 +257,7 @@ jobs:
       # AGP 8.7 needs JDK 17+, and the app targets JVM 17. setup-java sets JAVA_HOME, so the
       # build does not follow the runner image's default JDK when that changes.
       - name: Setup Java
-        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad  # v6.1.0
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78  # v6.2.0
         with:
           distribution: temurin
           java-version: '17'
