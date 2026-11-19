@@ -40,7 +40,8 @@ import { nativeAssetLabelsForNetwork } from '../../lib/ui/token-labels';
 import { NoteCard } from '../../components/moth/note-card';
 import { WordChipGrid, WordInputGrid } from '../../components/moth/words';
 import { Tabs, TabsList, TabsTrigger } from '../../components/ui/tabs';
-import { useNetworkConfig, NetworkFields, type SupportedNetwork } from '../../components/screens/NetworkConfig';
+import { DialogShell } from '../../components/ui/dialog';
+import { useNetworkConfig, NetworkFields, networkLabel, type SupportedNetwork } from '../../components/screens/NetworkConfig';
 
 type Mode = 'create' | 'import';
 /** Which backup artifact the person restoring is holding. */
@@ -462,12 +463,14 @@ export function PasswordStep({
 // Choose a network (design template setup-network), rendered in the full-tab
 // setup Shell like every other step. The named network list is shared with
 // Settings → Network (see NetworkConfig); only SUPPORTED_NETWORKS are offered,
-// and mainnet among those only with developer mode on. This step defaults to
-// preprod, the network with a bundled pre-seed reference. The choice
-// becomes the NEW account's network — existing accounts keep theirs. It is
-// also saved as the default selection for the new account flow.
+// and mainnet among those only with developer mode on, which the list itself
+// can turn on because a first run has no Settings to reach. Choosing mainnet
+// asks for the same real-funds acknowledgement as Settings → Network. This
+// step defaults to preprod, the network with a bundled pre-seed reference.
+// The choice becomes the NEW account's network — existing accounts keep
+// theirs. It is also saved as the default selection for the new account flow.
 
-function NetworkStep({
+export function NetworkStep({
   progress,
   busy,
   firstRun,
@@ -482,16 +485,23 @@ function NetworkStep({
 }) {
   const net = useNetworkConfig();
   const [saving, setSaving] = useState(false);
+  const [confirmingValue, setConfirmingValue] = useState(false);
   const working = saving || busy;
 
   const save = async () => {
     setSaving(true);
     try {
       await net.save();
+      setConfirmingValue(false);
       await onContinue(net.network);
     } finally {
       setSaving(false);
     }
+  };
+
+  const submit = () => {
+    if (net.needsValueWarning) setConfirmingValue(true);
+    else void save();
   };
 
   return (
@@ -506,11 +516,32 @@ function NetworkStep({
           {t('setup_networkNote')}
         </NoteCard>
         <div className="flex justify-end pt-2">
-          <Button variant="secondary" size="lg" className={STEP_CTA} disabled={!net.valid} loading={working} onClick={() => void save()}>
+          <Button variant="secondary" size="lg" className={STEP_CTA} disabled={!net.valid} loading={working} onClick={submit}>
             {working ? t('setup_settingUp') : t('setup_continue')}
           </Button>
         </div>
       </div>
+      <DialogShell
+        open={confirmingValue}
+        onOpenChange={(open) => {
+          if (!working) setConfirmingValue(open);
+        }}
+        title={t('network_valueWarningTitle', [networkLabel(net.network)])}
+        actions={
+          <>
+            <Button variant="outline" disabled={working} onClick={() => setConfirmingValue(false)}>
+              {t('common_cancel')}
+            </Button>
+            <Button loading={working} onClick={() => void save()}>
+              {t('setup_continue')}
+            </Button>
+          </>
+        }
+      >
+        <NoteCard variant="error" icon={TriangleAlert}>
+          {t('network_valueWarningBody', [networkLabel(net.network)])}
+        </NoteCard>
+      </DialogShell>
     </Shell>
   );
 }

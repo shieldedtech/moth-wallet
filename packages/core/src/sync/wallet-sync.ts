@@ -23,7 +23,7 @@ import {EMPTY_REF_WALLET, InMemorySyncStateStore, syncStateKey, type SyncStateSt
 import {initialDustParameters} from './ledger-routing.js';
 import {spendableDust, summarizeDustGeneration, type DustGeneration} from './dust-generation.js';
 import {TerminatingDustWallet, type DustFeePass, type MothDustWallet} from './dust-transacting.js';
-import {overallSyncProgress, type SubWallet} from './progress.js';
+import {dustProgressFor, overallSyncProgress, type DustPassPosition, type SubWallet} from './progress.js';
 import {partsToSeed, preSeedPlan, birthdayAdmits, type SeedablePart} from './preseed-parts.js';
 import {dustHistoryBefore} from './dust-history.js';
 import {makeTransactionLifecycleService} from './transaction-lifecycle.js';
@@ -599,7 +599,12 @@ export async function startWalletSync(
   // The SDK's dust wallet, but with moth's fee-balancing loop, which pays from the
   // largest coin first and reports each pass to the fee log
   // (sync/dust-transacting.ts, sync/dust-coin-selection.ts).
-  const Dust = TerminatingDustWallet(walletCfg, {onPass: options?.onDustFeePass});
+  // Where the running projections pass has got to; null until one reports.
+  const dustPosition = new Rx.BehaviorSubject<DustPassPosition | null>(null);
+  const Dust = TerminatingDustWallet(walletCfg, {
+    onPass: options?.onDustFeePass,
+    onProjectionsPosition: (position) => dustPosition.next(position),
+  });
   let dustWallet: MothDustWallet | undefined;
   const savedDust = await loadCachedState(store, name, network.id, 'dust');
   if (savedDust) {
@@ -671,16 +676,16 @@ export async function startWalletSync(
 
   let hasSavedCache = false;
   let lastCacheSaveTime = 0;
-  const subscription = facade
-    .state()
+  // The pass position rides along so a hop is shown even when no state changed.
+  const subscription = Rx.combineLatest([facade.state(), dustPosition])
     .pipe(Rx.auditTime(1000))
     .subscribe({
-      next: (s: FacadeState) => {
+      next: ([s, position]: [FacadeState, DustPassPosition | null]) => {
         emissionCount++;
         // Captured before lastProgressPct is overwritten below; comparing against
         // the updated value made the percent-change branch always false.
         const prevPct = Math.round(lastProgressPct * 100);
-        const balances = extractBalancesPartial(s, syncStartTime, lastProgressPct, progressBaseline, latestBalances);
+        const balances = extractBalancesPartial(s, syncStartTime, lastProgressPct, progressBaseline, latestBalances, position);
         latestBalances = balances;
         lastProgressPct = balances.syncProgress.percentage;
 
@@ -760,6 +765,7 @@ export async function startWalletSync(
 
   const stop = async () => {
     subscription.unsubscribe();
+    dustPosition.complete();
     await saveCache(store, facade, txHistoryStorage, name, network.id).catch(() => {});
     await facade.stop().catch(() => {});
   };
@@ -875,6 +881,8 @@ function extractBalancesPartial(
    * session, so the previous value is a better answer than a default.
    */
   previous?: WalletBalances,
+  /** Where the running DUST projections pass has got to, shown until the wallet reports a total. */
+  dustPosition: DustPassPosition | null = null,
 ): WalletBalances {
   let shielded: Record<string, bigint> = {};
   let unshielded: Record<string, bigint> = {};
@@ -1018,7 +1026,7 @@ function extractBalancesPartial(
     const dp = state.dust?.progress;
     const duApplied = dp?.appliedIndex ?? 0n;
     const duTotal = dp?.highestRelevantWalletIndex ?? 0n;
-    subProgress.dust = {applied: Number(duApplied), total: Number(duTotal)};
+    subProgress.dust = dustProgressFor({applied: Number(duApplied), total: Number(duTotal)}, dustPosition);
     if (typeof dp?.isStrictlyComplete === 'function') {
       dustSynced = dp.isStrictlyComplete();
     } else if (duTotal > 0n && duApplied >= duTotal) {
