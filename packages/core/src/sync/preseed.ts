@@ -16,6 +16,7 @@ import {cursorWitnessKey, emptyRefHeightKey, emptyRefMnemonicKey, emptyRefStateK
 import {
   compareWitness,
   readEventWitness,
+  readEventWitnessRetrying,
   type CursorWitness,
   type WitnessStream,
 } from './cursor-witness.js';
@@ -165,7 +166,10 @@ async function referenceCursorsStillValid(
     }
     let observed: CursorWitness | null = null;
     try {
-      observed = await readEventWitness(network.indexerUrl, stored.stream, stored.id);
+      observed = await readEventWitnessRetrying(network.indexerUrl, stored.stream, stored.id, {
+        onRetry: (attempt, outcome) =>
+          onProgress?.(`Pre-seed: ${part} cursor check ${attempt} got ${outcome}; trying again`),
+      });
     } catch (err) {
       onProgress?.(`Pre-seed: could not re-check the ${part} cursor (${err}) — refusing the reference`);
       return false;
