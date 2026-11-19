@@ -419,6 +419,8 @@ interface ProtocolMap {
     applied: number;
     total: number;
   };
+  /** Rescan shielded coins, keeping DUST. `started` is false when a transaction was in flight. */
+  shieldedRebuild(): { started: boolean };
   dustRebuild(): { started: boolean };
 
   // -------------------------------------------------------------------------

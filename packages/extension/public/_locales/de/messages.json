@@ -1199,6 +1199,24 @@
   "settings_resyncError": {
     "message": "Der Cache konnte nicht geleert werden. Versuche es erneut."
   },
+  "settings_rebuildShielded": {
+    "message": "Shielded-Coins neu aufbauen"
+  },
+  "settings_rebuildShieldedDescription": {
+    "message": "Die Chain erneut nach den shielded Coins dieses Kontos durchsuchen, wenn ein shielded Guthaben falsch oder veraltet aussieht. DUST bleibt erhalten, daher geht das viel schneller als eine vollständige Neusynchronisierung."
+  },
+  "settings_rebuildShieldedButton": {
+    "message": "Neu aufbauen"
+  },
+  "settings_rebuildShieldedWorking": {
+    "message": "Wird aufgebaut…"
+  },
+  "settings_rebuildShieldedDeferred": {
+    "message": "Eine Transaktion läuft gerade. Versuche es erneut, sobald sie abgeschlossen ist."
+  },
+  "settings_rebuildShieldedError": {
+    "message": "Neuaufbau fehlgeschlagen. Versuche es erneut."
+  },
   "settings_sectionSecurity": {
     "message": "Sicherheit"
   },

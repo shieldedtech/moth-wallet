@@ -71,7 +71,7 @@ export {
 
 // Sync
 export {
-  startWalletSync, formatNight, NIGHT_TOKEN_ID, clearSyncCache, clearDustSyncCache, resolveSyncStore,
+  startWalletSync, formatNight, NIGHT_TOKEN_ID, clearSyncCache, clearDustSyncCache, clearShieldedSyncCache, resolveSyncStore,
   EMPTY_COINS, EMPTY_SUB_PROGRESS, type WalletSyncOptions,
   type WalletBalances, type SyncedWallet, type DustGeneration, type SyncProgress,
   type SubWalletSyncProgress, type SubWalletProgress, type WalletCoinDetails,
@@ -156,6 +156,8 @@ export {
   insertVerifierKey, type InsertVerifierKeyOptions,
   insertVerifierKeys, type InsertVerifierKeysOptions,
   type BatchEntryResult, type BatchInsertResult,
+  replaceAuthority, type ReplaceAuthorityOptions, type ReplaceAuthorityResult,
+  readAuthority, authorityKeyText, type AuthorityDescription, type AuthorityKey, type AuthoritySigner,
 } from './contract/maintenance.js';
 export { queryContractState, type ContractState } from './contract/state.js';
 export {

@@ -1199,6 +1199,24 @@
   "settings_resyncError": {
     "message": "Impossible de vider le cache. Réessayez."
   },
+  "settings_rebuildShielded": {
+    "message": "Reconstruire les pièces shielded"
+  },
+  "settings_rebuildShieldedDescription": {
+    "message": "Analyser à nouveau la chaîne pour retrouver les pièces shielded de ce compte, si un solde shielded semble faux ou obsolète. Le DUST est conservé, c’est donc bien plus rapide qu’une resynchronisation complète."
+  },
+  "settings_rebuildShieldedButton": {
+    "message": "Reconstruire"
+  },
+  "settings_rebuildShieldedWorking": {
+    "message": "Reconstruction…"
+  },
+  "settings_rebuildShieldedDeferred": {
+    "message": "Une transaction est en cours. Réessayez une fois qu’elle est réglée."
+  },
+  "settings_rebuildShieldedError": {
+    "message": "Échec de la reconstruction. Réessayez."
+  },
   "settings_sectionSecurity": {
     "message": "Sécurité"
   },

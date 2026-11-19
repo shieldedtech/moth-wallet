@@ -69,6 +69,22 @@ export function Settings({ onBack, navigate }: { onBack: () => void; navigate: (
   const [confirmingResync, setConfirmingResync] = useState(false);
   const [resyncing, setResyncing] = useState(false);
   const [resyncError, setResyncError] = useState<string | null>(null);
+  // Shielded-only rebuild: no confirm step, since it keeps DUST and costs minutes.
+  const [rebuildingShielded, setRebuildingShielded] = useState(false);
+  const [rebuildShieldedNote, setRebuildShieldedNote] = useState<string | null>(null);
+
+  const rebuildShielded = async () => {
+    setRebuildingShielded(true);
+    setRebuildShieldedNote(null);
+    try {
+      const { started } = await sendMessage('shieldedRebuild', undefined);
+      if (!started) setRebuildShieldedNote(t('settings_rebuildShieldedDeferred'));
+    } catch {
+      setRebuildShieldedNote(t('settings_rebuildShieldedError'));
+    } finally {
+      setRebuildingShielded(false);
+    }
+  };
 
   const resync = async () => {
     setResyncing(true);
@@ -365,6 +381,23 @@ export function Settings({ onBack, navigate }: { onBack: () => void; navigate: (
           </span>
           <Button size="sm" variant="secondary" className="shrink-0" onClick={() => setConfirmingResync(true)}>
             {t('settings_resyncButton')}
+          </Button>
+        </div>
+        <div className="flex items-center justify-between px-4 py-[13px]">
+          <span className="min-w-0 pr-3">
+            <span className="block text-sm font-medium">{t('settings_rebuildShielded')}</span>
+            <span className="block text-[12.5px] text-muted-foreground">
+              {rebuildShieldedNote ?? t('settings_rebuildShieldedDescription')}
+            </span>
+          </span>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="shrink-0"
+            disabled={rebuildingShielded}
+            onClick={() => void rebuildShielded()}
+          >
+            {rebuildingShielded ? t('settings_rebuildShieldedWorking') : t('settings_rebuildShieldedButton')}
           </Button>
         </div>
         <div className="flex items-center justify-between px-4 py-[13px]">
