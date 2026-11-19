@@ -19,6 +19,10 @@ function utxo(owner: string, value: bigint, tokenType = NIGHT_TOKEN_ID) {
   return { value, owner, tokenType, intentHash: 'i'.repeat(64), outputIndex: 0 };
 }
 
+function dustUtxo(initialValue: bigint, seq = 0) {
+  return { initialValue, nonce: BigInt(seq + 1), seq, backingNight: 'b'.repeat(64), mtIndex: BigInt(seq) };
+}
+
 describe('deriveActivityEntry', () => {
   it('classifies a pure incoming transfer as received', () => {
     const activity = deriveActivityEntry(
@@ -161,6 +165,27 @@ describe('deriveActivityEntry', () => {
     expect(activity.kind).toBe('dust');
     expect(activity.deltas).toEqual([]);
     expect(activity.dustDelta).toBe(5n);
+    expect(activity.paidFee).toBe(false);
+  });
+
+  // A contract call moves none of the wallet's tokens: its only trace is the DUST
+  // that paid the fee. The change UTXO's initial value includes everything the
+  // spent one generated since it was created, so the "delta" reads positive.
+  it('marks a DUST spend as a paid fee even when the DUST delta reads positive', () => {
+    const activity = deriveActivityEntry(
+      entry({
+        fees: 1n,
+        dust: {
+          receivedUtxos: [dustUtxo(13_082_987_999_999_995n, 5)],
+          spentUtxos: [dustUtxo(6_041_891_999_999_996n, 4)],
+        },
+      }),
+      OWN,
+    );
+
+    expect(activity.kind).toBe('dust');
+    expect(activity.dustDelta).toBeGreaterThan(0n);
+    expect(activity.paidFee).toBe(true);
   });
 
   it('keeps failure status, fees and timestamp visible', () => {
@@ -194,5 +219,27 @@ describe('deriveActivity', () => {
 
     const hashes = deriveActivity(entries, OWN).map((activity) => activity.hash);
     expect(hashes).toEqual(['new'.padEnd(64, '0'), 'old'.padEnd(64, '0'), 'undated'.padEnd(64, '0')]);
+  });
+
+  // The feed tracks what the wallet spends. DUST that simply arrives (generation
+  // starting, or restarting at a protocol upgrade) is not something it did.
+  it('leaves out DUST that arrived with nothing else of the wallet in the transaction', () => {
+    const entries = [
+      entry({ hash: 'receipt'.padEnd(64, '0'), dust: { receivedUtxos: [dustUtxo(0n)], spentUtxos: [] } }),
+      entry({
+        hash: 'fee'.padEnd(64, '0'),
+        dust: { receivedUtxos: [dustUtxo(9n, 1)], spentUtxos: [dustUtxo(5n)] },
+      }),
+      entry({
+        hash: 'registration'.padEnd(64, '0'),
+        unshielded: { id: 1, createdUtxos: [utxo(OWN, 100n)], spentUtxos: [utxo(OWN, 100n)] },
+        dust: { receivedUtxos: [dustUtxo(0n)], spentUtxos: [] },
+      }),
+    ];
+
+    const byHash = new Map(deriveActivity(entries, OWN).map((activity) => [activity.hash.replace(/0+$/, ''), activity]));
+    expect([...byHash.keys()].sort()).toEqual(['fee', 'registration']);
+    expect(byHash.get('fee')?.paidFee).toBe(true);
+    expect(byHash.get('registration')?.paidFee).toBe(false);
   });
 });
