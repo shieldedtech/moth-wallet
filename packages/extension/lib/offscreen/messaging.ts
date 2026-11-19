@@ -310,6 +310,10 @@ export interface OffscreenProtocol {
   /** Ensure sync, wait for a synced snapshot, and return serialized balances. */
   'os/balancesGet'(data: { seedHex: string; walletName: string; network: NetworkConfig }): string;
 
+  /** Ensure sync and return the shielded coins with their spend fields, as bigint JSON:
+   *  `{synced, coins: ShieldedCoinRow[]}`. Separate from balancesGet, which blanks coins. */
+  'os/shieldedCoinsGet'(data: { seedHex: string; walletName: string; network: NetworkConfig }): string;
+
   'os/sendTokens'(data: {
     seedHex: string;
     walletName: string;

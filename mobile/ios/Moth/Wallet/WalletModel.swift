@@ -43,6 +43,8 @@ struct ActivityItem: Decodable, Identifiable, Equatable {
     let timestamp: Double?
     let deltas: [Delta]
     let dustDelta: String
+    /// True when this wallet spent DUST in the transaction, i.e. paid its fee.
+    let paidFee: Bool?
     let counterparty: String?
     let fees: String?
     let pending: Bool
