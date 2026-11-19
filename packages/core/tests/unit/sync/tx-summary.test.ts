@@ -5,11 +5,20 @@
 
 import {describe, expect, it} from 'vitest';
 import {
+  ContractCallPrototype,
+  ContractDeploy,
+  ContractMaintenanceAuthority,
+  ContractOperation,
+  ContractState,
   CostModel,
   Intent,
+  MaintenanceUpdate,
+  ReplaceAuthority,
   Transaction,
   UnshieldedOffer,
+  communicationCommitmentRandomness,
   nativeToken,
+  sampleContractAddress,
   sampleSigningKey,
   signatureVerifyingKey,
   type ProvingProvider,
@@ -28,6 +37,8 @@ import {forks} from '../../../src/sync/ledger-routing.js';
 // A version on each side of the v9 fork, naming which ledger authored the bytes.
 const V8 = ProtocolVersion.MinSupportedVersion;
 const V9 = forks.v9;
+
+const NO_CONTRACT_ACTIONS = {contractActions: 0, contractCalls: 0, contractDeploys: 0, maintenanceUpdates: 0};
 
 const OWNER = 'be5eb2579464f606ed883d18831617302f484e6ce3602b0e2725801b653cd19d';
 const OTHER_TOKEN = 'ab'.repeat(32);
@@ -80,7 +91,7 @@ describe('summarizeConnectorTransaction', () => {
     expect(summarizeConnectorTransaction(bytes, false, V8)).toEqual({
       spends: [{kind: 'unshielded', tokenId: nativeToken().raw, amount: 1_000_000n}],
       receives: [],
-      contractActions: 0,
+      ...NO_CONTRACT_ACTIONS,
     });
   });
 
@@ -90,7 +101,7 @@ describe('summarizeConnectorTransaction', () => {
     expect(summarizeConnectorTransaction(bytes, false, V9)).toEqual({
       spends: [{kind: 'unshielded', tokenId: ledgerV9.nativeToken().raw, amount: 1_000_000n}],
       receives: [],
-      contractActions: 0,
+      ...NO_CONTRACT_ACTIONS,
     });
     // Each ledger version's bytes carry its own header tag, so the other refuses them.
     expect(() => summarizeConnectorTransaction(bytes, false, V8)).toThrow();
@@ -131,14 +142,14 @@ describe('summarizeConnectorTransaction', () => {
     expect(summarizeConnectorTransaction(bytes, false, V8)).toEqual({
       spends: [],
       receives: [{kind: 'unshielded', tokenId: nativeToken().raw, amount: 2_000_000n}],
-      contractActions: 0,
+      ...NO_CONTRACT_ACTIONS,
     });
   });
 
   it('reports nothing for a transaction that is already balanced', async () => {
     const bytes = await unsealedTx([nightInput(1_000_000n)], [{owner: OWNER, type: nativeToken().raw, value: 1_000_000n}]);
 
-    expect(summarizeConnectorTransaction(bytes, false, V8)).toEqual({spends: [], receives: [], contractActions: 0});
+    expect(summarizeConnectorTransaction(bytes, false, V8)).toEqual({spends: [], receives: [], ...NO_CONTRACT_ACTIONS});
   });
 
   it('decodes with the markers the balancing path uses, so the summary matches what gets balanced', async () => {
@@ -148,5 +159,83 @@ describe('summarizeConnectorTransaction', () => {
     // A pre-binding transaction is not a bound one; asking for the wrong stage must fail loudly.
     expect(() => decodeConnectorTransaction(bytes, true, V8)).toThrow();
     expect(() => decodeConnectorTransaction(bytes, true)).toThrow();
+  });
+});
+
+describe('contract actions', () => {
+  async function txWithActions(build: (intent: Intent<never, never, never>) => Intent<never, never, never>) {
+    const intent = build(Intent.new(new Date(Date.now() + 60_000)) as Intent<never, never, never>);
+    const unproven = Transaction.fromParts('preprod', undefined, undefined, intent as never);
+    return (await unproven.prove(noProofs, CostModel.initialCostModel())).serialize();
+  }
+
+  it('counts a call as a call, not a deploy', () => {
+    // Summarized unproven: a real call would need its circuit proven to serialize.
+    const empty = {value: [], alignment: []};
+    const call = new ContractCallPrototype(
+      sampleContractAddress(),
+      'mint',
+      new ContractOperation(),
+      undefined,
+      undefined,
+      [],
+      empty,
+      empty,
+      communicationCommitmentRandomness(),
+      'mint'
+    );
+    const intent = Intent.new(new Date(Date.now() + 60_000)).addCall(call);
+    const tx = Transaction.fromParts('preprod', undefined, undefined, intent);
+
+    expect(summarizeTransaction(tx)).toMatchObject({
+      contractActions: 1,
+      contractCalls: 1,
+      contractDeploys: 0,
+      maintenanceUpdates: 0,
+    });
+  });
+
+  it('counts a deploy as a deploy, not a call', async () => {
+    const bytes = await txWithActions((intent) => intent.addDeploy(new ContractDeploy(new ContractState())) as never);
+
+    expect(summarizeConnectorTransaction(bytes, false, V8)).toMatchObject({
+      contractActions: 1,
+      contractCalls: 0,
+      contractDeploys: 1,
+      maintenanceUpdates: 0,
+    });
+  });
+
+  it('counts a ledger-v9 deploy as a deploy', async () => {
+    // Each ledger version has its own action classes, so a v9 deploy must not fall through to "unrecognised".
+    const intent = ledgerV9.Intent.new(new Date(Date.now() + 60_000)).addDeploy(
+      new ledgerV9.ContractDeploy(new ledgerV9.ContractState()),
+    );
+    const unproven = ledgerV9.Transaction.fromParts('preprod', undefined, undefined, intent);
+    const bytes = (
+      await unproven.prove({...noProofs, lookupKey: async () => undefined}, ledgerV9.CostModel.initialCostModel())
+    ).serialize();
+
+    expect(summarizeConnectorTransaction(bytes, false, V9)).toMatchObject({
+      contractActions: 1,
+      contractCalls: 0,
+      contractDeploys: 1,
+      maintenanceUpdates: 0,
+    });
+  });
+
+  it('counts a maintenance update apart from calls and deploys', async () => {
+    const authority = new ContractMaintenanceAuthority([signatureVerifyingKey(sampleSigningKey())], 1);
+    const update = new MaintenanceUpdate(sampleContractAddress(), [new ReplaceAuthority(authority)], 0n);
+    const bytes = await txWithActions(
+      (intent) => intent.addDeploy(new ContractDeploy(new ContractState())).addMaintenanceUpdate(update) as never
+    );
+
+    expect(summarizeConnectorTransaction(bytes, false, V8)).toMatchObject({
+      contractActions: 2,
+      contractCalls: 0,
+      contractDeploys: 1,
+      maintenanceUpdates: 1,
+    });
   });
 });

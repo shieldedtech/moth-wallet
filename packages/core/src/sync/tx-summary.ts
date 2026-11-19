@@ -43,14 +43,21 @@ export interface TransactionSummary {
   receives: TxTokenAmount[];
   /** Contract calls, deploys and maintenance updates across all intents. */
   contractActions: number;
+  /** `contractActions` by kind, so a deploy is never presented as a call. */
+  contractCalls: number;
+  contractDeploys: number;
+  maintenanceUpdates: number;
 }
 
 /** A token type as both ledger versions describe one. */
 export type SummaryTokenType = {tag: 'shielded' | 'unshielded'; raw: string} | {tag: 'dust'};
 
+/** A contract action as either ledger version describes one. */
+type AnyContractAction = ledgerV8.ContractAction<ledgerV8.Proofish> | ledgerV9.ContractAction<ledgerV9.Proofish>;
+
 /** The members the summary reads; both ledger versions' transactions have them. */
 export interface SummarizableTransaction {
-  readonly intents?: Map<number, {readonly actions: ReadonlyArray<unknown>}>;
+  readonly intents?: Map<number, {readonly actions: ReadonlyArray<AnyContractAction>}>;
   readonly fallibleOffer?: Map<number, unknown>;
   imbalances(segment: number): Map<SummaryTokenType, bigint>;
 }
@@ -156,10 +163,33 @@ export function summarizeTransaction(tx: SummarizableTransaction): TransactionSu
     else if (amount > 0n) receives.push(toTokenAmount(type, amount));
   }
 
-  let contractActions = 0;
-  for (const intent of tx.intents?.values() ?? []) contractActions += intent.actions.length;
+  let contractCalls = 0;
+  let contractDeploys = 0;
+  let maintenanceUpdates = 0;
+  for (const intent of tx.intents?.values() ?? []) {
+    for (const action of intent.actions) {
+      // Each ledger version has its own classes, so a v9 action is no instance of the v8 one.
+      if (action instanceof ledgerV9.ContractCall || action instanceof ledgerV8.ContractCall) contractCalls += 1;
+      else if (action instanceof ledgerV9.ContractDeploy || action instanceof ledgerV8.ContractDeploy) contractDeploys += 1;
+      else if (action instanceof ledgerV9.MaintenanceUpdate || action instanceof ledgerV8.MaintenanceUpdate) {
+        maintenanceUpdates += 1;
+      }
+      else {
+        // A kind a later ledger adds must be named here, not shown as a call.
+        const unknown: never = action;
+        throw new Error(`Unrecognised contract action: ${String(unknown)}`);
+      }
+    }
+  }
 
-  return {spends, receives, contractActions};
+  return {
+    spends,
+    receives,
+    contractActions: contractCalls + contractDeploys + maintenanceUpdates,
+    contractCalls,
+    contractDeploys,
+    maintenanceUpdates,
+  };
 }
 
 /** Decode + summarize in one step, for the connector's approval prompt. */
