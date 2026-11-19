@@ -11,6 +11,7 @@ import {
   dedesignateFromDustWithKeys,
   listNightUtxos,
   clearSyncCache,
+  clearShieldedSyncCache,
   NIGHT_TOKEN_ID,
   DustRegistrationNotYetError,
   type SendRequest,
@@ -557,6 +558,16 @@ export function App({ networkId: networkIdProp }: AppProps) {
                 logs.info(`Sync cache cleared for ${name} on ${network.id} — resyncing from scratch`);
               }).catch((err) => {
                 logs.error(`Clear cache failed: ${err instanceof Error ? err.message : String(err)}`);
+              });
+            }}
+            onRebuildShielded={(name) => {
+              // Same stop, clear, restart order as onClearCache, but only the
+              // shielded part: DUST is kept, so the rescan takes minutes, not an hour.
+              void balance.restart(async () => {
+                await clearShieldedSyncCache(name, network.id);
+                logs.info(`Shielded cache cleared for ${name} on ${network.id} — rescanning shielded coins`);
+              }).catch((err) => {
+                logs.error(`Rebuild shielded failed: ${err instanceof Error ? err.message : String(err)}`);
               });
             }}
             onRevealPhrase={async (name, passphrase) => {

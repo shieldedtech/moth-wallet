@@ -22,6 +22,8 @@ interface KeysProps {
   onSwitch: (name: string) => Promise<void>;
   onRemove: (name: string) => Promise<void>;
   onClearCache: (name: string) => void;
+  /** Rescan only shielded coins, keeping DUST, which is far slower to rebuild. */
+  onRebuildShielded: (name: string) => void;
   /**
    * Recover the wallet's backup secret from the keystore. Takes a passphrase
    * because revealing always goes through the keystore (D-KM-2), never the
@@ -36,7 +38,7 @@ type Mode = 'list' | 'unlock' | 'reveal-confirm' | 'reveal-unlock' | 'reveal-sho
 
 export function Keys({
   wallets, isUnlocked, getAddresses, onUnlock, onLock, onSwitch, onRemove, onClearCache,
-  onRevealPhrase, onCreateNew, onBack,
+  onRebuildShielded, onRevealPhrase, onCreateNew, onBack,
 }: KeysProps) {
   const [mode, setMode] = useState<Mode>('list');
   const createIndex = wallets.length;
@@ -115,6 +117,7 @@ export function Keys({
         out.push({ key: 'p', label: 'reveal phrase' });
         out.push({ key: 'd', label: 'delete' });
         out.push({ key: 'c', label: 'clear cache' });
+        out.push({ key: 's', label: 'rebuild shielded' });
       }
     }
     out.push({ key: 'ESC', label: 'back' });
@@ -210,6 +213,11 @@ export function Keys({
     if (input === 'c') {
       onClearCache(w.name);
       setMessage(`Sync cache cleared for ${w.name}`);
+      return;
+    }
+    if (input === 's') {
+      onRebuildShielded(w.name);
+      setMessage(`Rebuilding shielded coins for ${w.name}`);
       return;
     }
   });
