@@ -28,6 +28,7 @@ vi.mock('../lib/background/approvals', () => ({
   getPendingApproval: vi.fn(),
   resolveApproval: vi.fn(),
   hasPendingApproval: vi.fn(() => false),
+  trackRequester: vi.fn(() => () => {}),
 }));
 
 vi.mock('../lib/background/sync-service', () => ({ beginOp: vi.fn(), endOp: vi.fn() }));

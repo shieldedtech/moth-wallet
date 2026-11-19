@@ -1,0 +1,20 @@
+[package]
+name = "moth-android"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# libmoth_android.so: moth-native's in-app proof server and engine file server, exposed to
+# Kotlin through JNI (app/src/main/java/io/shielded/moth/Native.kt).
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+moth-native = { path = "../../shared/native" }
+jni = "0.21"
+# The prover downloads proving keys over HTTPS (reqwest + rustls-platform-verifier), which on
+# Android checks certificates through the system's verifier and must be given the app context.
+rustls-platform-verifier = "0.6"
+
+[profile.release]
+lto = "thin"

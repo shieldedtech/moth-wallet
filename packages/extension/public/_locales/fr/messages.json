@@ -986,6 +986,9 @@
   "send_sendNow": {
     "message": "Envoyer maintenant"
   },
+  "send_waitingForPrevious": {
+    "message": "En attente de la transaction précédente…"
+  },
   "send_irreversibleNote": {
     "message": "Les transferts sont irréversibles. Vérifiez l'adresse avant d'envoyer."
   },
@@ -1007,6 +1010,9 @@
   "send_feeUnavailable": {
     "message": "Indisponible pour le moment"
   },
+  "send_feeWaiting": {
+    "message": "En attente de la transaction précédente"
+  },
   "send_feeIdle": {
     "message": "Saisissez les détails du transfert"
   },
@@ -1018,6 +1024,9 @@
   },
   "send_feeNoteUnavailable": {
     "message": "Vous pouvez quand même envoyer. Les frais de réseau finaux seront payés en $1."
+  },
+  "send_feeNoteWaiting": {
+    "message": "Votre transaction précédente est encore en cours de confirmation et, d’ici là, retient des pièces dont celle-ci a besoin, comme le $1 des frais. Cet affichage se met à jour tout seul dès qu’elle est confirmée."
   },
   "send_feeNoteIdle": {
     "message": "Ajoutez un montant et une adresse valides pour calculer les frais."
@@ -1535,6 +1544,9 @@
   "network_authHeaderValue": {
     "message": "Valeur de l’en-tête"
   },
+  "network_descLocal": {
+    "message": "local-env de midnight-node sur cette machine"
+  },
   "network_descUndeployed": {
     "message": "Stack devnet local sur cette machine"
   },
@@ -1578,7 +1590,10 @@
     "message": "L’enregistrement paie ses propres frais avec le $1 que génère votre $2, et ce solde est trop faible pour les couvrir. Ajoutez davantage de $2, puis réessayez."
   },
   "network_mainnetHidden": {
-    "message": "Les réseaux à valeur réelle sont masqués. Ce portefeuille n’est ni audité ni pris en charge — activez le mode développeur dans les Réglages pour les afficher."
+    "message": "Les réseaux à valeur réelle sont masqués. Ce portefeuille n’est ni audité ni pris en charge — activez le mode développeur pour les afficher."
+  },
+  "network_enableDeveloperMode": {
+    "message": "Activer le mode développeur"
   },
   "network_valueWarningTitle": {
     "message": "Passer à $1 — fonds réels ?"
@@ -1657,6 +1672,48 @@
   },
   "accounts_revealNoPhraseReason": {
     "message": "Ce compte a été restauré depuis un seed hexadécimal : il n’a donc pas de phrase de récupération, et une phrase ne peut pas être déduite d’un seed. Son seed est la sauvegarde."
+  },
+  "network_protocolTitle": {
+    "message": "Protocole · $1"
+  },
+  "network_protocolVersion": {
+    "message": "Version du protocole"
+  },
+  "network_ledger": {
+    "message": "Ledger"
+  },
+  "network_ledgerV8": {
+    "message": "ledger-v8 · avant le fork v9"
+  },
+  "network_ledgerV9": {
+    "message": "ledger-v9 · depuis le fork v9"
+  },
+  "network_protocolPhase": {
+    "message": "État"
+  },
+  "network_protocolSettled": {
+    "message": "Stabilisé"
+  },
+  "network_protocolCrossing": {
+    "message": "Passage de $1 à $2 · en attente de $3"
+  },
+  "network_walletShielded": {
+    "message": "shielded"
+  },
+  "network_walletUnshielded": {
+    "message": "unshielded"
+  },
+  "network_walletDust": {
+    "message": "DUST"
+  },
+  "network_protocolChecking": {
+    "message": "Lecture du portefeuille…"
+  },
+  "network_protocolUnavailable": {
+    "message": "Connue dès que ce compte se synchronise. La version est celle que rapporte le portefeuille, pas un réglage."
+  },
+  "network_protocolHelp": {
+    "message": "Le portefeuille lit la version du protocole sur la chaîne pendant la synchro, et elle décide pour quel ledger les transactions sont construites : ledger-v8 avant le fork v9, ledger-v9 depuis. Autour d’un fork, les trois portefeuilles passent l’un après l’autre ; tant qu’ils ne l’ont pas tous fait, rien qui couvre les deux côtés ne peut être construit."
   },
   "status_provingLocal": {
     "message": "Proving on this device — a few minutes is normal."

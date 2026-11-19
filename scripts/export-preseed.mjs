@@ -96,10 +96,25 @@ try {
 console.log(`network:  ${network.id}`);
 console.log(`height:   ${height}${staleBy === null ? '' : `  (${staleBy} blocks behind tip at export)`}`);
 
-// Which stream each cursor indexes into. Only shielded and dust ride the
-// indexer's global ledger-event numbering; unshielded is keyed by address, so
-// there is no id to witness.
-const WITNESS_STREAMS = { shielded: 'zswapLedgerEvents', dust: 'dustLedgerEvents' };
+/** The SDK records in `syncKind` which sync saved a DUST snapshot's offset; one without it replayed events. */
+const writtenByProjections = (raw) => {
+  try {
+    return JSON.parse(raw).syncKind === 'projections';
+  } catch {
+    return false;
+  }
+};
+
+// Which stream each cursor indexes into, if any. Mirrors witnessStreamFor in
+// packages/core/src/sync/preseed.ts. Only shielded and event-replayed dust ride
+// the indexer's global ledger-event numbering. Unshielded is keyed by address,
+// and dust the projections sync wrote (from the v9 fork on) has a block height
+// as its offset, which no renumbering moves — neither has an id to witness.
+const witnessStreamFor = (part, raw) => {
+  if (part === 'shielded') return 'zswapLedgerEvents';
+  if (part === 'dust') return writtenByProjections(raw) ? null : 'dustLedgerEvents';
+  return null;
+};
 
 /** The cursor a serialized snapshot resumes from. */
 const cursorOf = (raw) => {
@@ -112,7 +127,12 @@ const cursorOf = (raw) => {
 };
 
 const witnesses = {};
-for (const [part, stream] of Object.entries(WITNESS_STREAMS)) {
+for (const part of PARTS) {
+  const stream = witnessStreamFor(part, states[part]);
+  if (!stream) {
+    if (part === 'dust') console.log(`  ${part.padEnd(11)} synced from projections — offset is a block height, no witness`);
+    continue;
+  }
   const id = cursorOf(states[part]);
   if (!Number.isFinite(id) || id <= 0) {
     console.error(`  ${part.padEnd(11)} cursor is ${id} — refusing to export a reference whose cursor is unusable`);

@@ -16,6 +16,7 @@ The daemon's write-verb pipeline is `parse → approve → build → balance →
 | parse | params don't match the verb's schema | `INVALID_PARAMS` with the field name | log via audit, return |
 | approve | L3 modal denied / scope check fails / timeout | `UNAUTHORIZED` or `TIMEOUT` | audit the denial, no chain side-effects |
 | build | facade can't construct the tx (e.g. unknown contract address, invalid args) | `INVALID_PARAMS` or `INTERNAL_ERROR` from the SDK | audit, return |
+| build | `submitTransaction` hex is a transaction for the other side of the ledger fork, or the wallets crossed it before submission | `PROTOCOL_VERSION_MISMATCH` with the version the wallet is acting at | audit, return; the consumer rebuilds for that version |
 | balance | `Insufficient Funds: could not balance dust` (or NIGHT) | `WALLET_ERROR` with the SDK message preserved | audit, return |
 | prove | proof-server unreachable | `NETWORK_ERROR` after retry budget exhausts | retry-with-backoff (see below) |
 | prove | proof-server returns a malformed / rejected proof | `INTERNAL_ERROR` with the SDK's reason | audit, return |

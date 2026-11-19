@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import type { WalletBalances } from '@shieldedtech/moth-browser';
 import {
   etaDisplay,
   initialSyncDisplayState,
@@ -7,23 +8,45 @@ import {
   SyncStatus,
   syncDisplayReducer,
 } from '../components/moth/sync-status';
+import { syncStatusView } from '../lib/ui/sync-view';
 
 describe('SyncStatus', () => {
   it('names the network-independent DUST wallet in sync progress', () => {
     const html = renderToStaticMarkup(
-      <SyncStatus view={{ shielded: 100, unshielded: 75, dust: 25 }} defaultOpen />,
+      <SyncStatus view={{ shielded: 100, unshielded: 75, dust: 25, overall: 25, synced: false }} defaultOpen />,
     );
 
     expect(html).toContain('>DUST</span>');
     expect(html).not.toContain('tDUST');
   });
 
-  it('shows an initial sync immediately', () => {
+  // Seen on mainnet: the rows' average of 100, 100 and 99 is 99.67, which
+  // rounded to a "Synced" the DUST wallet had not reached.
+  it('does not call itself synced while a row is still short', () => {
     const html = renderToStaticMarkup(
-      <SyncStatus view={{ shielded: 100, unshielded: 75, dust: 25 }} />,
+      <SyncStatus view={{ shielded: 100, unshielded: 100, dust: 99, overall: 99, synced: false }} defaultOpen />,
     );
 
-    expect(html).toContain('aria-label="Syncing, 67%"');
+    expect(html).toContain('aria-label="Syncing, 99%"');
+    expect(html).not.toContain('>Synced</span>');
+  });
+
+  // Rows at 100 passed the old averaging whatever the verdict said.
+  it('follows the verdict, not the rows, for synced', () => {
+    const html = renderToStaticMarkup(
+      <SyncStatus view={{ shielded: 100, unshielded: 100, dust: 100, overall: 99, synced: false }} />,
+    );
+
+    expect(html).toContain('aria-label="Syncing, 99%"');
+    expect(html).not.toContain('>Synced</span>');
+  });
+
+  it('shows an initial sync immediately', () => {
+    const html = renderToStaticMarkup(
+      <SyncStatus view={{ shielded: 100, unshielded: 75, dust: 25, overall: 25, synced: false }} />,
+    );
+
+    expect(html).toContain('aria-label="Syncing, 25%"');
     expect(html).not.toContain('>Synced</span>');
   });
 
@@ -149,7 +172,7 @@ describe('etaDisplay', () => {
 describe('the ETA on screen', () => {
   it('appears beside the percentage while syncing', () => {
     const html = renderToStaticMarkup(
-      <SyncStatus view={{ shielded: 100, unshielded: 75, dust: 25, etaSeconds: 300 }} defaultOpen />,
+      <SyncStatus view={{ shielded: 100, unshielded: 75, dust: 25, overall: 25, synced: false, etaSeconds: 300 }} defaultOpen />,
     );
 
     expect(html).toContain('~5 min left');
@@ -157,7 +180,7 @@ describe('the ETA on screen', () => {
 
   it('is absent when core cannot estimate one', () => {
     const html = renderToStaticMarkup(
-      <SyncStatus view={{ shielded: 100, unshielded: 75, dust: 25, etaSeconds: null }} defaultOpen />,
+      <SyncStatus view={{ shielded: 100, unshielded: 75, dust: 25, overall: 25, synced: false, etaSeconds: null }} defaultOpen />,
     );
 
     expect(html).not.toContain('left');
@@ -166,10 +189,60 @@ describe('the ETA on screen', () => {
   // An ETA beside a completion state reads as a contradiction.
   it('is absent once synced', () => {
     const html = renderToStaticMarkup(
-      <SyncStatus view={{ shielded: 100, unshielded: 100, dust: 100, etaSeconds: 300 }} defaultOpen />,
+      <SyncStatus view={{ shielded: 100, unshielded: 100, dust: 100, overall: 100, synced: true, etaSeconds: 300 }} defaultOpen />,
     );
 
     expect(html).toContain('>Synced</span>');
     expect(html).not.toContain('left');
+  });
+});
+
+describe('syncStatusView', () => {
+  const full = { applied: 500, total: 500 };
+  const balances = (over: {
+    synced: boolean;
+    percentage: number;
+    dust?: { applied: number; total: number };
+    dustSynced?: boolean;
+  }) =>
+    ({
+      synced: over.synced,
+      subProgress: { shielded: full, unshielded: full, dust: over.dust ?? full },
+      syncProgress: {
+        percentage: over.percentage,
+        etaSeconds: null,
+        slowest: null,
+        shieldedSynced: true,
+        unshieldedSynced: true,
+        dustSynced: over.dustSynced ?? true,
+      },
+    }) as unknown as WalletBalances;
+
+  // The indexer connection dropped on a caught-up wallet: the facade's live
+  // verdict goes false and core holds its percentage at 99, but the flags the
+  // rows and the DUST panel read are carried forward. The badge stays with them
+  // rather than spinning at 99% for as long as the outage lasts.
+  it('stays synced with the rows and the DUST panel when only the live verdict drops', () => {
+    const view = syncStatusView(balances({ synced: false, percentage: 0.99 }));
+
+    expect(view).toMatchObject({ shielded: 100, unshielded: 100, dust: 100, synced: true });
+    expect(renderToStaticMarkup(<SyncStatus view={view} />)).toContain('>Synced</span>');
+  });
+
+  it('is not synced while one sub-wallet has yet to complete', () => {
+    const view = syncStatusView(
+      balances({ synced: false, percentage: 0.99, dust: { applied: 4950, total: 5000 }, dustSynced: false }),
+    );
+
+    expect(view).toMatchObject({ shielded: 100, unshielded: 100, dust: 99, overall: 99, synced: false });
+    expect(renderToStaticMarkup(<SyncStatus view={view} />)).toContain('aria-label="Syncing, 99%"');
+  });
+
+  it("takes the overall figure from core's slowest-sub-wallet percentage", () => {
+    const view = syncStatusView(
+      balances({ synced: false, percentage: 0.25, dust: { applied: 125, total: 500 }, dustSynced: false }),
+    );
+
+    expect(view.overall).toBe(25);
   });
 });

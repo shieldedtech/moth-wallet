@@ -6,7 +6,13 @@
 // here; the actual wallet/ledger work (balances, transfers) is delegated to the
 // offscreen document, which owns the WASM.
 
-import type { DesiredInput, DesiredOutput, Configuration, ConnectionStatus } from '@midnight-ntwrk/dapp-connector-api';
+import type {
+  DesiredInput,
+  DesiredOutput,
+  Configuration,
+  ConnectionStatus,
+  Signature,
+} from '@midnightntwrk/dapp-connector-api';
 import type { WalletBalances } from '@shieldedtech/moth-browser';
 import { resolveProverConfig } from '@shieldedtech/moth-wallet/types/network';
 import { onMessage, deserializeBalances } from '../messaging/protocol';
@@ -17,11 +23,17 @@ import {
   connectorError,
   describeCip30Error,
   describeErrorFields,
+  errorCodeFor,
   serializeError,
-  type ErrorCode,
 } from '../connector/errors';
-import { NOT_IMPLEMENTED_METHODS, type ConnectorMethod } from '../connector/constants';
-import type { TransferRequestDTO, SwapInputDTO, ProvingKeyMaterialDTO, TxSummaryDTO } from '../offscreen/messaging';
+import { NOT_IMPLEMENTED_METHODS, isProtocolKeyLocation, type ConnectorMethod } from '../connector/constants';
+import type {
+  TransferRequestDTO,
+  SwapInputDTO,
+  ProvingKeyMaterialDTO,
+  ProvingKeyMaterialRefDTO,
+  TxSummaryDTO,
+} from '../offscreen/messaging';
 import { getSettings, getNetworkConfig } from './settings';
 import { getSession, type Session } from './session';
 import { isAllowed, grant, revoke, listAll } from './permissions';
@@ -31,6 +43,8 @@ import {
   getApproval,
   getPendingApproval,
   resolveApproval,
+  requesterKey,
+  trackRequester,
 } from './approvals';
 import { beginOp, endOp } from './sync-service';
 import { recordActivity } from './auto-lock';
@@ -56,9 +70,11 @@ const APPROVAL_METHODS = new Set<ConnectorMethod>([
 // unlocked wallet instead of starting parallel offscreen sync requests.
 const pendingBalanceSnapshots = new Map<string, Promise<WalletBalances>>();
 
+// Rejects an empty transaction here, before it can reach an approval prompt or
+// start a wallet sync, rather than letting the ledger fail on it later.
 function assertTxHex(hex: string): string {
-  if (!/^[0-9a-fA-F]*$/.test(hex) || hex.length % 2 !== 0) {
-    throw connectorError('InvalidRequest', 'Transaction must be a hex string');
+  if (!/^[0-9a-fA-F]+$/.test(hex) || hex.length % 2 !== 0) {
+    throw connectorError('InvalidRequest', 'Transaction must be a non-empty hex string');
   }
   return hex;
 }
@@ -70,16 +86,30 @@ function assertBytes(value: unknown, label: string): Uint8Array {
   return value;
 }
 
-function assertKeyMaterial(value: unknown): ProvingKeyMaterialDTO {
+function assertSha256(value: unknown, label: string): string {
+  if (typeof value !== 'string' || !/^[0-9a-f]{64}$/.test(value)) {
+    throw connectorError('InvalidRequest', `${label} must be a lowercase hex SHA-256`);
+  }
+  return value;
+}
+
+function assertKeyMaterial(
+  value: unknown,
+  keyLocation: string,
+): ProvingKeyMaterialDTO | ProvingKeyMaterialRefDTO | null {
+  // The wallet supplies the ledger's own circuits; a dApp sends the keys of its contract's.
+  if (value === null && isProtocolKeyLocation(keyLocation)) return null;
   if (!value || typeof value !== 'object') {
     throw connectorError('InvalidRequest', 'Proving key material is required');
   }
-  const material = value as Partial<ProvingKeyMaterialDTO>;
-  return {
-    zkir: assertBytes(material.zkir, 'ZKIR'),
-    proverKey: assertBytes(material.proverKey, 'Prover key'),
-    verifierKey: assertBytes(material.verifierKey, 'Verifier key'),
-  };
+  const material = value as Partial<ProvingKeyMaterialDTO & ProvingKeyMaterialRefDTO>;
+  const zkir = assertBytes(material.zkir, 'ZKIR');
+  const verifierKey = assertBytes(material.verifierKey, 'Verifier key');
+  // A prover key the page has sent before travels as its hash only.
+  if (material.proverKey === undefined && material.proverKeySha256 !== undefined) {
+    return { zkir, verifierKey, proverKeySha256: assertSha256(material.proverKeySha256, 'Prover key hash') };
+  }
+  return { zkir, verifierKey, proverKey: assertBytes(material.proverKey, 'Prover key') };
 }
 
 function toWsUrl(url: string): string {
@@ -109,11 +139,12 @@ async function ensureConnected(
   networkId: string,
   senderTabId?: number,
   preparedPanel?: Promise<boolean>,
+  requester?: string,
 ): Promise<void> {
   const allowed = await isAllowed(origin);
   const session = await getSession();
   if (!allowed || !session) {
-    const approved = await requestApproval('connect', origin, { networkId }, senderTabId, preparedPanel);
+    const approved = await requestApproval('connect', origin, { networkId }, senderTabId, preparedPanel, requester);
     if (!approved) throw connectorError('Rejected', 'User rejected the connection request');
     await requireSession();
   }
@@ -193,6 +224,7 @@ async function balance(
   params: unknown[],
   senderTabId?: number,
   preparedPanel?: Promise<boolean>,
+  requester?: string,
 ): Promise<{ tx: string }> {
   const session = await requireConnected(origin);
   const tx = assertTxHex(String(params[0] ?? ''));
@@ -212,7 +244,7 @@ async function balance(
     summary = null;
   }
   const payload: BalanceApprovalPayload = { sealed, payFees, summary };
-  const approved = await requestApproval('balance', origin, payload, senderTabId, preparedPanel);
+  const approved = await requestApproval('balance', origin, payload, senderTabId, preparedPanel, requester);
   if (!approved) throw connectorError('Rejected', 'User rejected the transaction');
 
   const { txHex } = await offscreen.balanceTransaction({
@@ -239,17 +271,20 @@ export async function dispatch(
   method: ConnectorMethod,
   params: unknown[],
   senderTabId?: number,
+  requester?: string,
 ): Promise<unknown> {
   const preparedPanel = APPROVAL_METHODS.has(method) ? prepareApprovalPanel(senderTabId) : undefined;
+  const releaseRequester = trackRequester(requester);
   beginOp();
   try {
-    const result = await dispatchMethod(origin, method, params, senderTabId, preparedPanel);
+    const result = await dispatchMethod(origin, method, params, senderTabId, preparedPanel, requester);
     // A connected dApp talking to the wallet is usually the user at work, even with
     // the panel closed, so it extends the session — up to a ceiling (auto-lock.ts).
     if (await isAllowed(origin)) await recordActivity(Date.now(), { byUser: false });
     return result;
   } finally {
     endOp();
+    releaseRequester();
   }
 }
 
@@ -259,13 +294,14 @@ async function dispatchMethod(
   params: unknown[],
   senderTabId?: number,
   preparedPanel?: Promise<boolean>,
+  requester?: string,
 ): Promise<unknown> {
   // CIP-30 shares this transport and its origin permissions, but not its
   // method namespace: `cardano.*` is the Cardano bridge, everything else is the
   // Midnight connector. Two wallets behind one relay, deliberately separate so
   // a dApp on one chain can never reach the other's methods.
   if (method.startsWith('cardano.')) {
-    return dispatchCip30(origin, method.slice('cardano.'.length), params, senderTabId);
+    return dispatchCip30(origin, method.slice('cardano.'.length), params, senderTabId, requester);
   }
 
   if ((NOT_IMPLEMENTED_METHODS as readonly string[]).includes(method)) {
@@ -279,7 +315,7 @@ async function dispatchMethod(
       if (networkId !== settings.network) {
         throw connectorError('InvalidRequest', `Wallet is connected to "${settings.network}", not "${networkId}"`);
       }
-      await ensureConnected(origin, networkId, senderTabId, preparedPanel);
+      await ensureConnected(origin, networkId, senderTabId, preparedPanel, requester);
       return true;
     }
 
@@ -291,7 +327,7 @@ async function dispatchMethod(
       // (spec: "resolve the promise only after the user has granted the
       // permissions"). Already-connected origins resolve without a prompt.
       const settings = await getSettings();
-      await ensureConnected(origin, settings.network, senderTabId, preparedPanel);
+      await ensureConnected(origin, settings.network, senderTabId, preparedPanel, requester);
       return undefined;
     }
 
@@ -335,10 +371,10 @@ async function dispatchMethod(
       if (typeof keyLocation !== 'string' || keyLocation === '') {
         throw connectorError('InvalidRequest', 'Circuit key location must be a non-empty string');
       }
-      const keyMaterial = assertKeyMaterial(params[2]);
+      const keyMaterial = assertKeyMaterial(params[2], keyLocation);
       const network = await getNetworkConfig();
       if (method === 'provingProviderCheck') {
-        return offscreen.provingProviderCheck({network, serializedPreimage, keyLocation, keyMaterial});
+        return offscreen.provingProviderCheck({network, origin, serializedPreimage, keyLocation, keyMaterial});
       }
       const overwriteBindingInput = params[3];
       if (overwriteBindingInput !== undefined && typeof overwriteBindingInput !== 'bigint') {
@@ -346,10 +382,30 @@ async function dispatchMethod(
       }
       return offscreen.provingProviderProve({
         network,
+        origin,
         serializedPreimage,
         keyLocation,
         keyMaterial,
         overwriteBindingInput,
+      });
+    }
+
+    case 'proverKeyPut': {
+      await requireConnected(origin);
+      const [sha256, uploadId, index, count, chunk] = params;
+      if (typeof uploadId !== 'string' || uploadId === '' || uploadId.length > 64) {
+        throw connectorError('InvalidRequest', 'Prover key upload needs an upload id');
+      }
+      if (!Number.isInteger(index) || !Number.isInteger(count)) {
+        throw connectorError('InvalidRequest', 'Prover key upload needs an integer chunk index and count');
+      }
+      return offscreen.proverKeyPut({
+        origin,
+        sha256: assertSha256(sha256, 'Prover key hash'),
+        uploadId,
+        index: index as number,
+        count: count as number,
+        chunk: assertBytes(chunk, 'Prover key chunk'),
       });
     }
 
@@ -431,12 +487,14 @@ async function dispatchMethod(
         { encoding, message: data },
         senderTabId,
         preparedPanel,
+        requester,
       );
       if (!approved) throw connectorError('Rejected', 'User rejected the signing request');
 
       const network = await getNetworkConfig();
       try {
-        return await offscreen.signData({ seedHex: session.seedHex, network, data, encoding });
+        const signed: Signature = await offscreen.signData({ seedHex: session.seedHex, network, data, encoding });
+        return signed;
       } catch (err) {
         // The realistic failure here is malformed hex/base64 input.
         throw connectorError('InvalidRequest', (err as Error).message ?? 'Failed to sign data');
@@ -468,6 +526,7 @@ async function dispatchMethod(
         { domain },
         senderTabId,
         preparedPanel,
+        requester,
       );
       if (!approved) throw connectorError('Rejected', 'User rejected the derivation request');
 
@@ -478,10 +537,10 @@ async function dispatchMethod(
     }
 
     case 'balanceSealedTransaction':
-      return balance(origin, true, params, senderTabId, preparedPanel);
+      return balance(origin, true, params, senderTabId, preparedPanel, requester);
 
     case 'balanceUnsealedTransaction':
-      return balance(origin, false, params, senderTabId, preparedPanel);
+      return balance(origin, false, params, senderTabId, preparedPanel, requester);
 
     case 'makeIntent': {
       const session = await requireConnected(origin);
@@ -514,6 +573,7 @@ async function dispatchMethod(
         } satisfies TransferApprovalPayload,
         senderTabId,
         preparedPanel,
+        requester,
       );
       if (!approved) throw connectorError('Rejected', 'User rejected the transaction');
 
@@ -552,6 +612,7 @@ async function dispatchMethod(
         } satisfies TransferApprovalPayload,
         senderTabId,
         preparedPanel,
+        requester,
       );
       if (!approved) throw connectorError('Rejected', 'User rejected the transfer');
 
@@ -604,7 +665,7 @@ export function registerConnectorHandlers(): void {
     }
     try {
       const params = decodeBigintJson<unknown[]>(data.paramsJson);
-      const result = await dispatch(origin, data.method as ConnectorMethod, params, sender?.tab?.id);
+      const result = await dispatch(origin, data.method as ConnectorMethod, params, sender?.tab?.id, requesterKey(sender));
       return { ok: true as const, resultJson: encodeBigintJson(result ?? null) };
     } catch (err) {
       // A CIP-30 error is a plain object with a NUMERIC code (or only
@@ -615,7 +676,7 @@ export function registerConnectorHandlers(): void {
         const reason = describeCip30Error(cip30);
         return { ok: false as const, error: { ...serializeError('InternalError', reason), cip30 } };
       }
-      const code: ErrorCode = (err as { code?: ErrorCode }).code ?? 'InternalError';
+      const code = errorCodeFor(err);
       const base = (err as { reason?: string; message?: string }).reason ?? (err as Error).message ?? String(err);
       // Fold the error's structured fields into the reason. Without this a DApp
       // only ever sees the message, and SDK errors keep the useful part (e.g.
@@ -690,6 +751,7 @@ async function dispatchCip30(
   method: string,
   params: unknown[],
   senderTabId?: number,
+  requester?: string,
 ): Promise<unknown> {
   const { requireCardano } = await import('./cardano-session');
 
@@ -697,7 +759,7 @@ async function dispatchCip30(
 
   if (method === 'enable') {
     const settings = await getSettings();
-    await ensureConnected(origin, settings.network, senderTabId);
+    await ensureConnected(origin, settings.network, senderTabId, undefined, requester);
     // Fail here rather than at the first getBalance: a dApp that enabled
     // successfully reasonably assumes the wallet can answer.
     await requireCardano(false);
@@ -736,6 +798,8 @@ async function dispatchCip30(
         preview,
       } satisfies CardanoSignApprovalPayload,
       senderTabId,
+      undefined,
+      requester,
     );
     if (!approved) {
       // Each signing method has its own "user said no" code; APIError.Refused

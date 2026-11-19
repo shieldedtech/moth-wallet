@@ -1,3 +1,4 @@
+import { isValidElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import {
@@ -7,6 +8,7 @@ import {
 } from '@shieldedtech/moth-wallet/types/network';
 import { t } from '../lib/i18n';
 import {
+  ProtocolCard,
   NETWORK_DESCRIPTIONS,
   NETWORK_LABELS,
   NetworkFields,
@@ -64,6 +66,7 @@ const networkState = (over: Partial<NetworkConfigState> = {}): NetworkConfigStat
   setProverType: vi.fn(),
   editProverUrl: vi.fn(),
   resetEndpoints: vi.fn(),
+  enableDeveloperMode: vi.fn(),
   save: vi.fn(),
   ...over,
 });
@@ -140,7 +143,8 @@ describe('value-bearing networks', () => {
       developerMode: false, available: selectableNetworks(false, 'preprod'),
       needsValueWarning: false,
       pick: vi.fn(), edit: vi.fn(() => vi.fn()), editAuthHeader: vi.fn(() => vi.fn()),
-      setProverType: vi.fn(), editProverUrl: vi.fn(), resetEndpoints: vi.fn(), save: vi.fn(),
+      setProverType: vi.fn(), editProverUrl: vi.fn(), resetEndpoints: vi.fn(),
+      enableDeveloperMode: vi.fn(), save: vi.fn(),
       ...over,
     }) as NetworkConfigState;
 
@@ -164,11 +168,115 @@ describe('value-bearing networks', () => {
     expect(html).toContain('unaudited and unsupported');
   });
 
+  // Setup renders this picker before any account exists, when there is no
+  // Settings screen to reach, so the notice must carry its own way out.
+  it('offers to turn developer mode on from the notice itself', () => {
+    const state = base({});
+    const html = renderToStaticMarkup(<NetworkFields state={state} />);
+    expect(html).toContain(escaped(t('network_enableDeveloperMode')));
+    expect(html).not.toContain('in Settings');
+
+    const button = findElement(
+      NetworkFields({ state }),
+      (element) => element.type === 'button' && element.props.children === t('network_enableDeveloperMode'),
+    );
+    expect(button, 'no developer-mode button in the notice').toBeDefined();
+    (button!.props.onClick as () => void)();
+    expect(state.enableDeveloperMode).toHaveBeenCalledOnce();
+  });
+
+  // A plain button inside role="radiogroup" is announced as one of the choices.
+  it('keeps the developer-mode button out of the network radiogroup', () => {
+    const tree = NetworkFields({ state: base({}) });
+    const group = findElement(tree, (element) => element.props.role === 'radiogroup');
+    expect(group?.props['aria-label']).toBe(t('network_groupAria'));
+    const inside = findElement(group!.props.children, (element) => element.type === 'button');
+    expect(inside).toBeUndefined();
+  });
+
   it('drops the notice when nothing is being withheld', () => {
     const html = renderToStaticMarkup(
       <NetworkFields state={base({ developerMode: true, available: selectableNetworks(true, 'preprod') })} />,
     );
     expect(html).toContain('Mainnet');
     expect(html).not.toContain('unaudited and unsupported');
+    expect(html).not.toContain(escaped(t('network_enableDeveloperMode')));
+  });
+});
+
+type ElementLike = { type: unknown; props: Record<string, unknown> };
+
+/** Depth-first search of a rendered element tree, without a DOM: NetworkFields
+ *  holds no hooks, so calling it returns the tree its handlers are attached to. */
+function findElement(node: unknown, match: (element: ElementLike) => boolean): ElementLike | undefined {
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      const found = findElement(child, match);
+      if (found) return found;
+    }
+    return undefined;
+  }
+  if (!isValidElement(node)) return undefined;
+  const element = node as ElementLike;
+  return match(element) ? element : findElement(element.props.children, match);
+}
+
+describe('ProtocolCard', () => {
+  it('shows the version the wallet SDK reports, the ledger it implies and a settled status', () => {
+    const html = renderToStaticMarkup(
+      <ProtocolCard
+        networkName="Devnet"
+        protocol={{
+          status: 'known',
+          info: {
+            version: 2_000_000,
+            ledger: 'v9',
+            phase: { kind: 'settled' },
+            wallets: { shielded: 2_000_000, unshielded: 2_000_000, dust: 2_000_000 },
+          },
+        }}
+      />,
+    );
+    expect(html).toContain(escaped(t('network_protocolTitle', ['Devnet'])));
+    expect(html).toContain('2000000');
+    expect(html).toContain(escaped(t('network_ledgerV9')));
+    expect(html).toContain(escaped(t('network_protocolSettled')));
+  });
+
+  it('names ledger-v8 below the fork and says which wallets are still crossing', () => {
+    const html = renderToStaticMarkup(
+      <ProtocolCard
+        networkName="Preprod"
+        protocol={{
+          status: 'known',
+          info: {
+            version: 1_000_000,
+            ledger: 'v8',
+            phase: { kind: 'crossing', from: 1_000_000, to: 2_000_000, behind: ['shielded', 'dust'] },
+            wallets: { shielded: 1_000_000, unshielded: 2_000_000, dust: 1_000_000 },
+          },
+        }}
+      />,
+    );
+    expect(html).toContain(escaped(t('network_ledgerV8')));
+    expect(html).not.toContain(escaped(t('network_ledgerV9')));
+    expect(html).toContain(
+      escaped(
+        t('network_protocolCrossing', [
+          '1000000',
+          '2000000',
+          [t('network_walletShielded'), t('network_walletDust')].join(', '),
+        ]),
+      ),
+    );
+  });
+
+  it('says so while the wallet is being asked, and when no sync session is up', () => {
+    expect(renderToStaticMarkup(<ProtocolCard networkName="Devnet" protocol={{ status: 'checking' }} />)).toContain(
+      escaped(t('network_protocolChecking')),
+    );
+    const unavailable = renderToStaticMarkup(<ProtocolCard networkName="Devnet" protocol={{ status: 'unavailable' }} />);
+    expect(unavailable).toContain(escaped(t('network_protocolUnavailable')));
+    expect(unavailable).not.toContain(escaped(t('network_protocolVersion')));
   });
 });

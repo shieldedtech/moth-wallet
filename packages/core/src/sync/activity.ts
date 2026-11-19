@@ -8,6 +8,17 @@
 
 import type {WalletEntry} from '@midnightntwrk/wallet-sdk/facade';
 
+/**
+ * The execution status of an entry. The indexer reports one once the transaction
+ * is applied; an entry the wallet recorded itself carries only its lifecycle, so
+ * a rejection reads as a failure and everything else as a success until the chain
+ * says otherwise.
+ */
+function statusOf(entry: WalletEntry): ActivityStatus {
+  if (entry.status) return entry.status;
+  return entry.lifecycle?.status === 'rejected' ? 'FAILURE' : 'SUCCESS';
+}
+
 export type ActivityKind = 'sent' | 'received' | 'swap' | 'dust';
 export type ActivityStatus = 'SUCCESS' | 'FAILURE' | 'PARTIAL_SUCCESS';
 
@@ -34,7 +45,7 @@ export interface ActivityEntry {
   counterparty: string | null;
   /** DUST paid in fees, when the indexer reported it. */
   fees: bigint | null;
-  /** True for a locally-submitted transaction not yet seen on chain. */
+  /** True for a submitted transaction the chain has not yet applied. */
   pending: boolean;
   /** Number of outgoing destination outputs the wallet can see — how many
    *  transfers a single (possibly batched) transaction carried. Counts
@@ -114,13 +125,13 @@ export function deriveActivityEntry(entry: WalletEntry, ownAddress: string): Act
     hash: entry.hash,
     identifiers: entry.identifiers ? [...entry.identifiers] : undefined,
     kind,
-    status: entry.status,
+    status: statusOf(entry),
     timestamp: entry.timestamp ?? null,
     deltas: net,
     dustDelta,
     counterparty: kind === 'sent' || kind === 'swap' ? recipient : kind === 'received' ? sender : null,
     fees: entry.fees ?? null,
-    pending: false,
+    pending: entry.lifecycle?.status === 'pending',
     outputs,
   };
 }

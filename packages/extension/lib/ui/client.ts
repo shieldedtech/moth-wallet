@@ -10,6 +10,7 @@ import {
   deserializeBalances,
   BALANCES_PORT,
   type SessionStatus,
+  type PanelReport,
   type PortEvent,
   type RelayState,
 } from '../messaging/protocol';
@@ -320,6 +321,7 @@ export function usePanelEvents(): PanelEvents {
       } catch {
         return; // extension context invalidated — this page is going away
       }
+      reportVisibility();
       port.onMessage.addListener((raw) => {
         const event = raw as PortEvent;
         if (event.kind === 'balances') {
@@ -352,10 +354,22 @@ export function usePanelEvents(): PanelEvents {
       });
     };
 
+    // Another extension's panel hides this one without closing it; the background
+    // must know, or it would send a dApp prompt here where nobody can see it.
+    const reportVisibility = () => {
+      try {
+        port?.postMessage({ kind: 'visibility', visible: document.visibilityState === 'visible' } satisfies PanelReport);
+      } catch {
+        /* port closed; the reconnect reports again */
+      }
+    };
+    document.addEventListener('visibilitychange', reportVisibility);
+
     connect();
 
     return () => {
       cancelled = true;
+      document.removeEventListener('visibilitychange', reportVisibility);
       if (retry !== null) clearTimeout(retry);
       try {
         port?.disconnect();
