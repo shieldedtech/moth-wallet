@@ -4,6 +4,8 @@ import type { SyncStateStore } from '@shieldedtech/moth-wallet/sync/sync-store';
 import {
   SUBMISSIONS_MAX,
   SUBMISSION_PENDING_TTL_MS,
+  connectorSubmission,
+  forgetSubmissions,
   loadSubmissions,
   mergeSubmissions,
   recordSubmission,
@@ -166,6 +168,26 @@ describe('mergeSubmissions', () => {
     ]);
   });
 
+  // The SDK writes its own pending entry for every submission, holding only a
+  // hash. The record must fill that row in, never stand beside it as a second one.
+  it('fills in the pending entry history already holds for the submission', () => {
+    const pending = chainEntry({ kind: 'dust', pending: true });
+    const { entries } = mergeSubmissions([pending], [submission({})], NOW);
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ kind: 'sent', pending: true, counterparty: 'mn_addr1recipient' });
+    expect(entries[0]?.deltas).toEqual([{ tokenType: TOKEN, kind: 'unshielded', amount: -120_000_000n }]);
+  });
+
+  it('keeps the amount on an entry history marked rejected, and its failure', () => {
+    const rejected = chainEntry({ kind: 'dust', status: 'FAILURE' });
+    const { entries } = mergeSubmissions([rejected], [submission({})], NOW);
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ kind: 'sent', status: 'FAILURE', pending: false });
+    expect(entries[0]?.deltas[0]?.amount).toBe(-120_000_000n);
+  });
+
   it('prunes a submission unseen on chain past the pending TTL', () => {
     const stale = submission({ submittedAt: NOW - SUBMISSION_PENDING_TTL_MS - 1 });
     const { entries, prune } = mergeSubmissions([], [stale], NOW);
@@ -214,6 +236,46 @@ describe('submission storage', () => {
     expect(loaded[0]?.hash).toBe('5'.padEnd(64, 'c'));
   });
 
+  it('loses neither write when two interleave', async () => {
+    // A store whose reads and writes each take a turn of the event loop, as
+    // IndexedDB does, so unserialized load-then-save passes would overlap.
+    class SlowStore extends MemoryStore {
+      override async get(key: string) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        return super.get(key);
+      }
+      override async put(key: string, value: string) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        return super.put(key, value);
+      }
+    }
+    const store = new SlowStore();
+    await recordSubmission(store, 'devnet', 'alice', submission({ hash: 'a'.repeat(64) }));
+
+    await Promise.all([
+      forgetSubmissions(store, 'devnet', 'alice', ['a'.repeat(64)]),
+      recordSubmission(store, 'devnet', 'alice', submission({ hash: 'b'.repeat(64) })),
+      recordSubmission(store, 'devnet', 'alice', submission({ hash: 'c'.repeat(64) })),
+    ]);
+
+    const loaded = await loadSubmissions(store, 'devnet', 'alice');
+    expect(loaded.map((tx) => tx.hash[0])).toEqual(['b', 'c']);
+  });
+
+  it('keeps writing after a store failure', async () => {
+    const store = new MemoryStore();
+    const put = store.put.bind(store);
+    store.put = async () => {
+      throw new Error('quota');
+    };
+    await expect(recordSubmission(store, 'devnet', 'alice', submission({}))).rejects.toThrow('quota');
+
+    store.put = put;
+    await recordSubmission(store, 'devnet', 'alice', submission({}));
+
+    expect(await loadSubmissions(store, 'devnet', 'alice')).toHaveLength(1);
+  });
+
   it('treats a corrupted payload as empty', async () => {
     const store = new MemoryStore();
     await store.put(submissionsKey('devnet', 'alice'), '{not json');
@@ -223,5 +285,65 @@ describe('submission storage', () => {
   it('keys submissions per wallet and network', () => {
     expect(submissionsKey('devnet', 'alice')).not.toBe(submissionsKey('preprod', 'alice'));
     expect(submissionsKey('devnet', 'alice')).not.toBe(submissionsKey('devnet', 'bob'));
+  });
+});
+
+describe('connectorSubmission', () => {
+  const HASH = 'c'.repeat(64);
+
+  it('records only the hash when nothing was prepared', () => {
+    expect(connectorSubmission(HASH, undefined, NOW)).toEqual({
+      hash: HASH,
+      transactionHash: HASH,
+      submittedAt: NOW,
+      kind: 'send',
+    });
+  });
+
+  it('takes the amount from a lone non-DUST deficit the wallet covered', () => {
+    // A contract call that takes 100 NIGHT: the balancing summary shows the
+    // NIGHT deficit plus the DUST the fee needs. Only the NIGHT is the row.
+    const tx = connectorSubmission(
+      HASH,
+      {
+        spends: [
+          { kind: 'unshielded', tokenId: TOKEN, amount: '100000000' },
+          { kind: 'dust', tokenId: '', amount: '5' },
+        ],
+      },
+      NOW,
+    );
+
+    expect(tx).toMatchObject({ kind: 'send', tokenType: TOKEN, tokenKind: 'unshielded', amount: '100000000' });
+    expect(tx.to).toBeUndefined();
+  });
+
+  it('shows no single amount for a mixed-token spend', () => {
+    const tx = connectorSubmission(
+      HASH,
+      {
+        spends: [
+          { kind: 'unshielded', tokenId: TOKEN, amount: '1' },
+          { kind: 'shielded', tokenId: '1'.repeat(64), amount: '2' },
+        ],
+      },
+      NOW,
+    );
+
+    expect(tx.amount).toBeUndefined();
+    expect(tx.tokenType).toBeUndefined();
+  });
+
+  it('keeps the recipient and size of a transfer the wallet built itself', () => {
+    const tx = connectorSubmission(
+      HASH,
+      {
+        spends: [{ kind: 'shielded', tokenId: TOKEN, amount: '7' }],
+        transfer: { to: 'mn_addr1recipient', outputs: 1 },
+      },
+      NOW,
+    );
+
+    expect(tx).toMatchObject({ to: 'mn_addr1recipient', outputs: 1, tokenKind: 'shielded', amount: '7' });
   });
 });

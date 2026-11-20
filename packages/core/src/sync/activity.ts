@@ -19,6 +19,17 @@ function statusOf(entry: WalletEntry): ActivityStatus {
   return entry.lifecycle?.status === 'rejected' ? 'FAILURE' : 'SUCCESS';
 }
 
+/**
+ * When the entry happened. Only an applied transaction has a block time; one the
+ * wallet recorded itself is dated by when it was submitted, or given up on.
+ */
+function timestampOf(entry: WalletEntry): Date | null {
+  if (entry.timestamp) return entry.timestamp;
+  if (entry.lifecycle?.status === 'pending') return entry.lifecycle.submittedAt;
+  if (entry.lifecycle?.status === 'rejected') return entry.lifecycle.rejectedAt;
+  return null;
+}
+
 export type ActivityKind = 'sent' | 'received' | 'swap' | 'dust';
 export type ActivityStatus = 'SUCCESS' | 'FAILURE' | 'PARTIAL_SUCCESS';
 
@@ -132,7 +143,7 @@ export function deriveActivityEntry(entry: WalletEntry, ownAddress: string): Act
     identifiers: entry.identifiers ? [...entry.identifiers] : undefined,
     kind,
     status: statusOf(entry),
-    timestamp: entry.timestamp ?? null,
+    timestamp: timestampOf(entry),
     deltas: net,
     dustDelta,
     paidFee: (entry.dust?.spentUtxos?.length ?? 0) > 0,

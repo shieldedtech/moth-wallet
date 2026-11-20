@@ -323,7 +323,16 @@ describe('DUST operations on a fresh wallet', () => {
       submitTransaction: vi.fn().mockResolvedValue('tx-id'),
     } as unknown as Partial<WalletFacade>);
 
-    await expect(dedesignateFromDust(facade, seedHex, 'devnet')).resolves.toBe('tx-hash');
+    const stages: TxStage[] = [];
+    // The proof is the long step, so the stage shown while it runs must say so.
+    finalizeRecipe.mockImplementation(async () => {
+      expect(stages).toEqual(['building', 'proving']);
+      return finalized;
+    });
+    await expect(
+      dedesignateFromDust(facade, seedHex, 'devnet', (stage) => stages.push(stage)),
+    ).resolves.toBe('tx-hash');
+    expect(stages).toEqual(['building', 'proving', 'submitting']);
     expect(deregisterFromDustGeneration).toHaveBeenCalledWith([coin], expect.anything(), expect.any(Function));
     expect(balanceUnprovenTransaction).toHaveBeenCalledWith(recipe.transaction, { ttl: expect.any(Date) });
     expect(finalizeRecipe).toHaveBeenCalledWith(balanced);

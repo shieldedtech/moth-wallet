@@ -1,10 +1,10 @@
-// Locally-submitted transactions, persisted next to the sync state. A
-// submission reaches on-chain history only once the indexer reports it applied;
-// recording what we submitted bridges that gap: the activity feed shows it as
-// pending immediately, and keeps the recipient visible after it lands (a chain
-// entry alone may not reveal the counterparty). Stored per wallet + network in
-// the same store as the serialized sync state, so it survives session restarts
-// alongside it.
+// What the wallet knew about a transaction when it submitted it, persisted next
+// to the sync state. The SDK's history says whether a submission is pending,
+// applied or rejected, but its own entry for one carries only a hash; this
+// record supplies the recipient and amount the row shows, and keeps the
+// recipient visible after the transaction lands (a chain entry alone may not
+// reveal the counterparty). Stored per wallet + network in the same store as
+// the serialized sync state, so it survives session restarts alongside it.
 //
 // WASM-free: type-only imports plus the pure activity helpers.
 
@@ -12,7 +12,7 @@ import { sortActivity, type ActivityEntry } from '@shieldedtech/moth-wallet/sync
 import type { SyncStateStore } from '@shieldedtech/moth-wallet/sync/sync-store';
 
 export interface SubmittedTx {
-  /** Stable logical identifier returned by the wallet facade. */
+  /** The submitted transaction's hash, or the facade's logical identifier for it. */
   hash: string;
   /** Hash of the finalized transaction submitted to the node. */
   transactionHash?: string;
@@ -62,17 +62,80 @@ export async function saveSubmissions(
   await store.put(submissionsKey(networkId, walletName), JSON.stringify(submissions.slice(-SUBMISSIONS_MAX)));
 }
 
-export async function recordSubmission(
+// Each write is a read followed by a put, so two of them interleaving would
+// drop one another's change. They run one at a time per key.
+const writes = new Map<string, Promise<void>>();
+
+function updateSubmissions(
+  store: SyncStateStore,
+  networkId: string,
+  walletName: string,
+  update: (existing: SubmittedTx[]) => SubmittedTx[],
+): Promise<void> {
+  const key = submissionsKey(networkId, walletName);
+  const run = (writes.get(key) ?? Promise.resolve()).then(async () => {
+    await saveSubmissions(store, networkId, walletName, update(await loadSubmissions(store, networkId, walletName)));
+  });
+  const settled = run.catch(() => {});
+  writes.set(key, settled);
+  void settled.then(() => {
+    if (writes.get(key) === settled) writes.delete(key);
+  });
+  return run;
+}
+
+export function recordSubmission(
   store: SyncStateStore,
   networkId: string,
   walletName: string,
   tx: SubmittedTx,
 ): Promise<void> {
-  const existing = await loadSubmissions(store, networkId, walletName);
-  await saveSubmissions(store, networkId, walletName, [
+  return updateSubmissions(store, networkId, walletName, (existing) => [
     ...existing.filter((s) => s.hash !== tx.hash),
     tx,
   ]);
+}
+
+/** Drop the records for `hashes`: stale ones, or one whose transaction was never sent. */
+export function forgetSubmissions(
+  store: SyncStateStore,
+  networkId: string,
+  walletName: string,
+  hashes: readonly string[],
+): Promise<void> {
+  return updateSubmissions(store, networkId, walletName, (existing) =>
+    existing.filter((s) => !hashes.includes(s.hash)),
+  );
+}
+
+/** What the wallet learned about a connector transaction before the dApp asked
+ *  it to submit: the deficits it covered when balancing, or the transfer it
+ *  built. Fees are never part of it. */
+export interface PreparedSubmission {
+  spends: Array<{ kind: 'shielded' | 'unshielded' | 'dust'; tokenId: string; amount: string }>;
+  /** Set when the wallet built the transfer itself (connector makeTransfer). */
+  transfer?: { to?: string; outputs: number };
+}
+
+/**
+ * The record for a connector-submitted transaction. A lone non-DUST spend is
+ * the amount the row shows; a mixed spend has no single figure, and a DUST-only
+ * transaction (a contract call paying just its fee) is a plain send until the
+ * chain entry says what it was. Without preparation only the hash is known.
+ */
+export function connectorSubmission(hash: string, prepared: PreparedSubmission | undefined, now: number): SubmittedTx {
+  const base: SubmittedTx = { hash, transactionHash: hash, submittedAt: now, kind: 'send' };
+  if (!prepared) return base;
+  const tokens = prepared.spends.filter(
+    (spend): spend is typeof spend & { kind: 'shielded' | 'unshielded' } => spend.kind !== 'dust',
+  );
+  const single = tokens.length === 1 ? tokens[0] : undefined;
+  return {
+    ...base,
+    to: prepared.transfer?.to,
+    outputs: prepared.transfer?.outputs,
+    ...(single ? { tokenType: single.tokenId, tokenKind: single.kind, amount: single.amount } : {}),
+  };
 }
 
 /** Turn a not-yet-applied submission into a provisional activity entry. */
