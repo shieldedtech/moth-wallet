@@ -220,6 +220,29 @@ export interface SubWalletSyncProgress {
 export interface ShieldedCoinInfo {
   value: bigint;
   type: string;
+  /** Coin nonce. With `type`, `value` and `mtIndex` it is the `QualifiedShieldedCoinInfo` a circuit spends. */
+  nonce?: string;
+  /** Index in the global commitment tree. Absent for a pending coin, which is not in the tree yet. */
+  mtIndex?: bigint;
+  /** Coin commitment, which identifies the coin in the commitment tree. */
+  commitment?: string;
+}
+
+/**
+ * One SDK shielded coin, kept whole. An available coin's `coin` is a
+ * `QualifiedShieldedCoinInfo` and carries `mt_index`; a pending one's does not.
+ */
+export function shieldedCoinInfo(c: {
+  coin?: {value?: bigint; type?: string; nonce?: string; mt_index?: bigint};
+  commitment?: string;
+}): ShieldedCoinInfo {
+  return {
+    value: c.coin?.value ?? 0n,
+    type: c.coin?.type ?? '',
+    nonce: c.coin?.nonce,
+    mtIndex: c.coin?.mt_index,
+    commitment: c.commitment,
+  };
 }
 
 export interface UnshieldedCoinInfo {
@@ -923,12 +946,11 @@ export function extractBalancesPartial(
   try {
     const sb = state.shielded?.balances;
     if (sb && typeof sb === 'object') shielded = sb as Record<string, bigint>;
-    for (const c of state.shielded?.availableCoins ?? []) {
-      coins.shielded.available.push({value: c.coin?.value ?? 0n, type: c.coin?.type ?? ''});
-    }
-    for (const c of state.shielded?.pendingCoins ?? []) {
-      coins.shielded.pending.push({value: c.coin?.value ?? 0n, type: c.coin?.type ?? ''});
-    }
+    // Kept whole: the nonce and Merkle index are what spending a coin needs, and
+    // nothing outside the wallet can reconstruct them. The SDK leaves coins booked
+    // by a pending transaction out of availableCoins.
+    for (const c of state.shielded?.availableCoins ?? []) coins.shielded.available.push(shieldedCoinInfo(c));
+    for (const c of state.shielded?.pendingCoins ?? []) coins.shielded.pending.push(shieldedCoinInfo(c));
   } catch {
     /* shielded coins not ready */
   }

@@ -13,7 +13,7 @@ import { beginOp, endOp, hasVisiblePanel, hasOpsInFlight, broadcastApproval } fr
 
 export interface PendingApproval {
   id: string;
-  kind: 'connect' | 'transfer' | 'signData' | 'deriveAppSecret' | 'balance' | 'cardanoSign';
+  kind: 'connect' | 'transfer' | 'signData' | 'deriveAppSecret' | 'shieldedCoins' | 'balance' | 'cardanoSign';
   origin: string;
   /** kind-specific display data (amounts as strings) */
   payload: unknown;
