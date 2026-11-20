@@ -199,15 +199,15 @@ const DUST_COST_PARAMETERS = {
 export type {DustGeneration} from './dust-generation.js';
 
 export interface SyncProgress {
-  /** 0.0 to 1.0 */
+  /** 0.0 to 1.0: the average of the sub-wallets still syncing, below 1 until synced. */
   percentage: number;
-  /** Estimated seconds remaining, or null if unknown */
+  /** Estimated seconds remaining, from the slowest sub-wallet, or null if unknown */
   etaSeconds: number | null;
   /** Which sub-wallets are synced */
   shieldedSynced: boolean;
   unshieldedSynced: boolean;
   dustSynced: boolean;
-  /** Which sub-wallet the percentage came from; null once synced. */
+  /** The slowest sub-wallet, which the estimate waits on; null once synced. */
   slowest: SubWallet | null;
 }
 
@@ -433,10 +433,10 @@ export interface WalletSyncOptions {
  * each ledger version derives its own key objects from the same seed.
  */
 /** A sub-wallet's own fraction, for the progress line. `done` wins over the
- *  counters: a sub-wallet with nothing to apply is complete, not stalled. */
+ *  counters, and 0/0 without it is a sub-wallet that has not reported yet. */
 function subPct(sub: {applied: number; total: number}, done: boolean): string {
   if (done) return '100%';
-  return sub.total > 0 ? `${Math.round(Math.min(1, sub.applied / sub.total) * 100)}%` : '100%';
+  return sub.total > 0 ? `${Math.round(Math.min(1, sub.applied / sub.total) * 100)}%` : '0%';
 }
 
 export async function startWalletSync(
@@ -717,7 +717,7 @@ export async function startWalletSync(
         const eta = balances.syncProgress.etaSeconds;
         const etaStr = eta !== null ? formatEta(eta) : '';
         const slowest = balances.syncProgress.slowest;
-        const slowestLabel = slowest ? ` (${slowest})` : '';
+        const slowestLabel = slowest ? ` (waiting on ${slowest})` : '';
 
         if (
           emissionCount % 50 === 0 ||
@@ -731,11 +731,9 @@ export async function startWalletSync(
           // which is worse. formatDustBalance has existed and been exported the
           // whole time; this line simply predates it.
           //
-          // The progress line names the sub-wallet the percentage belongs to.
-          // Reporting the slowest sub-wallet's fraction with no attribution, and
-          // suffixing it with a NIGHT balance, made "syncing 27% — NIGHT: 8378"
-          // read as "NIGHT is 27% synced" while the panel showed shielded and
-          // unshielded at 100%. Balances belong on the synced line, once.
+          // The progress line names the sub-wallet the estimate waits on, and
+          // keeps balances off it: "syncing 27% — NIGHT: 8378" read as "NIGHT is
+          // 27% synced". Balances belong on the synced line, once.
           onProgress?.(
             balances.synced
               ? `● synced — NIGHT: ${formatNight(nightTotal)}, DUST: ${formatDustBalance(balances.dust)}`
@@ -1084,11 +1082,17 @@ export function extractBalancesPartial(
     if (carried.has('shielded')) shieldedSynced = false;
     if (carried.has('unshielded')) unshieldedSynced = false;
     if (carried.has('dust')) dustSynced = false;
+    // A sub-wallet that was strictly complete does not stop being complete. Held
+    // before the overall figure, which no longer counts an unconfirmed 0/0 as done:
+    // a dropped connection would otherwise read an empty wallet's side as 0%.
+    shieldedSynced = shieldedSynced || previous.syncProgress.shieldedSynced;
+    unshieldedSynced = unshieldedSynced || previous.syncProgress.unshieldedSynced;
+    dustSynced = dustSynced || previous.syncProgress.dustSynced;
   }
 
   // Overall progress: the slowest sub-wallet, clamped below 100% until actually
   // synced. Arithmetic lives in ./progress.ts so it is unit-testable without WASM.
-  const {percentage, etaSeconds, slowest} = overallSyncProgress({
+  const {percentage, etaSeconds, slowest, slowestFraction} = overallSyncProgress({
     shielded: subProgress.shielded,
     unshielded: subProgress.unshielded,
     dust: subProgress.dust,
@@ -1141,17 +1145,13 @@ export function extractBalancesPartial(
     if (coins.shielded.available.length === 0 && previous.coins.shielded.available.length > 0) coins.shielded = previous.coins.shielded;
     if (coins.unshielded.available.length === 0 && previous.coins.unshielded.available.length > 0) coins.unshielded = previous.coins.unshielded;
     if (coins.dust.available.length === 0 && previous.coins.dust.available.length > 0) coins.dust = previous.coins.dust;
-    // A sub-wallet that was strictly complete does not stop being complete.
-    shieldedSynced = shieldedSynced || previous.syncProgress.shieldedSynced;
-    unshieldedSynced = unshieldedSynced || previous.syncProgress.unshieldedSynced;
-    dustSynced = dustSynced || previous.syncProgress.dustSynced;
   }
 
   // First usable sample is the session's starting point. Captured after the
   // fraction is known and only once, so the rate below is measured over work
-  // this session actually did.
-  if (baseline && baseline.value === null && !synced && percentage > 0 && percentage < 0.995) {
-    baseline.value = {fraction: percentage, elapsedMs: syncStartTime > 0 ? Date.now() - syncStartTime : 0};
+  // this session actually did. It is the slowest sub-wallet's, as the ETA is.
+  if (baseline && baseline.value === null && !synced && slowestFraction > 0 && slowestFraction < 0.995) {
+    baseline.value = {fraction: slowestFraction, elapsedMs: syncStartTime > 0 ? Date.now() - syncStartTime : 0};
   }
 
   const syncProgress: SyncProgress = {percentage, etaSeconds, slowest, shieldedSynced, unshieldedSynced, dustSynced};

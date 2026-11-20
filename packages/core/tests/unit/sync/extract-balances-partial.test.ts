@@ -68,8 +68,9 @@ describe('extractBalancesPartial through an emission that says nothing about DUS
     it('keeps the percentage where it was instead of jumping to 99%', () => {
       const shown = session(every20s(gap)).map((b) => b.syncProgress.percentage);
       shown.forEach((pct, i) => expect(pct).toBeGreaterThanOrEqual(shown[i - 1] ?? 0));
-      expect(Math.max(...shown)).toBeLessThan(0.2);
-      expect(shown[19]).toBeCloseTo(0.019, 6);
+      // Shielded done and DUST behind; the empty unshielded side is left out.
+      expect(Math.max(...shown)).toBeLessThan(0.6);
+      expect(shown[19]).toBeCloseTo((1 + 0.019) / 2, 6);
     });
 
     it('does not mark DUST synced', () => {
@@ -95,5 +96,77 @@ describe('extractBalancesPartial through an emission that says nothing about DUS
     );
     expect(snapshots[59]!.syncProgress.dustSynced).toBe(true);
     expect(snapshots.slice(59).every((b) => b.syncProgress.dustSynced)).toBe(true);
+  });
+});
+
+// Before the sub-wallets connect, every part reads 0/0 and none is strictly
+// complete. On a fresh preprod wallet that showed 99% with 0s remaining for the
+// first seconds, then 0%, and the 99% became the ETA baseline, so no estimate
+// appeared for the rest of the sync.
+describe('extractBalancesPartial before the sub-wallets connect', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const reading = (applied: bigint, total: bigint, complete: boolean) => ({
+    appliedIndex: applied,
+    highestRelevantWalletIndex: total,
+    isStrictlyComplete: () => complete,
+  });
+  const unshieldedReading = (complete: boolean) => ({appliedId: 0n, highestTransactionId: 0n, isStrictlyComplete: () => complete});
+  const silent = reading(0n, 0n, false);
+
+  // Nothing connected for the first 5s; then shielded finishes, unshielded is
+  // empty, and DUST replays at 1,000 events/s.
+  const startup = (second: number, unshieldedComplete = true): FacadeState =>
+    ({
+      isSynced: false,
+      shielded: {balances: {}, availableCoins: [], pendingCoins: [], progress: second <= 5 ? silent : reading(SHIELDED_TOTAL, SHIELDED_TOTAL, true)},
+      unshielded: {balances: {}, availableCoins: [], pendingCoins: [], progress: unshieldedReading(second > 5 && unshieldedComplete)},
+      dust: {
+        balance: () => 0n,
+        availableCoins: [],
+        pendingCoins: [],
+        progress: second <= 5 ? silent : reading(BigInt(second - 5) * 1_000n, DUST_TOTAL, false),
+      },
+    }) as unknown as FacadeState;
+
+  const run = (stateAt: (second: number) => FacadeState) => {
+    const start = Date.now();
+    const baseline: ProgressBaseline = {value: null};
+    let previous: WalletBalances | undefined;
+    const snapshots: WalletBalances[] = [];
+    for (let second = 1; second <= 60; second++) {
+      vi.setSystemTime(start + second * 1_000);
+      previous = extractBalancesPartial(stateAt(second), start, 0, baseline, previous);
+      snapshots.push(previous);
+    }
+    return snapshots;
+  };
+
+  it('reads 0% until a sub-wallet reports, not 99%', () => {
+    const shown = run((s) => startup(s)).map((b) => b.syncProgress.percentage);
+    expect(shown.slice(0, 5)).toEqual([0, 0, 0, 0, 0]);
+    shown.forEach((pct, i) => expect(pct).toBeGreaterThanOrEqual(shown[i - 1] ?? 0));
+    expect(Math.max(...shown)).toBeLessThan(0.6);
+  });
+
+  it('gives an estimate once DUST is moving', () => {
+    const etas = run((s) => startup(s)).map((b) => b.syncProgress.etaSeconds);
+    expect(etas.slice(0, 5).every((eta) => eta === null)).toBe(true);
+    // 1,000 of 1,000,000 events a second: about 1,000s in all.
+    expect(etas.at(-1)).toBeGreaterThan(800);
+    expect(etas.at(-1)).toBeLessThan(1_000);
+  });
+
+  it('does not drop to 0% when an empty sub-wallet stops reporting complete', () => {
+    // An empty unshielded side reads 0/0 throughout; a dropped connection makes it
+    // not strictly complete. It finished earlier this session, so it still counts.
+    const shown = run((s) => startup(s, !(s >= 30 && s <= 32))).map((b) => b.syncProgress);
+    expect(shown.slice(29, 32).every((p) => p.unshieldedSynced)).toBe(true);
+    shown.slice(6).forEach((p, i) => expect(p.percentage).toBeGreaterThanOrEqual(shown[i + 5]!.percentage));
   });
 });
