@@ -249,6 +249,8 @@ export type PortEvent =
   // `since`: when this stage began (epoch ms), so a panel that mounts mid-op
   // can show elapsed time. `null` stage: the op ended (success or failure).
   | { kind: 'txStage'; stage: TxStage | null; since: number | null }
+  /** The activity feed changed outside sync: a submission became pending or was rejected. */
+  | { kind: 'activityChanged'; hash: string }
   | { kind: 'relayState'; state: RelayState }
   | { kind: 'approval'; id: string | null }
   | { kind: 'setupOpen'; open: boolean }

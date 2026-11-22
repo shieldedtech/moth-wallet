@@ -201,6 +201,31 @@ describe('deriveActivityEntry', () => {
     expect(activity.kind).toBe('dust');
   });
 
+  // An entry the wallet recorded itself has no block time, and an undated row
+  // sinks below the whole feed: the newest transaction would be the last one shown.
+  it('dates a pending entry by when it was submitted', () => {
+    const submittedAt = new Date('2026-11-19T10:00:00Z');
+    const activity = deriveActivityEntry(
+      entry({ status: undefined, lifecycle: { status: 'pending', submittedAt } }),
+      OWN,
+    );
+
+    expect(activity.pending).toBe(true);
+    expect(activity.timestamp).toEqual(submittedAt);
+  });
+
+  it('dates a rejected entry by when the wallet gave up on it', () => {
+    const rejectedAt = new Date('2026-11-19T10:30:00Z');
+    const activity = deriveActivityEntry(
+      entry({ status: undefined, lifecycle: { status: 'rejected', rejectedAt } }),
+      OWN,
+    );
+
+    expect(activity.status).toBe('FAILURE');
+    expect(activity.pending).toBe(false);
+    expect(activity.timestamp).toEqual(rejectedAt);
+  });
+
   it('keeps logical transaction identifiers for pending-submission reconciliation', () => {
     const identifiers = ['logical-id-1', 'logical-id-2'];
     const activity = deriveActivityEntry(entry({ identifiers }), OWN);
