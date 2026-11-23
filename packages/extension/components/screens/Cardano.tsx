@@ -222,6 +222,7 @@ export function Cardano({
     } catch (err) {
       // The background names this one: no Blockfrost project ID. The account
       // above is still good, so the screen keeps it on display.
+      setStatus(null);
       setMode({ kind: 'chainBlocked', message: err instanceof Error ? err.message : String(err) });
     }
   }, []);
@@ -515,7 +516,8 @@ export function Cardano({
   if (mode.kind === 'accounts') {
     return (
       <PanelScreen cta={<Button onClick={() => void refresh()}>{t('cardano_accountBack')}</Button>}>
-        <PanelHeader title={t('cardano_accountsTitle')} onBack={() => setMode({ kind: 'overview' })} />
+        {/* Opened from the overview or the blocked screen; a re-read lands on whichever applies. */}
+        <PanelHeader title={t('cardano_accountsTitle')} onBack={() => void refresh()} />
 
         <Card className="flex flex-col gap-1 p-2">
           {accounts?.accounts.map((a) => (
@@ -909,7 +911,18 @@ export function Cardano({
     );
   }
 
-  if (!status) return null;
+  // Every way into the overview reads the status first; this keeps a missed one
+  // from leaving the panel without a header or a way back.
+  if (!status) {
+    return (
+      <PanelScreen cta={<Button onClick={() => void refresh()}>{t('cardano_retry')}</Button>}>
+        {header}
+        <NoteCard variant="error" icon={TriangleAlert}>
+          {t('cardano_chainUnavailable')}
+        </NoteCard>
+      </PanelScreen>
+    );
+  }
 
   const designation = !status.registered
     ? t('cardano_notRegistered')
