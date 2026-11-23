@@ -25,10 +25,13 @@ const mockDappDir = path.resolve(import.meta.dirname, '..', '..', 'mock-dapp', '
 // worker, where `chrome` is a global; this file itself runs in Node.
 declare const chrome: {
   storage: {
-    session: { get(key: string): Promise<Record<string, unknown>>; set(items: object): Promise<void> };
+    session: { get(keys: string | string[]): Promise<Record<string, unknown>>; set(items: object): Promise<void> };
     local: { get(key: string): Promise<Record<string, unknown>> };
   };
-  alarms: { create(name: string, info: { when: number; periodInMinutes: number }): Promise<void> };
+  alarms: {
+    create(name: string, info: { when: number; periodInMinutes: number }): Promise<void>;
+    get(name: string): Promise<object | undefined>;
+  };
   runtime: { getContexts(filter: { contextTypes: string[] }): Promise<unknown[]> };
 };
 
@@ -228,17 +231,45 @@ function hasOffscreenDocument(ext: Extension): Promise<boolean> {
   });
 }
 
-/** Whether the background holds an unlocked session. */
-export function isUnlocked(ext: Extension): Promise<boolean> {
+/** What the auto-lock check reads, as stored in the service worker. */
+interface AutoLockState {
+  unlocked: boolean;
+  lastActivityAt: number | null;
+  lastUserActivityAt: number | null;
+  alarm: object | null;
+  autoLockMinutes: unknown;
+  now: number;
+}
+
+function autoLockState(ext: Extension): Promise<AutoLockState> {
   return ext.worker.evaluate(async () => {
-    const stored = await chrome.storage.session.get('session');
-    return Boolean(stored.session);
+    const stored = await chrome.storage.session.get(['session', 'session.lastActivityAt', 'session.lastUserActivityAt']);
+    const at = (value: unknown) => (typeof value === 'number' ? value : null);
+    return {
+      unlocked: Boolean(stored.session),
+      lastActivityAt: at(stored['session.lastActivityAt']),
+      lastUserActivityAt: at(stored['session.lastUserActivityAt']),
+      alarm: (await chrome.alarms.get('auto-lock-check')) ?? null,
+      autoLockMinutes: ((await chrome.storage.local.get('settings')).settings as { autoLockMinutes?: unknown } | undefined)
+        ?.autoLockMinutes,
+      now: Date.now(),
+    };
   });
 }
 
+/** Records the last activity, by the user and by a dApp, `idleMinutes` ago. Returns when it did so. */
+function backdateActivity(ext: Extension, idleMinutes: number): Promise<number> {
+  return ext.worker.evaluate(async (minutes) => {
+    const now = Date.now();
+    const past = now - minutes * 60_000;
+    await chrome.storage.session.set({ 'session.lastActivityAt': past, 'session.lastUserActivityAt': past });
+    return now;
+  }, idleMinutes);
+}
+
 /**
- * Makes the auto-lock check run now, against a clock that says the wallet has
- * been idle for `idleMinutes`.
+ * Locks the wallet through the production auto-lock check, against a clock
+ * that says it has been idle for `idleMinutes`, and waits for the lock.
  *
  * The real check runs on a periodic one-minute alarm. Rather than wait for it,
  * this backdates the recorded activity and replaces that alarm with one that
@@ -247,14 +278,38 @@ export function isUnlocked(ext: Extension): Promise<boolean> {
  *
  * The replacement must stay periodic. The handler defers the lock while a
  * watched sync holds it (a panel port the worker has not yet seen close counts)
- * and relies on the next tick to retry. Locking clears the alarm (lockNow
- * calls clearAutoLock), so it stops once the wallet locks. Unpacked extensions are not held to
- * the 30-second alarm minimum, so a one-second period is allowed.
+ * and relies on the next tick to retry. Locking clears the alarm (lockNow calls
+ * clearAutoLock), so it stops once the wallet locks. Unpacked extensions are
+ * not held to the 30-second alarm minimum, so a one-second period is allowed.
+ *
+ * Activity recorded after the backdate resets the clock, and then no tick
+ * expires. Deciding an approval is one source: the background records it after
+ * the decision has already reached the dApp, so it can land after a test that
+ * waited for the dApp's result. Such a write is logged and the clock is
+ * backdated again. If the wallet is still unlocked at the timeout, the error
+ * carries what the check reads, so the cause shows in the CI log.
  */
-export function runAutoLockCheck(ext: Extension, idleMinutes: number): Promise<void> {
-  return ext.worker.evaluate(async (minutes) => {
-    const past = Date.now() - minutes * 60_000;
-    await chrome.storage.session.set({ 'session.lastActivityAt': past, 'session.lastUserActivityAt': past });
-    await chrome.alarms.create('auto-lock-check', { when: Date.now() + 100, periodInMinutes: 1 / 60 });
-  }, idleMinutes);
+export async function lockByAutoLock(ext: Extension, idleMinutes: number, timeout = 5_000): Promise<void> {
+  let backdatedAt = await backdateActivity(ext, idleMinutes);
+  await ext.worker.evaluate(() =>
+    chrome.alarms.create('auto-lock-check', { when: Date.now() + 100, periodInMinutes: 1 / 60 }),
+  );
+  const deadline = Date.now() + timeout;
+  for (let state = await autoLockState(ext); state.unlocked; state = await autoLockState(ext)) {
+    const backdatedTo = backdatedAt - idleMinutes * 60_000;
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `Auto-lock did not lock within ${timeout} ms. With recent activity the check ` +
+          'finds the window unexpired; with old activity, a live alarm and a set ' +
+          'autoLockMinutes it is deferring (an op in flight or a watched sync). ' +
+          `State: ${JSON.stringify({ backdatedAt, backdatedTo, ...state })}`,
+      );
+    }
+    const latest = Math.max(state.lastActivityAt ?? 0, state.lastUserActivityAt ?? 0);
+    if (latest > backdatedTo) {
+      console.log(`lockByAutoLock: activity recorded ${latest - backdatedAt} ms after the backdate; backdating again`);
+      backdatedAt = await backdateActivity(ext, idleMinutes);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
 }

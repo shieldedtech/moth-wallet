@@ -18,10 +18,9 @@ import {
 import {
   assertBuilt,
   importWallet,
-  isUnlocked,
   launchExtension,
+  lockByAutoLock,
   PASSWORD,
-  runAutoLockCheck,
   startMockDapp,
   startRefusingProxy,
   teardownList,
@@ -180,8 +179,7 @@ test('auto-lock locks a connected wallet, and unlocking restores the dApp', asyn
   // lock (a watched sync), so lock with the panel closed, as a user who walked away would.
   await panel.close();
 
-  await runAutoLockCheck(ext, 120);
-  await expect.poll(() => isUnlocked(ext)).toBe(false);
+  await lockByAutoLock(ext, 120);
 
   await dapp.getByRole('button', { name: 'All addresses' }).click();
   await expect(requestLog(dapp)).toContainText('"code": "Disconnected"');
