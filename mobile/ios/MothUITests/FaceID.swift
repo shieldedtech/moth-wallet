@@ -23,3 +23,11 @@ enum FaceID {
 
 /// The system UI that hosts Face ID failures and the passcode fallback.
 let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+
+extension FaceID {
+    /// The alert a non-matching face brings up. Its title follows the simulator's locale ("Face Not
+    /// Recognised" in en_GB, "Face Not Recognized" in en_US), so it is matched by the shared stem.
+    static var notRecognisedAlert: XCUIElement {
+        springboard.alerts.matching(NSPredicate(format: "label BEGINSWITH 'Face Not Recogni'")).firstMatch
+    }
+}

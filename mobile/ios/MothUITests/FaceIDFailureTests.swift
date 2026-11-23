@@ -25,7 +25,7 @@ final class FaceIDFailureTests: XCTestCase {
         // A face that doesn't match, then Cancel: nothing runs and no error is shown.
         FaceID.answer(.nomatch)
         register.tap()
-        let failed = springboard.alerts["Face Not Recognised"]
+        let failed = FaceID.notRecognisedAlert
         XCTAssertTrue(failed.waitForExistence(timeout: 30), "Face ID failed")
         failed.buttons["Cancel"].firstMatch.tap()
         let ran = app.staticTexts["This account has no NIGHT to register."]
@@ -52,7 +52,7 @@ final class FaceIDFailureTests: XCTestCase {
         XCTAssertTrue(faceOnly.waitForEnabled(timeout: 60), "Face ID only can be changed")
         faceOnly.switches.firstMatch.tap()
         app.buttons["I've written down every phrase — turn on"].tap()
-        let failed = springboard.alerts["Face Not Recognised"]
+        let failed = FaceID.notRecognisedAlert
         XCTAssertTrue(failed.waitForExistence(timeout: 30), "Face ID failed")
         failed.buttons["Cancel"].firstMatch.tap()
         XCTAssertTrue(faceOnly.waitForValue("0", timeout: 10), "still off")
