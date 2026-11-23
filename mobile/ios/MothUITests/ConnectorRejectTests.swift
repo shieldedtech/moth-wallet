@@ -11,12 +11,17 @@ final class ConnectorRejectTests: XCTestCase {
         app.launch()
         unlockOrCreate(app)
 
+        // Switch only once the first sync is done: its progress redraws Settings, which has closed
+        // the network menu on CI before preprod was chosen (see ConnectorTests).
+        XCTAssertTrue(app.staticTexts["Synced"].waitForExistence(timeout: 300), "first sync on preview done")
+
         // The mock DApp requests preprod, and new wallets start on preview.
         app.tabBars.buttons["Settings"].tap()
-        reveal(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Network'")).firstMatch, in: app).tap()
-        app.buttons["preprod"].tap()
+        let network = reveal(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Network'")).firstMatch, in: app)
+        choose(app.buttons["preprod"], fromMenu: network)
         app.tabBars.buttons["Wallet"].tap()
-        let onPreprod = app.staticTexts.matching(NSPredicate(format: "label CONTAINS '· preprod'")).firstMatch
+        // The header is a List section header, which iOS shows in capitals ("MAIN · PREPROD").
+        let onPreprod = app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] '· preprod'")).firstMatch
         XCTAssertTrue(onPreprod.waitForExistence(timeout: 60), "account moved to preprod")
 
         app.tabBars.buttons["Browser"].tap()

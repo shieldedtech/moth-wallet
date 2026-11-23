@@ -25,8 +25,8 @@ final class LifecycleTests: XCTestCase {
         unlockOrCreate(app)
 
         app.tabBars.buttons["Settings"].tap()
-        reveal(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Auto-lock'")).firstMatch, in: app).tap()
-        app.buttons["After 1 minute"].tap()
+        let autoLock = reveal(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Auto-lock'")).firstMatch, in: app)
+        choose(app.buttons["After 1 minute"], fromMenu: autoLock)
         app.tabBars.buttons["Wallet"].tap()
 
         let started = Date()

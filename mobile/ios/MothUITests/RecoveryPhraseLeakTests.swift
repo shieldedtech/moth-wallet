@@ -17,7 +17,9 @@ final class RecoveryPhraseLeakTests: XCTestCase {
         app.launch()
 
         // Create and back up, reading the phrase off the screen. Each word follows its number.
-        app.buttons["Create a new wallet"].tap()
+        let create = app.buttons["Create a new wallet"]
+        XCTAssertTrue(create.waitForExistence(timeout: firstScreenTimeout), "welcome screen")
+        create.tap()
         XCTAssertTrue(app.staticTexts["Your recovery phrase"].waitForExistence(timeout: 60), "backup screen")
         let labels = app.staticTexts.allElementsBoundByIndex.map(\.label)
         let words = (1...24).compactMap { n in labels.firstIndex(of: "\(n)").flatMap { $0 + 1 < labels.count ? labels[$0 + 1] : nil } }
