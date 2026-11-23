@@ -28,7 +28,7 @@ declare const chrome: {
     session: { get(key: string): Promise<Record<string, unknown>>; set(items: object): Promise<void> };
     local: { get(key: string): Promise<Record<string, unknown>> };
   };
-  alarms: { create(name: string, info: { when: number }): Promise<void> };
+  alarms: { create(name: string, info: { when: number; periodInMinutes: number }): Promise<void> };
   runtime: { getContexts(filter: { contextTypes: string[] }): Promise<unknown[]> };
 };
 
@@ -189,8 +189,15 @@ export async function importWallet(
   await setup.getByRole('textbox', { name: 'Hex seed' }).fill(seed);
   await setup.getByRole('button', { name: 'Continue' }).click();
   const changesNetwork = (await savedNetwork(ext)) !== network.toLowerCase();
-  await setup.getByRole('radiogroup', { name: 'Midnight network' }).getByRole('radio', { name: new RegExp(`^${network}`) }).click();
-  await setup.getByRole('button', { name: 'Continue' }).click();
+  const radio = setup.getByRole('radiogroup', { name: 'Midnight network' }).getByRole('radio', { name: new RegExp(`^${network}`) });
+  const next = setup.getByRole('button', { name: 'Continue' });
+  // The network step renders its radios before its settings load lands, and the
+  // load then resets the pick to the saved network. Continue is enabled only once
+  // the load has landed, so wait for it before picking.
+  await expect(next).toBeEnabled();
+  await radio.click();
+  await expect(radio).toBeChecked();
+  await next.click();
   // Saving a different network locks the wallet host and closes its offscreen
   // document without waiting. An import sent inside that window loses its reply
   // ("message channel closed"), so wait for the close to land first.
@@ -233,14 +240,21 @@ export function isUnlocked(ext: Extension): Promise<boolean> {
  * Makes the auto-lock check run now, against a clock that says the wallet has
  * been idle for `idleMinutes`.
  *
- * The real check runs on a one-minute alarm. Rather than wait for it, this
- * backdates the recorded activity and reschedules that same alarm to fire at
- * once, so the production handler does the locking.
+ * The real check runs on a periodic one-minute alarm. Rather than wait for it,
+ * this backdates the recorded activity and replaces that alarm with one that
+ * fires at once and then every second, so the production handler does the
+ * locking.
+ *
+ * The replacement must stay periodic. The handler defers the lock while a
+ * watched sync holds it (a panel port the worker has not yet seen close counts)
+ * and relies on the next tick to retry. Locking clears the alarm (lockNow
+ * calls clearAutoLock), so it stops once the wallet locks. Unpacked extensions are not held to
+ * the 30-second alarm minimum, so a one-second period is allowed.
  */
 export function runAutoLockCheck(ext: Extension, idleMinutes: number): Promise<void> {
   return ext.worker.evaluate(async (minutes) => {
     const past = Date.now() - minutes * 60_000;
     await chrome.storage.session.set({ 'session.lastActivityAt': past, 'session.lastUserActivityAt': past });
-    await chrome.alarms.create('auto-lock-check', { when: Date.now() + 100 });
+    await chrome.alarms.create('auto-lock-check', { when: Date.now() + 100, periodInMinutes: 1 / 60 });
   }, idleMinutes);
 }
