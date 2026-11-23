@@ -63,6 +63,8 @@ const click = async (el: Element | undefined) => {
   await flush();
 };
 
+let answerStatus: ((value: unknown) => void) | null = null;
+
 describe('Registering cNIGHT to another Midnight account', () => {
   beforeEach(() => {
     sendMessage.mockReset().mockImplementation((type: string) => {
@@ -76,7 +78,8 @@ describe('Registering cNIGHT to another Midnight account', () => {
         case 'cardanoBalance':
           return Promise.resolve({ lovelace: status.lovelace, cnight: status.cnight, cnightUtxos: 1 });
         case 'cardanoStatus':
-          return Promise.resolve(status);
+          // Held open when a test wants to act while the read is out.
+          return answerStatus === null ? Promise.resolve(status) : new Promise((r) => { answerStatus = r; });
         case 'cardanoResolveReceiver':
           return Promise.resolve({ dustAddressBytes: DUST_BYTES });
         default:
@@ -127,5 +130,55 @@ describe('Registering cNIGHT to another Midnight account', () => {
     expect(text).not.toContain('Account-7');
     expect(text).toContain(t('cardano_confirmAccountLabel'));
     expect(text).toContain(t('cardano_registerRotationNote', ['Account 1']));
+  });
+});
+
+describe('Opening the account manager while the registration is read', () => {
+  beforeEach(() => {
+    answerStatus = () => {};
+    sendMessage.mockImplementation((type: string) => {
+      switch (type) {
+        case 'cardanoAccountList':
+          return Promise.resolve({ accounts: [{ id: 'd0', label: 'Account 1', kind: 'derived', accountIndex: 0 }], activeId: 'd0' });
+        case 'cardanoAddresses':
+          return Promise.resolve(status);
+        case 'cardanoReceiverAccounts':
+          return Promise.resolve([receiverAccount]);
+        case 'cardanoBalance':
+          return Promise.resolve({ lovelace: status.lovelace, cnight: status.cnight, cnightUtxos: 1 });
+        case 'cardanoStatus':
+          return new Promise((r) => { answerStatus = r; });
+        default:
+          return Promise.reject(new Error(`unexpected ${type}`));
+      }
+    });
+    container = document.createElement('div');
+    document.body.append(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    answerStatus = null;
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  it('stays on the account manager when the read finishes, and goes back to the reading screen before it does', async () => {
+    act(() => root.render(<Cardano network="mainnet" onBack={() => {}} />));
+    await flush();
+    expect(container.textContent).toContain(t('cardano_readingChain'));
+
+    await click(buttons().find((b) => b.textContent?.includes('Account 1')));
+    expect(container.textContent).toContain(t('cardano_accountsTitle'));
+
+    // Back before the read answers: the reading screen, not an empty overview.
+    await click(container.querySelector('header button, button[aria-label]') ?? buttons()[0]);
+    expect(container.textContent).toContain(t('cardano_readingChain'));
+
+    await click(buttons().find((b) => b.textContent?.includes('Account 1')));
+    await act(async () => answerStatus!(status));
+    await flush();
+    // The answer arrives while the manager is open: it stays open.
+    expect(container.textContent).toContain(t('cardano_accountsTitle'));
   });
 });

@@ -55,15 +55,25 @@ describe('registrationOutRefs', () => {
     ]);
   });
 
-  it('reads every page, several at a time, and stops at the first short one', async () => {
-    // 250 registrations: pages of 100, 100, 50. Ours is on the last page.
+  it('reads every page, several at a time, and stops at the first empty one', async () => {
+    // 250 registrations: pages of 100, 100, 50, then empty. Ours is on the last page.
     const utxos = [...Array.from({ length: 249 }, (_, i) => reg(`t${i}`, THEIRS)), reg('mine', MINE)];
     const { fetch, pages } = fakeBlockfrost(utxos);
 
     expect(await registrationOutRefs(config, VALIDATOR, AUTH, MINE, { fetch, concurrency: 2 })).toEqual([
       { txHash: 'mine', outputIndex: 0 },
     ]);
-    expect(pages.sort()).toEqual([1, 2, 3, 4]);
+    expect(pages.sort((a, b) => a - b)).toEqual([1, 2, 3, 4]);
+  });
+
+  it('keeps reading when the backend serves pages smaller than asked for', async () => {
+    // A Blockfrost-compatible backend capped at 40 per page: ours is on page 4.
+    const utxos = [...Array.from({ length: 150 }, (_, i) => reg(`t${i}`, THEIRS)), reg('mine', MINE)];
+    const { fetch } = fakeBlockfrost(utxos, { pageSize: 40 });
+
+    expect(await registrationOutRefs(config, VALIDATOR, AUTH, MINE, { fetch, concurrency: 2 })).toEqual([
+      { txHash: 'mine', outputIndex: 0 },
+    ]);
   });
 
   it('is empty when the validator has never held a registration', async () => {
@@ -78,3 +88,29 @@ describe('registrationOutRefs', () => {
     await expect(registrationOutRefs(config, VALIDATOR, AUTH, MINE, { fetch })).rejects.toThrow(/429/);
   });
 });
+
+describe('findRegistrations', () => {
+  it('fails when Lucid returns fewer registrations than the scan found', async () => {
+    const { findRegistrations } = await import('../../../src/cardano/registration.js');
+    const { resolveCardanoNetwork } = await import('../../../src/cardano/network.js');
+    const real = { ...resolveCardanoNetwork('mainnet'), blockfrostProjectId: 'pid' };
+    const { fetch } = fakeBlockfrostAny([reg('mine', MINE)]);
+    // Lucid's provider turns a 429 on /txs/{hash}/utxos into no UTxOs.
+    const session = {
+      config: real,
+      addresses: { stakeKeyHash: MINE },
+      lucid: { utxosByOutRef: async () => [] },
+    } as unknown as Parameters<typeof findRegistrations>[0];
+
+    await expect(findRegistrations(session, { fetch })).rejects.toThrow(/could read only 0/);
+  });
+});
+
+/** Serves `utxos` for whatever validator and unit the real config derives. */
+function fakeBlockfrostAny(utxos: unknown[]) {
+  const fetch = (async (url: string) => {
+    const n = Number(new URL(url).searchParams.get('page'));
+    return new Response(JSON.stringify(utxos.slice((n - 1) * 100, n * 100)), { status: 200 });
+  }) as typeof globalThis.fetch;
+  return { fetch };
+}

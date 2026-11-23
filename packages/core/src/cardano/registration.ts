@@ -142,6 +142,16 @@ export async function findRegistrations(
     opts,
   );
   const candidates = outRefs.length > 0 ? await session.lucid.utxosByOutRef([...outRefs]) : [];
+  // Lucid's provider answers an error on any of these lookups with no UTxOs, not
+  // a throw. Reading that as "not registered" would offer a second registration
+  // on this stake key, which forces deregistration, so a shortfall fails instead.
+  // It also catches a registration spent since the scan; a retry reads it right.
+  if (candidates.length < outRefs.length) {
+    throw new WalletError(
+      'WALLET_ERROR',
+      `Found ${outRefs.length} DUST registration(s) for this stake key but could read only ${candidates.length}. Try again.`,
+    );
+  }
   const found: RegistrationRecord[] = [];
   for (const utxo of candidates) {
     // The auth NFT is what makes an output at this address a registration.

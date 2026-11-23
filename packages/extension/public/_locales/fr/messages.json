@@ -1947,7 +1947,7 @@
     "message": "Lecture de l’enregistrement DUST…"
   },
   "cardano_errorStatusTimeout": {
-    "message": "Cardano n’a pas répondu dans les 2 minutes, l’enregistrement DUST est donc inconnu. Réessayez pour le lire."
+    "message": "Cardano n’a pas répondu dans les 2 minutes."
   },
   "cardano_retry": {
     "message": "Réessayer"
@@ -2290,5 +2290,8 @@
   },
   "cardano_receiverNoDustAddress": {
     "message": "Ouvrez ce compte une fois pour afficher son adresse DUST"
+  },
+  "cardano_registrationUnavailable": {
+    "message": "L’enregistrement DUST n’a pas pu être lu."
   }
 }

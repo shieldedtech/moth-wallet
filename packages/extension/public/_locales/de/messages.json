@@ -1947,7 +1947,7 @@
     "message": "DUST-Registrierung wird gelesen …"
   },
   "cardano_errorStatusTimeout": {
-    "message": "Cardano hat nicht innerhalb von 2 Minuten geantwortet, daher ist die DUST-Registrierung unbekannt. Versuche es erneut, um sie zu lesen."
+    "message": "Cardano hat nicht innerhalb von 2 Minuten geantwortet."
   },
   "cardano_retry": {
     "message": "Erneut versuchen"
@@ -2290,5 +2290,8 @@
   },
   "cardano_receiverNoDustAddress": {
     "message": "Öffne dieses Konto einmal, um seine DUST-Adresse anzuzeigen"
+  },
+  "cardano_registrationUnavailable": {
+    "message": "Die DUST-Registrierung konnte nicht gelesen werden."
   }
 }

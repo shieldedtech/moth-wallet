@@ -81,10 +81,12 @@ export async function registrationOutRefs(
   };
 
   // The page count is unknown up front, so pages go out in rounds and the first
-  // short page ends the read.
+  // empty page ends the read. Not the first short one: `blockfrostUrl` can name
+  // any Blockfrost-compatible backend, and one that caps pages below `count`
+  // would otherwise end the read early and miss later registrations.
   for (let start = 1; ; start += concurrency) {
     const round = await Promise.all(Array.from({ length: concurrency }, (_, i) => page(start + i)));
     for (const utxos of round) if (utxos) collect(utxos);
-    if (round.some((utxos) => utxos === null || utxos.length < PAGE)) return matches;
+    if (round.some((utxos) => utxos === null || utxos.length === 0)) return matches;
   }
 }

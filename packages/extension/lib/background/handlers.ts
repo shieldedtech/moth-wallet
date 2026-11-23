@@ -348,6 +348,10 @@ async function withTxTiming<T>(
   }
 }
 
+
+/** Cardano status reads still running in the offscreen document, keyed by account. */
+const cardanoStatusInFlight = new Map<string, ReturnType<typeof offscreen.cardanoStatus>>();
+
 export function registerHandlers(): void {
   onMessage('walletList', async () => {
     const { network } = await getSettings();
@@ -811,14 +815,20 @@ export function registerHandlers(): void {
   });
 
   onMessage('cardanoStatus', async () => {
-    const { config, mnemonic, session, accountIndex } = await requireCardano(true);
+    const { config, mnemonic, session, accountIndex, account } = await requireCardano(true);
     const network = await getNetworkConfig();
-    const status = await offscreen.cardanoStatus({
-      mnemonic,
-      config,
-      indexerUrl: network.indexerUrl,
-      accountIndex,
-    });
+    // The panel gives up on a slow read but the offscreen scan carries on, so a
+    // retry joins the read still running instead of starting a second scan
+    // beside it and spending Blockfrost quota twice.
+    const key = [session.network, session.walletName, account.id, config.blockfrostUrl, network.indexerUrl].join('|');
+    let read = cardanoStatusInFlight.get(key);
+    if (!read) {
+      read = offscreen
+        .cardanoStatus({ mnemonic, config, indexerUrl: network.indexerUrl, accountIndex })
+        .finally(() => cardanoStatusInFlight.delete(key));
+      cardanoStatusInFlight.set(key, read);
+    }
+    const status = await read;
     const ownDustBytes = await ownDustAddressBytes(session);
     return {
       ...status,
