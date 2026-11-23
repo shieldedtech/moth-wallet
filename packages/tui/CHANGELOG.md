@@ -1,5 +1,437 @@
 # @shieldedtech/moth-tui
 
+## 0.15.0
+
+### Minor Changes
+
+- 8fcbeaa: The bundled moth-ft token issuer, and the receive-unshielded test fixture, now come in two builds:
+  the compactc 0.31.1 one they had (a ledger-8 contract) and a compactc 0.36.0 one (a ledger-9 contract).
+  midnight-js 5 refuses to deploy a ledger-8 contract after the v9 fork, and attaches to a deployed
+  contract only through the build whose verifier keys it holds, so moth picks one per operation.
+
+  - `deployFungibleToken` deploys the build for the era of the network's latest block, the reading
+    midnight-js checks a deploy against. Token deploys from the CLI and TUI keep working after the fork.
+  - `mintFungibleToken` reads the contract's state and mints through the build whose verifier keys it
+    holds: the ledger-8 build for a token deployed before the fork, on either side of it, and the
+    ledger-9 build for one deployed after. An address that holds neither build's keys is refused with a
+    message saying so.
+  - A ledger-9 build's circuits are ZKIR v3, so minting through it needs a prover that reads them, such
+    as proof server 9.0.0 or later.
+  - The package now ships moth-ft (both builds, about 16.7 MB packed). It shipped only `dist` before,
+    so `deployFungibleToken` and `mintFungibleToken` found no artifact outside this repository.
+  - Core depends on `@midnight-ntwrk/compact-runtime` 0.21.0, shared with midnight-js, and on 0.16.0
+    under the alias `compact-runtime-ledger8`, the name midnight-js gives its own ledger-8 copy. The
+    ledger-8 modules import the alias, so each build resolves its own runtime in any install.
+  - `FUNGIBLE_TOKEN_ARTIFACT_DIR` is removed. `bundledContractBuild(name, era)`,
+    `bundledContractForDeploy(name, network)` and `bundledContractForAddress(name, address, network)`
+    give a bundled contract's build directory, and the build an operation should take.
+- e38ea20: Register cNIGHT on Cardano for DUST generation, from all four surfaces.
+
+  DUST can be generated from NIGHT held on Midnight or from cNIGHT held on
+  Cardano. moth only did the first. The second needs a Cardano transaction that
+  maps a Cardano stake key to a Midnight DUST address, so it needed Cardano
+  keys, the `cnight_generates_dust` Plutus validator and a chain provider — none
+  of which the wallet had.
+
+  Core gains a `@shieldedtech/moth-wallet/cardano` subpath with register,
+  deregister and change-receiver, reachable as `moth cardano …`, `moth daemon
+  cardano …`, the TUI's `a` screen and a Cardano screen in the extension.
+
+  Cardano keys come from the account's existing recovery phrase via CIP-1852, so
+  there is no Cardano account to create and nothing new to back up — every surface
+  now says so where the address is shown, because "where do I create one?" is the
+  first thing the absence of a create button suggests.
+
+  The Cardano address is shown before anything is configured, since funding it is
+  the first step and derivation needs no Blockfrost key. The extension reaches
+  Cardano from the home screen rather than only from Settings, and truncates
+  addresses with a copy button rather than laying a 103-character bech32 string
+  into a label/value row.
+
+  Multiple Cardano accounts, in the extension. "Add account" takes the next
+  CIP-1852 index of the wallet's own phrase — its own address, its own stake key
+  and so its own independent DUST registration, with nothing new to back up.
+  Indices come from a persisted high-water mark, never recomputed from the list,
+  so removing an account cannot hand its address and registration to the next one
+  created. "Import" adds a Cardano-only account from a separate phrase, encrypted
+  under the wallet passphrase; that phrase is NOT covered by the moth recovery
+  phrase, which the import screen says before asking for it. Accounts imported from a raw hex seed have no
+  Cardano address at all — BIP-39's phrase-to-seed step is one-way, and CIP-1852
+  starts from the entropy — and every surface says so by name rather than failing
+  at derivation.
+
+  The Cardano network is derived from the Midnight network — mainnet/Mainnet,
+  preprod/Preprod, preview/Preview — and cannot be chosen separately. devnet,
+  qanet and undeployed have no counterpart and refuse rather than falling back to
+  a testnet. Letting the two be picked independently had exactly one outcome in
+  practice: cNIGHT registered on Cardano Preview against a Midnight preprod
+  wallet, valid on Cardano, invisible to Midnight, and silent for the twelve
+  hours you spend waiting for DUST that cannot arrive.
+
+  cNIGHT amounts are STARs, six decimal places, as NIGHT is on Midnight. Cardano
+  carries no protocol-level decimals and the asset publishes no registry entry,
+  so nothing on chain states the scale and a block explorer shows the raw
+  integer. Both the display and the send inputs now apply it: `--cnight 10` used
+  to move ten STARs — a hundred-thousandth of what was asked for — and succeed.
+
+  Reads and submission go through Blockfrost, which needs a project id — one per
+  network, since a project id is issued for a single network and answers 403 on
+  the others. Every
+  surface can set one: `moth config set blockfrost-project-id`, the TUI's Network
+  screen under Cardano, the extension's Cardano settings, or
+  `MOTH_BLOCKFROST_PROJECT_ID`. The CLI, TUI and daemon share one store, so
+  setting it once covers all three; the extension keeps its own. Without a project
+  id, address derivation still works and everything else refuses with that reason.
+
+  The ID is masked wherever it is shown back — `config get`, `config set` output,
+  and the TUI's input field — because it is a credential and those all end up in
+  terminal scrollback or CI logs.
+
+  Sending ADA and cNIGHT, on every surface: `moth cardano send`, `moth daemon
+  cardano send`, the TUI's `s` flow and a Send screen in the extension. The
+  destination is checked against the session's own network id before anything is
+  built — a well-formed mainnet address entered on a testnet is the mistake that
+  actually loses funds, and the builder would otherwise accept it. Sending cNIGHT
+  from a registered account warns first, because the cNIGHT that leaves stops
+  generating DUST and the rest is rotated.
+
+  Cardano account management reached the CLI and TUI too: `moth cardano account
+  list|add|import|use|remove`, a `--account` flag on every `moth cardano` command,
+  and an accounts view on the TUI's Cardano screen with a two-step masked import.
+
+  DUST on the Cardano side is finality-bound: Midnight will not act on a
+  registration until Cardano finalises it, about 12 hours (k=2160 blocks at ~20s).
+  Native NIGHT registration takes minutes, so the two flows feel very different
+  and the wallet used to claim the fast one for both. The Cardano screen now
+  counts down from the registration transaction's own block time — read from the
+  chain, so it survives a reinstall and is right for a registration made from the
+  dApp or the CLI — and says what the wait is for.
+
+  Registering also offers your Midnight accounts as DUST receivers instead of only
+  taking 66 hex characters by hand. The DUST address is read out of each account,
+  so locked accounts are offered too — the account holding the cNIGHT is usually
+  not the one being paid.
+
+  The extension can show its DUST address again: Receive gained a DUST tab and the
+  DUST screen shows the address with a copy button. Neither had it, while the TUI
+  showed it on the keys screen all along. It is not a "receive" address — nothing
+  can send you DUST — but it is what you hand to another wallet or a Cardano
+  registration to point generation at yourself.
+
+  Also fixes `moth dust status`, which passed the wallet's Midnight address to an
+  indexer query keyed by Cardano *reward* address and so reported "not registered"
+  for every wallet, registered or not.
+
+  moth registers against the `cnight_generates_dust` deployment the Midnight
+  bridge actually reads on Preprod and Preview: script hash 7e69087d…, the contract the node repo ships
+  as `mapping_validator.plutus`. It previously used the compilation in the dApp's
+  `contracts-new-aiken/plutus.json` (5027bb76…), which is newer, compiles
+  cleanly, and is not deployed. Registrations against it confirmed on Cardano and
+  generated nothing — the bridge has never acknowledged one, and there is no
+  error anywhere to read. 51 registrations live at the deployed address; moth's
+  three transactions are the only ones that have ever touched the other.
+
+  `scripts/sync-cnight-blueprint.mjs` now pins that hash and refuses to emit
+  bytes that do not match it, reads either a `.plutus` envelope or an Aiken
+  blueprint, and takes `--verify-on-chain` to confirm the derived address holds
+  real registrations. The hash is pinned in the tests too, as a literal. The
+  check that was there before compared the compiled bytes to a hash generated
+  from the same file: self-consistent by construction, and green throughout.
+
+  The registration datum records the 33 bytes `DustAddress.serialize()` returns —
+  a 0x73 type tag then the payload — matching every live registration and the
+  deployed validator's own `length_of_bytearray(dust_address) <= 33`. The other
+  plausible receiver, the 32-byte shielded coin public key, encodes just as
+  cleanly and is a different key: Cardano accepts it and the bridge matches
+  nothing.
+
+  Registrations written against the coin public key still exist on chain, so the
+  datum is read back with a range rather than a fixed length. Pinning the reader
+  would not reject such a registration, it would hide it: the datum stops
+  decoding, the wallet reports "not registered", and registering again mints a
+  second auth NFT onto a stake key that already has one, which the validator
+  rejects. A registration that cannot generate DUST is labelled as such in all
+  four surfaces, with `update` offered to repoint it.
+
+  The extension also reported a wallet's own registration as belonging to someone
+  else. It compared the datum against the session's shielded coin public key,
+  which the datum has not held since the receiver became a DUST address — same
+  length, different key, so the comparison failed silently rather than loudly.
+  It now resolves the wallet's own DUST address through the same path the
+  registration writes it. The CLI, TUI and daemon derived this through
+  `dustAddressBytes` and were unaffected.
+
+  Changing the DUST address no longer adds a zero withdrawal. The validator
+  authorises a key-based stake credential by signature; the withdrawal route is
+  for script credentials, and its redeemer is an output reference rather than the
+  unit value, so including one aborted the transaction.
+
+  The extension's Cardano provider now implements CIP-30 in full: `getExtensions`,
+  `getUtxos(amount, paginate)` with amount filtering, `getCollateral({ amount })`
+  reading `cbor<Coin>`, pagination on `getUsedAddresses`, and `enable(extensions)`.
+  Errors reach dApps in the shapes the spec fixes — numeric `APIError` codes,
+  `PaginateError { maxSize }`, and the per-method decline codes — where previously
+  every CIP-30 failure arrived as `[object Object]` with its detail dropped.
+- 5ce169b: From the v9 fork on, the DUST wallet syncs from the indexer's DUST projections
+  instead of replaying every DUST ledger event, so its sync scales with the
+  wallet's own activity rather than the chain's length.
+
+  Below the fork nothing changes: ledger-v8 has no projections path, so the wallet
+  replays events as before, and at the fork it hands its state over to the
+  projections side. After the fork, each sync pass runs every 5 seconds rather
+  than following a live subscription, and a restart resumes from the block height
+  the saved state reached.
+
+  Pre-seeding no longer records a cursor witness for a DUST reference the
+  projections sync wrote. Its offset is a block height rather than an event id,
+  so an indexer renumbering cannot misplace it.
+- 58b2553: Add `local`, midnight-node's local-env (`ws://localhost:9933`), as a network of its own. It is no
+  longer folded into `undeployed`: local-env's network id reaches its addresses (`mn_addr_local1…`),
+  so serving it as `undeployed` derived the wrong prefix and read every unshielded balance as zero.
+  Stored `local` selections, wallets, birthdays and endpoint overrides now stay on `local`.
+
+  - `--network local` now targets 9933. Scripts that used it as an alias for the 9944 dev stack must
+    switch to `--network undeployed`.
+  - Wallets that 0.13.0–0.14.1 already rewrote to `undeployed` stay there: select Local again, or
+    recreate the wallet.
+- 1fb2591: Rebuild only the shielded part of a wallet's sync state.
+
+  A stale shielded view could only be repaired by clearing every part of the sync
+  cache, which also forces DUST to resync, by far the slowest part. That is the case,
+  for example, when an indexer renumbering leaves the stored shielded cursor pointing
+  at a different event ("values inserted non-linearly into zswap commitment tree"),
+  which retrying replays forever.
+
+  - Core adds `clearShieldedSyncCache`, which evicts the shielded state and keeps
+    unshielded, DUST and history.
+  - The extension's Settings adds "Rebuild shielded coins", next to "Clear cache and
+    resync". It spends nothing, so it needs no confirmation, and it waits while a
+    transaction is in flight, as the DUST rebuild does.
+  - The TUI's wallets screen adds `s` (rebuild shielded) next to `c` (clear cache).
+- e067726: Reveal a wallet's recovery phrase from the TUI keys screen (`p`).
+
+  The mnemonic was shown exactly once, during onboarding, on a screen that told
+  the user "This is the only time these words will be shown" — true for the TUI
+  and no other surface. Onboarding now says the words can be shown again from
+  the Keys screen. Core has had `exportPhrase`/`exportSeedHex` throughout,
+  the extension exposes it on the Accounts screen, and the CLI got
+  `wallet export-phrase` in #59. The TUI was the last surface where a wallet it
+  created itself had no backup path, while the same screen would delete that
+  wallet on a single keystroke.
+
+  The flow mirrors the CLI's: confirm first, because the failure mode is a phrase
+  left on a screen someone else can see; then the passphrase, which is asked for
+  even when the wallet is already unlocked. That is not redundant: D-KM-2 puts
+  seed export through the keystore, so an unlocked wallet left on screen is not
+  enough to reveal its phrase. The screen says so rather than looking like a
+  bug. Pressing ESC while the keystore is being decrypted cancels the reveal, so
+  the phrase never appears; Meta-key shortcuts (Meta+P pauses sync) no longer
+  open the prompt; and only a failed decryption is reported as a wrong
+  passphrase. The words are shown four to a row, so the grid fits an 80-column
+  terminal. A wallet imported from a hex seed is shown its seed
+  and told it has no phrase, instead of being handed 128 hex characters labelled
+  "recovery phrase". ESC or Enter takes the secret back off the screen and drops
+  it, along with the passphrase, from component state.
+- fa2a009: Upgrade to `@midnightntwrk/wallet-sdk` 2.0.0, which brings `@midnightntwrk/ledger-v9` 1.0.0, and to
+  `@midnight-ntwrk/midnight-js` 5.0.0. The SDK runs ledger-v8 below the chain's v9 fork and ledger-v9 from it, and its
+  wallets follow a live chain across the boundary, so moth reaches networks on either side with one
+  build.
+
+  - Wallets start from per-role seeds: `WalletKeys` is now `{shielded, unshielded, dust}` seeds
+    rather than ledger key objects, and the wallet holds the keys it derives from them for as long
+    as it runs. Transaction-building methods no longer take key material.
+  - Transactions travel as version-stamped handles (`FinalizedTransaction`). Hex payloads on the
+    daemon socket and dApp-supplied transactions are read with the ledger the facade is acting at,
+    through the SDK's `WalletFacade.adoptTransaction`; `transactionHashOf` and
+    `activeProtocolVersion` read hashes and versions off the handles.
+  - Proving routes by protocol version: one proof server serves both sides, and the in-process
+    prover, including the extension's in-worker one, is registered per ledger version. Each backend
+    refuses a transaction built by the other ledger version with `ProvingEpochMismatchError`.
+  - ledger-v8 now comes from `@midnightntwrk/ledger-v8` 8.1.3, the copy the SDK and midnight-js 5 both use, and the
+    in-process prover from `@midnightntwrk/zkir-v2` 2.2.0, the one the SDK proves with. The `@midnight-ntwrk` copies
+    are gone from the install: a second copy of a WASM ledger refuses the first one's objects.
+  - The client-side dedup of re-sent boundary events (`sync/sdk-dedup.ts`) is removed; the fix
+    landed upstream in both wallet variants.
+  - DUST fee balancing keeps largest-first coin selection and moth's own balancing loop on both
+    sides of the fork, through `DustWallet` rebuilt with `CustomForkingDustWallet` over the SDK's
+    `dustVariantConfigurations`, so each variant is valued against the same rates. SDK 2.0.0-rc.1
+    fixed the unbounded loop upstream; moth's stays because it reports each pass to the fee log.
+  - A DUST fee is no longer dated at a block whose DUST events the wallet has not applied, which the
+    node rejected with `Custom error: 170`. When neither the newest block nor the wallet's own is safe
+    to date it at, balancing re-reads the newest block every second and fails with `SyncWalletError`
+    after two minutes.
+  - A wallet restored from a cache written below the v9 fork is started by the facade with both
+    ledger versions' keys, derived from the seeds, so it resumes on whichever side its cache was
+    written.
+  - Contract deploy, call and maintenance run on midnight-js 5 and work on both sides of the v9 fork. An
+    artifact's compact-runtime version picks its ledger. One compiled by compactc 0.31 (runtime 0.16) is a
+    ledger-8 contract: it deploys and takes maintenance updates
+    before the fork, and stays callable after it. One compiled by compactc 0.36.0 (runtime 0.21) is a ledger-9
+    contract, which runs from the fork on; the proof server (9.0.0 or later) and the in-process prover both
+    prove its ZKIR v3 circuits. Artifacts compiled for any other runtime are refused.
+  - A contract project that has its own midnight-js runs the whole operation on that copy, so it must be on
+    midnight-js 5 and have the node-zk-config, indexer, level private state and http-client proof provider
+    packages. A project still on midnight-js 4 is refused with a message saying so.
+  - Contract artifacts are checked against `compiler/contract-manifest.json` when they carry one, as compactc
+    0.36 writes it.
+  - The intent the wallet adds while balancing a contract transaction lives for one hour, the lifetime
+    midnight-js gives the transaction itself, where it was 30 minutes.
+  - `createProofProvider(config, zkConfigProvider)` takes the contract's `ZKConfigProvider` rather than a key
+    material provider, and returns a midnight-js 5 proof provider that serves both ledger eras.
+  - Message signing returns the schnorr hex value of ledger-v9's tagged signature, so the wire
+    format is unchanged for connectors.
+  - Browser bundles now carry both ledgers' WASM, as every SDK 2.0 consumer does.
+  - The wait for the first facade emission no longer reaches for its own subscription: the 2.0
+    facade replays state synchronously on subscribe, which turned that into a startup crash.
+  - The SDK's unshielded subscription now reads `protocolVersion` off the indexer's progress frame,
+    so unshielded sync needs an indexer that exposes it (midnight-indexer 4.4.0-rc.2 / `25da0487`
+    or later). Against an older indexer the unshielded wallet never connects.
+  - The unshielded wallet no longer takes the indexer's word that it is synced: it checks the
+    indexer's tip against the node's finalized head, and its sync completes only once that check does
+    not block. Against an indexer that is behind the node, or on another network, unshielded sync
+    stays incomplete, and so do the NIGHT and DUST operations that wait for it.
+  - After a send or a DUST registration on a quiet wallet, unshielded sync reports complete within
+    seconds, where it could stay incomplete for up to about five minutes, waiting for the indexer's
+    next progress message. The NIGHT and DUST operations that wait for it no longer stall.
+  - A UTXO booked for a transaction that was never submitted is released once its TTL passes, and a
+    resync no longer re-admits a booked UTXO as available, which could double the NIGHT balance.
+  - Shielded coins booked for a transaction that is never submitted or never included are released
+    during sync, once the lesser of its TTL and 14 days has passed. A send or balance that fails
+    part-way releases the coins it had already booked.
+  - Each transaction in flight is one SDK lifecycle record, from balancing to the chain's verdict,
+    saved with the wallet under the same cache key; the pending list an earlier build saved is read
+    back as records. A record that ends rejected or orphaned releases its coins, as before.
+  - A transaction the chain applies only in part releases only the coins of its failed segments;
+    what its guaranteed and successful segments spent stays spent. Reverting a transaction releases
+    only the DUST it spent, and pending DUST is saved with the wallet, so a restored wallet can still
+    release it.
+  - Stopping a wallet whose node never answered now completes: the SDK's submission service
+    abandons its unfinished connection on close, and nothing it started keeps retrying. The
+    5-second bound on teardown, and its "Sync stop timed out" message, are gone.
+  - A call to the node after an idle gap, such as a send, no longer waits a second and logs
+    `WebSocket is not connected` before it is served.
+  - A wallet restored from cache reports the protocol version its state records, rather than its
+    variant's lower bound, so the protocol version shown in Settings and stamped on the transactions
+    it builds is right from the first state after a restart.
+  - Cached wallet state and transaction history are written in the SDK's versioned formats. A
+    pre-seeded snapshot, which carries no format version, still restores as the legacy format.
+    Fields a newer build wrote are kept on the next save. DUST snapshots and the lifecycle records
+    are written in new format versions that earlier builds refuse, so after a rollback the DUST
+    wallet resyncs from genesis and the records of transactions in flight are dropped.
+
+### Patch Changes
+
+- db695ea: The Cardano screen shows the DUST generation rate in DUST per second.
+
+  The indexer reports the rate in SPECK per second (10^15 per DUST), and the
+  "Generating" row rendered that integer as-is, with no unit — 37204806800000000
+  next to a meter reading in DUST. It now goes through the same SPECK → DUST
+  conversion as the capacities and reads, for example, "37.204806 tDUST/s".
+- 451cf52: cNIGHT registration on Cardano mainnet now goes to the contract the Midnight
+  bridge watches.
+
+  `cnight_generates_dust` compiles the cNIGHT policy in, so mainnet has its own
+  script: hash 73e4aea3…, address
+  `addr1w9e7ft4rrdd4rkdseguxr9hudfxyytm5ckh2qy0yhz7lfeg9lvhq7`. moth attached
+  the testnet script (7e69087d…) on every network, so a mainnet `register`
+  locked its NFT at `addr1w9lxjzranravtp574s2wz00md7vz9rzpucu252je68u9a8qe6r9ud`,
+  an address the bridge does not read: Cardano confirmed it and no DUST was
+  ever generated. `status`, `update` and `deregister` looked at the same wrong
+  address.
+
+  Each Cardano network now selects its own deployment, both pinned from
+  midnight-reserve-contracts' `deployed-scripts`. Preprod and Preview are
+  unchanged. `scripts/sync-cnight-blueprint.mjs` takes `--deployment
+  mainnet|testnet` and pins each hash separately.
+- 5aff21e: `MOTH_HOME` now applies to everything moth writes to disk.
+
+  It moved the keystore and the daemon socket but not the sync cache, daemon API
+  keys, the daemon audit log, contract private state (`level-db`), the CLI's
+  `timings.json` or the TUI's `moth.log`, which each built `~/.moth` themselves. A process that sets `MOTH_HOME` to isolate itself
+  was still sharing those with every other instance on the account, and deleting
+  a wallet looked for its socket under the wrong root.
+
+  **If you already set `MOTH_HOME`:** those now resolve under it. Existing API
+  keys, audit log, sync cache, contract private state, timings and TUI log stay in
+  `~/.moth` and are not migrated. Move them across, or reissue API keys, after upgrading.
+  Without `MOTH_HOME` nothing changes.
+- b66d004: Report each shielded coin with the fields needed to spend it.
+
+  A Compact circuit that takes a coin needs its nonce, type, value and Merkle index
+  (a `QualifiedShieldedCoinInfo`). Only the wallet has these: the dApp connector API
+  has no coin enumeration, and the indexer's Zswap state is filtered to one contract,
+  so it cannot give a global Merkle index. Sync kept only each coin's value and type.
+
+  - Core keeps the nonce, Merkle index and commitment on every shielded coin
+    (`ShieldedCoinInfo`), and `shieldedCoinRows` lists them in the field names a
+    circuit takes. The nullifier is never included.
+  - The extension adds the connector method `getShieldedCoins`, outside the standard
+    API like `deriveAppSecret`. It returns `{synced, coins}`, so an empty list can be
+    told apart from one sync has not filled yet. It needs a connected dApp and asks
+    the user every time, as `deriveAppSecret` does: the list shows the site every
+    shielded coin, nonces included, where `getShieldedBalances` shows only totals.
+  - `moth balance --coins` lists the same coins, as text or JSON.
+  - The TUI dashboard shows each shielded coin's Merkle index and nonce prefix.
+
+  Coins booked by a transaction still in flight are not listed as available:
+  wallet-sdk 2.0 already leaves them out of `availableCoins`.
+- 13dabe8: The TUI's Send screen parses NIGHT amounts with core's `parseNightAmount`.
+
+  It had its own parser, which cut off a seventh decimal place instead of
+  rejecting it, so `1.1234567` was sent as `1.123456`. The TUI's local
+  `parseNightAmount` in `utils/balance.ts`, used for a second parse at submit
+  time, is removed too.
+- 25570f0: Move to `@midnightntwrk/wallet-sdk` 2.0.1 and `@midnight-ntwrk/midnight-js` 5.0.1, with
+  `@midnightntwrk/ledger-v9` 1.0.2, `@midnightntwrk/onchain-runtime-v4` 4.0.2,
+  `@midnight-ntwrk/compact-js` 3.0.2 and `@midnightntwrk/zkir-v3` 3.2.1. `@midnightntwrk/ledger-v8`
+  stays at 8.1.3 and `@midnightntwrk/zkir-v2` at 2.2.0, the versions both libraries still build on.
+
+  - A failed submission keeps the transaction's coins and DUST booked unless the failure proves no
+    block holds it, so a finality timeout after inclusion no longer offers spent coins until sync
+    catches up.
+  - Proving through a proof server keeps at most 10 requests waiting there and resends on a full
+    queue (HTTP 429) and on 502, 503 and 504, so a transaction with many proofs no longer fails
+    with `Job Queue full`.
+  - A shielded wallet on a chain with no shielded outputs yet reports synced.
+  - A DUST wallet on projections sync keeps syncing when a pass returns a coin it already applied,
+    and a DUST snapshot holding values the wallet cannot use is refused rather than restored.
+- Updated dependencies [5ed095d]
+- Updated dependencies [8fcbeaa]
+- Updated dependencies [e38ea20]
+- Updated dependencies [b3ca358]
+- Updated dependencies [451cf52]
+- Updated dependencies [cabe681]
+- Updated dependencies [c59cb7e]
+- Updated dependencies [773443b]
+- Updated dependencies [6eeba08]
+- Updated dependencies [8b3cc3b]
+- Updated dependencies [9e6c972]
+- Updated dependencies [891e7f3]
+- Updated dependencies [db1b886]
+- Updated dependencies [5ce169b]
+- Updated dependencies [58b2553]
+- Updated dependencies [5aff21e]
+- Updated dependencies [d07668a]
+- Updated dependencies [fd3366a]
+- Updated dependencies [b57f3e9]
+- Updated dependencies [e3f8a35]
+- Updated dependencies [1fb2591]
+- Updated dependencies [353b8c5]
+- Updated dependencies [b66d004]
+- Updated dependencies [7519c11]
+- Updated dependencies [842b48b]
+- Updated dependencies [844ee29]
+- Updated dependencies [78300a1]
+- Updated dependencies [f12e1dd]
+- Updated dependencies [3f70d37]
+- Updated dependencies [3f70d37]
+- Updated dependencies [8f1356e]
+- Updated dependencies [fd3366a]
+- Updated dependencies [25570f0]
+- Updated dependencies [fa2a009]
+- Updated dependencies [ab76749]
+  - @shieldedtech/moth-wallet@0.15.0
+
 ## 0.14.1
 
 ### Patch Changes

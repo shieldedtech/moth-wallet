@@ -199,16 +199,34 @@ describe('activityRowView', () => {
     expect(view.icon).toBe('dust');
   });
 
-  it('renders a dust-negative entry as a network fee', () => {
+  it('renders a DUST spend as a network fee, with no amount', () => {
+    const view = activityRowView(entry({ kind: 'dust', paidFee: true }), labels, { now: NOW });
+
+    expect(view.title).toBe('Network fee paid');
+    expect(view.amount).toBeNull();
+    expect(view.tone).toBe('negative');
+  });
+
+  // dustDelta compares initial values, so a fee-paying transaction usually reads
+  // positive (the spent UTXO had generated more since). It used to be titled a
+  // registration and shown as DUST gained.
+  it('calls a fee a fee even when the DUST delta reads positive', () => {
     const view = activityRowView(
-      entry({ kind: 'dust', dustDelta: -400_000_000_000_000n }),
+      entry({ kind: 'dust', paidFee: true, dustDelta: 7_041_095_999_999_999n }),
       labels,
       { now: NOW },
     );
 
     expect(view.title).toBe('Network fee paid');
-    expect(view.amount).toBe('-0.4 tDUST');
+    expect(view.amount).toBeNull();
     expect(view.tone).toBe('negative');
+  });
+
+  it('never shows a DUST delta as an amount on a registration', () => {
+    const view = activityRowView(entry({ kind: 'dust', dustDelta: 5n }), labels, { now: NOW });
+
+    expect(view.title).toBe('tDUST registration');
+    expect(view.amount).toBeNull();
   });
 
   it('marks failures in the subtitle and mutes the amount', () => {

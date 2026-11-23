@@ -72,6 +72,7 @@ export const hostDispatch: Dispatch = {
   'os/syncCacheClear': (host, d) => host.syncCacheClear(d.walletName, d.networkIds),
   'os/syncCacheReset': (host, d) => host.syncCacheReset(d.walletName, d.network),
   'os/balancesGet': (host, d) => host.balancesGet(d.seedHex, d.walletName, d.network),
+  'os/shieldedCoinsGet': (host, d) => host.shieldedCoinsGet(d.seedHex, d.walletName, d.network),
   'os/sendTokens': (host, d) => host.sendTokens(d.seedHex, d.walletName, d.network, d.requests),
   'os/estimateTransferFee': (host, d) =>
     host.estimateTransferFee(d.seedHex, d.walletName, d.network, d.requests),
@@ -85,6 +86,7 @@ export const hostDispatch: Dispatch = {
   'os/protocolStatus': (host) => host.protocolStatus(),
   'os/requestStatsReset': (host) => host.resetRequestStats(),
   'os/dustRebuild': (host, d) => host.dustRebuild(d.seedHex, d.walletName, d.network),
+  'os/shieldedRebuild': (host, d) => host.shieldedRebuild(d.seedHex, d.walletName, d.network),
   'os/transferBuild': (host, d) => host.transferBuild(d.seedHex, d.walletName, d.network, d.requests, d.payFees),
   'os/transferSubmit': (host, d) => host.transferSubmit(d.seedHex, d.walletName, d.network, d.txHex),
   'os/txHistoryGet': (host, d) => host.txHistoryGet(d.seedHex, d.walletName, d.network, d.pageNumber, d.pageSize),

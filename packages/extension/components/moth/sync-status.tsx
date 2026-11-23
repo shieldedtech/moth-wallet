@@ -9,13 +9,11 @@ export interface SyncStatusView {
   unshielded: number;
   dust: number;
   /**
-   * Overall percent 0-100: core's `syncProgress.percentage`, the SLOWEST
-   * sub-wallet, which core holds below 100 until the wallet is synced.
+   * Overall percent 0-100: core's `syncProgress.percentage`, the average of the
+   * rows still syncing, which core holds below 100 until the wallet is synced.
    *
-   * Not an average of the rows. The ETA beside it is computed against the
-   * slowest sub-wallet, so an average read "67% · ~5 min left" where the five
-   * minutes belonged to a row at 25% — and 100, 100 and 99 average to 99.67,
-   * which rounds to a "100%" the wallet has not reached.
+   * Not recomputed here: core leaves out a row that finished with nothing to
+   * sync, and the ETA beside it comes from the slowest row, not the average.
    */
   overall: number;
   /**

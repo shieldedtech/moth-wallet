@@ -310,6 +310,10 @@ export interface OffscreenProtocol {
   /** Ensure sync, wait for a synced snapshot, and return serialized balances. */
   'os/balancesGet'(data: { seedHex: string; walletName: string; network: NetworkConfig }): string;
 
+  /** Ensure sync and return the shielded coins with their spend fields, as bigint JSON:
+   *  `{synced, coins: ShieldedCoinRow[]}`. Separate from balancesGet, which blanks coins. */
+  'os/shieldedCoinsGet'(data: { seedHex: string; walletName: string; network: NetworkConfig }): string;
+
   'os/sendTokens'(data: {
     seedHex: string;
     walletName: string;
@@ -359,6 +363,13 @@ export interface OffscreenProtocol {
     applied: number;
     total: number;
   };
+  /** Evict the shielded sync cache and restart sync so the shielded sub-wallet
+   *  rescans, keeping DUST. Spends nothing. `started` is false when a transaction was in flight. */
+  'os/shieldedRebuild'(data: {
+    seedHex: string;
+    walletName: string;
+    network: NetworkConfig;
+  }): { started: boolean };
   /** Evict the dust sync cache and restart sync so the dust sub-wallet rescans.
    *  Spends nothing. `started` is false when a transaction was in flight. */
   'os/dustRebuild'(data: {

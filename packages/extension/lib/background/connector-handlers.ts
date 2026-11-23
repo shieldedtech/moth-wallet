@@ -59,6 +59,7 @@ const APPROVAL_METHODS = new Set<ConnectorMethod>([
   'hintUsage',
   'signData',
   'deriveAppSecret',
+  'getShieldedCoins',
   'balanceSealedTransaction',
   'balanceUnsealedTransaction',
   'makeIntent',
@@ -412,6 +413,18 @@ async function dispatchMethod(
     case 'getShieldedBalances': {
       const session = await requireConnected(origin);
       return (await syncedBalances(session)).shielded;
+    }
+
+    // Asks every time, as deriveAppSecret does: the list shows the site every
+    // shielded coin, nonces included, which totals alone never did.
+    case 'getShieldedCoins': {
+      const session = await requireConnected(origin);
+      const approved = await requestApproval('shieldedCoins', origin, {}, senderTabId, preparedPanel, requester);
+      if (!approved) throw connectorError('Rejected', 'User rejected sharing shielded coins');
+      const network = await getNetworkConfig();
+      return decodeBigintJson(
+        await offscreen.shieldedCoinsGet({ seedHex: session.seedHex, walletName: session.walletName, network }),
+      );
     }
 
     case 'getUnshieldedBalances': {

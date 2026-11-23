@@ -39,6 +39,13 @@ export const settings = {
   settings_resyncConfirm: 'Clear & resync',
   settings_resyncWorking: 'Clearing\u2026',
   settings_resyncError: 'Could not clear the cache. Try again.',
+  settings_rebuildShielded: 'Rebuild shielded coins',
+  settings_rebuildShieldedDescription:
+    'Scan the chain again for this account\u2019s shielded coins, if a shielded balance looks wrong or stale. DUST is kept, so this is much faster than a full resync.',
+  settings_rebuildShieldedButton: 'Rebuild',
+  settings_rebuildShieldedWorking: 'Rebuilding\u2026',
+  settings_rebuildShieldedDeferred: 'A transaction is in progress. Try again once it settles.',
+  settings_rebuildShieldedError: 'Could not rebuild. Try again.',
   settings_sectionSecurity: 'Security',
   settings_autoLock: 'Auto-lock',
   settings_autoLockDemo: 'The wallet never locks itself on its own.',
