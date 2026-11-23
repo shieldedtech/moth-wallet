@@ -10,7 +10,11 @@ import {
   makeDefaultSubmissionService,
   type SubmissionService,
 } from '@midnightntwrk/wallet-sdk/capabilities/submission';
-import {ShieldedWallet} from '@midnightntwrk/wallet-sdk/shielded';
+import {CustomForkingShieldedWallet, ShieldedWallet} from '@midnightntwrk/wallet-sdk/shielded';
+import {V1Builder} from '@midnightntwrk/wallet-sdk/shielded/v1';
+import {V2Builder, Migration as ShieldedMigration} from '@midnightntwrk/wallet-sdk/shielded/v2';
+import {makeIndexerChainVersionProbe} from '@midnightntwrk/wallet-sdk/capabilities';
+import {coinSelectionFor, type CoinSelectionStrategy} from './coin-selection.js';
 import {UnshieldedWallet, PublicKey, createKeystore} from '@midnightntwrk/wallet-sdk/unshielded';
 import {InMemoryTransactionHistoryStorage, type FinalizedTx} from '@midnightntwrk/wallet-sdk';
 import {WalletEntrySchema, lifecycleTransactionTraits, mergeWalletEntries} from '@midnightntwrk/wallet-sdk/facade';
@@ -420,6 +424,28 @@ export interface WalletSyncOptions {
    * otherwise observable only on chain.
    */
   onDustFeePass?: (pass: DustFeePass) => void;
+  /**
+   * Which shielded coin to spend first when balancing a transaction. Default
+   * `smallest-first`, the SDK's own rule.
+   */
+  coinSelection?: CoinSelectionStrategy;
+}
+
+/** The shielded wallet class, with the SDK's defaults or another coin-selection rule. */
+function shieldedWalletClass(walletCfg: Parameters<typeof ShieldedWallet>[0], strategy: CoinSelectionStrategy | undefined) {
+  if (strategy === undefined || strategy === 'smallest-first') return ShieldedWallet(walletCfg);
+  // Mirrors ShieldedWallet(), which offers no way to change the rule.
+  return CustomForkingShieldedWallet(
+    {...walletCfg, chainVersionProbe: walletCfg.chainVersionProbe ?? makeIndexerChainVersionProbe(walletCfg)},
+    {builder: new V1Builder().withDefaults().withCoinSelection(() => coinSelectionFor(strategy)), configuration: walletCfg},
+    {
+      builder: new V2Builder()
+        .withDefaults()
+        .withCoinSelection(() => coinSelectionFor(strategy))
+        .withMigration(() => ShieldedMigration.makeCrossLedgerMigration()),
+      configuration: walletCfg,
+    }
+  );
 }
 
 /**
@@ -583,7 +609,7 @@ export async function startWalletSync(
 
   // --- Shielded wallet: try restore from cache ---
   onProgress?.('Starting shielded wallet...');
-  const Shielded = ShieldedWallet(walletCfg);
+  const Shielded = shieldedWalletClass(walletCfg, options?.coinSelection);
   let shieldedWallet: ShieldedWallet | undefined;
   let restoredFromCache = false;
   const savedShielded = await loadCachedState(store, name, network.id, 'shielded');
@@ -1142,9 +1168,11 @@ export function extractBalancesPartial(
     if (Object.keys(shielded).length === 0 && Object.keys(previous.shielded).length > 0) shielded = previous.shielded;
     if (Object.keys(unshielded).length === 0 && Object.keys(previous.unshielded).length > 0) unshielded = previous.unshielded;
     if (dust === 0n && previous.dust > 0n) dust = previous.dust;
-    if (coins.shielded.available.length === 0 && previous.coins.shielded.available.length > 0) coins.shielded = previous.coins.shielded;
-    if (coins.unshielded.available.length === 0 && previous.coins.unshielded.available.length > 0) coins.unshielded = previous.coins.unshielded;
-    if (coins.dust.available.length === 0 && previous.coins.dust.available.length > 0) coins.dust = previous.coins.dust;
+    // A sub-wallet whose coins are all pending (spent by a transaction not yet in
+    // a block) has none available; that is news, not a gap, so keep it.
+    if (coins.shielded.available.length === 0 && coins.shielded.pending.length === 0 && previous.coins.shielded.available.length > 0) coins.shielded = previous.coins.shielded;
+    if (coins.unshielded.available.length === 0 && coins.unshielded.pending.length === 0 && previous.coins.unshielded.available.length > 0) coins.unshielded = previous.coins.unshielded;
+    if (coins.dust.available.length === 0 && coins.dust.pending.length === 0 && previous.coins.dust.available.length > 0) coins.dust = previous.coins.dust;
   }
 
   // First usable sample is the session's starting point. Captured after the
