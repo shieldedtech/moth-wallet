@@ -1946,6 +1946,12 @@
   "cardano_retry": {
     "message": "Erneut versuchen"
   },
+  "cardano_refreshing": {
+    "message": "Wird von Cardano aktualisiert …"
+  },
+  "cardano_refreshFailed": {
+    "message": "Aktualisierung von Cardano fehlgeschlagen, dies ist der zuletzt gelesene Stand."
+  },
   "cardano_settingsSection": {
     "message": "Cardano"
   },
