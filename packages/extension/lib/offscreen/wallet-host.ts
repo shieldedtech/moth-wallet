@@ -5,6 +5,7 @@
 
 import { shieldedCoinRows } from '@shieldedtech/moth-wallet/wallet/shielded-coins';
 import { encodeBigintJson } from '../messaging/bigint-json';
+import { sameEndpoints } from '../messaging/network-endpoints';
 import { relayRetry, setRelayUrl } from './relay-socket';
 import { installBundledReference, hasBundledReference } from './bundled-preseed';
 import { requestMeter, type MeterSnapshot } from './request-meter';
@@ -311,15 +312,19 @@ export async function walletUnlock(name: string, passphrase: string, network: st
 
 // --- Sync engine (singleton) ----------------------------------------------
 
-let current: {
+interface SyncRecord {
   key: string;
+  /** What the engine was started against; the background's own start replaces it when its endpoints differ. */
+  network: NetworkConfig;
   synced: Promise<SyncedWallet>;
   // The WASM key bundle for this sync session, derived once from the seed the
   // background threads in (Option A: core is called only with keys). Reused by
   // every op so none re-derives or holds the raw seed past derivation.
   walletKeys: WalletKeys;
   unsubscribe?: () => void;
-} | null = null;
+}
+
+let current: SyncRecord | null = null;
 
 /** Keys for the live sync session. Ops call this after syncEnsure so they pass
  *  walletKeys — never the seed — into the keys-based core write paths. */
@@ -328,11 +333,15 @@ function activeWalletKeys(): WalletKeys {
   return current.walletKeys;
 }
 
-// In-flight teardown. The background service worker fires syncStop without
-// awaiting it (locking must not wait for the WASM state serialization), so a
-// following syncEnsure must queue behind the shutdown instead of racing a new
-// sync engine against it.
-let stopping: Promise<void> | null = null;
+// Engine starts and stops run one at a time, so a stop reaches an engine whose start
+// is still being prepared and two starts can never both register one.
+let lifecycle: Promise<unknown> = Promise.resolve();
+
+function serialized<T>(step: () => Promise<T>): Promise<T> {
+  const run = lifecycle.then(step);
+  lifecycle = run.catch(() => {});
+  return run;
+}
 
 /** Bound on waiting out a start-then-stop round trip. Well above a slow cold start,
  *  because abandoning a healthy one leaves two engines coming up at once. */
@@ -342,11 +351,45 @@ export async function syncEnsure(
   seedHex: string,
   walletName: string,
   network: NetworkConfig,
+  /** Set by the background's own start, whose endpoints are the saved ones. */
+  opts: { authoritative?: boolean } = {},
 ): Promise<SyncedWallet> {
   const key = `${network.id}/${walletName}`;
-  if (current?.key === key) return current.synced;
+  const { record, started } = await serialized(async () => {
+    // An op may carry endpoints read before a settings save, so only the background moves a running engine.
+    if (current?.key === key && (!opts.authoritative || sameEndpoints(current.network, network))) {
+      return { record: current, started: false };
+    }
+    const record = await startEngine(seedHex, walletName, network, key);
+    return { record, started: true };
+  });
+  if (!started) return record.synced;
 
-  await syncStop();
+  const wallet = await record.synced.catch((err) => {
+    // A later start may already have replaced this record; that session is not ours to drop.
+    if (current === record) current = null;
+    throw err;
+  });
+
+  // Guarded by identity: a replaced engine for the same wallet shares its key, and
+  // core's subscribe emits synchronously before returning.
+  const unsubscribe = wallet.subscribe((balances) => {
+    if (current !== record) return;
+    emit('os/eventBalances', serializeForClients(balances));
+  });
+  if (current === record) record.unsubscribe = unsubscribe;
+  else unsubscribe();
+  return wallet;
+}
+
+/** Replace whatever engine is running with a new one. Runs inside the lifecycle queue. */
+async function startEngine(
+  seedHex: string,
+  walletName: string,
+  network: NetworkConfig,
+  key: string,
+): Promise<SyncRecord> {
+  await stopCurrent();
 
   // Name the socket the backoff wrapper should throttle. Must mirror how core
   // derives the SDK's relayURL from nodeUrl (sync/wallet-sync.ts), or the
@@ -382,40 +425,8 @@ export async function syncEnsure(
       ...(ON_MAIN_THREAD ? { batchUpdates: MAIN_THREAD_BATCH } : {}),
     },
   );
-  current = { key, synced, walletKeys };
-
-  const wallet = await synced.catch((err) => {
-    // Only disown the session if it is still ours. `current` can have moved on
-    // across this await, and syncStop bounds its wait at STOP_TIMEOUT_MS — so a
-    // start that fails after that bound would otherwise null the record of the
-    // wallet the user switched to, and every later op would report no wallet
-    // synced.
-    if (current?.key === key) current = null;
-    throw err;
-  });
-
-  // A subscription must not outlive its wallet's turn as the active one.
-  //
-  // `current` can change across the await above, and core's `subscribe` invokes
-  // the callback synchronously with that wallet's own balances before returning
-  // (sync/wallet-sync.ts). So an unguarded callback publishes a superseded
-  // wallet's balance into the shared channel at the instant it subscribes —
-  // which the panel then shows, attributed to the wallet the user is looking at,
-  // until the active wallet next emits. A synced wallet emits only on change,
-  // audited at 1s, so "until" can be minutes.
-  const unsubscribe = wallet.subscribe((balances) => {
-    if (current?.key !== key) return;
-    emit('os/eventBalances', serializeForClients(balances));
-  });
-  if (current?.key === key) {
-    current.unsubscribe = unsubscribe;
-  } else {
-    // Superseded while starting: no record will ever hold this handle, so
-    // syncStop could not reach it. Drop it here rather than leaving the callback
-    // in core's subscriber list for the lifetime of the document.
-    unsubscribe();
-  }
-  return wallet;
+  current = { key, network, synced, walletKeys };
+  return current;
 }
 
 // Rebuild of a stale local dust view (registered NIGHT past the grace period
@@ -604,44 +615,44 @@ export async function dustRebuild(
   }
 }
 
-export async function syncStop(): Promise<void> {
-  if (current) {
-    const target = current;
-    current = null;
-    stopping = (stopping ?? Promise.resolve()).then(async () => {
-      try {
-        target.unsubscribe?.();
-      } catch {
-        /* subscription already gone */
-      }
-      // Unbounded on purpose: an engine that comes up after the wait below gave up
-      // must still be stopped, or it keeps writing the cache the next one restores.
-      const settled = target.synced.then(
-        (wallet) => wallet.stop().catch(() => {}),
-        () => {
-          /* never finished starting */
-        },
-      );
-      // The wait itself is bounded, because a start against an unreachable node
-      // settles neither way and every caller of syncStop inherits that.
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      const timedOut = await new Promise<boolean>((resolve) => {
-        timer = setTimeout(() => resolve(true), STOP_TIMEOUT_MS);
-        void settled.then(() => resolve(false));
-      });
-      clearTimeout(timer);
-      if (timedOut) {
-        emit(
-          'os/eventSyncMessage',
-          `Sync stop still pending after ${STOP_TIMEOUT_MS / 1000}s — continuing without it`,
-        );
-      }
-    });
+// Queued, so a stop fired without awaiting (locking must not wait for the WASM state
+// serialization) still lands before the next start.
+export function syncStop(): Promise<void> {
+  return serialized(stopCurrent);
+}
+
+/** Stop and forget the running engine. Runs inside the lifecycle queue. */
+async function stopCurrent(): Promise<void> {
+  const target = current;
+  if (!target) return;
+  current = null;
+  try {
+    target.unsubscribe?.();
+  } catch {
+    /* subscription already gone */
   }
-  const inFlight = stopping;
-  if (!inFlight) return;
-  await inFlight;
-  if (stopping === inFlight) stopping = null;
+  // Unbounded on purpose: an engine that comes up after the wait below gave up
+  // must still be stopped, or it keeps writing the cache the next one restores.
+  const settled = target.synced.then(
+    (wallet) => wallet.stop().catch(() => {}),
+    () => {
+      /* never finished starting */
+    },
+  );
+  // The wait itself is bounded, because a start against an unreachable node
+  // settles neither way and every caller of syncStop inherits that.
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = await new Promise<boolean>((resolve) => {
+    timer = setTimeout(() => resolve(true), STOP_TIMEOUT_MS);
+    void settled.then(() => resolve(false));
+  });
+  clearTimeout(timer);
+  if (timedOut) {
+    emit(
+      'os/eventSyncMessage',
+      `Sync stop still pending after ${STOP_TIMEOUT_MS / 1000}s — continuing without it`,
+    );
+  }
 }
 
 export async function syncCacheClear(walletName: string, networkIds: string[]): Promise<void> {

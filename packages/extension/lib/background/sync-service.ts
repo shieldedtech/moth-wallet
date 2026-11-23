@@ -13,6 +13,7 @@ import { offscreen } from './offscreen-client';
 import { acquireKeepalive, releaseKeepalive } from './keepalive';
 import { hasPendingApproval } from './approvals';
 import { record as recordTiming } from './timings';
+import { sameEndpoints } from '../messaging/network-endpoints';
 import type { Session } from './session';
 
 const SNAPSHOT_KEY = 'balances.snapshot';
@@ -31,6 +32,8 @@ let sawBalancesSinceStart = false;
 // claim about a connection this process has never observed.
 let lastRelayState: RelayState | null = null;
 let currentKey: string | null = null;
+// Endpoints of the start that set currentKey: an endpoint change keeps the key, so the key alone would swallow the restart.
+let currentNetwork: NetworkConfig | null = null;
 // Operations (panel sends, dApp connector builds/submits) currently in flight.
 let opsInFlight = 0;
 // The transaction stage in progress, stamped when it began: replayed to each new port
@@ -111,7 +114,7 @@ export async function clearSnapshot(): Promise<void> {
 /** Start (or resume) sync for the unlocked wallet in the offscreen document. */
 export async function startSync(session: Session, network: NetworkConfig): Promise<void> {
   const key = `${network.id}/${session.walletName}`;
-  if (currentKey === key) return;
+  if (currentKey === key && currentNetwork !== null && sameEndpoints(currentNetwork, network)) return;
   // Switching accounts/network: drop the previous account's cached snapshot
   // (and reset the panels) so its balances, coins and progress can't be shown
   // under the newly-selected account until the new sync emits its first update.
@@ -129,6 +132,7 @@ export async function startSync(session: Session, network: NetworkConfig): Promi
   lastProgressPct = -1;
   syncHoldSince = null;
   currentKey = key;
+  currentNetwork = network;
   try {
     await offscreen.syncEnsure({ seedHex: session.seedHex, walletName: session.walletName, network });
   } catch (error) {
