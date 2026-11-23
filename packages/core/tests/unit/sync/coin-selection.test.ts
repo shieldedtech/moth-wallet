@@ -83,6 +83,26 @@ describe('coin selection', () => {
     expect(rounds('best-fit')).toBe(200);
   });
 
+  it('best-fit spends largest first in a swap, where the SDK does not say what is owed', () => {
+    // initSwap balances from empty imbalances toward a target of 50 T, so the
+    // selector sees 0, then the running total, never the 50 still owed.
+    const swap = (strategy: CoinSelectionStrategy) =>
+      getBalanceRecipe<C, {type: string; value: bigint}>({
+        coins: [coin(1, 5n), coin(2, 40n), coin(3, 60n), coin(4, 100n)],
+        initialImbalances: new Map(),
+        transactionCostModel: {inputFeeOverhead: 0n, outputFeeOverhead: 0n},
+        feeTokenType: '',
+        createOutput: (c) => c,
+        isCoinEqual: (a, b) => a.id === b.id,
+        coinSelection: coinSelectionFor<C>(strategy),
+        targetImbalances: new Map([[T, 50n]]),
+      });
+
+    // Before: 5, then 40, then 60, as smallest-first would.
+    expect(swap('best-fit').inputs.map((c) => c.id)).toEqual([4]);
+    expect(swap('smallest-first').inputs.map((c) => c.id)).toEqual([1, 2, 3]);
+  });
+
   it('parses strategy names', () => {
     expect(parseCoinSelectionStrategy('best-fit')).toBe('best-fit');
     expect(() => parseCoinSelectionStrategy('random')).toThrow(/smallest-first, largest-first, best-fit/);

@@ -194,5 +194,28 @@ describe('extractBalancesPartial while the only DUST coin is pending', () => {
     const gap = extractBalancesPartial(state([], []), 0, 0, undefined, before);
     expect(gap.coins.dust.available).toHaveLength(1);
   });
+
+  // A emission whose DUST slice is missing, or whose balance() throws before the
+  // coins are read.
+  const unread = (how: 'missing' | 'throws'): FacadeState => {
+    const s = state([], []) as unknown as {dust: unknown};
+    s.dust = how === 'missing' ? undefined : {balance: () => { throw new Error('mid-read'); }, availableCoins: [], pendingCoins: []};
+    return s as unknown as FacadeState;
+  };
+
+  it.each(['missing', 'throws'] as const)('keeps a pending-only list through a later unread emission (%s)', (how) => {
+    const a = extractBalancesPartial(state([coin], []));
+    const b = extractBalancesPartial(state([], [coin]), 0, 0, undefined, a);
+    const c = extractBalancesPartial(unread(how), 0, 0, undefined, b);
+    expect(c.coins.dust.pending).toHaveLength(1);
+    expect(c.coins.dust.available).toHaveLength(0);
+  });
+
+  it('shows a sweep of the last coin as empty, not as still pending', () => {
+    const pending = extractBalancesPartial(state([], [coin]));
+    const swept = extractBalancesPartial(state([], []), 0, 0, undefined, pending);
+    expect(swept.coins.dust.pending).toHaveLength(0);
+    expect(swept.coins.dust.available).toHaveLength(0);
+  });
 });
 

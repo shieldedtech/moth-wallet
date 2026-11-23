@@ -8,7 +8,8 @@ import {chooseCoin, type CoinSelection} from '@midnightntwrk/wallet-sdk/capabili
  * - `largest-first`: spends the largest coin first, so a payment smaller than
  *   it needs one input.
  * - `best-fit`: spends the smallest coin that covers what is still owed on its
- *   own; if none does, the largest, and repeats.
+ *   own; if none does, the largest, and repeats. In a swap the SDK does not
+ *   say what is owed, so best-fit spends largest first there.
  */
 export type CoinSelectionStrategy = 'smallest-first' | 'largest-first' | 'best-fit';
 
@@ -49,9 +50,14 @@ export function coinSelectionFor<T extends Coin>(strategy: CoinSelectionStrategy
     case 'largest-first':
       return (coins, tokenType) => largestFirst(coins, tokenType);
     case 'best-fit':
-      // The SDK passes the token's current imbalance, which is negative while
-      // inputs are still owed.
-      return (coins, tokenType, imbalance) => bestFit(coins, tokenType, imbalance < 0n ? -imbalance : 0n);
+      // The SDK passes the token's current imbalance, which is negative while a
+      // transfer still owes inputs. A swap (initSwap) instead starts at zero and
+      // selects until it reaches a target the selector is never shown, so the
+      // imbalance is zero or positive and says nothing about what is owed. The
+      // shielded wallet has no fee token, so that only happens in a swap; there,
+      // largest-first gives the fewest inputs instead of smallest-first.
+      return (coins, tokenType, imbalance) =>
+        imbalance < 0n ? bestFit(coins, tokenType, -imbalance) : largestFirst(coins, tokenType);
     default: {
       const unknown: never = strategy;
       throw new Error(`Unknown coin selection strategy: ${String(unknown)}`);
