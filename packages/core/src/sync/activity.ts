@@ -8,6 +8,17 @@
 
 import type {WalletEntry} from '@midnightntwrk/wallet-sdk/facade';
 
+/**
+ * The execution status of an entry. The indexer reports one once the transaction
+ * is applied; an entry the wallet recorded itself carries only its lifecycle, so
+ * a rejection reads as a failure and everything else as a success until the chain
+ * says otherwise.
+ */
+function statusOf(entry: WalletEntry): ActivityStatus {
+  if (entry.status) return entry.status;
+  return entry.lifecycle?.status === 'rejected' ? 'FAILURE' : 'SUCCESS';
+}
+
 export type ActivityKind = 'sent' | 'received' | 'swap' | 'dust';
 export type ActivityStatus = 'SUCCESS' | 'FAILURE' | 'PARTIAL_SUCCESS';
 
@@ -28,13 +39,19 @@ export interface ActivityEntry {
   timestamp: Date | null;
   /** Net per-token movements, largest magnitude first. Excludes DUST. */
   deltas: ActivityDelta[];
-  /** Net DUST movement (initial values of received minus spent DUST UTXOs). */
+  /**
+   * Initial values of received minus spent DUST UTXOs. Not a fee and not for
+   * display: a spent UTXO's initial value predates the DUST it generated since,
+   * so a fee-paying transaction usually reads positive here.
+   */
   dustDelta: bigint;
+  /** True when this wallet spent DUST in the transaction, i.e. it paid the fee. */
+  paidFee?: boolean;
   /** The other side's unshielded address, when the entry reveals it. */
   counterparty: string | null;
-  /** DUST paid in fees, when the indexer reported it. */
+  /** The indexer's `paidFees`, as reported. Not a reliable amount: preprod reports 0 or 1 for every transaction. */
   fees: bigint | null;
-  /** True for a locally-submitted transaction not yet seen on chain. */
+  /** True for a submitted transaction the chain has not yet applied. */
   pending: boolean;
   /** Number of outgoing destination outputs the wallet can see — how many
    *  transfers a single (possibly batched) transaction carried. Counts
@@ -114,13 +131,14 @@ export function deriveActivityEntry(entry: WalletEntry, ownAddress: string): Act
     hash: entry.hash,
     identifiers: entry.identifiers ? [...entry.identifiers] : undefined,
     kind,
-    status: entry.status,
+    status: statusOf(entry),
     timestamp: entry.timestamp ?? null,
     deltas: net,
     dustDelta,
+    paidFee: (entry.dust?.spentUtxos?.length ?? 0) > 0,
     counterparty: kind === 'sent' || kind === 'swap' ? recipient : kind === 'received' ? sender : null,
     fees: entry.fees ?? null,
-    pending: false,
+    pending: entry.lifecycle?.status === 'pending',
     outputs,
   };
 }
@@ -134,6 +152,22 @@ export function sortActivity<T extends {timestamp: Date | null}>(entries: T[]): 
   return [...entries].sort((a, b) => (b.timestamp?.getTime() ?? 0) - (a.timestamp?.getTime() ?? 0));
 }
 
+/**
+ * DUST arriving with nothing else of the wallet's in the transaction: generation
+ * starting, or restarting at a protocol upgrade. The wallet did nothing and paid
+ * nothing, so it is not activity; the feed tracks what the wallet spends.
+ */
+function isDustReceiptOnly(entry: WalletEntry): boolean {
+  return (
+    entry.dust !== undefined &&
+    (entry.dust.spentUtxos?.length ?? 0) === 0 &&
+    entry.shielded === undefined &&
+    entry.unshielded === undefined
+  );
+}
+
 export function deriveActivity(entries: readonly WalletEntry[], ownAddress: string): ActivityEntry[] {
-  return sortActivity(entries.map((entry) => deriveActivityEntry(entry, ownAddress)));
+  return sortActivity(
+    entries.filter((entry) => !isDustReceiptOnly(entry)).map((entry) => deriveActivityEntry(entry, ownAddress)),
+  );
 }

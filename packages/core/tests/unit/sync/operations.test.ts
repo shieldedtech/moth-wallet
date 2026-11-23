@@ -1,12 +1,16 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import * as Rx from 'rxjs';
+import { ProtocolVersion, WalletTransaction } from '@midnightntwrk/wallet-sdk';
 import type { UtxoWithMeta, WalletFacade } from '@midnightntwrk/wallet-sdk/facade';
+import { SubmissionError } from '@midnightntwrk/wallet-sdk/capabilities/submission';
+import { NodeClientError } from '@midnightntwrk/wallet-sdk/node-client/effect';
 import {
   designateForDust,
   dedesignateFromDust,
   deriveWalletKeys,
   estimateTransferFee,
   listNightUtxos,
+  submitFinalizedTransaction,
   type TxStage,
   type WalletKeys,
 } from '../../../src/sync/operations.js';
@@ -23,6 +27,16 @@ beforeAll(async () => {
   seedHex = await testSeedHex();
   keys = deriveWalletKeys(seedHex);
 });
+
+/** A finalized handle over a stand-in ledger transaction, the shape the facade
+ * returns from finalizeRecipe: the hash it carries is what moth must report. */
+function finalizedHandle() {
+  return WalletTransaction.adopt(
+    'Finalized',
+    { serialize: () => new Uint8Array(), transactionHash: () => 'tx-hash' },
+    ProtocolVersion.MinSupportedVersion,
+  );
+}
 
 /** A fresh faucet-funded wallet can have complete NIGHT state while the facade
  * aggregate remains unsynced because its shielded and DUST streams are empty. */
@@ -74,7 +88,7 @@ describe('DUST operations on a fresh wallet', () => {
       meta: { ctime: new Date(), registeredForDustGeneration: false },
     } as UtxoWithMeta;
     const recipe = { type: 'UNPROVEN_TRANSACTION', transaction: {} };
-    const finalized = { identifiers: () => ['tx-id'], transactionHash: () => 'tx-hash' };
+    const finalized = finalizedHandle();
     const registerNightUtxosForDustGeneration = vi.fn().mockResolvedValue(recipe);
     const finalizeRecipe = vi.fn().mockResolvedValue(finalized);
     // The facade resolves to an intent identifier — the submit path must
@@ -107,7 +121,7 @@ describe('DUST operations on a fresh wallet', () => {
       meta: { ctime: new Date(), registeredForDustGeneration: false },
     } as UtxoWithMeta;
     const recipe = { type: 'UNPROVEN_TRANSACTION', transaction: {} };
-    const finalized = { identifiers: () => ['tx-id'], transactionHash: () => 'tx-hash' };
+    const finalized = finalizedHandle();
     // The pool already holds this tx (a prior attempt landed); the node rejects
     // the resubmitted identical bytes with 1013 rather than accepting it again.
     const submitTransaction = vi
@@ -130,7 +144,7 @@ describe('DUST operations on a fresh wallet', () => {
       meta: { ctime: new Date(), registeredForDustGeneration: false },
     } as UtxoWithMeta;
     const recipe = { type: 'UNPROVEN_TRANSACTION', transaction: {} };
-    const finalized = { identifiers: () => ['tx-id'], transactionHash: () => 'tx-hash' };
+    const finalized = finalizedHandle();
     // The node evaluated the tx and rejected it — resending the same bytes only
     // yields the same verdict, so the user should see the failure at once.
     const submitTransaction = vi.fn().mockRejectedValue(new Error('1010: Invalid Transaction'));
@@ -152,7 +166,7 @@ describe('DUST operations on a fresh wallet', () => {
         meta: { ctime: new Date(), registeredForDustGeneration: false },
       } as UtxoWithMeta;
       const recipe = { type: 'UNPROVEN_TRANSACTION', transaction: {} };
-      const finalized = { identifiers: () => ['tx-id'], transactionHash: () => 'tx-hash' };
+      const finalized = finalizedHandle();
       // First attempt never reached the node; a resend is warranted.
       const submitTransaction = vi
         .fn()
@@ -182,7 +196,7 @@ describe('DUST operations on a fresh wallet', () => {
       meta: { ctime: new Date(), registeredForDustGeneration: false },
     } as UtxoWithMeta;
     const recipe = { type: 'UNPROVEN_TRANSACTION', transaction: {} };
-    const finalized = { identifiers: () => ['tx-id'], transactionHash: () => 'tx-hash' };
+    const finalized = finalizedHandle();
     const submitTransaction = vi
       .fn()
       .mockRejectedValue(sdkSubmissionFailure('1013: Transaction Already Imported'));
@@ -204,7 +218,7 @@ describe('DUST operations on a fresh wallet', () => {
         meta: { ctime: new Date(), registeredForDustGeneration: false },
       } as UtxoWithMeta;
       const recipe = { type: 'UNPROVEN_TRANSACTION', transaction: {} };
-      const finalized = { identifiers: () => ['tx-id'], transactionHash: () => 'tx-hash' };
+      const finalized = finalizedHandle();
       // A relay socket that dropped during a long local-WASM proof looks
       // exactly like a node rejection from the outermost message alone.
       const submitTransaction = vi
@@ -234,7 +248,7 @@ describe('DUST operations on a fresh wallet', () => {
       meta: { ctime: new Date(), registeredForDustGeneration: false },
     } as UtxoWithMeta;
     const recipe = { type: 'UNPROVEN_TRANSACTION', transaction: {} };
-    const finalized = { identifiers: () => ['tx-id'], transactionHash: () => 'tx-hash' };
+    const finalized = finalizedHandle();
     const original = sdkSubmissionFailure('1010: Invalid Transaction: Custom error: 170');
     const facade = freshWalletFacade([coin], {
       registerNightUtxosForDustGeneration: vi.fn().mockResolvedValue(recipe),
@@ -278,7 +292,7 @@ describe('DUST operations on a fresh wallet', () => {
     } as UtxoWithMeta;
     const receiver = deriveAllAddressesFromSeed(seedHex).dust.bech32m['devnet']!;
     const recipe = { type: 'UNPROVEN_TRANSACTION', transaction: {} };
-    const finalized = { identifiers: () => ['tx-id'], transactionHash: () => 'tx-hash' };
+    const finalized = finalizedHandle();
     const registerNightUtxosForDustGeneration = vi.fn().mockResolvedValue(recipe);
     const facade = freshWalletFacade([coin], {
       registerNightUtxosForDustGeneration,
@@ -298,7 +312,7 @@ describe('DUST operations on a fresh wallet', () => {
     } as UtxoWithMeta;
     const recipe = { type: 'UNPROVEN_TRANSACTION', transaction: {} };
     const balanced = { type: 'UNPROVEN_TRANSACTION', transaction: {} };
-    const finalized = { identifiers: () => ['tx-id'], transactionHash: () => 'tx-hash' };
+    const finalized = finalizedHandle();
     const deregisterFromDustGeneration = vi.fn().mockResolvedValue(recipe);
     const balanceUnprovenTransaction = vi.fn().mockResolvedValue(balanced);
     const finalizeRecipe = vi.fn().mockResolvedValue(finalized);
@@ -311,8 +325,66 @@ describe('DUST operations on a fresh wallet', () => {
 
     await expect(dedesignateFromDust(facade, seedHex, 'devnet')).resolves.toBe('tx-hash');
     expect(deregisterFromDustGeneration).toHaveBeenCalledWith([coin], expect.anything(), expect.any(Function));
-    expect(balanceUnprovenTransaction).toHaveBeenCalledWith(recipe.transaction, expect.anything(), expect.anything());
+    expect(balanceUnprovenTransaction).toHaveBeenCalledWith(recipe.transaction, { ttl: expect.any(Date) });
     expect(finalizeRecipe).toHaveBeenCalledWith(balanced);
+  });
+});
+
+describe('resending after the facade released the coins', () => {
+  /** Built from the SDK's own classes, so a change to how it classifies this failure shows up here. */
+  function connectionFailure(): SubmissionError {
+    return new SubmissionError({
+      message: 'Transaction submission error',
+      cause: new NodeClientError.ConnectionError({
+        message: 'Node accepted the connection but repeatedly failed to answer RPC',
+      }),
+    });
+  }
+
+  /** A socket that dropped mid-send: the node may hold the transaction, so the facade keeps its coins booked. */
+  function droppedSocket(): SubmissionError {
+    return new SubmissionError({
+      message: 'Transaction submission error',
+      cause: new NodeClientError.SubmissionError({
+        message: 'Transaction submission failed',
+        cause: new Error('1006: Abnormal Closure'),
+      }),
+    });
+  }
+
+  async function submitWith(submitTransaction: ReturnType<typeof vi.fn>) {
+    vi.useFakeTimers();
+    try {
+      const facade = { submitTransaction } as unknown as WalletFacade;
+      const outcome = submitFinalizedTransaction(facade, finalizedHandle()).then(
+        (hash) => ({ hash }),
+        (error: Error) => ({ error }),
+      );
+      await vi.advanceTimersByTimeAsync(15_000);
+      return await outcome;
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
+  it('does not resend a first send that provably never reached a block', async () => {
+    const submitTransaction = vi.fn().mockRejectedValue(connectionFailure());
+
+    const outcome = await submitWith(submitTransaction);
+
+    expect(submitTransaction).toHaveBeenCalledTimes(1);
+    expect('error' in outcome && outcome.error.message).toContain('repeatedly failed to answer RPC');
+  });
+
+  it('keeps resending once an earlier send may have reached the node', async () => {
+    const submitTransaction = vi
+      .fn()
+      .mockRejectedValueOnce(droppedSocket())
+      .mockRejectedValueOnce(connectionFailure())
+      .mockResolvedValueOnce('tx-id');
+
+    await expect(submitWith(submitTransaction)).resolves.toEqual({ hash: 'tx-hash' });
+    expect(submitTransaction).toHaveBeenCalledTimes(3);
   });
 });
 
@@ -342,15 +414,11 @@ describe('transfer fee estimation', () => {
       estimateTransferFee(facade, keys, 'preprod', [request]),
     ).resolves.toBe(125_000_000_000_000n);
 
-    const transferOptions = transferTransaction.mock.calls[0]![2];
+    const transferOptions = transferTransaction.mock.calls[0]![1];
     expect(transferOptions).toEqual({ ttl: expect.any(Date), payFees: false });
-    // The fee estimate is booked against the DUST secret key, not the shielded
-    // keys — assert the exact key so a mis-wired bundle can't slip through.
-    expect(estimateTransactionFee).toHaveBeenCalledWith(
-      transaction,
-      keys.dustSecretKey,
-      { ttl: transferOptions.ttl },
-    );
+    // The wallet holds its own keys since the SDK 2.0 upgrade; the estimate is
+    // costed for the same TTL the throwaway transfer was built with.
+    expect(estimateTransactionFee).toHaveBeenCalledWith(transaction, { ttl: transferOptions.ttl });
     expect(revertTransaction).toHaveBeenCalledWith(transaction);
   });
 

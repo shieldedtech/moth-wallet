@@ -5,36 +5,29 @@
 // See NOTICE for attribution.
 
 import * as Rx from 'rxjs';
-import * as ledger from '@midnight-ntwrk/ledger-v8';
-import {DefaultConfiguration, WalletFacade, type FacadeState} from '@midnightntwrk/wallet-sdk/facade';
+import {WalletFacade, type DefaultConfiguration, type FacadeState} from '@midnightntwrk/wallet-sdk/facade';
 import {
   makeDefaultSubmissionService,
   type SubmissionService,
 } from '@midnightntwrk/wallet-sdk/capabilities/submission';
-// CustomDustWallet/CustomShieldedWallet let v8's dedup builders wrap the sync
-// pipeline (see sdk-dedup); the plain wallets remain for non-deduped paths.
-import {DustWallet, CustomDustWallet} from '@midnightntwrk/wallet-sdk/dust';
-import {ShieldedWallet, CustomShieldedWallet} from '@midnightntwrk/wallet-sdk/shielded';
+import {ShieldedWallet} from '@midnightntwrk/wallet-sdk/shielded';
 import {UnshieldedWallet, PublicKey, createKeystore} from '@midnightntwrk/wallet-sdk/unshielded';
-import {InMemoryTransactionHistoryStorage} from '@midnightntwrk/wallet-sdk';
-import {WalletEntrySchema, mergeWalletEntries} from '@midnightntwrk/wallet-sdk/facade';
-import {HDWallet, Roles} from '@midnightntwrk/wallet-sdk/hd';
-import {setNetworkId} from '@midnight-ntwrk/midnight-js/network-id';
+import {InMemoryTransactionHistoryStorage, type FinalizedTx} from '@midnightntwrk/wallet-sdk';
+import {WalletEntrySchema, lifecycleTransactionTraits, mergeWalletEntries} from '@midnightntwrk/wallet-sdk/facade';
 import {resolveProverConfig, type NetworkConfig} from '../types/network.js';
 import {createWalletProvingService} from '../proof/provider.js';
 import {NIGHT_TOKEN_ID, formatNight} from '../types/tokens.js';
 import {formatDustBalance} from '../wallet/balance-format.js';
 import {ensureEmptyRefCache, preSeedNewWallet} from './preseed.js';
 import {EMPTY_REF_WALLET, InMemorySyncStateStore, syncStateKey, type SyncStateStore, type WalletPart} from './sync-store.js';
-import {dedupingShieldedBuilder, dedupingDustBuilder} from './sdk-dedup.js';
-import {largestDustCoinFirst} from './dust-coin-selection.js';
+import {initialDustParameters} from './ledger-routing.js';
 import {spendableDust, summarizeDustGeneration, type DustGeneration} from './dust-generation.js';
-import {terminatingDustTransacting, type DustFeePass} from './dust-transacting.js';
-import {overallSyncProgress, type SubWallet} from './progress.js';
+import {TerminatingDustWallet, type DustFeePass, type MothDustWallet} from './dust-transacting.js';
+import {dustProgressFor, overallSyncProgress, type DustPassPosition, type SubWallet} from './progress.js';
 import {partsToSeed, preSeedPlan, birthdayAdmits, type SeedablePart} from './preseed-parts.js';
 import {dustHistoryBefore} from './dust-history.js';
-import {restorePendingTransactions, serializePendingTransactions} from './pending-transactions.js';
-import {dustAddressForKey} from '../wallet/address.js';
+import {makeTransactionLifecycleService} from './transaction-lifecycle.js';
+import {dustAddressForSeed} from '../wallet/address.js';
 import {IndexerClient} from '../network/indexer-client.js';
 import type {WalletKeys} from './operations.js';
 
@@ -60,13 +53,11 @@ export {NIGHT_TOKEN_ID, formatNight};
  * transaction around this call (optimistic balances) and reverts it if
  * submission is rejected.
  */
-function makeSubmittedOnlySubmissionService(
-  relayURL: URL,
-): SubmissionService<ledger.FinalizedTransaction> {
-  const inner = makeDefaultSubmissionService<ledger.FinalizedTransaction>({relayURL});
+function makeSubmittedOnlySubmissionService(relayURL: URL): SubmissionService<FinalizedTx> {
+  const inner = makeDefaultSubmissionService<FinalizedTx>({relayURL});
   return {
-    submitTransaction: ((tx: ledger.FinalizedTransaction) =>
-      inner.submitTransaction(tx, 'Submitted')) as SubmissionService<ledger.FinalizedTransaction>['submitTransaction'],
+    submitTransaction: ((tx: FinalizedTx) =>
+      inner.submitTransaction(tx, 'Submitted')) as SubmissionService<FinalizedTx>['submitTransaction'],
     close: () => inner.close(),
   };
 }
@@ -208,15 +199,15 @@ const DUST_COST_PARAMETERS = {
 export type {DustGeneration} from './dust-generation.js';
 
 export interface SyncProgress {
-  /** 0.0 to 1.0 */
+  /** 0.0 to 1.0: the average of the sub-wallets still syncing, below 1 until synced. */
   percentage: number;
-  /** Estimated seconds remaining, or null if unknown */
+  /** Estimated seconds remaining, from the slowest sub-wallet, or null if unknown */
   etaSeconds: number | null;
   /** Which sub-wallets are synced */
   shieldedSynced: boolean;
   unshieldedSynced: boolean;
   dustSynced: boolean;
-  /** Which sub-wallet the percentage came from; null once synced. */
+  /** The slowest sub-wallet, which the estimate waits on; null once synced. */
   slowest: SubWallet | null;
 }
 
@@ -229,6 +220,29 @@ export interface SubWalletSyncProgress {
 export interface ShieldedCoinInfo {
   value: bigint;
   type: string;
+  /** Coin nonce. With `type`, `value` and `mtIndex` it is the `QualifiedShieldedCoinInfo` a circuit spends. */
+  nonce?: string;
+  /** Index in the global commitment tree. Absent for a pending coin, which is not in the tree yet. */
+  mtIndex?: bigint;
+  /** Coin commitment, which identifies the coin in the commitment tree. */
+  commitment?: string;
+}
+
+/**
+ * One SDK shielded coin, kept whole. An available coin's `coin` is a
+ * `QualifiedShieldedCoinInfo` and carries `mt_index`; a pending one's does not.
+ */
+export function shieldedCoinInfo(c: {
+  coin?: {value?: bigint; type?: string; nonce?: string; mt_index?: bigint};
+  commitment?: string;
+}): ShieldedCoinInfo {
+  return {
+    value: c.coin?.value ?? 0n,
+    type: c.coin?.type ?? '',
+    nonce: c.coin?.nonce,
+    mtIndex: c.coin?.mt_index,
+    commitment: c.commitment,
+  };
 }
 
 export interface UnshieldedCoinInfo {
@@ -408,21 +422,21 @@ export interface WalletSyncOptions {
   onDustFeePass?: (pass: DustFeePass) => void;
 }
 
-/** Bound on the SDK's own teardown. A healthy stop takes tens of milliseconds, so
- *  this only ever elapses for one that will never finish. */
-const STOP_TIMEOUT_MS = 5_000;
-
 /**
  * Bring up the WalletFacade (shielded + unshielded + dust) and start syncing.
- * Takes `walletKeys` (the typed bundle derived once at unlock — Option A, the
- * raw seed is never threaded here). Pre-seed of brand-new wallets derives the
+ * Takes `walletKeys` (the per-role seeds derived once at unlock — Option A, the
+ * master seed is never threaded here). Pre-seed of brand-new wallets derives the
  * bundle up front (see preseed.ts) and calls this directly.
+ *
+ * The SDK's forking wallets run ledger-v8 below the chain's fork version and
+ * ledger-v9 from it, and cross on their own; seeds are what lets them, because
+ * each ledger version derives its own key objects from the same seed.
  */
 /** A sub-wallet's own fraction, for the progress line. `done` wins over the
- *  counters: a sub-wallet with nothing to apply is complete, not stalled. */
+ *  counters, and 0/0 without it is a sub-wallet that has not reported yet. */
 function subPct(sub: {applied: number; total: number}, done: boolean): string {
   if (done) return '100%';
-  return sub.total > 0 ? `${Math.round(Math.min(1, sub.applied / sub.total) * 100)}%` : '100%';
+  return sub.total > 0 ? `${Math.round(Math.min(1, sub.applied / sub.total) * 100)}%` : '0%';
 }
 
 export async function startWalletSync(
@@ -439,15 +453,12 @@ export async function startWalletSync(
   await ensureWebSocket();
   const store = await resolveSyncStore(options?.syncStore);
 
-  setNetworkId(network.id);
   onProgress?.('Deriving keys...');
 
   const name = walletName ?? 'default';
 
-  // Option A: keys arrive pre-derived; the seed was dropped at unlock.
-  const shieldedSecretKeys = keys.shieldedSecretKeys;
-  const dustSecretKey = keys.dustSecretKey;
-  const keystore = createKeystore(keys.nightExternalKey, network.id);
+  // Option A: the per-role seeds arrive pre-derived; the master seed was dropped at unlock.
+  const keystore = createKeystore({kind: 'schnorr', secret: keys.unshielded}, network.id);
 
   const indexerHttpUrl = network.indexerUrl;
   const indexerWsUrl = toWsUrl(indexerHttpUrl) + '/ws';
@@ -459,22 +470,31 @@ export async function startWalletSync(
   // only fills in what happened since.
   const txHistoryStorage = await loadHistoryStorage(store, name, network.id, onProgress);
 
-  // Cast confined to the SDK's config intersection: the literal can't satisfy
-  // DefaultTransactionHistoryConfiguration structurally, so it's typed as the
-  // factory's config type, matching the prior runtime behaviour.
-  const walletCfg: DefaultConfiguration = {
+  // Resolved once so the wallets built here, outside the facade's factories, are
+  // handed the same `forks` the facade presets: where the chain hands over to
+  // ledger-v9 is a fact about the chain, and every component must read one value.
+  const walletCfg = WalletFacade.resolveConfiguration<DefaultConfiguration>({
     networkId: network.id,
     indexerClientConnection: {indexerHttpUrl, indexerWsUrl},
     relayURL,
-    // Shared transaction history storage for all sub-wallets (v4 SDK requirement)
+    // Shared transaction history storage for all sub-wallets.
     txHistoryStorage,
     costParameters: DUST_COST_PARAMETERS,
+    // A fresh DUST wallet starts at the ledger-v9 fork instead of replaying the
+    // ledger-v8 DUST history: about 8x faster on preprod (29 min to under 4 for
+    // a funded wallet), with an identical end state. Networks restarted DUST at
+    // that fork, so no pre-fork DUST UTXO survives it; what is lost is only the
+    // DUST side of pre-fork transaction history (the fee rows of a restored
+    // wallet's old contract calls). A restore from a cached state, a chain
+    // without the fork, or a failed timeline search starts as it would without
+    // this. Shielded and unshielded still read ledger-v8.
+    skipLedgerV8DustHistory: true,
     batchUpdates: {
       size: options?.batchUpdates?.size ?? 500,
       timeout: options?.batchUpdates?.timeout ?? 500,
       spacing: options?.batchUpdates?.spacing ?? 50,
     },
-  };
+  });
 
   // --- Pre-seed: fill in whichever sub-wallet caches are missing ---
   //
@@ -518,7 +538,7 @@ export async function startWalletSync(
           dustHistory = await dustHistoryBefore(
             new IndexerClient(indexerHttpUrl),
             indexerHttpUrl,
-            dustAddressForKey(dustSecretKey, network.id),
+            dustAddressForSeed(keys.dust, network.id),
             emptyRef.height
           );
         }
@@ -557,83 +577,70 @@ export async function startWalletSync(
     }
   }
 
+  // A restored snapshot carries no key material and sits on whichever variant
+  // wrote it; facade.start() below hands it both ledger versions' keys from the
+  // seeds. A fresh wallet asks the chain which side to begin on.
+
   // --- Shielded wallet: try restore from cache ---
-  // Use CustomShieldedWallet with a deduping syncCapability so that
-  // re-sent boundary events from the indexer don't trip the WASM tree
-  // (see sync/sdk-dedup.ts for the upstream bug context).
   onProgress?.('Starting shielded wallet...');
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const shieldedBuilder = dedupingShieldedBuilder() as any;
+  const Shielded = ShieldedWallet(walletCfg);
   let shieldedWallet: ShieldedWallet | undefined;
   let restoredFromCache = false;
   const savedShielded = await loadCachedState(store, name, network.id, 'shielded');
   if (savedShielded) {
     try {
       onProgress?.('Restoring shielded state from cache...');
-      shieldedWallet = CustomShieldedWallet(walletCfg, shieldedBuilder).restore(savedShielded);
+      shieldedWallet = Shielded.restore(savedShielded);
       restoredFromCache = true;
     } catch {
       onProgress?.('Shielded cache corrupted, syncing from genesis...');
       await evictCachedState(store, name, network.id, 'shielded');
     }
   }
-  if (!shieldedWallet) {
-    shieldedWallet = CustomShieldedWallet(walletCfg, shieldedBuilder).startWithSecretKeys(shieldedSecretKeys);
-  }
+  shieldedWallet ??= await Shielded.startWithSeed(keys.shielded);
 
   // --- Unshielded wallet: try restore from cache ---
   onProgress?.('Starting unshielded wallet...');
+  const Unshielded = UnshieldedWallet(walletCfg);
   let unshieldedWallet: UnshieldedWallet | undefined;
   const savedUnshielded = await loadCachedState(store, name, network.id, 'unshielded');
   if (savedUnshielded) {
     try {
       onProgress?.('Restoring unshielded state from cache...');
-      unshieldedWallet = UnshieldedWallet(walletCfg).restore(savedUnshielded);
+      unshieldedWallet = Unshielded.restore(savedUnshielded);
     } catch {
       onProgress?.('Unshielded cache corrupted, syncing from genesis...');
       await evictCachedState(store, name, network.id, 'unshielded');
     }
   }
   if (!unshieldedWallet) {
-    unshieldedWallet = UnshieldedWallet(walletCfg).startWithPublicKey(PublicKey.fromKeyStore(keystore));
+    unshieldedWallet = await Unshielded.startWithPublicKey(PublicKey.fromKeyStore(keystore));
   }
 
   // --- Dust wallet: try restore from cache ---
-  // Same deduping wrapper as the shielded wallet — the dust SDK has the
-  // same boundary-event off-by-one in its applyUpdate.
   onProgress?.('Starting dust wallet...');
-  const dustCfg = {
-    networkId: network.id,
-    costParameters: DUST_COST_PARAMETERS,
-    indexerClientConnection: {indexerHttpUrl, indexerWsUrl},
-    txHistoryStorage,
-  } as Parameters<typeof DustWallet>[0];
-  // Two fixes for the SDK's dust fee balancing, both chained onto the one
-  // builder the restore and start-with-secret-key paths below share, and kept
-  // out of dedupingDustBuilder so that module stays about the dedup fix alone:
-  // largest-first coin selection (sync/dust-coin-selection.ts) and a balancing
-  // loop that terminates (sync/dust-transacting.ts).
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const dustBuilder = (dedupingDustBuilder() as any)
-    .withCoinSelection(() => largestDustCoinFirst)
-    .withTransacting(terminatingDustTransacting({onPass: options?.onDustFeePass}));
-  let dustWallet: DustWallet | undefined;
+  // The SDK's dust wallet, but with moth's fee-balancing loop, which pays from the
+  // largest coin first and reports each pass to the fee log
+  // (sync/dust-transacting.ts, sync/dust-coin-selection.ts).
+  // Where the running projections pass has got to; null until one reports.
+  const dustPosition = new Rx.BehaviorSubject<DustPassPosition | null>(null);
+  const Dust = TerminatingDustWallet(walletCfg, {
+    onPass: options?.onDustFeePass,
+    onProjectionsPosition: (position) => dustPosition.next(position),
+  });
+  let dustWallet: MothDustWallet | undefined;
   const savedDust = await loadCachedState(store, name, network.id, 'dust');
   if (savedDust) {
     try {
       onProgress?.('Restoring dust state from cache...');
-      dustWallet = CustomDustWallet(dustCfg, dustBuilder).restore(savedDust);
+      dustWallet = Dust.restore(savedDust);
     } catch {
       onProgress?.('Dust cache corrupted, syncing from genesis...');
       await evictCachedState(store, name, network.id, 'dust');
     }
   }
-  if (!dustWallet) {
-    dustWallet = CustomDustWallet(dustCfg, dustBuilder).startWithSecretKey(
-      dustSecretKey,
-      ledger.LedgerParameters.initialParameters().dust
-    );
-  }
+  // DUST generation parameters default to the ledger's initial ones.
+  dustWallet ??= await Dust.startWithSeed(keys.dust);
 
   if (restoredFromCache) {
     onProgress?.('Sync state restored from cache — catching up...');
@@ -641,32 +648,26 @@ export async function startWalletSync(
 
   // --- WalletFacade ---
   onProgress?.('Initializing wallet facade...');
+  const savedLifecycle = await loadCachedState(store, name, network.id, 'pending');
   const facade = await WalletFacade.init({
     configuration: walletCfg,
-    // The SDK defaults to a proof server. Supply the service explicitly so
-    // WASM mode follows the documented makeWasmProvingService() path.
-    provingService: () => createWalletProvingService(prover),
+    // The SDK defaults to a proof server. Supply the service explicitly so WASM
+    // mode, and the browser's in-worker prover, route by protocol version too.
+    provingService: (cfg) => createWalletProvingService(prover, cfg.forks),
     // Resolve submissions at 'Submitted' instead of the default 'Finalized' so a
     // send doesn't block its message round-trip on finalization — see
     // makeSubmittedOnlySubmissionService.
     submissionService: (cfg) => makeSubmittedOnlySubmissionService(cfg.relayURL),
+    // Seeded with the records the last session saved, so the coins its
+    // transactions booked are released if they failed while it was down.
+    transactionLifecycleService: (cfg, {clock}) =>
+      makeTransactionLifecycleService(savedLifecycle, lifecycleTransactionTraits(cfg.forks.v9), cfg, clock),
     shielded: () => shieldedWallet!,
     unshielded: () => unshieldedWallet!,
     dust: () => dustWallet!,
   });
 
-  // Before start(), so the first status poll already covers them.
-  const savedPending = await loadCachedState(store, name, network.id, 'pending');
-  if (savedPending) {
-    await restorePendingTransactions(
-      savedPending,
-      (bytes) =>
-        ledger.Transaction.deserialize<ledger.SignatureEnabled, ledger.Proof, ledger.Binding>('signature', 'proof', 'binding', bytes),
-      (tx) => facade.pendingTransactionsService.addPendingTransaction(tx)
-    ).catch(() => 0);
-  }
-
-  await facade.start(shieldedSecretKeys, dustSecretKey);
+  await facade.start(keys);
   onProgress?.('Syncing with network...');
 
   // Subscribe to progressive state updates — don't block on full sync.
@@ -698,16 +699,16 @@ export async function startWalletSync(
 
   let hasSavedCache = false;
   let lastCacheSaveTime = 0;
-  const subscription = facade
-    .state()
+  // The pass position rides along so a hop is shown even when no state changed.
+  const subscription = Rx.combineLatest([facade.state(), dustPosition])
     .pipe(Rx.auditTime(1000))
     .subscribe({
-      next: (s: FacadeState) => {
+      next: ([s, position]: [FacadeState, DustPassPosition | null]) => {
         emissionCount++;
         // Captured before lastProgressPct is overwritten below; comparing against
         // the updated value made the percent-change branch always false.
         const prevPct = Math.round(lastProgressPct * 100);
-        const balances = extractBalancesPartial(s, syncStartTime, lastProgressPct, progressBaseline, latestBalances);
+        const balances = extractBalancesPartial(s, syncStartTime, lastProgressPct, progressBaseline, latestBalances, position);
         latestBalances = balances;
         lastProgressPct = balances.syncProgress.percentage;
 
@@ -716,7 +717,7 @@ export async function startWalletSync(
         const eta = balances.syncProgress.etaSeconds;
         const etaStr = eta !== null ? formatEta(eta) : '';
         const slowest = balances.syncProgress.slowest;
-        const slowestLabel = slowest ? ` (${slowest})` : '';
+        const slowestLabel = slowest ? ` (waiting on ${slowest})` : '';
 
         if (
           emissionCount % 50 === 0 ||
@@ -730,11 +731,9 @@ export async function startWalletSync(
           // which is worse. formatDustBalance has existed and been exported the
           // whole time; this line simply predates it.
           //
-          // The progress line names the sub-wallet the percentage belongs to.
-          // Reporting the slowest sub-wallet's fraction with no attribution, and
-          // suffixing it with a NIGHT balance, made "syncing 27% — NIGHT: 8378"
-          // read as "NIGHT is 27% synced" while the panel showed shielded and
-          // unshielded at 100%. Balances belong on the synced line, once.
+          // The progress line names the sub-wallet the estimate waits on, and
+          // keeps balances off it: "syncing 27% — NIGHT: 8378" read as "NIGHT is
+          // 27% synced". Balances belong on the synced line, once.
           onProgress?.(
             balances.synced
               ? `● synced — NIGHT: ${formatNight(nightTotal)}, DUST: ${formatDustBalance(balances.dust)}`
@@ -767,19 +766,9 @@ export async function startWalletSync(
       },
     });
 
-  // Wait briefly for first emission so we have something to return
-  await new Promise<void>((resolve) => {
-    const timeout = setTimeout(resolve, 5_000);
-    const earlyCheck = facade
-      .state()
-      .pipe(Rx.first())
-      .subscribe((s: FacadeState) => {
-        latestBalances = extractBalancesPartial(s);
-        clearTimeout(timeout);
-        earlyCheck.unsubscribe();
-        resolve();
-      });
-  });
+  // Wait briefly for the first emission so we have something to return.
+  const first = await firstEmission(facade.state(), 5_000);
+  if (first) latestBalances = extractBalancesPartial(first);
 
   const refresh = async (): Promise<WalletBalances> => {
     return latestBalances;
@@ -797,22 +786,9 @@ export async function startWalletSync(
 
   const stop = async () => {
     subscription.unsubscribe();
+    dustPosition.complete();
     await saveCache(store, facade, txHistoryStorage, name, network.id).catch(() => {});
-
-    // `facade.stop()` never settles against an unreachable node: it awaits a
-    // Polkadot client created with `throwOnConnect: false`. saveCache ran first.
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const timedOut = await new Promise<boolean>((resolve) => {
-      timer = setTimeout(() => resolve(true), STOP_TIMEOUT_MS);
-      facade.stop().then(
-        () => resolve(false),
-        () => resolve(false)
-      );
-    });
-    clearTimeout(timer);
-    if (timedOut) {
-      onProgress?.(`Sync stop timed out after ${STOP_TIMEOUT_MS / 1000}s — abandoning SDK teardown`);
-    }
+    await facade.stop().catch(() => {});
   };
 
   // `balances` is exposed as a getter so callers (notably the daemon's
@@ -829,6 +805,24 @@ export async function startWalletSync(
     refresh,
     subscribe,
   };
+}
+
+/**
+ * The first value an observable emits, or undefined after `timeoutMs` without one.
+ *
+ * The facade's state replays its current value synchronously on subscribe, so a
+ * hand-rolled subscription whose handler reaches back for the subscription it is
+ * created by trips over its own `const` before it is initialized. firstValueFrom
+ * owns the subscription itself and needs no such reference.
+ */
+export async function firstEmission<T>(source: Rx.Observable<T>, timeoutMs: number): Promise<T | undefined> {
+  return Rx.firstValueFrom(
+    source.pipe(
+      Rx.timeout(timeoutMs),
+      Rx.catchError(() => Rx.EMPTY),
+    ),
+    {defaultValue: undefined},
+  );
 }
 
 /**
@@ -863,31 +857,18 @@ async function saveCache(
   networkId: string
 ): Promise<void> {
   try {
-    const [sh, un, du, hi, pe] = await Promise.all([
-      facade.shielded.state
-        .pipe(Rx.first())
-        .toPromise()
-        .then((s) => s?.capabilities?.serialization?.serialize?.(s.state) ?? null),
-      facade.unshielded.state
-        .pipe(Rx.first())
-        .toPromise()
-        .then((s) => s?.capabilities?.serialization?.serialize?.(s.state) ?? null),
-      facade.dust.state
-        .pipe(Rx.first())
-        .toPromise()
-        .then((s) => s?.capabilities?.serialization?.serialize?.(s.state) ?? null),
+    const [sh, un, du, hi, lc] = await Promise.all([
+      facade.shielded.serializeState().catch(() => null),
+      facade.unshielded.serializeState().catch(() => null),
+      facade.dust.serializeState().catch(() => null),
       history.serialize().catch(() => null),
-      // undefined when unreadable, so a failed read never wipes the saved list.
-      Rx.firstValueFrom(facade.pendingTransactionsService.state())
-        .then((p) => serializePendingTransactions(p, (tx) => tx.serialize()))
-        .catch(() => undefined),
-    ]).catch(() => [null, null, null, null, undefined]);
+      facade.transactionLifecycleService.serializeState().catch(() => null),
+    ]).catch(() => [null, null, null, null, null]);
     if (sh) await saveCachedState(store, walletName, networkId, 'shielded', sh);
     if (un) await saveCachedState(store, walletName, networkId, 'unshielded', un);
     if (du) await saveCachedState(store, walletName, networkId, 'dust', du);
     if (hi) await saveCachedState(store, walletName, networkId, 'history', hi);
-    if (pe) await saveCachedState(store, walletName, networkId, 'pending', pe);
-    else if (pe === null) await evictCachedState(store, walletName, networkId, 'pending');
+    if (lc) await saveCachedState(store, walletName, networkId, 'pending', lc);
   } catch {
     /* best effort */
   }
@@ -906,7 +887,8 @@ export interface ProgressBaseline {
   value: {fraction: number; elapsedMs: number} | null;
 }
 
-function extractBalancesPartial(
+/** Exported for tests. */
+export function extractBalancesPartial(
   state: FacadeState,
   syncStartTime = 0,
   prevPct = 0,
@@ -921,6 +903,8 @@ function extractBalancesPartial(
    * session, so the previous value is a better answer than a default.
    */
   previous?: WalletBalances,
+  /** Where the running DUST projections pass has got to, shown until the wallet reports a total. */
+  dustPosition: DustPassPosition | null = null,
 ): WalletBalances {
   let shielded: Record<string, bigint> = {};
   let unshielded: Record<string, bigint> = {};
@@ -960,12 +944,11 @@ function extractBalancesPartial(
   try {
     const sb = state.shielded?.balances;
     if (sb && typeof sb === 'object') shielded = sb as Record<string, bigint>;
-    for (const c of state.shielded?.availableCoins ?? []) {
-      coins.shielded.available.push({value: c.coin?.value ?? 0n, type: c.coin?.type ?? ''});
-    }
-    for (const c of state.shielded?.pendingCoins ?? []) {
-      coins.shielded.pending.push({value: c.coin?.value ?? 0n, type: c.coin?.type ?? ''});
-    }
+    // Kept whole: the nonce and Merkle index are what spending a coin needs, and
+    // nothing outside the wallet can reconstruct them. The SDK leaves coins booked
+    // by a pending transaction out of availableCoins.
+    for (const c of state.shielded?.availableCoins ?? []) coins.shielded.available.push(shieldedCoinInfo(c));
+    for (const c of state.shielded?.pendingCoins ?? []) coins.shielded.pending.push(shieldedCoinInfo(c));
   } catch {
     /* shielded coins not ready */
   }
@@ -1064,7 +1047,7 @@ function extractBalancesPartial(
     const dp = state.dust?.progress;
     const duApplied = dp?.appliedIndex ?? 0n;
     const duTotal = dp?.highestRelevantWalletIndex ?? 0n;
-    subProgress.dust = {applied: Number(duApplied), total: Number(duTotal)};
+    subProgress.dust = dustProgressFor({applied: Number(duApplied), total: Number(duTotal)}, dustPosition);
     if (typeof dp?.isStrictlyComplete === 'function') {
       dustSynced = dp.isStrictlyComplete();
     } else if (duTotal > 0n && duApplied >= duTotal) {
@@ -1076,9 +1059,40 @@ function extractBalancesPartial(
     /* dust not ready */
   }
 
+  // Carry forward progress this emission did not report. Progress within a
+  // session only moves forward, so a part that reported 498,519/498,519 a second
+  // ago has not become 0/0 — the emission simply said nothing about it. Applied
+  // per part, because emissions are routinely partial in exactly this way, and
+  // before the overall figure is taken, so the percentage never sees the gap.
+  if (previous) {
+    const carried = new Set<SubWallet>();
+    for (const part of ['shielded', 'unshielded', 'dust'] as const) {
+      const now = subProgress[part];
+      const before = previous.subProgress[part];
+      if (now.total === 0 && before.total > 0) {
+        subProgress[part] = before;
+        carried.add(part);
+      } else if (now.applied === 0 && before.applied > now.applied && now.total === before.total) {
+        subProgress[part] = {applied: before.applied, total: now.total};
+        carried.add(part);
+      }
+    }
+    // An emission that said nothing about a part's progress has no verdict on
+    // it either: a connected 0/0 reads as strictly complete.
+    if (carried.has('shielded')) shieldedSynced = false;
+    if (carried.has('unshielded')) unshieldedSynced = false;
+    if (carried.has('dust')) dustSynced = false;
+    // A sub-wallet that was strictly complete does not stop being complete. Held
+    // before the overall figure, which no longer counts an unconfirmed 0/0 as done:
+    // a dropped connection would otherwise read an empty wallet's side as 0%.
+    shieldedSynced = shieldedSynced || previous.syncProgress.shieldedSynced;
+    unshieldedSynced = unshieldedSynced || previous.syncProgress.unshieldedSynced;
+    dustSynced = dustSynced || previous.syncProgress.dustSynced;
+  }
+
   // Overall progress: the slowest sub-wallet, clamped below 100% until actually
   // synced. Arithmetic lives in ./progress.ts so it is unit-testable without WASM.
-  const {percentage, etaSeconds, slowest} = overallSyncProgress({
+  const {percentage, etaSeconds, slowest, slowestFraction} = overallSyncProgress({
     shielded: subProgress.shielded,
     unshielded: subProgress.unshielded,
     dust: subProgress.dust,
@@ -1101,7 +1115,7 @@ function extractBalancesPartial(
   // Booked inputs count as registered NIGHT here for the same reason they count
   // toward the balance above; summarizeDustGeneration explains the rest.
   try {
-    const params = ledger.LedgerParameters.initialParameters().dust;
+    const params = initialDustParameters(state.activeProtocolVersion);
     const registeredNight = [...state.unshielded.availableCoins, ...state.unshielded.pendingCoins]
       .filter((c) => c.utxo?.type === NIGHT_TOKEN_ID && c.meta?.registeredForDustGeneration === true)
       .map((c) => ({value: c.utxo?.value ?? 0n, ctime: c.meta?.ctime ?? null}));
@@ -1113,30 +1127,16 @@ function extractBalancesPartial(
       balance: dust,
       registeredNight,
       dustCoins,
-      params: {
-        nightDustRatio: params.nightDustRatio,
-        generationDecayRate: params.generationDecayRate,
-        timeToCapSeconds: params.timeToCapSeconds,
-      },
+      params,
       now: new Date(),
     });
   } catch {
     /* dust generation info not available */
   }
 
-  // Carry forward anything this emission did not report. Progress within a
-  // session only moves forward, so a part that reported 498,519/498,519 a second
-  // ago has not become 0/0 — the emission simply said nothing about it. Applied
-  // per part, because emissions are routinely partial in exactly this way.
+  // Carry forward the rest of what this emission did not report, for the same
+  // reason as the progress above.
   if (previous) {
-    for (const part of ['shielded', 'unshielded', 'dust'] as const) {
-      const now = subProgress[part];
-      const before = previous.subProgress[part];
-      if (now.total === 0 && before.total > 0) subProgress[part] = before;
-      else if (now.applied === 0 && before.applied > now.applied && now.total === before.total) {
-        subProgress[part] = {applied: before.applied, total: now.total};
-      }
-    }
     // Same reasoning for the balances themselves: an empty map here means this
     // emission carried none, not that the wallet was emptied.
     if (Object.keys(shielded).length === 0 && Object.keys(previous.shielded).length > 0) shielded = previous.shielded;
@@ -1145,17 +1145,13 @@ function extractBalancesPartial(
     if (coins.shielded.available.length === 0 && previous.coins.shielded.available.length > 0) coins.shielded = previous.coins.shielded;
     if (coins.unshielded.available.length === 0 && previous.coins.unshielded.available.length > 0) coins.unshielded = previous.coins.unshielded;
     if (coins.dust.available.length === 0 && previous.coins.dust.available.length > 0) coins.dust = previous.coins.dust;
-    // A sub-wallet that was strictly complete does not stop being complete.
-    shieldedSynced = shieldedSynced || previous.syncProgress.shieldedSynced;
-    unshieldedSynced = unshieldedSynced || previous.syncProgress.unshieldedSynced;
-    dustSynced = dustSynced || previous.syncProgress.dustSynced;
   }
 
   // First usable sample is the session's starting point. Captured after the
   // fraction is known and only once, so the rate below is measured over work
-  // this session actually did.
-  if (baseline && baseline.value === null && !synced && percentage > 0 && percentage < 0.995) {
-    baseline.value = {fraction: percentage, elapsedMs: syncStartTime > 0 ? Date.now() - syncStartTime : 0};
+  // this session actually did. It is the slowest sub-wallet's, as the ETA is.
+  if (baseline && baseline.value === null && !synced && slowestFraction > 0 && slowestFraction < 0.995) {
+    baseline.value = {fraction: slowestFraction, elapsedMs: syncStartTime > 0 ? Date.now() - syncStartTime : 0};
   }
 
   const syncProgress: SyncProgress = {percentage, etaSeconds, slowest, shieldedSynced, unshieldedSynced, dustSynced};
@@ -1238,6 +1234,22 @@ export async function removeWalletSyncArtifacts(
   } catch {
     /* node fs/path/os unavailable — nothing on disk to clean */
   }
+}
+
+/**
+ * Clear ONLY the shielded sub-wallet's cached state. The next sync start rescans
+ * shielded coins from the chain and keeps DUST, which is far slower to rebuild.
+ * The repair for a stale shielded view, e.g. a cursor left pointing at a renumbered
+ * event ("values inserted non-linearly into zswap commitment tree"), which retrying
+ * replays forever.
+ */
+export async function clearShieldedSyncCache(
+  walletName: string,
+  networkId: string,
+  store?: SyncStateStore
+): Promise<void> {
+  const resolved = await resolveSyncStore(store);
+  await evictCachedState(resolved, walletName, networkId, 'shielded');
 }
 
 /**

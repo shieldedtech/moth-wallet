@@ -459,6 +459,9 @@ export function registerHandlers(): void {
   });
 
   onMessage('networkConfigSave', ({ data }) => saveNetworkConfig(data));
+  // Locked means no sync session, so there is nothing to ask the offscreen for —
+  // and asking would bring the document up for nothing.
+  onMessage('networkProtocolGet', async () => ((await getSession()) ? offscreen.protocolStatus() : null));
 
   onMessage('sessionUnlock', async ({ data }) => {
     await recordTiming('marker', 'unlock: start (keystore decrypt + offscreen + WASM ahead)');
@@ -656,6 +659,23 @@ export function registerHandlers(): void {
 
   // Spends nothing, but brackets the op anyway: it stops and restarts the sync
   // engine, and the service worker must not suspend underneath that.
+  onMessage('shieldedRebuild', async () => {
+    const session = await getSession();
+    if (!session) throw new Error('Wallet is locked');
+    const network = await getNetworkConfig();
+    beginOp();
+    try {
+      return await offscreen.shieldedRebuild({
+        seedHex: session.seedHex,
+        walletName: session.walletName,
+        network,
+      });
+    } finally {
+      endOp();
+    }
+  });
+
+  // Same bracketing as shieldedRebuild above.
   onMessage('dustRebuild', async () => {
     const session = await getSession();
     if (!session) throw new Error('Wallet is locked');

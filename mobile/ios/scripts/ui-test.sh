@@ -46,7 +46,13 @@ trap 'kill $MATCHER $SERVER $FIXTURES 2>/dev/null; rm -rf "$CONTROL"' EXIT
 
 DEST="platform=iOS Simulator,id=$SIM"
 xcodebuild build-for-testing -project Moth.xcodeproj -scheme Moth -configuration Debug -destination "$DEST" -derivedDataPath build/DerivedData
-# Each class starts from a fresh install, so none depends on another's wallet.
+# One result bundle per class (screenshots, logs), which CI uploads when a test fails.
+RESULTS=build/TestResults
+rm -rf "$RESULTS"
+mkdir -p "$RESULTS"
+# Each class starts from a fresh install, so none depends on another's wallet. A failing class
+# does not stop the others, so one flaky test does not hide the rest; the script fails at the end.
+failed=()
 for class in ${TESTS:-OnboardingTests AccountsTests ConnectorTests FeaturesTests SecurityTests FaceIDFailureTests ConnectorRejectTests LifecycleTests SyncInterruptTests IsolationTests RecoveryPhraseLeakTests}; do
   rm -f "$CONTROL/faceid"
   xcrun simctl uninstall "$SIM" bob.shielded.moth 2>/dev/null || true
@@ -54,14 +60,26 @@ for class in ${TESTS:-OnboardingTests AccountsTests ConnectorTests FeaturesTests
   xcrun simctl keychain "$SIM" reset
   start=$(date '+%Y-%m-%d %H:%M:%S')
   xcodebuild test-without-building -project Moth.xcodeproj -scheme Moth -configuration Debug -destination "$DEST" \
-    -derivedDataPath build/DerivedData -only-testing:"MothUITests/$class"
+    -derivedDataPath build/DerivedData -only-testing:"MothUITests/$class" \
+    -resultBundlePath "$RESULTS/$class.xcresult" || {
+      failed+=("$class")
+      # Whether WebKit's processes started, for an engine that never loaded.
+      xcrun simctl spawn "$SIM" log show --last 10m --style compact \
+        --predicate 'subsystem BEGINSWITH "com.apple.WebKit" OR process BEGINSWITH "com.apple.WebKit"' \
+        > "$RESULTS/$class.webkit.log" 2>&1 || true
+    }
+  # The app's own log (engine load and failures), kept until the next class uninstalls it.
+  DATA=$(xcrun simctl get_app_container "$SIM" bob.shielded.moth data 2>/dev/null) &&
+    cp "$DATA/Documents/moth-debug.log" "$RESULTS/$class.moth-debug.log" 2>/dev/null || true
   # A test that saved the phrase asks for the logs and the app's files to be searched for it.
-  # XCTest logs the text it types, so its own subsystem is left out.
+  # XCTest logs the text it types, so its own subsystem is left out. A leak fails the class like
+  # a failed test does, rather than stopping the run.
   if [ -f "$CONTROL/phrase" ]; then
     xcrun simctl spawn "$SIM" log show --start "$start" --info --debug --style compact \
       --predicate 'subsystem != "com.apple.dt.xctest" AND process != "testmanagerd"' > "$CONTROL/syslog"
     python3 -I scripts/phrase-scan.py "$CONTROL/phrase" "$CONTROL/syslog" \
-      "$(xcrun simctl get_app_container "$SIM" bob.shielded.moth data)" || { rm -f "$CONTROL/phrase" "$CONTROL/syslog"; exit 1; }
+      "$(xcrun simctl get_app_container "$SIM" bob.shielded.moth data)" || failed+=("$class (recovery phrase found)")
     rm -f "$CONTROL/phrase" "$CONTROL/syslog"
   fi
 done
+[ ${#failed[@]} -eq 0 ] || { echo "error: failed: ${failed[*]}; results in mobile/ios/$RESULTS" >&2; exit 1; }

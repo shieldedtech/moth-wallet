@@ -52,9 +52,6 @@ private struct ActivityRow: View {
                 ForEach(Array(item.deltas.enumerated()), id: \.offset) { _, delta in
                     Text(amount(delta)).font(.subheadline.monospacedDigit())
                 }
-                if let fees = item.fees {
-                    Text("Fee \(Amount.format(fees, decimals: Amount.dustDecimals, places: 6)) DUST").font(.caption).foregroundStyle(.secondary)
-                }
                 if let timestamp = item.timestamp {
                     Text(Date(timeIntervalSince1970: timestamp), style: .relative).font(.caption).foregroundStyle(.secondary)
                 }
@@ -68,7 +65,8 @@ private struct ActivityRow: View {
         case "sent": "Sent"
         case "received": "Received"
         case "swap": "Swap"
-        case "dust": "DUST"
+        // Nothing but DUST moved: a fee this wallet paid, or a NIGHT registration.
+        case "dust": item.paidFee == true ? "Network fee paid" : "DUST registration"
         default: item.kind.capitalized
         }
     }

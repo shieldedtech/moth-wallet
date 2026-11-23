@@ -14,7 +14,7 @@ final class OnboardingTests: XCTestCase {
         app.launch()
 
         let create = app.buttons["Create a new wallet"]
-        XCTAssertTrue(create.waitForExistence(timeout: 60), "welcome screen")
+        XCTAssertTrue(create.waitForExistence(timeout: firstScreenTimeout), "welcome screen")
         create.tap()
 
         XCTAssertTrue(app.staticTexts["Your recovery phrase"].waitForExistence(timeout: 60), "backup screen")

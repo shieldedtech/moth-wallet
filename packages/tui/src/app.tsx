@@ -11,6 +11,7 @@ import {
   dedesignateFromDustWithKeys,
   listNightUtxos,
   clearSyncCache,
+  clearShieldedSyncCache,
   NIGHT_TOKEN_ID,
   DustRegistrationNotYetError,
   type SendRequest,
@@ -558,6 +559,30 @@ export function App({ networkId: networkIdProp }: AppProps) {
               }).catch((err) => {
                 logs.error(`Clear cache failed: ${err instanceof Error ? err.message : String(err)}`);
               });
+            }}
+            onRebuildShielded={(name) => {
+              // Same stop, clear, restart order as onClearCache, but only the
+              // shielded part: DUST is kept, so the rescan takes minutes, not an hour.
+              void balance.restart(async () => {
+                await clearShieldedSyncCache(name, network.id);
+                logs.info(`Shielded cache cleared for ${name} on ${network.id} — rescanning shielded coins`);
+              }).catch((err) => {
+                logs.error(`Rebuild shielded failed: ${err instanceof Error ? err.message : String(err)}`);
+              });
+            }}
+            onRevealPhrase={async (name, passphrase) => {
+              // The event, never the value: moth.log is a file on disk, and a
+              // phrase written there outlives the screen it was shown on. Error
+              // messages are safe to log: they name the wallet or the failure,
+              // never the passphrase or the secret.
+              try {
+                const secret = await wallet.exportPhrase(name, passphrase);
+                logs.info(`Recovery ${secret.kind} revealed for wallet: ${name}`);
+                return secret;
+              } catch (err) {
+                logs.warn(`Recovery phrase reveal failed for wallet: ${name}: ${err instanceof Error ? err.message : String(err)}`);
+                throw err;
+              }
             }}
             onCreateNew={() => {
               nav.push('onboarding-network', { onComplete: onboardingCompleteStable, partial: {} });

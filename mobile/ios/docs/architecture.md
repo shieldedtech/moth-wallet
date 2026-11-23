@@ -5,8 +5,8 @@ Moth is three parts in three languages:
 | Part | Language | Where | What it does |
 |---|---|---|---|
 | App and UI | Swift / SwiftUI | `mobile/ios/Moth/` | Every screen, the Keychain and Face ID handling, the DApp browser, the approval sheets |
-| Wallet engine | TypeScript, run as JavaScript and WebAssembly | `mobile/ios/engine/` plus moth's `packages/` | moth's own wallet worker, unchanged: sync, balances, building transactions, the ledger. It runs inside a hidden WebView with no visible UI. |
-| Prover | Rust | `mobile/ios/native/`, `mobile/ios/proof-server/` | Makes zero-knowledge proofs on the phone, compiled into the app |
+| Wallet engine | TypeScript, run as JavaScript and WebAssembly | `mobile/shared/engine/` plus moth's `packages/` | moth's own wallet worker, unchanged: sync, balances, building transactions, the ledger. It runs inside a hidden WebView with no visible UI. |
+| Prover | Rust | `mobile/shared/native/`, `mobile/shared/proof-server/` | Makes zero-knowledge proofs on the phone, compiled into the app |
 
 ## Components
 

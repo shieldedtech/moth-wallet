@@ -1,0 +1,59 @@
+{
+  "manifest-version": "1",
+  "compiler-version": "0.36.0",
+  "compiler-commit": "b5d9e4dfc532fe47011c4f6296e254f4853eb469",
+  "language-version": "0.28.0",
+  "runtime-version": "0.21.0",
+  "compiler": {
+    "type": "directory",
+    "contract-info.json": {
+      "type": "file",
+      "size": 555,
+      "hash": "3aea4273dab93196a2dbcf0ff6604eade2b3ea647d1dcbd9fec284b1f4691e00"
+    }
+  },
+  "contract": {
+    "type": "directory",
+    "index.d.ts": {
+      "type": "file",
+      "size": 1352,
+      "hash": "3ea40d3eba304a9c1ceddba1c174fc5b98948d1dc5580c5d412cb31d0e7257d7"
+    },
+    "index.js": {
+      "type": "file",
+      "size": 14420,
+      "hash": "d99d811ba408c20dcb2aada93ee9fc33c8d610af1690b7fde05772600d5ca02e"
+    },
+    "index.js.map": {
+      "type": "file",
+      "size": 676,
+      "hash": "0e58388eea89f30d9edc9a921eb1014ca45a244eb227053608da25401bf92ef0"
+    }
+  },
+  "zkir": {
+    "type": "directory",
+    "takeNight.bzkir": {
+      "type": "file",
+      "size": 507,
+      "hash": "bc820398c409f2f3214ea314dac63d6214961b6020b38c09444d79a0f654175a"
+    },
+    "takeNight.zkir": {
+      "type": "file",
+      "size": 1495,
+      "hash": "248d067b174e7327aaebf8cf75f6a2f700d39a1f9e936f359bbf531bf59e324b"
+    }
+  },
+  "keys": {
+    "type": "directory",
+    "takeNight.prover": {
+      "type": "file",
+      "size": 113867,
+      "hash": "6d18831dc89b8fa5fb152cc38257a630b7fb222cf1ecd0aa398a124bcd1a988f"
+    },
+    "takeNight.verifier": {
+      "type": "file",
+      "size": 1353,
+      "hash": "59111bd5b63ba78d6fb97279e9b79fa6783d12c0484ac43e9485cafa81ee6d96"
+    }
+  }
+}

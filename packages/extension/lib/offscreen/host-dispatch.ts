@@ -13,14 +13,19 @@
 import type { HostMethod, MethodData, MethodResult } from './worker-rpc';
 import { decodeBigintJson, encodeBigintJson } from '../messaging/bigint-json';
 import type {
+  ProverKeyPutPayload,
   ProvingProviderCheckPayload,
   ProvingProviderProvePayload,
 } from './messaging';
+import { ProverKeyCache } from './prover-key-cache';
 // Safe to import for real, unlike `wallet-host`: every Cardano entry point in
 // there imports Lucid dynamically, so this module still loads no WASM.
 import * as cardano from './cardano-host';
 
 type Host = typeof import('./wallet-host');
+
+/** One per wallet host, so a key a page sent once serves every later proof of its circuit. */
+export const proverKeys = new ProverKeyCache();
 type Dispatch = {
   [M in HostMethod]: (host: Host, data: MethodData<M>) => Promise<MethodResult<M>> | MethodResult<M>;
 };
@@ -67,6 +72,7 @@ export const hostDispatch: Dispatch = {
   'os/syncCacheClear': (host, d) => host.syncCacheClear(d.walletName, d.networkIds),
   'os/syncCacheReset': (host, d) => host.syncCacheReset(d.walletName, d.network),
   'os/balancesGet': (host, d) => host.balancesGet(d.seedHex, d.walletName, d.network),
+  'os/shieldedCoinsGet': (host, d) => host.shieldedCoinsGet(d.seedHex, d.walletName, d.network),
   'os/sendTokens': (host, d) => host.sendTokens(d.seedHex, d.walletName, d.network, d.requests),
   'os/estimateTransferFee': (host, d) =>
     host.estimateTransferFee(d.seedHex, d.walletName, d.network, d.requests),
@@ -77,8 +83,10 @@ export const hostDispatch: Dispatch = {
   'os/relayRetry': (host) => host.relayRetry(),
   'os/nightCoins': (host, data) => host.nightCoins(data.seedHex, data.walletName, data.network),
   'os/requestStats': (host) => host.requestStats(),
+  'os/protocolStatus': (host) => host.protocolStatus(),
   'os/requestStatsReset': (host) => host.resetRequestStats(),
   'os/dustRebuild': (host, d) => host.dustRebuild(d.seedHex, d.walletName, d.network),
+  'os/shieldedRebuild': (host, d) => host.shieldedRebuild(d.seedHex, d.walletName, d.network),
   'os/transferBuild': (host, d) => host.transferBuild(d.seedHex, d.walletName, d.network, d.requests, d.payFees),
   'os/transferSubmit': (host, d) => host.transferSubmit(d.seedHex, d.walletName, d.network, d.txHex),
   'os/txHistoryGet': (host, d) => host.txHistoryGet(d.seedHex, d.walletName, d.network, d.pageNumber, d.pageSize),
@@ -91,7 +99,7 @@ export const hostDispatch: Dispatch = {
       d.network,
       payload.serializedPreimage,
       payload.keyLocation,
-      payload.keyMaterial,
+      proverKeys.resolve(payload.origin, payload.keyMaterial),
     );
     return encodeBigintJson(result);
   },
@@ -101,10 +109,14 @@ export const hostDispatch: Dispatch = {
       d.network,
       payload.serializedPreimage,
       payload.keyLocation,
-      payload.keyMaterial,
+      proverKeys.resolve(payload.origin, payload.keyMaterial),
       payload.overwriteBindingInput,
     );
     return encodeBigintJson(result);
+  },
+  'os/proverKeyPut': async (_host, d) => {
+    const { origin, ...part } = decodeBigintJson<ProverKeyPutPayload>(d.payloadJson);
+    return proverKeys.put(origin, part);
   },
   'os/balanceTransaction': (host, d) =>
     host.balanceTransaction(d.seedHex, d.walletName, d.network, d.txHex, d.sealed, d.payFees),
@@ -117,11 +129,23 @@ export const HOST_METHODS = Object.keys(hostDispatch) as HostMethod[];
 
 /**
  * Which worker answers a method. The sync engine's cache restore blocks its thread for
- * a minute or more, so the panel's first paint and a dApp approval's summary go to a
- * second instance of the worker. Fast-lane methods must touch no sync-session state.
+ * a minute or more, so the panel's first paint, a dApp approval's summary, the
+ * seed-only work a dApp waits on the moment the user approves (signData,
+ * deriveAppSecret) and a dApp's proof requests go to a second instance of the
+ * worker. Proving needs only the network's prover and the prover keys the page
+ * uploads, which each worker caches for itself, so the uploads share the proofs'
+ * lane. Fast-lane methods must touch no sync-session state.
  */
 export type HostLane = 'sync' | 'fast';
-export const FAST_LANE_METHODS: ReadonlySet<HostMethod> = new Set<HostMethod>(['os/walletList', 'os/txSummary']);
+export const FAST_LANE_METHODS: ReadonlySet<HostMethod> = new Set<HostMethod>([
+  'os/walletList',
+  'os/txSummary',
+  'os/signData',
+  'os/deriveAppSecret',
+  'os/provingProviderCheck',
+  'os/provingProviderProve',
+  'os/proverKeyPut',
+]);
 export function laneFor(method: HostMethod): HostLane {
   return FAST_LANE_METHODS.has(method) ? 'fast' : 'sync';
 }

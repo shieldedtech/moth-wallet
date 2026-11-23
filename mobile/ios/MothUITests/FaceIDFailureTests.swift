@@ -48,11 +48,20 @@ final class FaceIDFailureTests: XCTestCase {
         app.tabBars.buttons["Settings"].tap()
         FaceID.answer(.nomatch)
         let faceOnly = app.switches["Face ID only, no passcode"]
+        // Disabled while sync starts after unlock, and a tap on it then does nothing.
+        XCTAssertTrue(faceOnly.waitForEnabled(timeout: 60), "Face ID only can be changed")
         faceOnly.switches.firstMatch.tap()
         app.buttons["I've written down every phrase — turn on"].tap()
         let failed = springboard.alerts["Face Not Recognised"]
         XCTAssertTrue(failed.waitForExistence(timeout: 30), "Face ID failed")
         failed.buttons["Cancel"].firstMatch.tap()
         XCTAssertTrue(faceOnly.waitForValue("0", timeout: 10), "still off")
+    }
+}
+
+extension XCUIElement {
+    func waitForValue(_ value: String, timeout: TimeInterval) -> Bool {
+        let predicate = NSPredicate(format: "value == %@", value)
+        return XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: predicate, object: self)], timeout: timeout) == .completed
     }
 }

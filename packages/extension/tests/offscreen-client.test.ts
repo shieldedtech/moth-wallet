@@ -132,6 +132,7 @@ describe('offscreen client', () => {
         indexerUrl: 'https://indexer.example',
         prover: {type: 'wasm' as const},
       },
+      origin: 'https://dapp.example',
       serializedPreimage: new Uint8Array([1, 2, 3]),
       keyLocation: 'counter.increment',
       keyMaterial: {

@@ -1,0 +1,8 @@
+{
+  "version": 3,
+  "file": "index.js",
+  "sourceRoot": "../../../",
+  "sources": ["receive-unshielded.compact", "compiler/standard-library.compact"],
+  "names": [],
+  "mappings": ";;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;EAAA;;;;;;;;;;MASA,AAAA,SAGC;;;;;;;;;;;;;;;;;;;;;;;OAAA;;;;GACA;EAbD;;;;;;;;;;;;;;;;;;;;;;;;;;IAOA;;;;;;;;;yEAAgC;;;;;;;GAM/B;ECwBD,AAAA,QAA0B;kCACkB;;EA0E5C,AAAA;;;EAiNA,AAAA,sDAAiC,SAAkB;UACjD,qBAAsD;IAAtD;;;;;;;;;;;2HAAA;;;;;;2HAA8D;;;;;;;;;;;;;;;EDzThE,AAAA,kBAGC;;;;;UADC,KAAQ;IAAR;;;;;;;;;;6FAAA,KAAQ;;;;wEAAA;;GACT;;;;;;;;;;;;;;;;IALD;qCAAA;;;;;;;;;;;0GAAgC;KAAA;;;;;;;;;;;;;;;;;;"
+}

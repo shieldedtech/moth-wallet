@@ -43,7 +43,7 @@ export {
   NIGHT_DECIMALS,
 } from './wallet/night-amount.js';
 export { deriveAllAddressesFromSeed, deriveRawKeys, deriveShieldedPublicKeys, decodeBech32mAddress } from './wallet/address.js';
-export { signMessage, signedMessageBytes, type SignEncoding, type SignedMessage } from './wallet/sign-message.js';
+export { signMessage, signedMessageBytes, type SignEncoding, type SignedMessage, type SignatureScheme } from './wallet/sign-message.js';
 export { deriveAppSecret } from './wallet/app-secret.js';
 export { loadBatchFile, executeBatchTransfer, batchExitCode, type BatchTransferEntry, type BatchTransferResult, type BatchTransferSummary } from './wallet/batch-transfer.js';
 
@@ -71,7 +71,7 @@ export {
 
 // Sync
 export {
-  startWalletSync, formatNight, NIGHT_TOKEN_ID, clearSyncCache, clearDustSyncCache, resolveSyncStore,
+  startWalletSync, formatNight, NIGHT_TOKEN_ID, clearSyncCache, clearDustSyncCache, clearShieldedSyncCache, resolveSyncStore,
   EMPTY_COINS, EMPTY_SUB_PROGRESS, type WalletSyncOptions,
   type WalletBalances, type SyncedWallet, type DustGeneration, type SyncProgress,
   type SubWalletSyncProgress, type SubWalletProgress, type WalletCoinDetails,
@@ -91,7 +91,11 @@ export {
   designateForDust, designateForDustWithKeys, estimateDustRegistration,
   dedesignateFromDust, dedesignateFromDustWithKeys,
   listNightUtxos,
-  type SendRequest, type TxStage, type NightUtxo, type FinalizedTransaction, type TokenKindsToBalance, type WalletKeys,
+  // Transactions travel as version-stamped handles; these read hashes and bytes
+  // through the ledger version the wallets are acting at.
+  transactionHashOf, activeProtocolVersion, protocolStatus,
+  type SendRequest, type TxStage, type NightUtxo, type FinalizedTransaction, type UnprovenTransaction,
+  type TokenKindsToBalance, type WalletKeys, type ProtocolStatus, type LedgerVersion,
 } from './sync/operations.js';
 export {
   InMemorySyncStateStore, syncStateKey, emptyRefStateKey, emptyRefMnemonicKey, emptyRefHeightKey,
@@ -152,15 +156,24 @@ export {
   insertVerifierKey, type InsertVerifierKeyOptions,
   insertVerifierKeys, type InsertVerifierKeysOptions,
   type BatchEntryResult, type BatchInsertResult,
+  replaceAuthority, type ReplaceAuthorityOptions, type ReplaceAuthorityResult,
+  readAuthority, authorityKeyText, type AuthorityDescription, type AuthorityKey, type AuthoritySigner,
 } from './contract/maintenance.js';
 export { queryContractState, type ContractState } from './contract/state.js';
 export {
   deployFungibleToken,
   mintFungibleToken,
-  FUNGIBLE_TOKEN_ARTIFACT_DIR,
   type DeployFungibleTokenOptions,
   type MintFungibleTokenOptions,
 } from './contract/fungible-token.js';
+export {
+  bundledContractBuild,
+  bundledContractForDeploy,
+  bundledContractForAddress,
+  type BundledContractName,
+  type BundledContractBuild,
+} from './contract/bundled.js';
+export type { ContractEra } from './contract/midnight-js.js';
 export { parseArgs, toPositionalArgs } from './contract/args-parser.js';
 export {
   resolveInitialPrivateState,
@@ -204,3 +217,4 @@ export {
   type ApiKeyRecord, type ApiKeyGenerated, type ApiKeyAuthResult,
 } from './daemon/index.js';
 export { unshieldedSplit, describeReservation, type SpendableSplit } from './wallet/spendable.js';
+export { shieldedCoinRows, type ShieldedCoinRow } from './wallet/shielded-coins.js';

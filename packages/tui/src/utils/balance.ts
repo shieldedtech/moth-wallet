@@ -36,6 +36,10 @@ export interface DisplayCoin {
   registered: boolean;
   /** Booked as an input by an in-flight transaction; settles back on apply. */
   booked: boolean;
+  /** Shielded only: the coin's index in the commitment tree, which spending it needs. */
+  mtIndex?: bigint;
+  /** Shielded only: the coin's nonce. */
+  nonce?: string;
 }
 
 export interface DisplayTokenGroup {
@@ -45,7 +49,7 @@ export interface DisplayTokenGroup {
   coins: DisplayCoin[];
 }
 
-interface CoinLike { value: bigint; type: string; registeredForDustGeneration?: boolean }
+interface CoinLike { value: bigint; type: string; registeredForDustGeneration?: boolean; mtIndex?: bigint; nonce?: string }
 
 /**
  * Group a sub-wallet's coins by token for display, counting booked coins toward
@@ -70,8 +74,8 @@ export function groupCoinsForDisplay(
     tokenType === 'unshielded' && coin.registeredForDustGeneration === true;
 
   const rows: DisplayCoin[] = [
-    ...available.map((c) => ({ value: c.value, type: c.type, registered: isRegistered(c), booked: false })),
-    ...booked.map((c) => ({ value: c.value, type: c.type, registered: isRegistered(c), booked: true })),
+    ...available.map((c) => ({ value: c.value, type: c.type, registered: isRegistered(c), booked: false, mtIndex: c.mtIndex, nonce: c.nonce })),
+    ...booked.map((c) => ({ value: c.value, type: c.type, registered: isRegistered(c), booked: true, mtIndex: c.mtIndex, nonce: c.nonce })),
   ];
 
   const groups = new Map<string, DisplayTokenGroup>();

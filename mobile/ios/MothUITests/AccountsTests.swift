@@ -26,8 +26,7 @@ final class AccountsTests: XCTestCase {
 
         // Rename the active account from its options menu; the wallet header follows.
         app.tabBars.buttons["Settings"].tap()
-        app.buttons["Main options"].tap()
-        app.buttons["Rename"].tap()
+        choose(app.buttons["Rename"], fromMenu: app.buttons["Main options"])
         let name = app.alerts.textFields.firstMatch
         XCTAssertTrue(name.waitForExistence(timeout: 5))
         name.tap()
@@ -38,12 +37,13 @@ final class AccountsTests: XCTestCase {
         XCTAssertTrue(header(app, "Savings ·").waitForExistence(timeout: 10), "renamed in the wallet header")
 
         app.tabBars.buttons["Settings"].tap()
-        reveal(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Network'")).firstMatch, in: app).tap()
-        app.buttons["preprod"].tap()
+        let network = reveal(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Network'")).firstMatch, in: app)
+        choose(app.buttons["preprod"], fromMenu: network)
         app.tabBars.buttons["Wallet"].tap()
-        XCTAssertTrue(header(app, "preprod").waitForExistence(timeout: 60), "account moved to preprod")
+        XCTAssertTrue(header(app, "· preprod").waitForExistence(timeout: 60), "account moved to preprod")
     }
 
+    /// The wallet header is a List section header, which iOS shows in capitals, so match any case.
     private func header(_ app: XCUIApplication, _ text: String) -> XCUIElement {
         app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", text)).firstMatch
     }
