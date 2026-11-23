@@ -67,14 +67,18 @@ export const cardano = {
   cardano_registerHint: 'Generate DUST on Midnight from the cNIGHT you hold on Cardano.',
   cardano_updateHint: 'Send the generated DUST to a different Midnight address.',
   cardano_rotationNote:
-    'Every cNIGHT you hold is sent back to your own address in the same transaction. That is what makes the change take effect.',
+    'Your cNIGHT stays in $1. Cardano records the change by spending it and sending it straight back to the same address in this transaction. You pay only the network fee.',
+  cardano_registerRotationNote:
+    'Your cNIGHT stays in $1. Cardano records the registration by spending it and sending it straight back to the same address in this transaction. You pay the network fee, and about 1.6 ADA is held in the registration until you deregister.',
+  cardano_confirmThisCardanoAccount: 'this Cardano account',
   cardano_confirmTitle: 'Confirm on Cardano',
   cardano_confirm: 'Confirm',
   cardano_confirmActionLabel: 'Action',
   cardano_confirmNetworkLabel: 'Cardano network',
-  cardano_confirmAccountLabel: 'Account',
-  cardano_confirmDustToLabel: 'DUST to',
-  cardano_confirmCnightMovedLabel: 'cNIGHT moved',
+  cardano_confirmAccountLabel: 'Cardano account',
+  cardano_confirmDustToLabel: 'DUST goes to',
+  cardano_confirmCnightMovedLabel: 'cNIGHT generating DUST',
+  cardano_confirmCnightStopsLabel: 'cNIGHT that stops generating DUST',
   cardano_confirmThisWallet: 'This wallet',
   cardano_confirmMinAda: 'Minimum carried with cNIGHT',
   cardano_confirmDeregisterNote:
@@ -91,6 +95,7 @@ export const cardano = {
   // Receiver entry
   cardano_receiverPickAccount: 'Send DUST to one of your accounts',
   cardano_receiverSelected: 'Selected',
+  cardano_receiverNoDustAddress: 'Open this account once to show its DUST address',
   cardano_receiverLabel: 'Midnight DUST address',
   cardano_receiverPlaceholder: 'mn_dust_\u2026',
   cardano_receiverUseThisWallet: 'Use this wallet',

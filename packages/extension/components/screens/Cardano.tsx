@@ -791,9 +791,21 @@ export function Cardano({
       deregister: t('cardano_deregister'),
       update: t('cardano_update'),
     }[action];
-    const receiverName = dustAddress
-      ? midnightAccounts.find((a) => a.dustAddressBytes === dustAddress)?.name ?? truncateAddress(dustAddress)
-      : t('cardano_confirmThisWallet');
+    // The label the picker showed, and the DUST address itself, so what is
+    // confirmed is visibly what was picked.
+    const receiverAccount = dustAddress ? midnightAccounts.find((a) => a.dustAddressBytes === dustAddress) : undefined;
+    const receiverValue = !dustAddress ? (
+      t('cardano_confirmThisWallet')
+    ) : receiverAccount ? (
+      <span className="flex flex-col items-end">
+        <span>{receiverAccount.label}</span>
+        <span className="font-mono text-[11.5px] font-normal text-muted-foreground">
+          {displayAddress(receiverAccount.dustAddress)}
+        </span>
+      </span>
+    ) : (
+      <span className="font-mono text-[13px]">{truncateAddress(dustAddress)}</span>
+    );
     const rows = [
       { label: t('cardano_confirmActionLabel'), value: actionLabel },
       { label: t('cardano_confirmNetworkLabel'), value: status?.cardanoNetwork ?? account?.cardanoNetwork ?? '—' },
@@ -809,10 +821,13 @@ export function Cardano({
           ]
         : []),
       ...(action === 'register' || action === 'update'
-        ? [{ label: t('cardano_confirmDustToLabel'), value: receiverName }]
+        ? [{ label: t('cardano_confirmDustToLabel'), value: receiverValue }]
         : []),
       ...(action !== 'send' && status
-        ? [{ label: t('cardano_confirmCnightMovedLabel'), value: formatCnight(status.cnight) }]
+        ? [{
+            label: t(action === 'deregister' ? 'cardano_confirmCnightStopsLabel' : 'cardano_confirmCnightMovedLabel'),
+            value: formatCnight(status.cnight),
+          }]
         : []),
     ];
     return (
@@ -833,7 +848,11 @@ export function Cardano({
           <NoteCard variant="error" icon={TriangleAlert}>{t('cardano_sendRegisteredWarning')}</NoteCard>
         )}
         {action !== 'send' && (
-          <NoteCard variant="info" icon={Link2}>{t('cardano_rotationNote')}</NoteCard>
+          <NoteCard variant="info" icon={Link2}>
+            {t(action === 'register' ? 'cardano_registerRotationNote' : 'cardano_rotationNote', [
+              activeAccount?.label ?? t('cardano_confirmThisCardanoAccount'),
+            ])}
+          </NoteCard>
         )}
       </PanelScreen>
     );
@@ -938,16 +957,19 @@ export function Cardano({
             {midnightAccounts.map((a) => (
               <button
                 key={a.name}
+                // An account last saved before DUST addresses were stored has none
+                // until it is next unlocked; picking it would pick nothing.
+                disabled={!a.dustAddress}
                 onClick={() => { setReceiver(a.dustAddress); setReceiverError(null); }}
-                className="flex cursor-pointer items-center justify-between gap-2 rounded-[14px] border-0 bg-transparent px-2 py-2 text-left transition duration-150 hover:bg-muted"
+                className="flex cursor-pointer items-center justify-between gap-2 rounded-[14px] border-0 bg-transparent px-2 py-2 text-left transition duration-150 hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
               >
                 <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                   <span className="truncate text-sm font-medium">{a.label}</span>
                   <span className="truncate font-mono text-[11.5px] text-muted-foreground">
-                    {displayAddress(a.shieldedAddress)}
+                    {a.dustAddress ? displayAddress(a.dustAddress) : t('cardano_receiverNoDustAddress')}
                   </span>
                 </span>
-                {receiver === a.dustAddress && (
+                {a.dustAddress && receiver === a.dustAddress && (
                   <span className="shrink-0 text-[12px] text-muted-foreground">
                     {t('cardano_receiverSelected')}
                   </span>

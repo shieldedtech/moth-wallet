@@ -1869,7 +1869,7 @@
     "message": "Envoyez le DUST généré vers une autre adresse Midnight."
   },
   "cardano_rotationNote": {
-    "message": "Tout votre cNIGHT est renvoyé vers votre propre adresse dans la même transaction. C'est ce qui rend le changement effectif."
+    "message": "Vos cNIGHT restent dans $1. Cardano enregistre le changement en les dépensant puis en les renvoyant à la même adresse dans cette transaction. Vous ne payez que les frais de réseau."
   },
   "cardano_confirmTitle": {
     "message": "Confirmer sur Cardano"
@@ -1884,13 +1884,13 @@
     "message": "Réseau Cardano"
   },
   "cardano_confirmAccountLabel": {
-    "message": "Compte"
+    "message": "Compte Cardano"
   },
   "cardano_confirmDustToLabel": {
-    "message": "DUST vers"
+    "message": "Le DUST va à"
   },
   "cardano_confirmCnightMovedLabel": {
-    "message": "cNIGHT déplacé"
+    "message": "cNIGHT générant du DUST"
   },
   "cardano_confirmThisWallet": {
     "message": "Ce portefeuille"
@@ -2278,5 +2278,17 @@
   },
   "cardano_errorNoDustAddress": {
     "message": "Ce portefeuille n'a pas d'adresse DUST sur le réseau actuel : le DUST généré n'aurait nulle part où aller."
+  },
+  "cardano_registerRotationNote": {
+    "message": "Vos cNIGHT restent dans $1. Cardano enregistre l’inscription en les dépensant puis en les renvoyant à la même adresse dans cette transaction. Vous payez les frais de réseau, et environ 1,6 ADA sont conservés dans l’inscription jusqu’à votre désinscription."
+  },
+  "cardano_confirmThisCardanoAccount": {
+    "message": "ce compte Cardano"
+  },
+  "cardano_confirmCnightStopsLabel": {
+    "message": "cNIGHT qui cesse de générer du DUST"
+  },
+  "cardano_receiverNoDustAddress": {
+    "message": "Ouvrez ce compte une fois pour afficher son adresse DUST"
   }
 }
