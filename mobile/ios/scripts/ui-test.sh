@@ -1,10 +1,25 @@
 #!/usr/bin/env bash
-# Runs Moth's UI tests on a simulator, from a fresh install, with Face ID enrolled and every
-# Face ID prompt answered with a match. Needs network access (the test syncs on preprod).
+# Runs Moth's UI tests on a simulator, from a fresh install, with Face ID enrolled and its
+# prompts answered with a match unless a test asks for a non-matching face. Needs network access
+# (the tests sync on preprod).
 #
 #   SIMULATOR="iPhone 17 Pro" scripts/ui-test.sh    (default: the first available iPhone)
+#   SUITE=smoke scripts/ui-test.sh                  (default: full)
+#   TESTS="LifecycleTests IsolationTests" scripts/ui-test.sh
+#
+# Each class takes about 5 minutes on CI, so pull requests run only the smoke suite: the core
+# wallet flow and the DApp connector. The full suite runs on main, nightly and on demand.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+SMOKE="OnboardingTests ConnectorTests"
+FULL="$SMOKE AccountsTests FeaturesTests SecurityTests FaceIDFailureTests ConnectorRejectTests LifecycleTests SyncInterruptTests IsolationTests RecoveryPhraseLeakTests"
+case ${SUITE:-full} in
+  smoke) CLASSES=$SMOKE ;;
+  full) CLASSES=$FULL ;;
+  *) echo "SUITE must be smoke or full, not '$SUITE'" >&2; exit 1 ;;
+esac
+CLASSES=${TESTS:-$CLASSES}
+
 SIM=$(xcrun simctl list devices available -j | python3 -I -c "
 import json, sys
 want = sys.argv[1]
@@ -53,7 +68,7 @@ mkdir -p "$RESULTS"
 # Each class starts from a fresh install, so none depends on another's wallet. A failing class
 # does not stop the others, so one flaky test does not hide the rest; the script fails at the end.
 failed=()
-for class in ${TESTS:-OnboardingTests AccountsTests ConnectorTests FeaturesTests SecurityTests FaceIDFailureTests ConnectorRejectTests LifecycleTests SyncInterruptTests IsolationTests RecoveryPhraseLeakTests}; do
+for class in $CLASSES; do
   rm -f "$CONTROL/faceid"
   xcrun simctl uninstall "$SIM" bob.shielded.moth 2>/dev/null || true
   # Keychain items outlive an uninstall, and Moth never reuses a name that has one.

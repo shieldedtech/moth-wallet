@@ -73,7 +73,8 @@ cd mobile/ios
 LEDGER=src ../shared/scripts/build-engine.sh # ../shared/engine/dist; rerun when moth's packages change
 open Moth.xcodeproj                # or build from the command line:
 
-scripts/ui-test.sh                 # simulator UI test (fresh install, Face ID auto-matched)
+scripts/ui-test.sh                 # simulator UI tests, every class (fresh install per class)
+SUITE=smoke scripts/ui-test.sh     # only the classes pull requests run in CI
 TEAM_ID=… DEVICE=<udid> scripts/device.sh build
 DEVICE=<udid> scripts/device.sh install
 DEVICE=<udid> scripts/device.sh launch   # the phone must be unlocked
