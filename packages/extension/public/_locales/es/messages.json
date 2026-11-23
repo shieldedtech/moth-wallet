@@ -1943,6 +1943,12 @@
   "cardano_loading": {
     "message": "Leyendo Cardano…"
   },
+  "cardano_readingChain": {
+    "message": "Leyendo el registro de DUST…"
+  },
+  "cardano_errorStatusTimeout": {
+    "message": "Cardano no respondió en 2 minutos, así que el registro de DUST es desconocido. Inténtalo de nuevo para leerlo."
+  },
   "cardano_retry": {
     "message": "Reintentar"
   },

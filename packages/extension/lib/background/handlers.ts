@@ -805,6 +805,11 @@ export function registerHandlers(): void {
     return offscreen.cardanoAddresses({ mnemonic, config, accountIndex });
   });
 
+  onMessage('cardanoBalance', async () => {
+    const { config, mnemonic, accountIndex } = await requireCardano(true);
+    return offscreen.cardanoBalance({ mnemonic, config, accountIndex });
+  });
+
   onMessage('cardanoStatus', async () => {
     const { config, mnemonic, session, accountIndex } = await requireCardano(true);
     const network = await getNetworkConfig();

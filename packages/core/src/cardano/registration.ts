@@ -18,6 +18,7 @@ import {
 import { cnightUnit } from './network.js';
 import type { CardanoSession } from './session.js';
 import { resolveDustReceiver } from './receiver.js';
+import { registrationOutRefs, type RegistrationLookupOptions } from './registration-lookup.js';
 
 export { assertDustAddressBytes, dustAddressBytes, resolveDustReceiver } from './receiver.js';
 
@@ -120,20 +121,31 @@ async function collectCnightUtxos(session: CardanoSession, action: string): Prom
 }
 
 /**
- * Find this wallet's registration UTXO, if it has one.
+ * Find this wallet's registration UTXOs.
  *
- * The auth NFT has an empty asset name, so its unit is bare policy id and every
- * registration on the network shares it — the lookup returns all of them and
- * the stake key hash in the datum is what narrows it to ours.
+ * Every registration on the network shares one validator address and one auth
+ * NFT, and only the stake key hash in the datum says whose it is. The pages are
+ * read and decoded in registration-lookup.ts; Lucid is asked only for the
+ * matches, since its own conversion of every registration takes minutes.
  */
-export async function findRegistrations(session: CardanoSession): Promise<RegistrationRecord[]> {
+export async function findRegistrations(
+  session: CardanoSession,
+  opts: RegistrationLookupOptions = {},
+): Promise<RegistrationRecord[]> {
   const validatorAddress = await dustValidatorAddress(session.config);
-  const candidates = await session.lucid.utxosAtWithUnit(
+  const authUnit = dustAuthUnit(session.config);
+  const outRefs = await registrationOutRefs(
+    session.config,
     validatorAddress,
-    dustAuthUnit(session.config),
+    authUnit,
+    session.addresses.stakeKeyHash,
+    opts,
   );
+  const candidates = outRefs.length > 0 ? await session.lucid.utxosByOutRef([...outRefs]) : [];
   const found: RegistrationRecord[] = [];
   for (const utxo of candidates) {
+    // The auth NFT is what makes an output at this address a registration.
+    if (utxo.assets[authUnit] === undefined) continue;
     if (!utxo.datum) continue;
     let decoded;
     try {

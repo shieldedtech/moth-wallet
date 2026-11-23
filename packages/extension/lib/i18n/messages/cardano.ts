@@ -109,6 +109,9 @@ export const cardano = {
     'Add a Blockfrost project ID in Settings to read Cardano and submit transactions.',
   cardano_errorNoCnight: 'You need at least one cNIGHT to register.',
   cardano_loading: 'Reading Cardano…',
+  cardano_readingChain: 'Reading DUST registration…',
+  cardano_errorStatusTimeout:
+    'Cardano did not answer within 2 minutes, so the DUST registration is unknown. Try again to read it.',
   cardano_retry: 'Try again',
 
   // Accounts

@@ -481,6 +481,17 @@ interface ProtocolMap {
     paymentKeyHash: string;
   };
 
+  /**
+   * ADA and cNIGHT held, from the wallet's own UTXOs only. Fast where the full
+   * status is slow: the status also scans every DUST registration on Cardano.
+   */
+  cardanoBalance(): {
+    /** Decimal strings: both exceed Number's safe integer range. */
+    lovelace: string;
+    cnight: string;
+    cnightUtxos: number;
+  };
+
   /** cNIGHT holdings plus both sides of the DUST designation picture. */
   cardanoStatus(): {
     cardanoNetwork: string;
