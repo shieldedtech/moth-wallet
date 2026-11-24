@@ -20,6 +20,16 @@ case ${SUITE:-full} in
 esac
 CLASSES=${TESTS:-$CLASSES}
 
+# Moth's prover listens on 127.0.0.1:6300 in the simulator, which shares the Mac's loopback. Another
+# server there (a local devnet's proof server, say) would answer the isolation probes instead.
+case " $CLASSES " in *" IsolationTests "*)
+  other=$(lsof -nP -iTCP:6300 -sTCP:LISTEN -Fc 2>/dev/null | sed -n 's/^c//p' | grep -vx Moth || true)
+  [ -z "$other" ] || { echo "error: port 6300 is in use by: $(echo $other); stop it before the isolation tests" >&2; exit 1; } ;;
+esac
+
+# The leak check is only as good as the scan, so test the scan before relying on it.
+case " $CLASSES " in *" RecoveryPhraseLeakTests "*) python3 -I scripts/test_phrase_scan.py ;; esac
+
 SIM=$(xcrun simctl list devices available -j | python3 -I -c "
 import json, sys
 want = sys.argv[1]
@@ -92,13 +102,20 @@ for class in $CLASSES; do
   DATA=$(xcrun simctl get_app_container "$SIM" bob.shielded.moth data 2>/dev/null) &&
     cp "$DATA/Documents/moth-debug.log" "$RESULTS/$class.moth-debug.log" 2>/dev/null || true
   # A test that saved the phrase asks for the logs and the app's files to be searched for it.
-  # XCTest logs the text it types, so its own subsystem is left out. A leak fails the class like
-  # a failed test does, rather than stopping the run.
+  # XCTest logs the text it types, so its own subsystem is left out. A leak, or a scan that could
+  # not look everywhere, fails the class like a failed test does, rather than stopping the run.
   if [ -f "$CONTROL/phrase" ]; then
     xcrun simctl spawn "$SIM" log show --start "$start" --info --debug --style compact \
-      --predicate 'subsystem != "com.apple.dt.xctest" AND process != "testmanagerd"' > "$CONTROL/syslog"
-    python3 -I scripts/phrase-scan.py "$CONTROL/phrase" "$CONTROL/syslog" \
-      "$(xcrun simctl get_app_container "$SIM" bob.shielded.moth data)" || failed+=("$class (recovery phrase found)")
+      --predicate 'subsystem != "com.apple.dt.xctest" AND process != "testmanagerd"' > "$CONTROL/syslog" ||
+      failed+=("$class (system log not read)")
+    DATA=$(xcrun simctl get_app_container "$SIM" bob.shielded.moth data 2>/dev/null) || DATA=
+    scan=0
+    python3 -I scripts/phrase-scan.py "$CONTROL/phrase" "$CONTROL/syslog" "$DATA" || scan=$?
+    case $scan in
+      0) ;;
+      1) failed+=("$class (recovery phrase found)") ;;
+      *) failed+=("$class (phrase scan failed)") ;;
+    esac
     rm -f "$CONTROL/phrase" "$CONTROL/syslog"
   fi
 done

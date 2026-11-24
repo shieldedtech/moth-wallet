@@ -11,13 +11,17 @@ final class SyncInterruptTests: XCTestCase {
         let app = XCUIApplication()
         app.launch()
         unlockOrCreate(app)
-        // Sync starts on unlock, with a spinner until it finishes; kill the app while it runs.
-        XCTAssertTrue(app.activityIndicators.firstMatch.waitForExistence(timeout: 30), "sync in progress")
+        // Sync starts on unlock. Registering is disabled until it finishes, so kill the app while
+        // it still is.
+        app.buttons["Generate DUST from NIGHT"].tap()
+        let register = app.buttons["Register NIGHT for DUST"]
+        XCTAssertTrue(register.waitForExistence(timeout: 30))
+        XCTAssertFalse(register.isEnabled, "killed before the first sync finished")
         app.terminate()
 
         app.launch()
         unlockOrCreate(app)
         app.buttons["Generate DUST from NIGHT"].tap()
-        XCTAssertTrue(app.buttons["Register NIGHT for DUST"].waitForEnabled(timeout: 180), "synced after relaunch")
+        XCTAssertTrue(register.waitForEnabled(timeout: 180), "synced after relaunch")
     }
 }

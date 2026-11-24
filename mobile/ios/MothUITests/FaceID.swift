@@ -3,8 +3,9 @@ import XCTest
 /// Chooses how scripts/ui-test.sh answers the simulator's Face ID prompts from now on.
 ///
 /// The script polls a control file every 2 seconds and sends a matching or a non-matching face.
-/// The default, and the state at the start of every class, is a match. Returns once the new answer
-/// has been sent, so no earlier answer still on its way can reach a prompt opened after this.
+/// It resets the answer to a match before each class, not before each test, so a test that depends
+/// on the answer sets it first. Returns once the new answer has been sent, so no earlier answer
+/// still on its way can reach a prompt opened after this.
 enum FaceID {
     enum Answer: String {
         case match, nomatch
@@ -46,6 +47,8 @@ extension FaceID {
     static func cancelFailure(attempts: Int = 3) {
         let alert = notRecognisedAlert
         for _ in 0..<attempts {
+            // It may have closed just after the last wait gave up.
+            guard alert.exists else { return }
             alert.buttons["Cancel"].firstMatch.tap()
             if alert.waitForNonExistence(timeout: 5) { return }
         }

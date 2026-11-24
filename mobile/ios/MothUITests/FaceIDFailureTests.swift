@@ -8,6 +8,8 @@ import XCTest
 final class FaceIDFailureTests: XCTestCase {
     override func setUp() {
         continueAfterFailure = false
+        // The answer carries over from the previous test in this class.
+        FaceID.answer(.match)
     }
 
     func testGatedActionNeedsAMatch() {
@@ -55,13 +57,8 @@ final class FaceIDFailureTests: XCTestCase {
         let failed = FaceID.notRecognisedAlert
         XCTAssertTrue(failed.waitForExistence(timeout: 30), "Face ID failed")
         FaceID.cancelFailure()
-        XCTAssertTrue(faceOnly.waitForValue("0", timeout: 10), "still off")
-    }
-}
-
-extension XCUIElement {
-    func waitForValue(_ value: String, timeout: TimeInterval) -> Bool {
-        let predicate = NSPredicate(format: "value == %@", value)
-        return XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: predicate, object: self)], timeout: timeout) == .completed
+        // The switch is disabled until the change has finished; only then is its value final.
+        XCTAssertTrue(faceOnly.waitForEnabled(timeout: 30), "the change finished")
+        XCTAssertEqual(faceOnly.value as? String, "0", "still off")
     }
 }

@@ -35,9 +35,9 @@ final class IsolationTests: XCTestCase {
 
     /// A DApp page must not be able to read Moth's in-app proof server or engine origin. The proof
     /// server listens on 127.0.0.1:6300 while Moth is open. The probe page is served over http on
-    /// localhost, the one kind of http page Moth's browser opens; WebKit's mixed-content rules
-    /// already stop an https page reaching the prover. The proof server answers only the engine's
-    /// own origin, so every probe must come back blocked.
+    /// localhost, the one kind of http page Moth's browser opens. The proof server refuses a request
+    /// from any origin but the engine's and sends no CORS headers to one, so every probe must come
+    /// back blocked. (A request with no Origin header is served, but a page can't read its answer.)
     func testPageCannotReadProverOrEngine() {
         let app = XCUIApplication()
         let web = openProbe(app)
