@@ -218,4 +218,3 @@ describe('extractBalancesPartial while the only DUST coin is pending', () => {
     expect(swept.coins.dust.available).toHaveLength(0);
   });
 });
-
