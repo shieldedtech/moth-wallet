@@ -3,8 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // A dApp can connect and ask for a transaction within a second of the wallet
 // starting to sync. A DUST spend made by a wallet that has not finished syncing is
 // rejected by the node as InvalidDustSpendProof, so every connector builder —
-// balancing, makeTransfer and makeIntent — must wait for the wallet to report
-// synced first.
+// balancing, makeTransfer and makeIntent — must wait until every sub-wallet has
+// caught up first.
 
 const { startWalletSync, coreBalanceTransaction, buildTransferTransaction, buildSwapIntent } = vi.hoisted(() => ({
   startWalletSync: vi.fn(),
@@ -52,23 +52,32 @@ import { balanceTransaction, makeIntent, syncStop, transferBuild } from '../lib/
 
 const network = { id: 'undeployed', nodeUrl: 'ws://localhost:9944', indexerUrl: 'http://localhost:8088' } as never;
 
-/** A wallet whose sync engine has started but not caught up. */
-function syncingWallet() {
-  const listeners = new Set<(balances: { synced: boolean }) => void>();
+interface Snapshot {
+  synced: boolean;
+  syncProgress: { shieldedSynced: boolean; unshieldedSynced: boolean; dustSynced: boolean };
+}
+
+const progress = (shieldedSynced: boolean, unshieldedSynced: boolean, dustSynced: boolean) =>
+  ({ shieldedSynced, unshieldedSynced, dustSynced });
+
+/** A wallet whose sync engine has started, reporting `initial` until it emits again. */
+function syncingWallet(initial: Snapshot = { synced: false, syncProgress: progress(false, false, false) }) {
+  const listeners = new Set<(balances: Snapshot) => void>();
   const wallet = {
     facade: {},
-    balances: { synced: false },
-    subscribe(listener: (balances: { synced: boolean }) => void) {
+    balances: initial,
+    subscribe(listener: (balances: Snapshot) => void) {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
     stop: async () => {},
   };
-  const finishSync = () => {
-    wallet.balances = { synced: true };
+  const emit = (balances: Snapshot) => {
+    wallet.balances = balances;
     for (const listener of [...listeners]) listener(wallet.balances);
   };
-  return { wallet, finishSync };
+  const finishSync = () => emit({ synced: true, syncProgress: progress(true, true, true) });
+  return { wallet, emit, finishSync };
 }
 
 const SEED = '11'.repeat(32);
@@ -93,7 +102,7 @@ describe('offscreen connector builders', () => {
     }
   });
 
-  it.each(builders)('$name does not build until the wallet reports synced', async ({ core, run }) => {
+  it.each(builders)('$name does not build until the wallet has caught up', async ({ core, run }) => {
     const { wallet, finishSync } = syncingWallet();
     startWalletSync.mockResolvedValue(wallet);
 
@@ -104,6 +113,32 @@ describe('offscreen connector builders', () => {
 
     finishSync();
     await expect(result).resolves.toEqual({ txHex: 'ab' });
+    expect(core).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(builders)('$name does not build while any sub-wallet is still catching up', async ({ core, run }) => {
+    const { wallet, emit, finishSync } = syncingWallet();
+    startWalletSync.mockResolvedValue(wallet);
+
+    const result = run();
+    await vi.waitFor(() => expect(startWalletSync).toHaveBeenCalled());
+    // Shielded and unshielded done, DUST not: the DUST spend would still be made from a part-synced tree.
+    emit({ synced: false, syncProgress: progress(true, true, false) });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(core).not.toHaveBeenCalled();
+
+    finishSync();
+    await expect(result).resolves.toEqual({ txHex: 'ab' });
+  });
+
+  // A wallet that caught up earlier this session and has since lost its indexer
+  // connection reads `synced: false` from the facade, while core keeps each
+  // sub-wallet's flag. It must build from the state it has, not hold the
+  // approved request for the whole wait and then fail it.
+  it.each(builders)('$name builds at once for a caught-up wallet whose indexer connection dropped', async ({ core, run }) => {
+    startWalletSync.mockResolvedValue(syncingWallet({ synced: false, syncProgress: progress(true, true, true) }).wallet);
+
+    await expect(run()).resolves.toEqual({ txHex: 'ab' });
     expect(core).toHaveBeenCalledTimes(1);
   });
 

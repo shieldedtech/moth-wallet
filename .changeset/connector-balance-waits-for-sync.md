@@ -9,5 +9,7 @@ gets it rejected by the node.
 `makeIntent` built their transactions without waiting for the wallet to finish
 syncing. A midnight-js deploy straight after connecting could reach the wallet
 in that window, and the node rejected its DUST spend as
-`Malformed(InvalidDustSpendProof)`. All four now wait for the wallet to report
-synced first.
+`Malformed(InvalidDustSpendProof)`. All four now wait until every sub-wallet has
+caught up this session. A wallet that has caught up and then loses its indexer
+connection still builds straight away from the state it has, rather than
+waiting and then failing the request.
