@@ -125,9 +125,10 @@ describe('Cardano status refresh', () => {
     expect(text()).not.toContain(t('cardano_refreshing'));
   });
 
-  it('waits on the chain when there is nothing cached', async () => {
+  it('waits on the chain when there is nothing cached, showing the address meanwhile', async () => {
     await render();
-    expect(text()).toContain(t('cardano_loading'));
+    expect(text()).toContain(t('cardano_readingChain'));
+    expect(text()).toContain(t('cardano_addressRow'));
 
     await act(async () => reads[0]!.resolve(unregistered));
     expect(text()).toContain(t('cardano_notRegistered'));

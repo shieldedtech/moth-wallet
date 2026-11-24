@@ -1875,7 +1875,7 @@
     "message": "Envía el DUST generado a otra dirección de Midnight."
   },
   "cardano_rotationNote": {
-    "message": "Todo tu cNIGHT se envía de vuelta a tu propia dirección en la misma transacción. Eso es lo que hace efectivo el cambio."
+    "message": "Tu cNIGHT se queda en $1. Cardano registra el cambio gastándolo y devolviéndolo a la misma dirección en esta transacción. Solo pagas la comisión de red."
   },
   "cardano_confirmTitle": {
     "message": "Confirmar en Cardano"
@@ -1890,13 +1890,13 @@
     "message": "Red de Cardano"
   },
   "cardano_confirmAccountLabel": {
-    "message": "Cuenta"
+    "message": "Cuenta de Cardano"
   },
   "cardano_confirmDustToLabel": {
-    "message": "DUST a"
+    "message": "El DUST va a"
   },
   "cardano_confirmCnightMovedLabel": {
-    "message": "cNIGHT movido"
+    "message": "cNIGHT que genera DUST"
   },
   "cardano_confirmThisWallet": {
     "message": "Esta billetera"
@@ -1948,6 +1948,12 @@
   },
   "cardano_loading": {
     "message": "Leyendo Cardano…"
+  },
+  "cardano_readingChain": {
+    "message": "Leyendo el registro de DUST…"
+  },
+  "cardano_errorStatusTimeout": {
+    "message": "Cardano no respondió en 2 minutos."
   },
   "cardano_retry": {
     "message": "Reintentar"
@@ -2284,5 +2290,20 @@
   },
   "cardano_errorNoDustAddress": {
     "message": "Esta cartera no tiene dirección DUST en la red actual, así que el DUST generado no tendría destino."
+  },
+  "cardano_registerRotationNote": {
+    "message": "Tu cNIGHT se queda en $1. Cardano registra la inscripción gastándolo y devolviéndolo a la misma dirección en esta transacción. Pagas la comisión de red y unos 1,6 ADA quedan retenidos en la inscripción hasta que la canceles."
+  },
+  "cardano_confirmThisCardanoAccount": {
+    "message": "esta cuenta de Cardano"
+  },
+  "cardano_confirmCnightStopsLabel": {
+    "message": "cNIGHT que deja de generar DUST"
+  },
+  "cardano_receiverNoDustAddress": {
+    "message": "Abre esta cuenta una vez para ver su dirección DUST"
+  },
+  "cardano_registrationUnavailable": {
+    "message": "No se pudo leer el registro de DUST."
   }
 }

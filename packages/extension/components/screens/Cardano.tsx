@@ -25,10 +25,15 @@ import { Input } from '../ui/input';
 
 type Status = Awaited<ReturnType<typeof fetchStatus>>;
 type Account = Awaited<ReturnType<typeof fetchAccount>>;
+type Balance = Awaited<ReturnType<typeof fetchBalance>>;
 type AccountList = Awaited<ReturnType<typeof fetchAccounts>>;
 
 function fetchAccounts() {
   return sendMessage('cardanoAccountList', undefined);
+}
+
+function fetchBalance() {
+  return sendMessage('cardanoBalance', undefined);
 }
 
 function fetchStatus() {
@@ -40,8 +45,27 @@ function fetchAccount() {
   return sendMessage('cardanoAddresses', undefined);
 }
 
+/**
+ * How long the status read may take. On mainnet it pages through every DUST
+ * registration on Cardano, thousands of them, so it is slow but finishes well
+ * inside this; past it, the screen says so instead of spinning forever.
+ */
+export const STATUS_TIMEOUT_MS = 120_000;
+
+export function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));
+
 type Mode =
   | { kind: 'loading' }
+  // The account is derived and on display; balances and registration are still being read.
+  | { kind: 'reading' }
   | { kind: 'accounts' }
   | { kind: 'import' }
   | { kind: 'rename'; id: string; current: string }
@@ -111,6 +135,18 @@ function parseCnightInput(value: string): bigint | null {
   return BigInt(whole!) * 1_000_000n + BigInt(frac.padEnd(6, '0'));
 }
 
+/** ADA and cNIGHT rows, from either the quick balance read or the full status. */
+function balanceRows(held: { lovelace: string; cnight: string; cnightUtxos: number }) {
+  return [
+    { label: t('cardano_adaRow'), value: formatAda(held.lovelace) },
+    {
+      label: t('cardano_cnightRow'),
+      value: formatCnight(held.cnight),
+      sub: held.cnightUtxos === 1 ? t('cardano_cnightUtxosOne') : t('cardano_cnightUtxos', [held.cnightUtxos]),
+    },
+  ];
+}
+
 /** Accrued as a percentage of the ceiling; 0 when the ceiling is unknown. */
 function capacityPercent(current: string, max: string | null): number {
   if (!max || max === '0') return 0;
@@ -157,6 +193,8 @@ export function Cardano({
   const [mode, setMode] = useState<Mode>({ kind: 'loading' });
   const [status, setStatus] = useState<Status | null>(null);
   const [account, setAccount] = useState<Account | null>(null);
+  // Shown while the slower status read is still out; the status carries the same figures.
+  const [balance, setBalance] = useState<Balance | null>(null);
   const [receiver, setReceiver] = useState('');
   const [receiverError, setReceiverError] = useState<string | null>(null);
   const [accounts, setAccounts] = useState<AccountList | null>(null);
@@ -204,32 +242,34 @@ export function Cardano({
   const refresh = useCallback(async () => {
     const seq = ++refreshSeq.current;
     const current = () => seq === refreshSeq.current;
+    // Leave only the screens this load put up; the reading screen offers the
+    // account switcher, so the user may be elsewhere by the time a read lands.
+    const fromLoad = (m: Mode) => m.kind === 'loading' || m.kind === 'reading';
     setMode({ kind: 'loading' });
     setRefreshError(null);
-    // Derivation first, and independently. It is the one call that works before
-    // anything is configured, so a failure here means there is genuinely no
-    // Cardano account — locked wallet, or one restored from a hex seed.
-    // The account list is independent of every other call: it is storage-only,
-    // so it works while locked out of Blockfrost and while the chain is down.
-    const list = await fetchAccounts().catch(() => null);
+    // The account list is storage-only, so it works while locked out of
+    // Blockfrost and while the chain is down. It and the derivation below wait
+    // on the offscreen sync lane, which a cache restore can hold for a minute or
+    // more, so both are time-limited like the chain read.
+    const list = await withTimeout(fetchAccounts(), STATUS_TIMEOUT_MS, t('cardano_errorStatusTimeout')).catch(() => null);
     if (!current()) return;
     setAccounts(list);
-    // Derived offscreen: the decode needs the ledger WASM, which has no place
-    // in the panel bundle.
-    const receivers = await sendMessage('cardanoReceiverAccounts', undefined).catch(() => []);
-    if (!current()) return;
-    setMidnightAccounts(receivers);
+    // Derivation needs no network, so a failure here means there is genuinely no
+    // Cardano account: locked wallet, or one restored from a hex seed.
     let derived: Account;
     try {
-      derived = await fetchAccount();
+      derived = await withTimeout(fetchAccount(), STATUS_TIMEOUT_MS, t('cardano_errorStatusTimeout'));
       if (!current()) return;
       setAccount(derived);
     } catch (err) {
-      if (current()) {
-        setMode({ kind: 'unavailable', message: err instanceof Error ? err.message : String(err) });
-      }
+      if (current()) setMode({ kind: 'unavailable', message: errorText(err) });
       return;
     }
+    // Derived offscreen: the decode needs the ledger WASM, which has no place
+    // in the panel bundle.
+    void sendMessage('cardanoReceiverAccounts', undefined)
+      .catch(() => [])
+      .then((receivers) => current() && setMidnightAccounts(receivers));
 
     // The last status read, shown at once while a fresh read runs behind it.
     const cached = await sendMessage('cardanoStatusCached', undefined).catch(() => null);
@@ -237,24 +277,32 @@ export function Cardano({
     if (cached) {
       setStatus(cached.status);
       setMode({ kind: 'overview' });
+    } else {
+      // Nothing kept yet: show the address now and balances as soon as they
+      // come, since the first full read can take a while on mainnet.
+      setStatus(null);
+      setBalance(null);
+      setMode({ kind: 'reading' });
+      void fetchBalance()
+        .then((read) => current() && setBalance(read))
+        .catch(() => undefined);
     }
     setRefreshing(true);
     try {
-      const fresh = await fetchStatus();
+      const fresh = await withTimeout(fetchStatus(), STATUS_TIMEOUT_MS, t('cardano_errorStatusTimeout'));
       if (!current()) return;
       setStatus(fresh);
-      // Only from loading: the user may have moved on from the cached overview.
-      setMode((m) => (m.kind === 'loading' ? { kind: 'overview' } : m));
+      setMode((m) => (fromLoad(m) ? { kind: 'overview' } : m));
     } catch (err) {
       if (!current()) return;
-      const message = err instanceof Error ? err.message : String(err);
+      const message = errorText(err);
       if (cached) {
         setRefreshError(message);
       } else {
-        // The background names this one: no Blockfrost project ID. The account
-        // above is still good, so the screen keeps it on display.
+        // No Blockfrost project ID, Cardano unreachable, or no answer in time.
+        // The account above is still good, so the screen keeps it on display.
         setStatus(null);
-        setMode((m) => (m.kind === 'loading' ? { kind: 'chainBlocked', message } : m));
+        setMode((m) => (fromLoad(m) ? { kind: 'chainBlocked', message } : m));
       }
     } finally {
       if (current()) setRefreshing(false);
@@ -405,12 +453,19 @@ export function Cardano({
     </button>
   );
 
-  const runAccountAction = async (fn: () => Promise<AccountList>, toastKey: Parameters<typeof t>[0]) => {
+  const runAccountAction = async (
+    fn: () => Promise<AccountList>,
+    toastKey: Parameters<typeof t>[0],
+    // A rename changes only a label, which the returned list already carries;
+    // re-reading the chain for it would also pull the user back here up to two
+    // minutes later, from wherever they had gone meanwhile.
+    { reread = true }: { reread?: boolean } = {},
+  ) => {
     setBusy(true);
     try {
       setAccounts(await fn());
       toast(t(toastKey));
-      await refresh();
+      if (reread) await refresh();
     } catch (err) {
       toast(err instanceof Error ? err.message : String(err));
     } finally {
@@ -516,6 +571,7 @@ export function Cardano({
       await runAccountAction(
         () => sendMessage('cardanoAccountRename', { id, label }),
         'cardano_accountRenamed',
+        { reread: false },
       );
       setMode({ kind: 'accounts' });
     };
@@ -724,14 +780,32 @@ export function Cardano({
     );
   }
 
+  if (mode.kind === 'reading') {
+    return (
+      <PanelScreen>
+        {header}
+        {accountSwitcher}
+        {accountPanel}
+        {balance && <DetailCard rows={balanceRows(balance)} />}
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <LoaderCircle className="h-4 w-4 animate-spin" />
+          <span>{t('cardano_readingChain')}</span>
+        </div>
+      </PanelScreen>
+    );
+  }
+
   if (mode.kind === 'chainBlocked') {
     return (
       <PanelScreen cta={<Button onClick={() => void refresh()}>{t('cardano_retry')}</Button>}>
         {header}
         {accountSwitcher}
         {accountPanel}
+        {balance && <DetailCard rows={balanceRows(balance)} />}
         <NoteCard variant="error" icon={TriangleAlert}>
-          {t('cardano_chainUnavailable')} {mode.message}
+          {/* With balances on screen, only the registration is missing. The detail
+              can be an untranslated core error, so a translated lead goes first. */}
+          {`${t(balance ? 'cardano_registrationUnavailable' : 'cardano_chainUnavailable')} ${mode.message}`}
         </NoteCard>
       </PanelScreen>
     );
@@ -757,9 +831,21 @@ export function Cardano({
       deregister: t('cardano_deregister'),
       update: t('cardano_update'),
     }[action];
-    const receiverName = dustAddress
-      ? midnightAccounts.find((a) => a.dustAddressBytes === dustAddress)?.name ?? truncateAddress(dustAddress)
-      : t('cardano_confirmThisWallet');
+    // The label the picker showed, and the DUST address itself, so what is
+    // confirmed is visibly what was picked.
+    const receiverAccount = dustAddress ? midnightAccounts.find((a) => a.dustAddressBytes === dustAddress) : undefined;
+    const receiverValue = !dustAddress ? (
+      t('cardano_confirmThisWallet')
+    ) : receiverAccount ? (
+      <span className="flex flex-col items-end">
+        <span>{receiverAccount.label}</span>
+        <span className="font-mono text-[11.5px] font-normal text-muted-foreground">
+          {displayAddress(receiverAccount.dustAddress)}
+        </span>
+      </span>
+    ) : (
+      <span className="font-mono text-[13px]">{truncateAddress(dustAddress)}</span>
+    );
     const rows = [
       { label: t('cardano_confirmActionLabel'), value: actionLabel },
       { label: t('cardano_confirmNetworkLabel'), value: status?.cardanoNetwork ?? account?.cardanoNetwork ?? '—' },
@@ -775,10 +861,13 @@ export function Cardano({
           ]
         : []),
       ...(action === 'register' || action === 'update'
-        ? [{ label: t('cardano_confirmDustToLabel'), value: receiverName }]
+        ? [{ label: t('cardano_confirmDustToLabel'), value: receiverValue }]
         : []),
       ...(action !== 'send' && status
-        ? [{ label: t('cardano_confirmCnightMovedLabel'), value: formatCnight(status.cnight) }]
+        ? [{
+            label: t(action === 'deregister' ? 'cardano_confirmCnightStopsLabel' : 'cardano_confirmCnightMovedLabel'),
+            value: formatCnight(status.cnight),
+          }]
         : []),
     ];
     return (
@@ -799,7 +888,11 @@ export function Cardano({
           <NoteCard variant="error" icon={TriangleAlert}>{t('cardano_sendRegisteredWarning')}</NoteCard>
         )}
         {action !== 'send' && (
-          <NoteCard variant="info" icon={Link2}>{t('cardano_rotationNote')}</NoteCard>
+          <NoteCard variant="info" icon={Link2}>
+            {t(action === 'register' ? 'cardano_registerRotationNote' : 'cardano_rotationNote', [
+              activeAccount?.label ?? t('cardano_confirmThisCardanoAccount'),
+            ])}
+          </NoteCard>
         )}
       </PanelScreen>
     );
@@ -904,16 +997,19 @@ export function Cardano({
             {midnightAccounts.map((a) => (
               <button
                 key={a.name}
+                // An account last saved before DUST addresses were stored has none
+                // until it is next unlocked; picking it would pick nothing.
+                disabled={!a.dustAddress}
                 onClick={() => { setReceiver(a.dustAddress); setReceiverError(null); }}
-                className="flex cursor-pointer items-center justify-between gap-2 rounded-[14px] border-0 bg-transparent px-2 py-2 text-left transition duration-150 hover:bg-muted"
+                className="flex cursor-pointer items-center justify-between gap-2 rounded-[14px] border-0 bg-transparent px-2 py-2 text-left transition duration-150 hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
               >
                 <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                   <span className="truncate text-sm font-medium">{a.label}</span>
                   <span className="truncate font-mono text-[11.5px] text-muted-foreground">
-                    {displayAddress(a.shieldedAddress)}
+                    {a.dustAddress ? displayAddress(a.dustAddress) : t('cardano_receiverNoDustAddress')}
                   </span>
                 </span>
-                {receiver === a.dustAddress && (
+                {a.dustAddress && receiver === a.dustAddress && (
                   <span className="shrink-0 text-[12px] text-muted-foreground">
                     {t('cardano_receiverSelected')}
                   </span>
@@ -939,7 +1035,9 @@ export function Cardano({
           {receiverError && <span className="text-xs text-destructive">{receiverError}</span>}
         </label>
         <NoteCard variant="info" icon={Link2}>
-          {t('cardano_rotationNote')}
+          {t(action === 'register' ? 'cardano_registerRotationNote' : 'cardano_rotationNote', [
+            activeAccount?.label ?? t('cardano_confirmThisCardanoAccount'),
+          ])}
         </NoteCard>
       </PanelScreen>
     );
@@ -1072,15 +1170,7 @@ export function Cardano({
 
       <DetailCard
         rows={[
-          { label: t('cardano_adaRow'), value: formatAda(status.lovelace) },
-          {
-            label: t('cardano_cnightRow'),
-            value: formatCnight(status.cnight),
-            sub:
-              status.cnightUtxos === 1
-                ? t('cardano_cnightUtxosOne')
-                : t('cardano_cnightUtxos', [status.cnightUtxos]),
-          },
+          ...balanceRows(status),
           {
             label: t('cardano_designationRow'),
             value: designation,

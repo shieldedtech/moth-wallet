@@ -356,6 +356,7 @@ async function withTxTiming<T>(
   }
 }
 
+
 export function registerHandlers(): void {
   onMessage('walletList', async () => {
     const { network } = await getSettings();
@@ -811,6 +812,11 @@ export function registerHandlers(): void {
   onMessage('cardanoAddresses', async () => {
     const { config, mnemonic, accountIndex } = await requireCardano(false);
     return offscreen.cardanoAddresses({ mnemonic, config, accountIndex });
+  });
+
+  onMessage('cardanoBalance', async () => {
+    const { config, mnemonic, accountIndex } = await requireCardano(true);
+    return offscreen.cardanoBalance({ mnemonic, config, accountIndex });
   });
 
   onMessage('cardanoStatus', async () => {
