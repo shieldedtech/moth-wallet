@@ -29,7 +29,7 @@ export interface TimingEntry {
   detail?: Record<string, number | string>;
 }
 
-export type TimingSource = 'sync' | 'tx' | 'marker';
+export type TimingSource = 'sync' | 'tx' | 'proof' | 'marker';
 
 /**
  * Persistence for the recorder. Deliberately tiny: four operations, all async,

@@ -497,6 +497,8 @@ export interface OffscreenProtocol {
   'os/eventTxStage'(stage: TxStage): void;
   /** Node relay reachability, pushed whenever it changes. */
   'os/eventRelayState'(state: RelayState): void;
+  /** A proof-pool diagnostic line: job start, key lookups, finish, timeout. */
+  'os/eventProofLog'(line: string): void;
 }
 
 export const { sendMessage: offscreenSend, onMessage: offscreenOn } =

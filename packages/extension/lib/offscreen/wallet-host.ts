@@ -102,7 +102,15 @@ const SYNC_WAIT_MS = 60_000;
 // a `?worker` import cannot resolve under `wxt dev`, which keeps the in-thread prover.
 if (!import.meta.env.DEV) {
   const pool: Promise<ProofPool> = import('./proof-worker?worker').then(({ default: ProofWorker }) =>
-    createProofPool({ spawn: () => new ProofWorker({ name: 'moth-proof-worker' }) }),
+    createProofPool({
+      spawn: () => new ProofWorker({ name: 'moth-proof-worker' }),
+      // Also to the timings log, which shows only stage changes otherwise: a
+      // proof stuck after "tx: proving" then says which key or step it is on.
+      log: (line) => {
+        console.info(line);
+        emit('os/eventProofLog', line);
+      },
+    }),
   );
   setWasmProvingProviderFactory((keyMaterial, zkir) => ({
     check: async (preimage, keyLocation) => (await pool).provider(keyMaterial, zkir).check(preimage, keyLocation),

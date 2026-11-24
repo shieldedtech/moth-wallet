@@ -388,6 +388,9 @@ export function registerSyncEvents(): void {
     void recordTiming('sync', data);
     broadcast({ kind: 'syncMessage', message: data });
   });
+  offscreenOn('os/eventProofLog', ({ data }) => {
+    void recordTiming('proof', data);
+  });
   offscreenOn('os/eventTxStage', ({ data }) => {
     void recordTiming('tx', `tx: ${data}`);
     const since = Date.now();
