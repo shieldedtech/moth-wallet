@@ -207,6 +207,54 @@ export interface CardanoAccountListDTO {
   readonly activeId: string;
 }
 
+/** cNIGHT holdings plus both sides of the DUST designation picture. */
+export interface CardanoStatusDTO {
+  cardanoNetwork: string;
+  address: string;
+  rewardAddress: string;
+  /** Decimal strings — both exceed Number's safe integer range. */
+  lovelace: string;
+  cnight: string;
+  cnightUtxos: number;
+  registered: boolean;
+  registeredDustAddress: string | null;
+  /** True when the registration points at THIS account's DUST address. */
+  registeredToThisWallet: boolean;
+  registrationUtxo: string | null;
+  /** Midnight-side rate; null until the indexer has observed the registration. */
+  generationRate: string | null;
+  /** Accrued DUST and its ceiling, in SPECK (10^15 per DUST). */
+  currentCapacity: string | null;
+  maxCapacity: string | null;
+  /**
+   * Midnight waits for Cardano finality (k=2160 blocks, ~12 hours) before
+   * acting on a registration. These carry that wait so the panel can count
+   * down instead of saying "soon". Null when there is nothing to wait for or
+   * the registration transaction is not yet in a block.
+   */
+  generatingFrom: number | null;
+  secondsRemaining: number | null;
+  /**
+   * What Midnight made of the registration. null = no record (not yet seen,
+   * or finality has not passed); false = ingested and REJECTED, which waiting
+   * will not fix; true = generating.
+   */
+  midnightValid: boolean | null;
+  /** More than one registration on a stake key forces deregistration. */
+  registrationCount: number;
+  /**
+   * The registration records something that is not a 33-byte DUST address,
+   * so it can never generate DUST. `update` rewrites it in one transaction.
+   */
+  legacyDustAddress: boolean;
+}
+
+export interface CachedCardanoStatusDTO {
+  readonly status: CardanoStatusDTO;
+  /** Unix milliseconds the status was read. */
+  readonly readAt: number;
+}
+
 /**
  * What a CIP-30 signing approval shows: the request, which key on which network
  * would sign it, and what it does — the decoded transaction for `signTx` and
@@ -492,47 +540,10 @@ interface ProtocolMap {
     cnightUtxos: number;
   };
 
-  /** cNIGHT holdings plus both sides of the DUST designation picture. */
-  cardanoStatus(): {
-    cardanoNetwork: string;
-    address: string;
-    rewardAddress: string;
-    /** Decimal strings — both exceed Number's safe integer range. */
-    lovelace: string;
-    cnight: string;
-    cnightUtxos: number;
-    registered: boolean;
-    registeredDustAddress: string | null;
-    /** True when the registration points at THIS account's DUST address. */
-    registeredToThisWallet: boolean;
-    registrationUtxo: string | null;
-    /** Midnight-side rate; null until the indexer has observed the registration. */
-    generationRate: string | null;
-    /** Accrued DUST and its ceiling, in SPECK (10^15 per DUST). */
-    currentCapacity: string | null;
-    maxCapacity: string | null;
-    /**
-     * Midnight waits for Cardano finality (k=2160 blocks, ~12 hours) before
-     * acting on a registration. These carry that wait so the panel can count
-     * down instead of saying "soon". Null when there is nothing to wait for or
-     * the registration transaction is not yet in a block.
-     */
-    generatingFrom: number | null;
-    secondsRemaining: number | null;
-    /**
-     * What Midnight made of the registration. null = no record (not yet seen,
-     * or finality has not passed); false = ingested and REJECTED, which waiting
-     * will not fix; true = generating.
-     */
-    midnightValid: boolean | null;
-    /** More than one registration on a stake key forces deregistration. */
-    registrationCount: number;
-    /**
-     * The registration records something that is not a 33-byte DUST address,
-     * so it can never generate DUST. `update` rewrites it in one transaction.
-     */
-    legacyDustAddress: boolean;
-  };
+  /** cNIGHT holdings plus both sides of the DUST designation picture, read fresh. */
+  cardanoStatus(): CardanoStatusDTO;
+  /** The last status read for the active account, or null if there is none yet. No network access. */
+  cardanoStatusCached(): CachedCardanoStatusDTO | null;
 
   /** `dustAddress` omitted means this account's own. */
   cardanoRegister(data: { dustAddress?: string } | undefined): { txHash: string; explorer: string };

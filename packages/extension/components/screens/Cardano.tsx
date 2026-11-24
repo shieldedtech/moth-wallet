@@ -195,9 +195,6 @@ export function Cardano({
   const [account, setAccount] = useState<Account | null>(null);
   // Shown while the slower status read is still out; the status carries the same figures.
   const [balance, setBalance] = useState<Balance | null>(null);
-  // Where the current load stands, so leaving the account manager mid-load goes
-  // back to it rather than to an overview with no status (or the last account's).
-  const [loadMode, setLoadMode] = useState<Mode>({ kind: 'loading' });
   const [receiver, setReceiver] = useState('');
   const [receiverError, setReceiverError] = useState<string | null>(null);
   const [accounts, setAccounts] = useState<AccountList | null>(null);
@@ -236,60 +233,79 @@ export function Cardano({
     return () => clearInterval(id);
   }, [status?.secondsRemaining]);
 
-  // A refresh started later supersedes an earlier one still waiting on the chain.
-  const generation = useRef(0);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  // Each refresh supersedes the ones before it, so a slow reply for an account
+  // the user has since switched away from cannot overwrite the current one.
+  const refreshSeq = useRef(0);
 
   const refresh = useCallback(async () => {
-    const current = ++generation.current;
-    const stale = () => generation.current !== current;
-    // The user can open the account manager while this runs (the reading screen
-    // offers it), so a result only replaces the screen this load put up.
-    const settle = (from: Mode['kind'], to: Mode) => {
-      setLoadMode(to);
-      setMode((m) => (m.kind === from ? to : m));
-    };
-    setStatus(null);
-    setLoadMode({ kind: 'loading' });
+    const seq = ++refreshSeq.current;
+    const current = () => seq === refreshSeq.current;
+    // Leave only the screens this load put up; the reading screen offers the
+    // account switcher, so the user may be elsewhere by the time a read lands.
+    const fromLoad = (m: Mode) => m.kind === 'loading' || m.kind === 'reading';
     setMode({ kind: 'loading' });
+    setRefreshError(null);
     // The account list is storage-only, so it works while locked out of
-    // Blockfrost and while the chain is down. Both of these wait on the
-    // offscreen sync lane, which a cache restore can hold for a minute or more.
-    await withTimeout(fetchAccounts(), STATUS_TIMEOUT_MS, t('cardano_errorStatusTimeout'))
-      .then(setAccounts)
-      .catch(() => setAccounts(null));
+    // Blockfrost and while the chain is down. It and the derivation below wait
+    // on the offscreen sync lane, which a cache restore can hold for a minute or
+    // more, so both are time-limited like the chain read.
+    const list = await withTimeout(fetchAccounts(), STATUS_TIMEOUT_MS, t('cardano_errorStatusTimeout')).catch(() => null);
+    if (!current()) return;
+    setAccounts(list);
     // Derivation needs no network, so a failure here means there is genuinely no
     // Cardano account: locked wallet, or one restored from a hex seed.
     let derived: Account;
     try {
       derived = await withTimeout(fetchAccount(), STATUS_TIMEOUT_MS, t('cardano_errorStatusTimeout'));
+      if (!current()) return;
+      setAccount(derived);
     } catch (err) {
-      if (!stale()) settle('loading', { kind: 'unavailable', message: errorText(err) });
+      if (current()) setMode({ kind: 'unavailable', message: errorText(err) });
       return;
     }
-    if (stale()) return;
-    setAccount(derived);
-    setBalance(null);
-    // The address shows now; the chain read below can take a while on mainnet.
-    settle('loading', { kind: 'reading' });
-    // Balances come from this wallet's own UTXOs and answer in a second or two,
-    // where the status also scans every DUST registration on Cardano.
-    void fetchBalance()
-      .then((read) => !stale() && setBalance(read))
-      .catch(() => undefined);
     // Derived offscreen: the decode needs the ledger WASM, which has no place
     // in the panel bundle.
     void sendMessage('cardanoReceiverAccounts', undefined)
-      .then((list) => !stale() && setMidnightAccounts(list))
-      .catch(() => !stale() && setMidnightAccounts([]));
+      .catch(() => [])
+      .then((receivers) => current() && setMidnightAccounts(receivers));
+
+    // The last status read, shown at once while a fresh read runs behind it.
+    const cached = await sendMessage('cardanoStatusCached', undefined).catch(() => null);
+    if (!current()) return;
+    if (cached) {
+      setStatus(cached.status);
+      setMode({ kind: 'overview' });
+    } else {
+      // Nothing kept yet: show the address now and balances as soon as they
+      // come, since the first full read can take a while on mainnet.
+      setStatus(null);
+      setBalance(null);
+      setMode({ kind: 'reading' });
+      void fetchBalance()
+        .then((read) => current() && setBalance(read))
+        .catch(() => undefined);
+    }
+    setRefreshing(true);
     try {
-      const read = await withTimeout(fetchStatus(), STATUS_TIMEOUT_MS, t('cardano_errorStatusTimeout'));
-      if (stale()) return;
-      setStatus(read);
-      settle('reading', { kind: 'overview' });
+      const fresh = await withTimeout(fetchStatus(), STATUS_TIMEOUT_MS, t('cardano_errorStatusTimeout'));
+      if (!current()) return;
+      setStatus(fresh);
+      setMode((m) => (fromLoad(m) ? { kind: 'overview' } : m));
     } catch (err) {
-      // No Blockfrost project ID, Cardano unreachable, or no answer in time. The
-      // account above is still good, so the screen keeps it on display.
-      if (!stale()) settle('reading', { kind: 'chainBlocked', message: errorText(err) });
+      if (!current()) return;
+      const message = errorText(err);
+      if (cached) {
+        setRefreshError(message);
+      } else {
+        // No Blockfrost project ID, Cardano unreachable, or no answer in time.
+        // The account above is still good, so the screen keeps it on display.
+        setStatus(null);
+        setMode((m) => (fromLoad(m) ? { kind: 'chainBlocked', message } : m));
+      }
+    } finally {
+      if (current()) setRefreshing(false);
     }
   }, []);
 
@@ -437,12 +453,19 @@ export function Cardano({
     </button>
   );
 
-  const runAccountAction = async (fn: () => Promise<AccountList>, toastKey: Parameters<typeof t>[0]) => {
+  const runAccountAction = async (
+    fn: () => Promise<AccountList>,
+    toastKey: Parameters<typeof t>[0],
+    // A rename changes only a label, which the returned list already carries;
+    // re-reading the chain for it would also pull the user back here up to two
+    // minutes later, from wherever they had gone meanwhile.
+    { reread = true }: { reread?: boolean } = {},
+  ) => {
     setBusy(true);
     try {
       setAccounts(await fn());
       toast(t(toastKey));
-      await refresh();
+      if (reread) await refresh();
     } catch (err) {
       toast(err instanceof Error ? err.message : String(err));
     } finally {
@@ -548,6 +571,7 @@ export function Cardano({
       await runAccountAction(
         () => sendMessage('cardanoAccountRename', { id, label }),
         'cardano_accountRenamed',
+        { reread: false },
       );
       setMode({ kind: 'accounts' });
     };
@@ -582,7 +606,8 @@ export function Cardano({
   if (mode.kind === 'accounts') {
     return (
       <PanelScreen cta={<Button onClick={() => void refresh()}>{t('cardano_accountBack')}</Button>}>
-        <PanelHeader title={t('cardano_accountsTitle')} onBack={() => setMode(status ? { kind: 'overview' } : loadMode)} />
+        {/* Opened from the overview or the blocked screen; a re-read lands on whichever applies. */}
+        <PanelHeader title={t('cardano_accountsTitle')} onBack={() => void refresh()} />
 
         <Card className="flex flex-col gap-1 p-2">
           {accounts?.accounts.map((a) => (
@@ -1018,7 +1043,18 @@ export function Cardano({
     );
   }
 
-  if (!status) return null;
+  // Every way into the overview reads the status first; this keeps a missed one
+  // from leaving the panel without a header or a way back.
+  if (!status) {
+    return (
+      <PanelScreen cta={<Button onClick={() => void refresh()}>{t('cardano_retry')}</Button>}>
+        {header}
+        <NoteCard variant="error" icon={TriangleAlert}>
+          {t('cardano_chainUnavailable')}
+        </NoteCard>
+      </PanelScreen>
+    );
+  }
 
   const designation = !status.registered
     ? t('cardano_notRegistered')
@@ -1068,6 +1104,18 @@ export function Cardano({
     >
       {header}
       {accountSwitcher}
+
+      {refreshing && (
+        <div className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
+          <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+          <span>{t('cardano_refreshing')}</span>
+        </div>
+      )}
+      {refreshError && (
+        <NoteCard variant="error" icon={TriangleAlert}>
+          {t('cardano_refreshFailed')} {refreshError}
+        </NoteCard>
+      )}
 
       {accountCard(status.cardanoNetwork, status.address, status.rewardAddress)}
 

@@ -118,6 +118,8 @@ export const cardano = {
   cardano_errorStatusTimeout: 'Cardano did not answer within 2 minutes.',
   cardano_registrationUnavailable: 'The DUST registration could not be read.',
   cardano_retry: 'Try again',
+  cardano_refreshing: 'Updating from Cardano…',
+  cardano_refreshFailed: 'Could not update from Cardano, so this is the last status read.',
 
   // Accounts
   cardano_accountsTitle: 'Cardano accounts',
