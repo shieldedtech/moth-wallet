@@ -253,7 +253,7 @@ describe('proof pool timeouts', () => {
     const provider = pool.provider(keys, 'v2');
     const stalled = provider.prove(preimage, 'a');
     const next = provider.prove(preimage, 'b');
-    const outcome = expect(stalled).rejects.toThrow(/gave no result within 1 s; it was proving/);
+    const outcome = expect(stalled).rejects.toThrow(/gave no result within 1 s; the proof worker never responded to it/);
 
     vi.advanceTimersByTime(1_000);
     await outcome;
@@ -274,6 +274,18 @@ describe('proof pool timeouts', () => {
     const job = worker.jobs()[0] as { id: number };
     worker.emit({ id: job.id, reqId: 1, req: 'lookupKey', keyLocation: SPEND_CIRCUIT });
     const outcome = expect(proof).rejects.toThrow(`it was waiting on key ${SPEND_CIRCUIT}`);
+    vi.advanceTimersByTime(1_000);
+    await outcome;
+  });
+
+  it('says a job was proving once its worker has asked for keys', async () => {
+    const pool = createProofPool({ size: 1, spawn: () => new FakeWorker(), jobTimeoutMs: 1_000, log: quiet });
+    const proof = pool.provider(keys, 'v2').prove(preimage, SPEND_CIRCUIT);
+    const worker = FakeWorker.all[0]!;
+    const job = worker.jobs()[0] as { id: number };
+    worker.emit({ id: job.id, reqId: 1, req: 'lookupKey', keyLocation: SPEND_CIRCUIT });
+    await flush(); // the lookup is answered, so nothing is pending
+    const outcome = expect(proof).rejects.toThrow(/gave no result within 1 s; it was proving$/);
     vi.advanceTimersByTime(1_000);
     await outcome;
   });

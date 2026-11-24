@@ -2,7 +2,7 @@
 // pool (proof-pool.ts) can run a transaction's proofs in parallel. It holds no key
 // material; each job asks the pool, which keeps the one cached copy.
 
-import { prove, check, type ProvingKeyMaterial } from '@midnightntwrk/zkir-v2';
+import type { ProvingKeyMaterial } from '@midnightntwrk/zkir-v2';
 import type { ZkirVersion } from '@shieldedtech/moth-browser';
 import { serializeHostError, deserializeHostError } from './worker-rpc';
 import { isKeyReply, type KeyQuery, type PoolToWorker, type ProofJobRequest, type WorkerToPool } from './proof-rpc';
@@ -37,12 +37,20 @@ function remoteKeyMaterial(jobId: number) {
 }
 
 type Zkir = Pick<typeof import('@midnightntwrk/zkir-v2'), 'prove' | 'check'>;
-const zkirV2: Zkir = { prove, check };
-// zkir-v3 instantiates its WASM on import, so only a worker handed a ZKIR v3
-// circuit loads it; the wallet's own circuits are all ZKIR v2.
+// Both zkir packages are imported on first use, never at module load. Each
+// instantiates its WASM with a top-level await, and a module worker starts
+// delivering messages before that await settles: with a static import the
+// pool's first job arrived before `onmessage` below was set and was dropped, so
+// every local proof waited forever without asking for a key. Loading lazily
+// keeps this module free of top-level awaits, so the handler is in place before
+// the first message. zkir-v3 is loaded only by a worker handed a ZKIR v3
+// circuit; the wallet's own circuits are ZKIR v2.
+let zkirV2: Promise<Zkir> | undefined;
 let zkirV3: Promise<Zkir> | undefined;
 const zkirFor = (version: ZkirVersion): Promise<Zkir> =>
-  version === 'v3' ? (zkirV3 ??= import('@midnightntwrk/zkir-v3')) : Promise.resolve(zkirV2);
+  version === 'v3'
+    ? (zkirV3 ??= import('@midnightntwrk/zkir-v3'))
+    : (zkirV2 ??= import('@midnightntwrk/zkir-v2'));
 
 async function run(job: ProofJobRequest): Promise<void> {
   try {
