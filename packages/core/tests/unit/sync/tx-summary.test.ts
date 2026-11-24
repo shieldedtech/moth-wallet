@@ -238,4 +238,29 @@ describe('contract actions', () => {
       maintenanceUpdates: 1,
     });
   });
+
+  // An app that depends on another ledger-v9 version than the SDK pins builds its actions with its own copy of the
+  // package, so they are no instances of the classes core loads. Plain objects stand in for them here.
+  function txOfActions(actions: ReadonlyArray<object>) {
+    return {intents: new Map([[1, {actions}]]), imbalances: () => new Map()} as never;
+  }
+
+  it('classifies actions that are no instance of the ledger classes core loads', () => {
+    const call = {entryPoint: 'mint'};
+    const deploy = {initialState: {}};
+    const update = {updates: []};
+
+    expect(summarizeTransaction(txOfActions([deploy, call, update, call]))).toMatchObject({
+      contractActions: 4,
+      contractCalls: 2,
+      contractDeploys: 1,
+      maintenanceUpdates: 1,
+    });
+  });
+
+  it('throws on an action of a kind it does not know, rather than count it as a call', () => {
+    expect(() => summarizeTransaction(txOfActions([{entryPoint: 'mint'}, {somethingNew: 1}]))).toThrow(
+      /Unrecognised contract action/,
+    );
+  });
 });

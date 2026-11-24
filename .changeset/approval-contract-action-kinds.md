@@ -11,4 +11,7 @@ present: contract deploys, contract calls and contract maintenance updates. The
 new labels stay in English in de/fr/es until someone reviews the translations.
 
 In core, `TransactionSummary` gains `contractCalls`, `contractDeploys` and
-`maintenanceUpdates`; `contractActions` is still their total.
+`maintenanceUpdates`; `contractActions` is still their total. Each action's
+kind is read from the field only that kind has, so actions built with any copy
+or version of the ledger package are counted. `summarizeTransaction` now throws
+on an action of a kind it does not know, instead of counting it.
