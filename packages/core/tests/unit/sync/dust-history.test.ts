@@ -31,7 +31,10 @@ class FakeSocket implements SocketLike {
   handshake() {
     this.onopen?.({});
     this.onmessage?.({data: JSON.stringify({type: 'connection_ack'})});
-    return this.sent.find((m) => m.type === 'subscribe') as {payload: {variables: {address: string; end: number}}};
+    return this.sent.find((m) => m.type === 'subscribe') as {payload: {query: string; variables: Record<string, unknown>}};
+  }
+  reject(message: string) {
+    this.onmessage?.({data: JSON.stringify({type: 'error', id: '1', payload: [{message}]})});
   }
   next(dustGenerations: Record<string, unknown>) {
     this.onmessage?.({data: JSON.stringify({type: 'next', id: '1', payload: {data: {dustGenerations}}})});
@@ -143,23 +146,106 @@ describe('probeDustGenerations', () => {
 });
 
 describe('dustHistoryBefore', () => {
-  const indexer = (size: number | null) =>
-    ({getDustGenerationEndIndex: vi.fn(async () => size)}) as unknown as IndexerClient;
+  const HEIGHT = 2_203_416;
+  const SIZE = 392_576;
+  const TIP = {hash: 'ab'.repeat(32), height: 2_300_000, timestamp: 0, protocolVersion: 0};
+  const indexer = (size: number | null, tip: typeof TIP | null = TIP) =>
+    ({
+      getBlock: vi.fn(async () => tip),
+      getDustGenerationEndIndex: vi.fn(async () => size),
+    }) as unknown as IndexerClient;
+  const socketNumber = (n: number) => vi.waitFor(() => FakeSocket.all[n] ?? Promise.reject(new Error(`no socket ${n}`)));
 
-  it('sizes the range from the generation tree at the reference height', async () => {
-    const client = indexer(392_576);
-    const pending = dustHistoryBefore(client, INDEXER, ADDRESS, 2_203_416, {socket});
-    await Promise.resolve();
-    const subscribe = FakeSocket.all[0]!.handshake();
+  // Indexer 4.4 replaced the index range with a snapshot, and serves it only at a
+  // recent block, so the probe asks at the tip and filters by the reference's tree size.
+  it('asks for a snapshot at the tip, sized from the generation tree at the reference height', async () => {
+    const client = indexer(SIZE);
+    const pending = dustHistoryBefore(client, INDEXER, ADDRESS, HEIGHT, {socket});
+    const subscribe = (await socketNumber(0)).handshake();
 
-    expect(client.getDustGenerationEndIndex).toHaveBeenCalledWith(2_203_416);
-    expect(subscribe.payload.variables.end).toBe(392_575);
+    expect(client.getDustGenerationEndIndex).toHaveBeenCalledWith(HEIGHT);
+    expect(client.getBlock).toHaveBeenCalledWith();
+    expect(subscribe.payload.query).toContain('blockHash: $blockHash, dtimeCutoffHeight: $cutoff');
+    expect(subscribe.payload.variables).toEqual({address: ADDRESS, blockHash: TIP.hash, cutoff: TIP.height});
     FakeSocket.all[0]!.complete();
     await expect(pending).resolves.toEqual({kind: 'none'});
   });
 
+  it('reports some for an owned entry the tree held at the reference height', async () => {
+    const pending = dustHistoryBefore(indexer(SIZE), INDEXER, ADDRESS, HEIGHT, {socket});
+    (await socketNumber(0)).handshake();
+    FakeSocket.all[0]!.next({__typename: 'DustGenerationsItem', generationMtIndex: SIZE - 1});
+
+    await expect(pending).resolves.toEqual({kind: 'some', entries: 1});
+  });
+
+  it('ignores owned entries added after the reference height', async () => {
+    const pending = dustHistoryBefore(indexer(SIZE), INDEXER, ADDRESS, HEIGHT, {socket});
+    (await socketNumber(0)).handshake();
+    FakeSocket.all[0]!.next({__typename: 'DustGenerationsItem', generationMtIndex: SIZE});
+    FakeSocket.all[0]!.next({__typename: 'DustGenerationDtimeUpdateItem', generationMtIndex: SIZE + 5});
+    FakeSocket.all[0]!.complete();
+
+    await expect(pending).resolves.toEqual({kind: 'none'});
+  });
+
+  it('counts an owned entry whose index is missing, since claiming history is the safe error', async () => {
+    const pending = dustHistoryBefore(indexer(SIZE), INDEXER, ADDRESS, HEIGHT, {socket});
+    (await socketNumber(0)).handshake();
+    FakeSocket.all[0]!.next({__typename: 'DustGenerationsItem'});
+
+    await expect(pending).resolves.toEqual({kind: 'some', entries: 1});
+  });
+
+  // Indexer 4.3 rejects the snapshot's arguments; it still answers the range.
+  it('falls back to the index range when the indexer rejects the snapshot', async () => {
+    const pending = dustHistoryBefore(indexer(SIZE), INDEXER, ADDRESS, HEIGHT, {socket});
+    (await socketNumber(0)).handshake();
+    FakeSocket.all[0]!.reject('Unknown argument "blockHash" on field "dustGenerations"');
+
+    const range = (await socketNumber(1)).handshake();
+    expect(range.payload.query).toContain('startIndex: 0, endIndex: $end');
+    expect(range.payload.variables).toEqual({address: ADDRESS, end: SIZE - 1});
+    FakeSocket.all[1]!.complete();
+    await expect(pending).resolves.toEqual({kind: 'none'});
+  });
+
+  it('names both refusals when the indexer takes neither form', async () => {
+    const pending = dustHistoryBefore(indexer(SIZE), INDEXER, ADDRESS, HEIGHT, {socket});
+    (await socketNumber(0)).handshake();
+    FakeSocket.all[0]!.reject('snapshot refused');
+    (await socketNumber(1)).handshake();
+    FakeSocket.all[1]!.reject('range refused');
+
+    const verdict = await pending;
+    expect(verdict.kind).toBe('unknown');
+    expect(verdict.kind === 'unknown' && verdict.reason).toMatch(/snapshot refused.*range form: .*range refused/);
+  });
+
+  it('does not fall back when the snapshot goes unanswered', async () => {
+    const pending = dustHistoryBefore(indexer(SIZE), INDEXER, ADDRESS, HEIGHT, {socket});
+    (await socketNumber(0)).onerror?.({});
+
+    expect((await pending).kind).toBe('unknown');
+    expect(FakeSocket.all).toHaveLength(1);
+  });
+
+  it('uses the range when the indexer reports no tip', async () => {
+    const pending = dustHistoryBefore(indexer(SIZE, null), INDEXER, ADDRESS, HEIGHT, {socket});
+    const range = (await socketNumber(0)).handshake();
+
+    expect(range.payload.variables).toEqual({address: ADDRESS, end: SIZE - 1});
+    FakeSocket.all[0]!.complete();
+    await expect(pending).resolves.toEqual({kind: 'none'});
+  });
+
+  it('answers none for an empty generation tree without opening a socket', async () => {
+    await expect(dustHistoryBefore(indexer(0), INDEXER, ADDRESS, HEIGHT, {socket})).resolves.toEqual({kind: 'none'});
+    expect(FakeSocket.all).toHaveLength(0);
+  });
+
   it('fails closed when the indexer cannot report the tree size', async () => {
-    const verdict = await dustHistoryBefore(indexer(null), INDEXER, ADDRESS, 2_203_416, {socket});
+    const verdict = await dustHistoryBefore(indexer(null), INDEXER, ADDRESS, HEIGHT, {socket});
 
     expect(verdict.kind).toBe('unknown');
     expect(FakeSocket.all).toHaveLength(0);

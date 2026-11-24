@@ -16,7 +16,7 @@ import { defineExtensionMessaging } from '@webext-core/messaging';
 import type { WalletInfo, TxStage, NetworkConfig, SignEncoding, SignedMessage } from '@shieldedtech/moth-browser';
 import type { HistoryEntry } from '@midnightntwrk/dapp-connector-api';
 import type { RelayState } from './relay-socket';
-import type { DustNotYet } from '../messaging/protocol';
+import type { DustNotYet, FeeEstimate } from '../messaging/protocol';
 import type { CardanoNetworkConfig } from '@shieldedtech/moth-wallet/cardano/network';
 import type { CardanoAddressesResult, CardanoStatusResult } from './cardano-host';
 import type { CardanoAccountList } from '@shieldedtech/moth-wallet/cardano/accounts';
@@ -314,6 +314,10 @@ export interface OffscreenProtocol {
   /** Ensure sync, wait for a synced snapshot, and return serialized balances. */
   'os/balancesGet'(data: { seedHex: string; walletName: string; network: NetworkConfig }): string;
 
+  /** Ensure sync and return the shielded coins with their spend fields, as bigint JSON:
+   *  `{synced, coins: ShieldedCoinRow[]}`. Separate from balancesGet, which blanks coins. */
+  'os/shieldedCoinsGet'(data: { seedHex: string; walletName: string; network: NetworkConfig }): string;
+
   'os/sendTokens'(data: {
     seedHex: string;
     walletName: string;
@@ -327,7 +331,7 @@ export interface OffscreenProtocol {
     walletName: string;
     network: NetworkConfig;
     requests: TransferRequestDTO[];
-  }): { /** Raw SPECK as a decimal string. */ fee: string };
+  }): FeeEstimate;
 
   /** Register the wallet's unshielded NIGHT for DUST generation. Stage updates
    *  stream back as `os/eventTxStage`. `txHash` is null when nothing needed
@@ -363,6 +367,13 @@ export interface OffscreenProtocol {
     applied: number;
     total: number;
   };
+  /** Evict the shielded sync cache and restart sync so the shielded sub-wallet
+   *  rescans, keeping DUST. Spends nothing. `started` is false when a transaction was in flight. */
+  'os/shieldedRebuild'(data: {
+    seedHex: string;
+    walletName: string;
+    network: NetworkConfig;
+  }): { started: boolean };
   /** Evict the dust sync cache and restart sync so the dust sub-wallet rescans.
    *  Spends nothing. `started` is false when a transaction was in flight. */
   'os/dustRebuild'(data: {

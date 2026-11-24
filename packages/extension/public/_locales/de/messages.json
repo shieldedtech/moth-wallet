@@ -287,6 +287,15 @@
   "approval_deriveNote": {
     "message": "Dies gewährt ein dauerhaftes, für diese Seite eindeutiges Geheimnis. Es bewegt kein Geld und kann deine Schlüssel weder ausgeben noch offenlegen – erlaube es nur Seiten, denen du vertraust."
   },
+  "approval_shieldedCoinsTitle": {
+    "message": "Deine shielded Coins teilen?"
+  },
+  "approval_shieldedCoinsSubtitle": {
+    "message": "$1 möchte jede shielded Coin in diesem Konto sehen, mit den Angaben, die zum Ausgeben nötig sind."
+  },
+  "approval_shieldedCoinsNote": {
+    "message": "Die Seite sieht Wert und Token jeder shielded Coin und kann Coins wiedererkennen, die sie dir geschickt hat. Ausgeben kann sie sie nicht: Jede Transaktion braucht weiterhin deine Zustimmung. Erlaube es nur Seiten, denen du vertraust."
+  },
   "approval_approveTitle": {
     "message": "Diese Transaktion genehmigen?"
   },
@@ -992,6 +1001,9 @@
   "send_sendNow": {
     "message": "Jetzt senden"
   },
+  "send_waitingForPrevious": {
+    "message": "Warte auf vorherige Transaktion…"
+  },
   "send_irreversibleNote": {
     "message": "Transfers lassen sich nicht rückgängig machen. Prüfe die Adresse, bevor du sendest."
   },
@@ -1013,6 +1025,9 @@
   "send_feeUnavailable": {
     "message": "Gerade nicht verfügbar"
   },
+  "send_feeWaiting": {
+    "message": "Warte auf vorherige Transaktion"
+  },
   "send_feeIdle": {
     "message": "Transferdetails eingeben"
   },
@@ -1024,6 +1039,9 @@
   },
   "send_feeNoteUnavailable": {
     "message": "Du kannst trotzdem senden. Die endgültige Netzwerkgebühr wird in $1 bezahlt."
+  },
+  "send_feeNoteWaiting": {
+    "message": "Deine vorherige Transaktion wird noch bestätigt und hält bis dahin Coins, die diese hier braucht, etwa das $1 für die Gebühr. Das aktualisiert sich von selbst, sobald sie bestätigt ist."
   },
   "send_feeNoteIdle": {
     "message": "Gib einen gültigen Betrag und eine Adresse ein, um die Gebühr zu berechnen."
@@ -1195,6 +1213,24 @@
   },
   "settings_resyncError": {
     "message": "Der Cache konnte nicht geleert werden. Versuche es erneut."
+  },
+  "settings_rebuildShielded": {
+    "message": "Shielded-Coins neu aufbauen"
+  },
+  "settings_rebuildShieldedDescription": {
+    "message": "Die Chain erneut nach den shielded Coins dieses Kontos durchsuchen, wenn ein shielded Guthaben falsch oder veraltet aussieht. DUST bleibt erhalten, daher geht das viel schneller als eine vollständige Neusynchronisierung."
+  },
+  "settings_rebuildShieldedButton": {
+    "message": "Neu aufbauen"
+  },
+  "settings_rebuildShieldedWorking": {
+    "message": "Wird aufgebaut…"
+  },
+  "settings_rebuildShieldedDeferred": {
+    "message": "Eine Transaktion läuft gerade. Versuche es erneut, sobald sie abgeschlossen ist."
+  },
+  "settings_rebuildShieldedError": {
+    "message": "Neuaufbau fehlgeschlagen. Versuche es erneut."
   },
   "settings_sectionSecurity": {
     "message": "Sicherheit"
@@ -1587,7 +1623,10 @@
     "message": "Die Registrierung zahlt ihre Gebühr aus dem $1, das Ihr $2 erwirtschaftet, und dieses Guthaben ist zu klein, um sie jemals zu decken. Fügen Sie mehr $2 hinzu und versuchen Sie es erneut."
   },
   "network_mainnetHidden": {
-    "message": "Netzwerke mit echtem Wert sind ausgeblendet. Diese Wallet ist nicht auditiert und wird nicht unterstützt — aktivieren Sie den Entwicklermodus in den Einstellungen, um sie anzuzeigen."
+    "message": "Netzwerke mit echtem Wert sind ausgeblendet. Diese Wallet ist nicht auditiert und wird nicht unterstützt — aktivieren Sie den Entwicklermodus, um sie anzuzeigen."
+  },
+  "network_enableDeveloperMode": {
+    "message": "Entwicklermodus aktivieren"
   },
   "network_valueWarningTitle": {
     "message": "Zu $1 wechseln — echte Gelder?"

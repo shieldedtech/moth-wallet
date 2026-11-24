@@ -21,6 +21,7 @@ import type {
   UnboundTransactionRecipe,
 } from '@midnightntwrk/wallet-sdk/facade';
 import {HDWallet, Roles} from '@midnightntwrk/wallet-sdk/hd';
+import {classifySubmissionFailure} from '@midnightntwrk/wallet-sdk/capabilities/submission';
 import type {NetworkConfig} from '../types/network.js';
 import {NIGHT_TOKEN_ID} from './wallet-sync.js';
 import {transactionHashOf} from './ledger-routing.js';
@@ -199,12 +200,22 @@ function asSubmissionFailure(e: unknown): Error {
 }
 
 /**
+ * Whether the facade released the coins of a transaction whose send failed with
+ * `e`. It does so only for a first send that provably never reached a block.
+ */
+function releasedByFacade(e: unknown, firstSend: boolean): boolean {
+  return firstSend && classifySubmissionFailure(e)._tag === 'NotIncluded';
+}
+
+/**
  * Submit an already-finalized transaction, classifying failures so the user
  * only waits through a retry when one could actually help:
  *
  * - "Already Imported" (1013): a prior attempt's identical bytes already reached
  *   the pool — that IS submitted, so report success with the tx's own hash.
- * - Transient connection failure: resend (the tx may never have arrived).
+ * - Transient connection failure: resend, unless the facade has released the
+ *   transaction's coins, since a resend that lands would spend coins the
+ *   wallet already offers to other transactions.
  * - Any other error is the node's deterministic rejection: surface it at once,
  *   without burning retries the user has to wait through.
  */
@@ -224,7 +235,9 @@ async function submitWithRetry(
       return transactionHashOf(finalized);
     } catch (e) {
       if (isAlreadyImported(e)) return transactionHashOf(finalized);
-      if (attempt === attempts || !isTransient(e)) throw asSubmissionFailure(e);
+      if (attempt === attempts || !isTransient(e) || releasedByFacade(e, attempt === 1)) {
+        throw asSubmissionFailure(e);
+      }
       await new Promise((r) => setTimeout(r, delayMs));
     }
   }

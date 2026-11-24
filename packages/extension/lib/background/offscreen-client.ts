@@ -295,6 +295,10 @@ export const offscreen = {
     await ensureOffscreen();
     return offscreenSend('os/balancesGet', data);
   },
+  async shieldedCoinsGet(data: SyncTarget) {
+    await ensureOffscreen();
+    return offscreenSend('os/shieldedCoinsGet', data);
+  },
   async sendTokens(data: SyncTarget & { requests: TransferRequestDTO[] }) {
     await ensureOffscreen();
     return offscreenSend('os/sendTokens', data);
@@ -338,6 +342,10 @@ export const offscreen = {
   async relayRetry() {
     await ensureOffscreen();
     return offscreenSend('os/relayRetry', undefined);
+  },
+  async shieldedRebuild(data: SyncTarget) {
+    await ensureOffscreen();
+    return offscreenSend('os/shieldedRebuild', data);
   },
   async dustRebuild(data: SyncTarget) {
     await ensureOffscreen();

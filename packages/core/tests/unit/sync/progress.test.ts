@@ -6,14 +6,15 @@
 // slowest sub-wallet — it is not; dust is, by two orders of magnitude.
 
 import {describe, expect, it} from 'vitest';
-import {overallSyncProgress} from '../../../src/sync/progress.js';
+import {dustProgressFor, overallSyncProgress} from '../../../src/sync/progress.js';
 
 const complete = {applied: 1_395_558, total: 1_395_558};
 
 describe('overallSyncProgress', () => {
-  it('reports the slowest sub-wallet, not the shielded one', () => {
+  it('counts DUST, not only shielded', () => {
     // The exact state observed on preprod: shielded and unshielded done, dust 12%.
-    const {percentage} = overallSyncProgress({
+    // Unshielded is empty, so the figure is the average of shielded and DUST.
+    const {percentage, slowest} = overallSyncProgress({
       shielded: complete,
       unshielded: {applied: 0, total: 0},
       dust: {applied: 178_029, total: 1_395_558},
@@ -24,7 +25,8 @@ describe('overallSyncProgress', () => {
       elapsedMs: 600_000,
     });
 
-    expect(Math.round(percentage * 100)).toBe(13); // was 100
+    expect(Math.round(percentage * 100)).toBe(56); // was 100
+    expect(slowest).toBe('dust');
   });
 
   it('estimates the remaining time from the sub-wallet that is behind', () => {
@@ -76,21 +78,80 @@ describe('overallSyncProgress', () => {
     expect(etaSeconds).toBe(0);
   });
 
-  it('treats a sub-wallet with nothing to apply as complete', () => {
-    // A fresh wallet's unshielded progress is legitimately 0/0. Counting that as
-    // zero would peg the whole wallet at 0% forever.
+  it('leaves a sub-wallet with nothing to sync out of the average', () => {
+    // A fresh wallet's unshielded progress is legitimately 0/0, and strictly
+    // complete once connected. Counting that as zero would peg the whole wallet
+    // at 0% forever; counting it as a third of the bar would hand out progress
+    // nobody made.
     const {percentage} = overallSyncProgress({
       shielded: {applied: 500, total: 1000},
       unshielded: {applied: 0, total: 0},
       dust: {applied: 750, total: 1000},
       shieldedSynced: false,
-      unshieldedSynced: false,
+      unshieldedSynced: true,
       dustSynced: false,
       synced: false,
       elapsedMs: 10_000,
     });
 
-    expect(percentage).toBeCloseTo(0.5, 5); // shielded is the slowest here
+    expect(percentage).toBeCloseTo(0.625, 5);
+  });
+
+  it('moves with every sub-wallet, not only the slowest', () => {
+    // A pre-seeded new wallet on preprod: shielded catching up from the
+    // reference, unshielded not yet complete, the DUST pass at its start. Taking
+    // the slowest read 0% here, then 100%.
+    const {percentage, slowest} = overallSyncProgress({
+      shielded: {applied: 1_982_194, total: 2_020_895},
+      unshielded: {applied: 0, total: 0},
+      dust: {applied: 0, total: 3_499_403},
+      shieldedSynced: false,
+      unshieldedSynced: false,
+      dustSynced: false,
+      synced: false,
+      elapsedMs: 1_400,
+    });
+
+    expect(Math.round(percentage * 100)).toBe(33);
+    expect(slowest).toBe('unshielded');
+  });
+
+  it('does not read sub-wallets that have not reported yet as complete', () => {
+    // Before connecting, every part reads 0/0 and none is strictly complete.
+    // This showed 99% with 0s remaining for the first seconds of a fresh preprod
+    // sync, then fell to 0%.
+    const silent = {applied: 0, total: 0};
+    const r = overallSyncProgress({
+      shielded: silent,
+      unshielded: silent,
+      dust: silent,
+      shieldedSynced: false,
+      unshieldedSynced: false,
+      dustSynced: false,
+      synced: false,
+      elapsedMs: 33_000,
+    });
+
+    expect(r.percentage).toBe(0);
+    expect(r.etaSeconds).toBeNull();
+  });
+
+  it('does not count a connected, complete empty part as the whole wallet', () => {
+    // Unshielded on a fresh wallet finishes first, while the others have yet to
+    // report: still 0%, not 99%.
+    const silent = {applied: 0, total: 0};
+    const {percentage} = overallSyncProgress({
+      shielded: silent,
+      unshielded: silent,
+      dust: silent,
+      shieldedSynced: false,
+      unshieldedSynced: true,
+      dustSynced: false,
+      synced: false,
+      elapsedMs: 35_000,
+    });
+
+    expect(percentage).toBe(0);
   });
 
   it('omits an estimate before there is enough signal', () => {
@@ -99,7 +160,7 @@ describe('overallSyncProgress', () => {
       unshielded: {applied: 0, total: 0},
       dust: {applied: 1, total: 1_000_000},
       shieldedSynced: false,
-      unshieldedSynced: false,
+      unshieldedSynced: true,
       dustSynced: false,
       synced: false,
       elapsedMs: 5_000,
@@ -128,7 +189,8 @@ describe('which sub-wallet is binding', () => {
   it('names dust when dust is behind — the reported case', () => {
     const r = overallSyncProgress(base);
     expect(r.slowest).toBe('dust');
-    expect(Math.round(r.percentage * 100)).toBe(30);
+    expect(r.slowestFraction).toBeCloseTo(0.3, 5);
+    expect(Math.round(r.percentage * 100)).toBe(77);
   });
 
   it('names shielded when shielded is behind', () => {
@@ -154,12 +216,12 @@ describe('which sub-wallet is binding', () => {
     expect(overallSyncProgress({...base, synced: true}).slowest).toBeNull();
   });
 
-  it('agrees with the percentage it returns', () => {
-    // The label and the number must come from the same sub-wallet, or the line
-    // is worse than no label at all.
+  it('reports the fraction of the sub-wallet it names', () => {
+    // The estimate is measured against this fraction, so it must be the named
+    // sub-wallet's own and not the average.
     const r = overallSyncProgress({...base, dust: {applied: 42, total: 100}});
     expect(r.slowest).toBe('dust');
-    expect(Math.round(r.percentage * 100)).toBe(42);
+    expect(r.slowestFraction).toBeCloseTo(0.42, 5);
   });
 });
 
@@ -216,5 +278,54 @@ describe('ETA on a resumed sync', () => {
       synced: true, elapsedMs: 5_000, baseline: {fraction: 0.9, elapsedMs: 0},
     });
     expect(r.etaSeconds).toBe(0);
+  });
+});
+
+// A projections pass applies nothing to the wallet until it ends, so the wallet
+// reports no DUST total while one runs. The pass's own position stands in.
+describe('dustProgressFor', () => {
+  const silent = {applied: 0, total: 0};
+
+  it('shows the pass position while the wallet reports no total', () => {
+    expect(dustProgressFor(silent, {resolvedThrough: 3_400_000, tip: 3_500_000})).toEqual({
+      applied: 3_400_000,
+      total: 3_500_000,
+    });
+  });
+
+  it('replaces a cursor left without a total, such as the one a hand-over parks', () => {
+    expect(dustProgressFor({applied: 1_623_186, total: 0}, {resolvedThrough: 0, tip: 3_500_000})).toEqual({
+      applied: 0,
+      total: 3_500_000,
+    });
+  });
+
+  it("keeps the wallet's own figures once it reports a total", () => {
+    const reported = {applied: 700, total: 752_061};
+    expect(dustProgressFor(reported, {resolvedThrough: 3_400_000, tip: 3_500_000})).toBe(reported);
+  });
+
+  it('reports nothing new before a pass has said where it is', () => {
+    expect(dustProgressFor(silent, null)).toBe(silent);
+    expect(dustProgressFor(silent, {resolvedThrough: 0, tip: 0})).toBe(silent);
+  });
+
+  it('never shows a position beyond the tip', () => {
+    expect(dustProgressFor(silent, {resolvedThrough: 120, tip: 100})).toEqual({applied: 100, total: 100});
+  });
+
+  it('feeds the overall figure, so a running pass no longer reads as 99%', () => {
+    const {percentage, slowest} = overallSyncProgress({
+      shielded: complete,
+      unshielded: silent,
+      dust: dustProgressFor(silent, {resolvedThrough: 1_750_000, tip: 3_500_000}),
+      shieldedSynced: true,
+      unshieldedSynced: true,
+      dustSynced: false,
+      synced: false,
+      elapsedMs: 60_000,
+    });
+    expect(slowest).toBe('dust');
+    expect(percentage).toBeCloseTo(0.75, 5); // shielded done, DUST pass halfway
   });
 });

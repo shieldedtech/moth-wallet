@@ -44,6 +44,9 @@ final class SecurityTests: XCTestCase {
         let toggle = app.switches["Face ID only, no passcode"]
         let rejected = app.alerts.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Authentication failure'")).firstMatch
         for _ in 0..<2 {
+            // The toggle is disabled while the wallet is busy, which includes starting sync after
+            // unlock; on CI that has taken over 10 s, and a tap on it then does nothing.
+            XCTAssertTrue(toggle.waitForEnabled(timeout: 60), "Face ID only can be changed")
             toggle.switches.firstMatch.tap()
             if on {
                 let accept = app.buttons["I've written down every phrase — turn on"]

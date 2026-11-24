@@ -57,15 +57,26 @@ export function Approval({
   const { names: tokenNames } = useTokenNames();
   const shownName = walletName ? accountLabel(walletName, walletLabel) : null;
 
+  // The id can move on (a dropped or decided request) while the previous request's
+  // details are still rendered, so nothing is shown until the new one is loaded, and
+  // a decision names the request on screen rather than the id the panel last sent.
   useEffect(() => {
+    let stale = false;
+    setApproval(null);
+    setMissing(false);
     void sendMessage('approvalGet', { id: approvalId }).then(({ approval }) => {
+      if (stale) return;
       setApproval(approval);
       setMissing(!approval);
     });
+    return () => {
+      stale = true;
+    };
   }, [approvalId]);
 
   const decide = async (approved: boolean) => {
-    await sendMessage('approvalResolve', { id: approvalId, approved });
+    if (!approval) return;
+    await sendMessage('approvalResolve', { id: approval.id, approved });
     onResolved();
   };
 
@@ -94,7 +105,7 @@ export function Approval({
                 ? t('approval_connect')
                 : approval.kind === 'signData'
                   ? t('approval_sign')
-                  : approval.kind === 'deriveAppSecret'
+                  : approval.kind === 'deriveAppSecret' || approval.kind === 'shieldedCoins'
                     ? t('approval_allow')
                     : t('approval_approve')}
             </Button>
@@ -169,6 +180,19 @@ export function Approval({
           </Card>
           <NoteCard icon={Moon}>
             {t('approval_deriveNote')}
+          </NoteCard>
+        </>
+      ) : approval.kind === 'shieldedCoins' ? (
+        <>
+          <SiteChip origin={approval.origin} />
+          <div className="text-center">
+            <h1 className="m-0 font-display text-[26px] font-extrabold leading-tight">{t('approval_shieldedCoinsTitle')}</h1>
+            <p className="m-0 pt-1.5 text-[13.5px] text-muted-foreground">
+              {t('approval_shieldedCoinsSubtitle', [host])}
+            </p>
+          </div>
+          <NoteCard icon={Moon}>
+            {t('approval_shieldedCoinsNote')}
           </NoteCard>
         </>
       ) : approval.kind === 'cardanoSign' ? (

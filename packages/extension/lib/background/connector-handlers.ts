@@ -43,6 +43,8 @@ import {
   getApproval,
   getPendingApproval,
   resolveApproval,
+  requesterKey,
+  trackRequester,
 } from './approvals';
 import { beginOp, endOp } from './sync-service';
 import { recordActivity } from './auto-lock';
@@ -57,6 +59,7 @@ const APPROVAL_METHODS = new Set<ConnectorMethod>([
   'hintUsage',
   'signData',
   'deriveAppSecret',
+  'getShieldedCoins',
   'balanceSealedTransaction',
   'balanceUnsealedTransaction',
   'makeIntent',
@@ -137,11 +140,12 @@ async function ensureConnected(
   networkId: string,
   senderTabId?: number,
   preparedPanel?: Promise<boolean>,
+  requester?: string,
 ): Promise<void> {
   const allowed = await isAllowed(origin);
   const session = await getSession();
   if (!allowed || !session) {
-    const approved = await requestApproval('connect', origin, { networkId }, senderTabId, preparedPanel);
+    const approved = await requestApproval('connect', origin, { networkId }, senderTabId, preparedPanel, requester);
     if (!approved) throw connectorError('Rejected', 'User rejected the connection request');
     await requireSession();
   }
@@ -221,6 +225,7 @@ async function balance(
   params: unknown[],
   senderTabId?: number,
   preparedPanel?: Promise<boolean>,
+  requester?: string,
 ): Promise<{ tx: string }> {
   const session = await requireConnected(origin);
   const tx = assertTxHex(String(params[0] ?? ''));
@@ -240,7 +245,7 @@ async function balance(
     summary = null;
   }
   const payload: BalanceApprovalPayload = { sealed, payFees, summary };
-  const approved = await requestApproval('balance', origin, payload, senderTabId, preparedPanel);
+  const approved = await requestApproval('balance', origin, payload, senderTabId, preparedPanel, requester);
   if (!approved) throw connectorError('Rejected', 'User rejected the transaction');
 
   const { txHex } = await offscreen.balanceTransaction({
@@ -267,17 +272,20 @@ export async function dispatch(
   method: ConnectorMethod,
   params: unknown[],
   senderTabId?: number,
+  requester?: string,
 ): Promise<unknown> {
   const preparedPanel = APPROVAL_METHODS.has(method) ? prepareApprovalPanel(senderTabId) : undefined;
+  const releaseRequester = trackRequester(requester);
   beginOp();
   try {
-    const result = await dispatchMethod(origin, method, params, senderTabId, preparedPanel);
+    const result = await dispatchMethod(origin, method, params, senderTabId, preparedPanel, requester);
     // A connected dApp talking to the wallet is usually the user at work, even with
     // the panel closed, so it extends the session — up to a ceiling (auto-lock.ts).
     if (await isAllowed(origin)) await recordActivity(Date.now(), { byUser: false });
     return result;
   } finally {
     endOp();
+    releaseRequester();
   }
 }
 
@@ -287,13 +295,14 @@ async function dispatchMethod(
   params: unknown[],
   senderTabId?: number,
   preparedPanel?: Promise<boolean>,
+  requester?: string,
 ): Promise<unknown> {
   // CIP-30 shares this transport and its origin permissions, but not its
   // method namespace: `cardano.*` is the Cardano bridge, everything else is the
   // Midnight connector. Two wallets behind one relay, deliberately separate so
   // a dApp on one chain can never reach the other's methods.
   if (method.startsWith('cardano.')) {
-    return dispatchCip30(origin, method.slice('cardano.'.length), params, senderTabId);
+    return dispatchCip30(origin, method.slice('cardano.'.length), params, senderTabId, requester);
   }
 
   if ((NOT_IMPLEMENTED_METHODS as readonly string[]).includes(method)) {
@@ -307,7 +316,7 @@ async function dispatchMethod(
       if (networkId !== settings.network) {
         throw connectorError('InvalidRequest', `Wallet is connected to "${settings.network}", not "${networkId}"`);
       }
-      await ensureConnected(origin, networkId, senderTabId, preparedPanel);
+      await ensureConnected(origin, networkId, senderTabId, preparedPanel, requester);
       return true;
     }
 
@@ -319,7 +328,7 @@ async function dispatchMethod(
       // (spec: "resolve the promise only after the user has granted the
       // permissions"). Already-connected origins resolve without a prompt.
       const settings = await getSettings();
-      await ensureConnected(origin, settings.network, senderTabId, preparedPanel);
+      await ensureConnected(origin, settings.network, senderTabId, preparedPanel, requester);
       return undefined;
     }
 
@@ -406,6 +415,18 @@ async function dispatchMethod(
       return (await syncedBalances(session)).shielded;
     }
 
+    // Asks every time, as deriveAppSecret does: the list shows the site every
+    // shielded coin, nonces included, which totals alone never did.
+    case 'getShieldedCoins': {
+      const session = await requireConnected(origin);
+      const approved = await requestApproval('shieldedCoins', origin, {}, senderTabId, preparedPanel, requester);
+      if (!approved) throw connectorError('Rejected', 'User rejected sharing shielded coins');
+      const network = await getNetworkConfig();
+      return decodeBigintJson(
+        await offscreen.shieldedCoinsGet({ seedHex: session.seedHex, walletName: session.walletName, network }),
+      );
+    }
+
     case 'getUnshieldedBalances': {
       const session = await requireConnected(origin);
       return (await syncedBalances(session)).unshielded;
@@ -479,6 +500,7 @@ async function dispatchMethod(
         { encoding, message: data },
         senderTabId,
         preparedPanel,
+        requester,
       );
       if (!approved) throw connectorError('Rejected', 'User rejected the signing request');
 
@@ -517,6 +539,7 @@ async function dispatchMethod(
         { domain },
         senderTabId,
         preparedPanel,
+        requester,
       );
       if (!approved) throw connectorError('Rejected', 'User rejected the derivation request');
 
@@ -527,10 +550,10 @@ async function dispatchMethod(
     }
 
     case 'balanceSealedTransaction':
-      return balance(origin, true, params, senderTabId, preparedPanel);
+      return balance(origin, true, params, senderTabId, preparedPanel, requester);
 
     case 'balanceUnsealedTransaction':
-      return balance(origin, false, params, senderTabId, preparedPanel);
+      return balance(origin, false, params, senderTabId, preparedPanel, requester);
 
     case 'makeIntent': {
       const session = await requireConnected(origin);
@@ -563,6 +586,7 @@ async function dispatchMethod(
         } satisfies TransferApprovalPayload,
         senderTabId,
         preparedPanel,
+        requester,
       );
       if (!approved) throw connectorError('Rejected', 'User rejected the transaction');
 
@@ -601,6 +625,7 @@ async function dispatchMethod(
         } satisfies TransferApprovalPayload,
         senderTabId,
         preparedPanel,
+        requester,
       );
       if (!approved) throw connectorError('Rejected', 'User rejected the transfer');
 
@@ -653,7 +678,7 @@ export function registerConnectorHandlers(): void {
     }
     try {
       const params = decodeBigintJson<unknown[]>(data.paramsJson);
-      const result = await dispatch(origin, data.method as ConnectorMethod, params, sender?.tab?.id);
+      const result = await dispatch(origin, data.method as ConnectorMethod, params, sender?.tab?.id, requesterKey(sender));
       return { ok: true as const, resultJson: encodeBigintJson(result ?? null) };
     } catch (err) {
       // A CIP-30 error is a plain object with a NUMERIC code (or only
@@ -739,6 +764,7 @@ async function dispatchCip30(
   method: string,
   params: unknown[],
   senderTabId?: number,
+  requester?: string,
 ): Promise<unknown> {
   const { requireCardano } = await import('./cardano-session');
 
@@ -746,7 +772,7 @@ async function dispatchCip30(
 
   if (method === 'enable') {
     const settings = await getSettings();
-    await ensureConnected(origin, settings.network, senderTabId);
+    await ensureConnected(origin, settings.network, senderTabId, undefined, requester);
     // Fail here rather than at the first getBalance: a dApp that enabled
     // successfully reasonably assumes the wallet can answer.
     await requireCardano(false);
@@ -785,6 +811,8 @@ async function dispatchCip30(
         preview,
       } satisfies CardanoSignApprovalPayload,
       senderTabId,
+      undefined,
+      requester,
     );
     if (!approved) {
       // Each signing method has its own "user said no" code; APIError.Refused

@@ -156,6 +156,9 @@ function FungibleBalanceBlock({
               <Text>{formatBalanceForToken(coin.value, coin.type, tokenType)}</Text>
               {coin.registered && <Text color="yellow"> [Registered for Dust]</Text>}
               {coin.booked && <Text color="cyan"> [in flight]</Text>}
+              {/* What picks a shielded coin out for spending; `moth balance --coins` has the full values. */}
+              {coin.mtIndex !== undefined && <Text dimColor>  #{coin.mtIndex.toString()}</Text>}
+              {coin.nonce !== undefined && <Text dimColor>  {coin.nonce.slice(0, 8)}…</Text>}
             </Box>
           );
         })}
