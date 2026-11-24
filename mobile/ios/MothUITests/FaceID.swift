@@ -3,7 +3,8 @@ import XCTest
 /// Chooses how scripts/ui-test.sh answers the simulator's Face ID prompts from now on.
 ///
 /// The script polls a control file every 2 seconds and sends a matching or a non-matching face.
-/// The default, and the state at the start of every class, is a match.
+/// The default, and the state at the start of every class, is a match. Returns once the new answer
+/// has been sent, so no earlier answer still on its way can reach a prompt opened after this.
 enum FaceID {
     enum Answer: String {
         case match, nomatch
@@ -14,10 +15,19 @@ enum FaceID {
             XCTFail("MOTH_CONTROL is not set; run the UI tests through scripts/ui-test.sh")
             return
         }
-        let file = URL(fileURLWithPath: dir).appendingPathComponent("faceid")
-        XCTAssertNoThrow(try answer.rawValue.write(to: file, atomically: true, encoding: .utf8))
-        // Let a poll pass, so a prompt shown next gets the new answer.
-        Thread.sleep(forTimeInterval: 3)
+        let control = URL(fileURLWithPath: dir)
+        let sent = control.appendingPathComponent("faceid.sent")
+        try? FileManager.default.removeItem(at: sent)
+        XCTAssertNoThrow(try answer.rawValue.write(to: control.appendingPathComponent("faceid"), atomically: true, encoding: .utf8))
+        // A post that read the old answer before the write may still finish after it, and then
+        // records the old answer; wait for one that sent the new one.
+        let deadline = Date().addingTimeInterval(60)
+        while Date() < deadline {
+            let last = try? String(contentsOf: sent, encoding: .utf8)
+            if last?.trimmingCharacters(in: .whitespacesAndNewlines) == answer.rawValue { return }
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        XCTFail("scripts/ui-test.sh did not send the \(answer.rawValue) answer within 60 seconds")
     }
 }
 

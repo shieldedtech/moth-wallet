@@ -47,13 +47,18 @@ FIXTURES=$!
 
 # Answer Face ID prompts for as long as the tests run. A test picks the answer by writing
 # match or nomatch to $CONTROL/faceid (see FaceID in MothUITests); the default is match.
+# After each post the answer sent goes to $CONTROL/faceid.sent. A post can take seconds on a busy
+# runner, so a test waits for that file to show its new answer: an earlier answer still being sent
+# could otherwise reach a prompt the test has just opened.
 CONTROL=$(mktemp -d)
 export TEST_RUNNER_MOTH_CONTROL=$CONTROL
 ( while true; do
-    case $(cat "$CONTROL/faceid" 2>/dev/null || echo match) in
+    answer=$(cat "$CONTROL/faceid" 2>/dev/null || echo match)
+    case $answer in
       match) xcrun simctl spawn "$SIM" notifyutil -p com.apple.BiometricKit_Sim.pearl.match >/dev/null 2>&1 ;;
       nomatch) xcrun simctl spawn "$SIM" notifyutil -p com.apple.BiometricKit_Sim.pearl.nomatch >/dev/null 2>&1 ;;
     esac
+    echo "$answer" > "$CONTROL/faceid.sending" && mv "$CONTROL/faceid.sending" "$CONTROL/faceid.sent"
     sleep 2
   done ) &
 MATCHER=$!
@@ -69,7 +74,7 @@ mkdir -p "$RESULTS"
 # does not stop the others, so one flaky test does not hide the rest; the script fails at the end.
 failed=()
 for class in $CLASSES; do
-  rm -f "$CONTROL/faceid"
+  rm -f "$CONTROL/faceid" "$CONTROL/faceid.sent"
   xcrun simctl uninstall "$SIM" bob.shielded.moth 2>/dev/null || true
   # Keychain items outlive an uninstall, and Moth never reuses a name that has one.
   xcrun simctl keychain "$SIM" reset
