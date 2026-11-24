@@ -211,12 +211,14 @@ export function Cardano({
     // Cardano account — locked wallet, or one restored from a hex seed.
     // The account list is independent of every other call: it is storage-only,
     // so it works while locked out of Blockfrost and while the chain is down.
-    await fetchAccounts().then(setAccounts).catch(() => setAccounts(null));
+    const list = await fetchAccounts().catch(() => null);
+    if (!current()) return;
+    setAccounts(list);
     // Derived offscreen: the decode needs the ledger WASM, which has no place
     // in the panel bundle.
-    await sendMessage('cardanoReceiverAccounts', undefined)
-      .then(setMidnightAccounts)
-      .catch(() => setMidnightAccounts([]));
+    const receivers = await sendMessage('cardanoReceiverAccounts', undefined).catch(() => []);
+    if (!current()) return;
+    setMidnightAccounts(receivers);
     let derived: Account;
     try {
       derived = await fetchAccount();
@@ -548,7 +550,8 @@ export function Cardano({
   if (mode.kind === 'accounts') {
     return (
       <PanelScreen cta={<Button onClick={() => void refresh()}>{t('cardano_accountBack')}</Button>}>
-        <PanelHeader title={t('cardano_accountsTitle')} onBack={() => setMode({ kind: 'overview' })} />
+        {/* Opened from the overview or the blocked screen; a re-read lands on whichever applies. */}
+        <PanelHeader title={t('cardano_accountsTitle')} onBack={() => void refresh()} />
 
         <Card className="flex flex-col gap-1 p-2">
           {accounts?.accounts.map((a) => (
@@ -942,7 +945,18 @@ export function Cardano({
     );
   }
 
-  if (!status) return null;
+  // Every way into the overview reads the status first; this keeps a missed one
+  // from leaving the panel without a header or a way back.
+  if (!status) {
+    return (
+      <PanelScreen cta={<Button onClick={() => void refresh()}>{t('cardano_retry')}</Button>}>
+        {header}
+        <NoteCard variant="error" icon={TriangleAlert}>
+          {t('cardano_chainUnavailable')}
+        </NoteCard>
+      </PanelScreen>
+    );
+  }
 
   const designation = !status.registered
     ? t('cardano_notRegistered')
