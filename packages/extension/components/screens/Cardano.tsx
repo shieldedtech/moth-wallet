@@ -211,12 +211,14 @@ export function Cardano({
     // Cardano account — locked wallet, or one restored from a hex seed.
     // The account list is independent of every other call: it is storage-only,
     // so it works while locked out of Blockfrost and while the chain is down.
-    await fetchAccounts().then(setAccounts).catch(() => setAccounts(null));
+    const list = await fetchAccounts().catch(() => null);
+    if (!current()) return;
+    setAccounts(list);
     // Derived offscreen: the decode needs the ledger WASM, which has no place
     // in the panel bundle.
-    await sendMessage('cardanoReceiverAccounts', undefined)
-      .then(setMidnightAccounts)
-      .catch(() => setMidnightAccounts([]));
+    const receivers = await sendMessage('cardanoReceiverAccounts', undefined).catch(() => []);
+    if (!current()) return;
+    setMidnightAccounts(receivers);
     let derived: Account;
     try {
       derived = await fetchAccount();

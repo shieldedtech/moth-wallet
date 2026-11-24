@@ -12,5 +12,5 @@ went blank until the extension was reopened.
 The back arrow now re-reads Cardano, as **Done** does, and returns to whichever
 screen applies. If the balances view is ever reached without balances, it shows
 the "cannot be read yet" notice with **Try again** instead of an empty panel.
-A failed read also clears the previous account's balances, so they are never
-shown for another account.
+Leaving the account list while **Switch** is still running no longer lets a
+late reply put the previous account back in the account switcher.
