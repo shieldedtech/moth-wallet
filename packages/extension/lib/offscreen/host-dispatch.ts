@@ -66,7 +66,7 @@ export const hostDispatch: Dispatch = {
   // startWalletSync resolves a SyncedWallet, which isn't structured-cloneable —
   // await it and return void (the protocol result type).
   'os/syncEnsure': async (host, d) => {
-    await host.syncEnsure(d.seedHex, d.walletName, d.network);
+    await host.syncEnsure(d.seedHex, d.walletName, d.network, { authoritative: true });
   },
   'os/syncStop': (host) => host.syncStop(),
   'os/syncCacheClear': (host, d) => host.syncCacheClear(d.walletName, d.networkIds),

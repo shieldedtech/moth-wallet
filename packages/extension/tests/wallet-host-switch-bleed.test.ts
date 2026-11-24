@@ -1,22 +1,18 @@
-// Cross-wallet balance bleed on a mid-start wallet switch.
+// Balance bleed between sync engines in the offscreen host: a superseded or
+// orphaned engine must never publish into the shared balances channel.
 //
 // syncEnsure sets `current` BEFORE awaiting the sync start, so a switch during
-// that await supersedes the record. When the first start finally resolves, it
-// subscribes unconditionally — and core's `subscribe` invokes the callback
-// immediately with the wallet's own balances (sync/wallet-sync.ts) — so the
-// superseded wallet emits one `os/eventBalances` into the shared channel after
-// the user has already moved on. The panel shows the wrong wallet's balance.
-//
-// The `if (current?.key === key)` guard on the following line shows the author
-// knew `current` could change; the emission itself was never guarded, and the
-// unsubscribe handle is dropped rather than called when the guard fails.
+// that await supersedes the record, and core's `subscribe` invokes the callback
+// immediately with the wallet's own balances (sync/wallet-sync.ts). The second
+// suite covers the same wallet on changed endpoints, where both engines share a key.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-const { startWalletSync, deriveWalletKeys, walletsList } = vi.hoisted(() => ({
+const { startWalletSync, deriveWalletKeys, walletsList, installBundledReference } = vi.hoisted(() => ({
   startWalletSync: vi.fn(),
   deriveWalletKeys: vi.fn((seed: string) => ({ seed }) as never),
   walletsList: vi.fn(async () => [] as Array<{ name: string; birthday?: number }>),
+  installBundledReference: vi.fn(async (..._args: unknown[]) => false),
 }));
 
 vi.mock('@shieldedtech/moth-browser', () => ({
@@ -53,7 +49,7 @@ vi.mock('@shieldedtech/moth-browser', () => ({
 }));
 
 vi.mock('./../lib/offscreen/bundled-preseed', () => ({
-  installBundledReference: vi.fn(async () => false),
+  installBundledReference,
   hasBundledReference: vi.fn(async () => false),
 }));
 vi.mock('./../lib/offscreen/relay-socket', () => ({
@@ -253,5 +249,104 @@ describe('balance emissions across a mid-start wallet switch', () => {
     startWalletSync.mockImplementation(async () => fakeWallet(1n).wallet);
     await host.syncEnsure('bb'.repeat(32), 'consumer', NETWORK);
     expect(startWalletSync).toHaveBeenCalledTimes(2);
+  });
+});
+
+// Same wallet and network id on both sides, so only the endpoints tell the engines apart.
+describe('one engine per wallet across an endpoint change', () => {
+  const OLD_ENDPOINTS = {
+    id: 'undeployed',
+    nodeUrl: 'ws://localhost:9954',
+    indexerUrl: 'http://localhost:8088/api/v4/graphql',
+    prover: { type: 'server', url: 'http://localhost:6310' },
+  } as const;
+  const OLD = OLD_ENDPOINTS as never;
+  const NEW = { ...OLD_ENDPOINTS, indexerUrl: 'http://localhost:8098/api/v4/graphql' } as never;
+  const SEED = '01'.repeat(32);
+
+  let host: typeof import('../lib/offscreen/wallet-host');
+  let emitted: Array<{ event: string; data: unknown }>;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    startWalletSync.mockReset();
+    installBundledReference.mockClear();
+    walletsList.mockResolvedValue([]);
+    emitted = [];
+    host = await import('../lib/offscreen/wallet-host');
+    host.setHostEmit((event, data) => emitted.push({ event, data }));
+  });
+
+  const nights = () =>
+    emitted
+      .filter((e) => e.event === 'os/eventBalances')
+      .map((e) => JSON.parse(String(e.data)).night as string);
+
+  /** Each chain's engine reports that chain's NIGHT balance, so an emission names its engine. */
+  function engines() {
+    const old = fakeWallet(250n);
+    const fresh = fakeWallet(209n);
+    startWalletSync.mockImplementation(async (_keys: unknown, network: { indexerUrl: string }) =>
+      network.indexerUrl === OLD_ENDPOINTS.indexerUrl ? old.wallet : fresh.wallet,
+    );
+    return { old, fresh };
+  }
+
+  it('does not leave an engine on the old endpoints running beside the restart', async () => {
+    const { old, fresh } = engines();
+
+    // A dApp balance call that read its config before the save, racing the background's restart.
+    await Promise.all([
+      host.syncEnsure(SEED, 'Seed 1', OLD),
+      host.syncEnsure(SEED, 'Seed 1', NEW, { authoritative: true }),
+    ]);
+    await vi.waitFor(() => expect(old.wallet.stop).toHaveBeenCalled());
+
+    emitted.length = 0;
+    old.push();
+    fresh.push();
+    expect(nights()).toEqual(['209']);
+  });
+
+  it('moves a running engine to the endpoints the background restarts it with', async () => {
+    const { old, fresh } = engines();
+
+    await host.syncEnsure(SEED, 'Seed 1', OLD);
+    await host.syncEnsure(SEED, 'Seed 1', NEW, { authoritative: true });
+
+    expect(startWalletSync).toHaveBeenCalledTimes(2);
+    expect(old.wallet.stop).toHaveBeenCalled();
+    emitted.length = 0;
+    old.push();
+    fresh.push();
+    expect(nights()).toEqual(['209']);
+  });
+
+  it('lets a dApp op reuse the running engine whatever endpoints it resolved', async () => {
+    const { fresh } = engines();
+
+    await host.syncEnsure(SEED, 'Seed 1', NEW, { authoritative: true });
+    // An op carrying the pre-save config must not drag the wallet back to the old chain.
+    const wallet = await host.syncEnsure(SEED, 'Seed 1', OLD);
+
+    expect(wallet).toBe(fresh.wallet);
+    expect(startWalletSync).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops an engine whose start was still being prepared when the stop arrived', async () => {
+    const { fresh } = engines();
+    let release!: () => void;
+    installBundledReference.mockImplementationOnce(() => new Promise<boolean>((res) => { release = () => res(false); }));
+
+    const start = host.syncEnsure(SEED, 'Seed 1', NEW, { authoritative: true });
+    await vi.waitFor(() => expect(installBundledReference).toHaveBeenCalled());
+    const stop = host.syncStop();
+    release();
+    await Promise.all([start, stop]);
+
+    expect(fresh.wallet.stop).toHaveBeenCalled();
+    emitted.length = 0;
+    fresh.push();
+    expect(nights()).toEqual([]);
   });
 });

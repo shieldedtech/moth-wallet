@@ -576,3 +576,44 @@ describe('sync-service syncDefersAutoLock', () => {
     expect(sync.syncDefersAutoLock()).toBe(true);
   });
 });
+
+describe('startSync after an endpoint change', () => {
+  const session = { seedHex: 'ab'.repeat(32), walletName: 'Seed 1' } as never;
+  const before = {
+    id: 'undeployed',
+    nodeUrl: 'ws://localhost:9954',
+    indexerUrl: 'http://localhost:8088/api/v4/graphql',
+    prover: { type: 'server', url: 'http://localhost:6310' },
+  };
+  const after = { ...before, indexerUrl: 'http://localhost:8098/api/v4/graphql' };
+  let sync: typeof import('../lib/background/sync-service');
+
+  beforeEach(async () => {
+    vi.resetModules();
+    syncEnsure.mockReset().mockResolvedValue(undefined);
+    syncStop.mockReset().mockResolvedValue(undefined);
+    exists.mockReset().mockResolvedValue(true);
+    hasPendingApproval.mockReset().mockReturnValue(false);
+    sync = await import('../lib/background/sync-service');
+  });
+
+  it('starts the newer endpoints when the previous restart registered after their stop', async () => {
+    // The next save's stop lands while the previous start is still reading the snapshot owner.
+    const previous = sync.startSync(session, before as never);
+    await sync.stopSync();
+    await previous;
+    await vi.waitFor(() => expect(syncEnsure).toHaveBeenCalledTimes(1));
+
+    await sync.startSync(session, after as never);
+
+    expect(syncEnsure).toHaveBeenCalledTimes(2);
+    expect(syncEnsure).toHaveBeenLastCalledWith(expect.objectContaining({ network: after }));
+  });
+
+  it('still treats a repeat start with the same endpoints as a no-op', async () => {
+    await sync.startSync(session, after as never);
+    await sync.startSync(session, { ...after } as never);
+
+    expect(syncEnsure).toHaveBeenCalledTimes(1);
+  });
+});
