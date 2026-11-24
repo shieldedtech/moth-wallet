@@ -6,7 +6,7 @@
 // reports both rather than folding them into one flag, because a correct,
 // freshly-submitted registration otherwise reads as a failed one.
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { ChevronRight, LoaderCircle, Link2, TriangleAlert } from 'lucide-react';
 import { browser } from 'wxt/browser';
@@ -195,34 +195,69 @@ export function Cardano({
     return () => clearInterval(id);
   }, [status?.secondsRemaining]);
 
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  // Each refresh supersedes the ones before it, so a slow reply for an account
+  // the user has since switched away from cannot overwrite the current one.
+  const refreshSeq = useRef(0);
+
   const refresh = useCallback(async () => {
+    const seq = ++refreshSeq.current;
+    const current = () => seq === refreshSeq.current;
     setMode({ kind: 'loading' });
+    setRefreshError(null);
     // Derivation first, and independently. It is the one call that works before
     // anything is configured, so a failure here means there is genuinely no
     // Cardano account — locked wallet, or one restored from a hex seed.
     // The account list is independent of every other call: it is storage-only,
     // so it works while locked out of Blockfrost and while the chain is down.
-    await fetchAccounts().then(setAccounts).catch(() => setAccounts(null));
+    const list = await fetchAccounts().catch(() => null);
+    if (!current()) return;
+    setAccounts(list);
     // Derived offscreen: the decode needs the ledger WASM, which has no place
     // in the panel bundle.
-    await sendMessage('cardanoReceiverAccounts', undefined)
-      .then(setMidnightAccounts)
-      .catch(() => setMidnightAccounts([]));
+    const receivers = await sendMessage('cardanoReceiverAccounts', undefined).catch(() => []);
+    if (!current()) return;
+    setMidnightAccounts(receivers);
     let derived: Account;
     try {
       derived = await fetchAccount();
+      if (!current()) return;
       setAccount(derived);
     } catch (err) {
-      setMode({ kind: 'unavailable', message: err instanceof Error ? err.message : String(err) });
+      if (current()) {
+        setMode({ kind: 'unavailable', message: err instanceof Error ? err.message : String(err) });
+      }
       return;
     }
-    try {
-      setStatus(await fetchStatus());
+
+    // The last status read, shown at once while a fresh read runs behind it.
+    const cached = await sendMessage('cardanoStatusCached', undefined).catch(() => null);
+    if (!current()) return;
+    if (cached) {
+      setStatus(cached.status);
       setMode({ kind: 'overview' });
+    }
+    setRefreshing(true);
+    try {
+      const fresh = await fetchStatus();
+      if (!current()) return;
+      setStatus(fresh);
+      // Only from loading: the user may have moved on from the cached overview.
+      setMode((m) => (m.kind === 'loading' ? { kind: 'overview' } : m));
     } catch (err) {
-      // The background names this one: no Blockfrost project ID. The account
-      // above is still good, so the screen keeps it on display.
-      setMode({ kind: 'chainBlocked', message: err instanceof Error ? err.message : String(err) });
+      if (!current()) return;
+      const message = err instanceof Error ? err.message : String(err);
+      if (cached) {
+        setRefreshError(message);
+      } else {
+        // The background names this one: no Blockfrost project ID. The account
+        // above is still good, so the screen keeps it on display.
+        setStatus(null);
+        setMode((m) => (m.kind === 'loading' ? { kind: 'chainBlocked', message } : m));
+      }
+    } finally {
+      if (current()) setRefreshing(false);
     }
   }, []);
 
@@ -515,7 +550,8 @@ export function Cardano({
   if (mode.kind === 'accounts') {
     return (
       <PanelScreen cta={<Button onClick={() => void refresh()}>{t('cardano_accountBack')}</Button>}>
-        <PanelHeader title={t('cardano_accountsTitle')} onBack={() => setMode({ kind: 'overview' })} />
+        {/* Opened from the overview or the blocked screen; a re-read lands on whichever applies. */}
+        <PanelHeader title={t('cardano_accountsTitle')} onBack={() => void refresh()} />
 
         <Card className="flex flex-col gap-1 p-2">
           {accounts?.accounts.map((a) => (
@@ -909,7 +945,18 @@ export function Cardano({
     );
   }
 
-  if (!status) return null;
+  // Every way into the overview reads the status first; this keeps a missed one
+  // from leaving the panel without a header or a way back.
+  if (!status) {
+    return (
+      <PanelScreen cta={<Button onClick={() => void refresh()}>{t('cardano_retry')}</Button>}>
+        {header}
+        <NoteCard variant="error" icon={TriangleAlert}>
+          {t('cardano_chainUnavailable')}
+        </NoteCard>
+      </PanelScreen>
+    );
+  }
 
   const designation = !status.registered
     ? t('cardano_notRegistered')
@@ -959,6 +1006,18 @@ export function Cardano({
     >
       {header}
       {accountSwitcher}
+
+      {refreshing && (
+        <div className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
+          <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+          <span>{t('cardano_refreshing')}</span>
+        </div>
+      )}
+      {refreshError && (
+        <NoteCard variant="error" icon={TriangleAlert}>
+          {t('cardano_refreshFailed')} {refreshError}
+        </NoteCard>
+      )}
 
       {accountCard(status.cardanoNetwork, status.address, status.rewardAddress)}
 
