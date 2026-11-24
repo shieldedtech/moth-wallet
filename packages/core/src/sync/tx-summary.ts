@@ -43,14 +43,29 @@ export interface TransactionSummary {
   receives: TxTokenAmount[];
   /** Contract calls, deploys and maintenance updates across all intents. */
   contractActions: number;
+  /** `contractActions` by kind, so a deploy is never presented as a call. */
+  contractCalls: number;
+  contractDeploys: number;
+  maintenanceUpdates: number;
 }
 
 /** A token type as both ledger versions describe one. */
 export type SummaryTokenType = {tag: 'shielded' | 'unshielded'; raw: string} | {tag: 'dust'};
 
+/**
+ * A contract action, described by the one field each kind has and the others lack: `entryPoint` (a call),
+ * `initialState` (a deploy), `updates` (a maintenance update). It is structural on purpose. A caller may build its
+ * transaction with its own copy of a ledger package, whose classes are distinct from the ones loaded here and whose
+ * types are not assignable to them, and its actions must still be summarized.
+ */
+type ContractActionShape =
+  | {readonly entryPoint: unknown}
+  | {readonly initialState: unknown}
+  | {readonly updates: unknown};
+
 /** The members the summary reads; both ledger versions' transactions have them. */
 export interface SummarizableTransaction {
-  readonly intents?: Map<number, {readonly actions: ReadonlyArray<unknown>}>;
+  readonly intents?: Map<number, {readonly actions: ReadonlyArray<ContractActionShape>}>;
   readonly fallibleOffer?: Map<number, unknown>;
   imbalances(segment: number): Map<SummaryTokenType, bigint>;
 }
@@ -137,6 +152,10 @@ function toTokenAmount(type: SummaryTokenType, amount: bigint): TxTokenAmount {
  * Sum the per-segment imbalances into what the wallet pays and what it gets
  * back. Fees are not included: they are computed only once the wallet has
  * balanced and proven its own segment, and they are always paid in DUST.
+ *
+ * Throws on a contract action of a kind it does not know, rather than count it
+ * as one it does: an approval prompt must not present an unknown action as a
+ * call.
  */
 export function summarizeTransaction(tx: SummarizableTransaction): TransactionSummary {
   const totals = new Map<string, {type: SummaryTokenType; amount: bigint}>();
@@ -156,10 +175,31 @@ export function summarizeTransaction(tx: SummarizableTransaction): TransactionSu
     else if (amount > 0n) receives.push(toTokenAmount(type, amount));
   }
 
-  let contractActions = 0;
-  for (const intent of tx.intents?.values() ?? []) contractActions += intent.actions.length;
+  let contractCalls = 0;
+  let contractDeploys = 0;
+  let maintenanceUpdates = 0;
+  for (const intent of tx.intents?.values() ?? []) {
+    for (const action of intent.actions) {
+      // Told apart by field, not class: an action built by another copy of either ledger is no instance of ours.
+      if ('entryPoint' in action) contractCalls += 1;
+      else if ('initialState' in action) contractDeploys += 1;
+      else if ('updates' in action) maintenanceUpdates += 1;
+      else {
+        // A kind a later ledger adds must be named here, not shown as a call.
+        const unknown: never = action;
+        throw new Error(`Unrecognised contract action: ${String(unknown)}`);
+      }
+    }
+  }
 
-  return {spends, receives, contractActions};
+  return {
+    spends,
+    receives,
+    contractActions: contractCalls + contractDeploys + maintenanceUpdates,
+    contractCalls,
+    contractDeploys,
+    maintenanceUpdates,
+  };
 }
 
 /** Decode + summarize in one step, for the connector's approval prompt. */

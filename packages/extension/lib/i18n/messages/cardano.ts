@@ -110,6 +110,8 @@ export const cardano = {
   cardano_errorNoCnight: 'You need at least one cNIGHT to register.',
   cardano_loading: 'Reading Cardano…',
   cardano_retry: 'Try again',
+  cardano_refreshing: 'Updating from Cardano…',
+  cardano_refreshFailed: 'Could not update from Cardano, so this is the last status read.',
 
   // Accounts
   cardano_accountsTitle: 'Cardano accounts',
