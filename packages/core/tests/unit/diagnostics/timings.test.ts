@@ -17,6 +17,28 @@ async function enabledRecorder(clock = fakeClock()) {
 }
 
 describe('createTimingRecorder', () => {
+  it('keeps every entry of a burst recorded at once', async () => {
+    // A store that yields on each read and write, as extension storage does, so
+    // records in flight together can interleave between read and write.
+    const inner = createMemoryTimingStore(true);
+    const tick = () => new Promise((r) => setTimeout(r, 1));
+    const store: TimingStore = {
+      ...inner,
+      read: async () => { await tick(); return inner.read(); },
+      write: async (entries) => { await tick(); return inner.write(entries); },
+    };
+    const recorder = createTimingRecorder(store);
+
+    await Promise.all([1, 2, 3, 4].map((n) => recorder.record('proof', `job ${n}: prove started`)));
+
+    expect((await recorder.list()).map((e) => e.label)).toEqual([
+      'job 1: prove started',
+      'job 2: prove started',
+      'job 3: prove started',
+      'job 4: prove started',
+    ]);
+  });
+
   it('records nothing while disabled, so call sites need no guard', async () => {
     const store = createMemoryTimingStore(false);
     const recorder = createTimingRecorder(store);
