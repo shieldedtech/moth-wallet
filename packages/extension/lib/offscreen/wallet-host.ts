@@ -69,7 +69,7 @@ import {
 import type { HistoryEntry } from '@midnightntwrk/dapp-connector-api';
 import { serializeBalances } from '../messaging/balances-json';
 import { serializeActivity } from '../messaging/activity-json';
-import { waitForSyncedBalances } from './wait-synced';
+import { caughtUpThisSession, waitForSyncedBalances } from './wait-synced';
 import { createProofPool, type ProofPool } from './proof-pool';
 import { dustHealKey } from './dust-heal';
 import { logDustFeeEstimate, logDustFeePass } from './dust-fee-log';
@@ -908,6 +908,21 @@ export async function deregisterDust(
   });
 }
 
+// The connector's transaction builders start the sync engine themselves when
+// nothing has yet, and a dApp can connect and ask for a transaction in the same
+// second. A DUST spend made by a part-synced wallet is rejected by the node as
+// InvalidDustSpendProof, so these wait until every sub-wallet has caught up.
+//
+// Not the facade's live `synced`: that also needs the indexer connection, so a
+// wallet that caught up and then lost the connection would hold every approved
+// request for the full wait and then fail it. Once caught up this session, the
+// builders work from the state the wallet already has, as they did before.
+async function connectorWallet(seedHex: string, walletName: string, network: NetworkConfig): Promise<SyncedWallet> {
+  const wallet = await syncEnsure(seedHex, walletName, network);
+  await waitForSyncedBalances(wallet, SYNC_WAIT_MS, caughtUpThisSession);
+  return wallet;
+}
+
 export async function transferBuild(
   seedHex: string,
   walletName: string,
@@ -917,7 +932,7 @@ export async function transferBuild(
 ): Promise<{ txHex: string }> {
   return trackOp(async () => {
     await ensureProver(network);
-    const wallet = await syncEnsure(seedHex, walletName, network);
+    const wallet = await connectorWallet(seedHex, walletName, network);
     const finalized = await buildTransferTransaction(
       wallet.facade,
       activeWalletKeys(),
@@ -950,7 +965,14 @@ export async function txSummary(network: NetworkConfig, txHex: string, sealed: b
   const summary = summarizeConnectorTransaction(fromHex(txHex), sealed, await activeVersionIfSynced(network));
   const dto = (entries: typeof summary.spends) =>
     entries.map((entry) => ({ kind: entry.kind, tokenId: entry.tokenId, amount: entry.amount.toString() }));
-  return { spends: dto(summary.spends), receives: dto(summary.receives), contractActions: summary.contractActions };
+  return {
+    spends: dto(summary.spends),
+    receives: dto(summary.receives),
+    contractActions: summary.contractActions,
+    contractCalls: summary.contractCalls,
+    contractDeploys: summary.contractDeploys,
+    maintenanceUpdates: summary.maintenanceUpdates,
+  };
 }
 
 // Balance a dApp-supplied transaction (connector balance*Transaction). Needs a
@@ -966,7 +988,7 @@ export async function balanceTransaction(
 ): Promise<{ txHex: string }> {
   return trackOp(async () => {
     await ensureProver(network);
-    const wallet = await syncEnsure(seedHex, walletName, network);
+    const wallet = await connectorWallet(seedHex, walletName, network);
     const finalized = await coreBalanceTransaction(
       wallet.facade,
       activeWalletKeys(),
@@ -992,7 +1014,7 @@ export async function makeIntent(
 ): Promise<{ txHex: string }> {
   return trackOp(async () => {
     await ensureProver(network);
-    const wallet = await syncEnsure(seedHex, walletName, network);
+    const wallet = await connectorWallet(seedHex, walletName, network);
     const intent = await buildSwapIntent(
       wallet.facade,
       activeWalletKeys(),
