@@ -195,9 +195,12 @@ final class WalletModel: ObservableObject {
     }
 
     func rename(_ account: Account, to label: String) async {
+        DebugLog.write("rename \(account.name) to \(label)")
         await perform {
             try await engine!.run("setLabel", [account.name, label, account.network])
+            DebugLog.write("rename setLabel done")
             try await refreshAccounts()
+            DebugLog.write("rename accounts refreshed")
         }
     }
 
