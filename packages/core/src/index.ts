@@ -123,11 +123,14 @@ export {
 } from './sync/dust-ledger-health.js';
 export {
   readEventWitness,
+  readEventWitnessRetrying,
+  WITNESS_RETRY_DELAYS_MS,
   compareWitness,
   verifyCursorWitness,
   type CursorWitness,
   type WitnessStream,
   type WitnessVerdict,
+  type WitnessRetryOptions,
 } from './sync/cursor-witness.js';
 export {
   createTimingRecorder,

@@ -147,6 +147,62 @@ export async function readEventWitness(
   });
 }
 
+export interface WitnessRetryOptions {
+  /** Pauses between attempts; one more attempt than there are pauses. */
+  delaysMs?: readonly number[];
+  /** Per-attempt timeout, passed to the read. */
+  timeoutMs?: number;
+  /** Called before each retry with what the previous attempt saw. */
+  onRetry?: (attempt: number, outcome: string) => void;
+  /** Injected in tests. */
+  read?: typeof readEventWitness;
+  sleep?: (ms: number) => Promise<void>;
+}
+
+/** Two retries, after 2 s and 5 s. */
+export const WITNESS_RETRY_DELAYS_MS: readonly number[] = [2_000, 5_000];
+
+/**
+ * `readEventWitness`, retried when an attempt yields nothing to compare.
+ *
+ * A single attempt fails on a dropped connection as readily as on a real
+ * problem: on CI, the iOS app's first socket to the preview indexer errored or
+ * went quiet on most fresh installs, while the same read from a desktop returned
+ * the witnessed event every time. Each failure refused a valid reference and
+ * sent a new wallet to scan from genesis.
+ *
+ * Only outcomes that carry no verdict are retried: a thrown error (unreachable,
+ * rejected) and null (silence). An event that comes back is returned at once,
+ * whatever its digest, so a renumbering is still reported on the first read.
+ * After the last attempt the last outcome stands: callers still refuse the
+ * reference on a throw or a null, so this fails closed exactly as before, just
+ * not on one dropped socket.
+ */
+export async function readEventWitnessRetrying(
+  indexerUrl: string,
+  stream: WitnessStream,
+  id: number,
+  opts: WitnessRetryOptions = {},
+): Promise<CursorWitness | null> {
+  const delays = opts.delaysMs ?? WITNESS_RETRY_DELAYS_MS;
+  const read = opts.read ?? readEventWitness;
+  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  for (let attempt = 0; ; attempt++) {
+    let outcome: string;
+    try {
+      const witness = await read(indexerUrl, stream, id, {timeoutMs: opts.timeoutMs});
+      if (witness) return witness;
+      if (attempt >= delays.length) return null;
+      outcome = 'no event';
+    } catch (err) {
+      if (attempt >= delays.length) throw err;
+      outcome = err instanceof Error ? err.message : String(err);
+    }
+    opts.onRetry?.(attempt + 1, outcome);
+    await sleep(delays[attempt]!);
+  }
+}
+
 /**
  * Compare a stored witness against what the indexer actually returned.
  *
