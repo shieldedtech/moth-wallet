@@ -10,7 +10,11 @@ import {
   makeDefaultSubmissionService,
   type SubmissionService,
 } from '@midnightntwrk/wallet-sdk/capabilities/submission';
-import {ShieldedWallet} from '@midnightntwrk/wallet-sdk/shielded';
+import {CustomForkingShieldedWallet, ShieldedWallet} from '@midnightntwrk/wallet-sdk/shielded';
+import {V1Builder} from '@midnightntwrk/wallet-sdk/shielded/v1';
+import {V2Builder, Migration as ShieldedMigration} from '@midnightntwrk/wallet-sdk/shielded/v2';
+import {makeIndexerChainVersionProbe} from '@midnightntwrk/wallet-sdk/capabilities';
+import {coinSelectionFor, type CoinSelectionStrategy} from './coin-selection.js';
 import {UnshieldedWallet, PublicKey, createKeystore} from '@midnightntwrk/wallet-sdk/unshielded';
 import {InMemoryTransactionHistoryStorage, type FinalizedTx} from '@midnightntwrk/wallet-sdk';
 import {WalletEntrySchema, lifecycleTransactionTraits, mergeWalletEntries} from '@midnightntwrk/wallet-sdk/facade';
@@ -420,6 +424,28 @@ export interface WalletSyncOptions {
    * otherwise observable only on chain.
    */
   onDustFeePass?: (pass: DustFeePass) => void;
+  /**
+   * Which shielded coin to spend first when balancing a transaction. Default
+   * `smallest-first`, the SDK's own rule.
+   */
+  coinSelection?: CoinSelectionStrategy;
+}
+
+/** The shielded wallet class, with the SDK's defaults or another coin-selection rule. */
+function shieldedWalletClass(walletCfg: Parameters<typeof ShieldedWallet>[0], strategy: CoinSelectionStrategy | undefined) {
+  if (strategy === undefined || strategy === 'smallest-first') return ShieldedWallet(walletCfg);
+  // Mirrors ShieldedWallet(), which offers no way to change the rule.
+  return CustomForkingShieldedWallet(
+    {...walletCfg, chainVersionProbe: walletCfg.chainVersionProbe ?? makeIndexerChainVersionProbe(walletCfg)},
+    {builder: new V1Builder().withDefaults().withCoinSelection(() => coinSelectionFor(strategy)), configuration: walletCfg},
+    {
+      builder: new V2Builder()
+        .withDefaults()
+        .withCoinSelection(() => coinSelectionFor(strategy))
+        .withMigration(() => ShieldedMigration.makeCrossLedgerMigration()),
+      configuration: walletCfg,
+    }
+  );
 }
 
 /**
@@ -583,7 +609,7 @@ export async function startWalletSync(
 
   // --- Shielded wallet: try restore from cache ---
   onProgress?.('Starting shielded wallet...');
-  const Shielded = ShieldedWallet(walletCfg);
+  const Shielded = shieldedWalletClass(walletCfg, options?.coinSelection);
   let shieldedWallet: ShieldedWallet | undefined;
   let restoredFromCache = false;
   const savedShielded = await loadCachedState(store, name, network.id, 'shielded');
@@ -924,6 +950,10 @@ export function extractBalancesPartial(
     dust: {available: [], pending: []},
   };
 
+  // Whether each coin list was actually read from this emission. An unread list
+  // is a gap to carry over; a read one that is empty may be real.
+  const coinsRead = {shielded: false, unshielded: false, dust: false};
+
   // Per-sub-wallet raw sync progress (applied/total)
   const subProgress: SubWalletProgress = {
     shielded: {applied: 0, total: 0},
@@ -949,6 +979,7 @@ export function extractBalancesPartial(
     // by a pending transaction out of availableCoins.
     for (const c of state.shielded?.availableCoins ?? []) coins.shielded.available.push(shieldedCoinInfo(c));
     for (const c of state.shielded?.pendingCoins ?? []) coins.shielded.pending.push(shieldedCoinInfo(c));
+    coinsRead.shielded = Array.isArray(state.shielded?.availableCoins);
   } catch {
     /* shielded coins not ready */
   }
@@ -1000,6 +1031,7 @@ export function extractBalancesPartial(
       // never incoming coins, so this can't over-count receipts.
       unshielded[type] = (unshielded[type] ?? 0n) + value;
     }
+    coinsRead.unshielded = Array.isArray(state.unshielded?.availableCoins);
     // v4 SDK unshielded SyncProgress: { appliedId, highestTransactionId, isConnected }
     const up = state.unshielded?.progress;
     const unApplied = up?.appliedId ?? 0n;
@@ -1040,6 +1072,7 @@ export function extractBalancesPartial(
         dtime: c.dtime ? (c.dtime instanceof Date ? c.dtime : new Date(c.dtime)) : null,
       });
     }
+    coinsRead.dust = Array.isArray(state.dust?.availableCoins);
     // Booked fee inputs count toward the displayed balance for the same reason
     // booked NIGHT inputs do above; see spendableDust.
     dust = spendableDust(dust, coins.dust.pending);
@@ -1142,9 +1175,9 @@ export function extractBalancesPartial(
     if (Object.keys(shielded).length === 0 && Object.keys(previous.shielded).length > 0) shielded = previous.shielded;
     if (Object.keys(unshielded).length === 0 && Object.keys(previous.unshielded).length > 0) unshielded = previous.unshielded;
     if (dust === 0n && previous.dust > 0n) dust = previous.dust;
-    if (coins.shielded.available.length === 0 && previous.coins.shielded.available.length > 0) coins.shielded = previous.coins.shielded;
-    if (coins.unshielded.available.length === 0 && previous.coins.unshielded.available.length > 0) coins.unshielded = previous.coins.unshielded;
-    if (coins.dust.available.length === 0 && previous.coins.dust.available.length > 0) coins.dust = previous.coins.dust;
+    coins.shielded = carryCoins(coins.shielded, previous.coins.shielded, coinsRead.shielded);
+    coins.unshielded = carryCoins(coins.unshielded, previous.coins.unshielded, coinsRead.unshielded);
+    coins.dust = carryCoins(coins.dust, previous.coins.dust, coinsRead.dust);
   }
 
   // First usable sample is the session's starting point. Captured after the
@@ -1156,6 +1189,26 @@ export function extractBalancesPartial(
 
   const syncProgress: SyncProgress = {percentage, etaSeconds, slowest, shieldedSynced, unshieldedSynced, dustSynced};
   return {shielded, unshielded, dust, dustGeneration, syncProgress, synced, coins, subProgress};
+}
+
+/**
+ * One sub-wallet's coin list after an emission, given the last one.
+ *
+ * Not read at all (slice missing, or it threw first) is a gap, whatever the last
+ * list held, pending-only included. Read but empty right after a list with
+ * spendable coins is also treated as a gap, since emissions do that mid-read.
+ * After a pending-only list it is not: that is what a confirmed sweep of the last
+ * coin looks like, and carrying it would leave a landed transaction "in flight".
+ * All pending and none available is news, not a gap, so it is kept as read.
+ */
+function carryCoins<T>(
+  now: {available: T[]; pending: T[]},
+  before: {available: T[]; pending: T[]},
+  read: boolean,
+): {available: T[]; pending: T[]} {
+  if (!read) return before.available.length > 0 || before.pending.length > 0 ? before : now;
+  if (now.available.length === 0 && now.pending.length === 0 && before.available.length > 0) return before;
+  return now;
 }
 
 function extractBalances(state: FacadeState): WalletBalances {

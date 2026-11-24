@@ -44,8 +44,26 @@ export function refuseMainnet(): never {
   process.exit(1);
 }
 
+/**
+ * LOCAL OVERRIDE — not upstream. Set MOTH_ALLOW_MAINNET=1 to downgrade the
+ * refusal to a warning for one process.
+ *
+ * Deliberately opt-in per invocation rather than deleting the guard: every
+ * other moth command on this machine keeps the original refusal, and anything
+ * that reaches mainnet has to say so out loud in its own environment. The
+ * banner still prints, because the warning it carries is still true — moth is
+ * the reference wallet and this is real money.
+ */
+function mainnetAllowed(): boolean {
+  return process.env.MOTH_ALLOW_MAINNET === '1';
+}
+
 /** Refuse if `networkId` names mainnet; otherwise return it unchanged. */
 export function assertNotMainnet(networkId: string): string {
-  if (isMainnet(networkId)) refuseMainnet();
+  if (isMainnet(networkId)) {
+    if (!mainnetAllowed()) refuseMainnet();
+    process.stderr.write(BANNER);
+    process.stderr.write('  MOTH_ALLOW_MAINNET=1 — proceeding on mainnet anyway.\n\n');
+  }
   return networkId;
 }

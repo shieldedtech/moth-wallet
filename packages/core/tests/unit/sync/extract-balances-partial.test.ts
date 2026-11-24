@@ -170,3 +170,51 @@ describe('extractBalancesPartial before the sub-wallets connect', () => {
     shown.slice(6).forEach((p, i) => expect(p.percentage).toBeGreaterThanOrEqual(shown[i + 5]!.percentage));
   });
 });
+
+describe('extractBalancesPartial while the only DUST coin is pending', () => {
+  const coin = {generatedNow: 5n, maxCap: 10n, rate: 1n, maxCapReachedAt: new Date(0), dtime: null};
+  const state = (available: unknown[], pending: unknown[]): FacadeState =>
+    ({
+      isSynced: true,
+      shielded: {balances: {}, availableCoins: [], pendingCoins: [], progress: progress(1n, 1n)},
+      unshielded: {balances: {}, availableCoins: [], pendingCoins: [], progress: {appliedId: 0n, highestTransactionId: 0n, isStrictlyComplete: () => true}},
+      dust: {balance: () => 0n, availableCoins: available, pendingCoins: pending, progress: progress(1n, 1n)},
+    }) as unknown as FacadeState;
+
+  it('reports the coin as pending, not the previous snapshot\'s available coin', () => {
+    const before = extractBalancesPartial(state([coin], []));
+    expect(before.coins.dust.available).toHaveLength(1);
+    const after = extractBalancesPartial(state([], [coin]), 0, 0, undefined, before);
+    expect(after.coins.dust.available).toHaveLength(0);
+    expect(after.coins.dust.pending).toHaveLength(1);
+  });
+
+  it('still carries the coins forward through an emission with none at all', () => {
+    const before = extractBalancesPartial(state([coin], []));
+    const gap = extractBalancesPartial(state([], []), 0, 0, undefined, before);
+    expect(gap.coins.dust.available).toHaveLength(1);
+  });
+
+  // A emission whose DUST slice is missing, or whose balance() throws before the
+  // coins are read.
+  const unread = (how: 'missing' | 'throws'): FacadeState => {
+    const s = state([], []) as unknown as {dust: unknown};
+    s.dust = how === 'missing' ? undefined : {balance: () => { throw new Error('mid-read'); }, availableCoins: [], pendingCoins: []};
+    return s as unknown as FacadeState;
+  };
+
+  it.each(['missing', 'throws'] as const)('keeps a pending-only list through a later unread emission (%s)', (how) => {
+    const a = extractBalancesPartial(state([coin], []));
+    const b = extractBalancesPartial(state([], [coin]), 0, 0, undefined, a);
+    const c = extractBalancesPartial(unread(how), 0, 0, undefined, b);
+    expect(c.coins.dust.pending).toHaveLength(1);
+    expect(c.coins.dust.available).toHaveLength(0);
+  });
+
+  it('shows a sweep of the last coin as empty, not as still pending', () => {
+    const pending = extractBalancesPartial(state([], [coin]));
+    const swept = extractBalancesPartial(state([], []), 0, 0, undefined, pending);
+    expect(swept.coins.dust.pending).toHaveLength(0);
+    expect(swept.coins.dust.available).toHaveLength(0);
+  });
+});
