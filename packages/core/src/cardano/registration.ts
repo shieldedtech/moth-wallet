@@ -1,5 +1,6 @@
 import type { UTxO } from '@lucid-evolution/lucid';
-import { InvalidInputError, WalletError } from '../types/errors.js';
+import { InvalidInputError, NetworkError, WalletError } from '../types/errors.js';
+import { blockfrostUtxoToUtxo, fetchUtxosWithUnit, type BlockfrostUtxo } from './blockfrost.js';
 import {
   LOVELACE_FOR_REGISTRATION,
   MIN_LOVELACE_FOR_REGISTRATION,
@@ -124,34 +125,54 @@ async function collectCnightUtxos(session: CardanoSession, action: string): Prom
  *
  * The auth NFT has an empty asset name, so its unit is bare policy id and every
  * registration on the network shares it — the lookup returns all of them and
- * the stake key hash in the datum is what narrows it to ours.
+ * the stake key hash in the datum is what narrows it to ours. That is thousands
+ * of UTXOs on mainnet, so they are read raw from Blockfrost, not through Lucid.
  */
 export async function findRegistrations(session: CardanoSession): Promise<RegistrationRecord[]> {
   const validatorAddress = await dustValidatorAddress(session.config);
-  const candidates = await session.lucid.utxosAtWithUnit(
+  const candidates = await fetchUtxosWithUnit(
+    session.config,
     validatorAddress,
     dustAuthUnit(session.config),
   );
-  const found: RegistrationRecord[] = [];
-  for (const utxo of candidates) {
-    if (!utxo.datum) continue;
+  // Keyed by output reference: pages read in parallel can repeat a UTXO if the
+  // set shifts mid-scan, and a duplicate would read as a second registration.
+  const found = new Map<string, RegistrationRecord>();
+  for (const candidate of candidates) {
+    if (!candidate.inline_datum) continue;
     let decoded;
     try {
-      decoded = decodeDustMappingDatum(utxo.datum);
+      decoded = decodeDustMappingDatum(candidate.inline_datum);
     } catch {
       // Not every UTXO parked at this address has to be a registration datum.
       continue;
     }
-    const stakeKeyHash = datumStakeKeyHash(decoded);
-    if (stakeKeyHash !== session.addresses.stakeKeyHash) continue;
-    found.push({
-      utxo,
+    if (datumStakeKeyHash(decoded) !== session.addresses.stakeKeyHash) continue;
+    found.set(`${candidate.tx_hash}#${candidate.output_index}`, {
+      utxo: await registrationUtxo(session, candidate),
       dustAddress: decoded.dust_address,
-      stakeKeyHash,
+      stakeKeyHash: session.addresses.stakeKeyHash,
       legacyDustAddress: decoded.dust_address.length !== DUST_ADDRESS_HEX_LENGTH,
     });
   }
-  return found;
+  return [...found.values()];
+}
+
+/**
+ * The spendable UTxO for a scanned registration. One carrying a reference
+ * script goes through Lucid, which fetches the script the fee depends on.
+ *
+ * Lucid answers a failed lookup with nothing rather than an error, so a missing
+ * answer throws: reading it as "not registered" would let `register` mint a
+ * second registration.
+ */
+async function registrationUtxo(session: CardanoSession, row: BlockfrostUtxo): Promise<UTxO> {
+  if (!row.reference_script_hash) return blockfrostUtxoToUtxo(row);
+  const [utxo] = await session.lucid.utxosByOutRef([
+    { txHash: row.tx_hash, outputIndex: row.output_index },
+  ]);
+  if (!utxo) throw new NetworkError('Could not read the DUST registration from Blockfrost. Try again.');
+  return utxo;
 }
 
 /**
