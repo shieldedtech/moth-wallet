@@ -1952,6 +1952,12 @@
   "cardano_retry": {
     "message": "Reintentar"
   },
+  "cardano_refreshing": {
+    "message": "Actualizando desde Cardano…"
+  },
+  "cardano_refreshFailed": {
+    "message": "No se pudo actualizar desde Cardano, así que este es el último estado leído."
+  },
   "cardano_settingsSection": {
     "message": "Cardano"
   },
