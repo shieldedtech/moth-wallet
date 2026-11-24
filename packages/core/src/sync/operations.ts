@@ -45,6 +45,28 @@ export {DustRegistrationNotYetError, type DustRegistrationEstimate};
  */
 export type FinalizedTransaction = FinalizedTx;
 
+type Recipe = Parameters<WalletFacade['finalizeRecipe']>[0];
+type SignSegment = Parameters<WalletFacade['signRecipe']>[1];
+
+/**
+ * Sign (when given a signer) and prove a recipe, releasing its coins if either step fails.
+ *
+ * Building a recipe books the wallet's inputs, the fee's DUST included, and only inclusion
+ * or a revert releases them. A recipe whose proof fails is never submitted, so without the
+ * revert its coins stayed booked, were saved with the sync cache, and every later send
+ * waited on a transaction that would never confirm.
+ */
+export async function proveRecipe(facade: WalletFacade, recipe: Recipe, sign?: SignSegment): Promise<FinalizedTransaction> {
+  try {
+    const signed = sign ? await facade.signRecipe(recipe, sign) : recipe;
+    return await facade.finalizeRecipe(signed);
+  } catch (error) {
+    // The proving error is what the caller needs; a failed release must not replace it.
+    await facade.revert(recipe, 'not proved').catch(() => undefined);
+    throw error;
+  }
+}
+
 /** An unproven transaction handle. */
 export type UnprovenTransaction = UnprovenTx;
 
@@ -282,9 +304,7 @@ export async function buildTransferTransaction(
   const recipe = await facade.transferTransaction(transfers, {...options, ttl});
 
   onProgress?.('proving');
-  const signed = await facade.signRecipe(recipe, ks.signDataAsync);
-
-  return facade.finalizeRecipe(signed);
+  return proveRecipe(facade, recipe, ks.signDataAsync);
 }
 
 /**
@@ -394,8 +414,7 @@ export async function balanceTransaction(
   }
 
   onProgress?.('proving');
-  const signed = await facade.signRecipe(recipe, ks.signDataAsync);
-  return facade.finalizeRecipe(signed);
+  return proveRecipe(facade, recipe, ks.signDataAsync);
 }
 
 // Matches wallet-sdk-facade's error when nothing needs balancing; a contract test runs the real facade.
@@ -449,8 +468,7 @@ export async function buildSwapIntent(
   const recipe = await facade.initSwap(swapInputs, swapOutputs, {...options, ttl});
 
   onProgress?.('proving');
-  const signed = await facade.signRecipe(recipe, ks.signDataAsync);
-  return facade.finalizeRecipe(signed);
+  return proveRecipe(facade, recipe, ks.signDataAsync);
 }
 
 /**
@@ -647,7 +665,7 @@ async function designateForDustImpl(
   }
 
   onProgress?.('proving');
-  const finalized = await facade.finalizeRecipe(recipe);
+  const finalized = await proveRecipe(facade, recipe);
 
   onProgress?.('submitting');
   return submitWithRetry(facade, finalized);
@@ -714,6 +732,6 @@ async function dedesignateFromDustImpl(
   });
 
   onProgress?.('submitting');
-  const finalized = await facade.finalizeRecipe(balancedRecipe);
+  const finalized = await proveRecipe(facade, balancedRecipe);
   return submitWithRetry(facade, finalized);
 }

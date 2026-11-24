@@ -235,3 +235,71 @@ describe('defaultPoolSize', () => {
     expect(defaultPoolSize(16)).toBe(MAX_PROOF_WORKERS);
   });
 });
+
+// A stalled proof used to hold the send on "Generating proof" with nothing logged.
+describe('proof pool timeouts', () => {
+  beforeEach(() => {
+    FakeWorker.all = [];
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+  const quiet = () => {};
+
+  it('fails a job that gives no result in time, terminates its worker and runs the next job', async () => {
+    const lines: string[] = [];
+    const pool = createProofPool({ size: 1, spawn: () => new FakeWorker(), jobTimeoutMs: 1_000, log: (l) => lines.push(l) });
+    const provider = pool.provider(keys, 'v2');
+    const stalled = provider.prove(preimage, 'a');
+    const next = provider.prove(preimage, 'b');
+    const outcome = expect(stalled).rejects.toThrow(/gave no result within 1 s; it was proving/);
+
+    vi.advanceTimersByTime(1_000);
+    await outcome;
+    expect(FakeWorker.all[0]!.terminated).toBe(true);
+    // The queued job gets a fresh worker and still completes.
+    const second = FakeWorker.all[1]!;
+    const job = second.jobs()[0] as { id: number };
+    second.emit({ id: job.id, ok: true, result: new Uint8Array([7]) });
+    await expect(next).resolves.toEqual(new Uint8Array([7]));
+    expect(lines.some((l) => l.startsWith('[moth proof]') && l.includes('gave no result'))).toBe(true);
+  });
+
+  it('names the lookup a timed-out job was waiting on', async () => {
+    const hanging: WasmKeyMaterialProvider = { lookupKey: () => new Promise(() => {}), getParams: () => new Promise(() => {}) };
+    const pool = createProofPool({ size: 1, spawn: () => new FakeWorker(), jobTimeoutMs: 1_000, keyTimeoutMs: 60_000, log: quiet });
+    const proof = pool.provider(hanging, 'v2').prove(preimage, SPEND_CIRCUIT);
+    const worker = FakeWorker.all[0]!;
+    const job = worker.jobs()[0] as { id: number };
+    worker.emit({ id: job.id, reqId: 1, req: 'lookupKey', keyLocation: SPEND_CIRCUIT });
+    const outcome = expect(proof).rejects.toThrow(`it was waiting on key ${SPEND_CIRCUIT}`);
+    vi.advanceTimersByTime(1_000);
+    await outcome;
+  });
+
+  it('answers a lookup that does not resolve in time with an error, so the worker can fail the job', async () => {
+    const hanging: WasmKeyMaterialProvider = { lookupKey: vi.fn(async () => undefined), getParams: () => new Promise(() => {}) };
+    const pool = createProofPool({ size: 1, spawn: () => new FakeWorker(), keyTimeoutMs: 500, log: quiet });
+    void pool.provider(hanging, 'v2').prove(preimage, SPEND_CIRCUIT);
+    const worker = FakeWorker.all[0]!;
+    const job = worker.jobs()[0] as { id: number };
+    worker.emit({ id: job.id, reqId: 3, req: 'getParams', k: 14 });
+    vi.advanceTimersByTime(500);
+    await flush();
+    const reply = worker.posted.find((m) => 'reqId' in m && m.reqId === 3) as { ok: boolean; error: unknown } | undefined;
+    expect(reply?.ok).toBe(false);
+    expect(JSON.stringify(reply?.error)).toContain('params k=14 did not answer within 0.5 s');
+  });
+
+  it('does not fire on a job that finishes in time', async () => {
+    const pool = createProofPool({ size: 1, spawn: () => new FakeWorker(), jobTimeoutMs: 1_000, log: quiet });
+    const proof = pool.provider(keys, 'v2').prove(preimage, 'a');
+    const worker = FakeWorker.all[0]!;
+    const job = worker.jobs()[0] as { id: number };
+    worker.emit({ id: job.id, ok: true, result: new Uint8Array([1]) });
+    await expect(proof).resolves.toEqual(new Uint8Array([1]));
+    vi.advanceTimersByTime(5_000);
+    expect(worker.terminated).toBe(false);
+  });
+});
