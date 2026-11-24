@@ -194,11 +194,26 @@ final class WalletModel: ObservableObject {
         phase = .locked
     }
 
+    /// Shows the new name at once: while a sync is catching up, the engine can take ten seconds
+    /// or more to store it and list the accounts again. A refused rename restores the old name.
     func rename(_ account: Account, to label: String) async {
+        let trimmed = label.trimmingCharacters(in: .whitespacesAndNewlines)
+        // The engine stores an empty name as no label, so the account shows its own name again.
+        relabel(account.name, trimmed.isEmpty ? nil : trimmed)
         await perform {
-            try await engine!.run("setLabel", [account.name, label, account.network])
+            do {
+                try await engine!.run("setLabel", [account.name, label, account.network])
+            } catch {
+                relabel(account.name, account.label)
+                throw error
+            }
             try await refreshAccounts()
         }
+    }
+
+    private func relabel(_ name: String, _ label: String?) {
+        guard let i = accounts.firstIndex(where: { $0.name == name }) else { return }
+        accounts[i] = Account(name: name, label: label, network: accounts[i].network)
     }
 
     /// Removes an account from this phone. Its funds stay on chain, reachable by its phrase.

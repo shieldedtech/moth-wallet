@@ -40,7 +40,9 @@ final class AccountsTests: XCTestCase {
         let network = reveal(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Network'")).firstMatch, in: app)
         choose(app.buttons["preprod"], fromMenu: network)
         app.tabBars.buttons["Wallet"].tap()
-        XCTAssertTrue(header(app, "· preprod").waitForExistence(timeout: 60), "account moved to preprod")
+        // Moving reloads the accounts from the engine, so the name here is the stored one, not
+        // just the one the app showed straight after Save.
+        XCTAssertTrue(header(app, "Savings · preprod").waitForExistence(timeout: 60), "account moved to preprod, still renamed")
     }
 
     /// The wallet header is a List section header, which iOS shows in capitals, so match any case.
