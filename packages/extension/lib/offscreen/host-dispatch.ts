@@ -53,6 +53,7 @@ export const hostDispatch: Dispatch = {
   'os/cardanoResolveReceiver': (host, d) => host.cardanoResolveReceiver(d.input),
   'os/cardanoReceiverAccounts': (host, d) => host.cardanoReceiverAccounts(d.network),
   'os/cardanoAddresses': (_host, d) => cardano.cardanoAddresses(d.mnemonic, d.config, d.accountIndex),
+  'os/cardanoBalance': (_host, d) => cardano.cardanoBalance(d.mnemonic, d.config, d.accountIndex),
   'os/cardanoStatus': (_host, d) => cardano.cardanoStatus(d.mnemonic, d.config, d.indexerUrl, d.accountIndex),
   'os/cardanoRegister': (_host, d) => cardano.cardanoRegister(d.mnemonic, d.config, d.receiver, d.accountIndex),
   'os/cardanoDeregister': (_host, d) => cardano.cardanoDeregister(d.mnemonic, d.config, d.accountIndex),

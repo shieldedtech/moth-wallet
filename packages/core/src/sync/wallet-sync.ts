@@ -10,7 +10,11 @@ import {
   makeDefaultSubmissionService,
   type SubmissionService,
 } from '@midnightntwrk/wallet-sdk/capabilities/submission';
-import {ShieldedWallet} from '@midnightntwrk/wallet-sdk/shielded';
+import {CustomForkingShieldedWallet, ShieldedWallet} from '@midnightntwrk/wallet-sdk/shielded';
+import {V1Builder} from '@midnightntwrk/wallet-sdk/shielded/v1';
+import {V2Builder, Migration as ShieldedMigration} from '@midnightntwrk/wallet-sdk/shielded/v2';
+import {makeIndexerChainVersionProbe} from '@midnightntwrk/wallet-sdk/capabilities';
+import {coinSelectionFor, type CoinSelectionStrategy} from './coin-selection.js';
 import {UnshieldedWallet, PublicKey, createKeystore} from '@midnightntwrk/wallet-sdk/unshielded';
 import {InMemoryTransactionHistoryStorage, type FinalizedTx} from '@midnightntwrk/wallet-sdk';
 import {WalletEntrySchema, lifecycleTransactionTraits, mergeWalletEntries} from '@midnightntwrk/wallet-sdk/facade';
@@ -199,15 +203,15 @@ const DUST_COST_PARAMETERS = {
 export type {DustGeneration} from './dust-generation.js';
 
 export interface SyncProgress {
-  /** 0.0 to 1.0 */
+  /** 0.0 to 1.0: the average of the sub-wallets still syncing, below 1 until synced. */
   percentage: number;
-  /** Estimated seconds remaining, or null if unknown */
+  /** Estimated seconds remaining, from the slowest sub-wallet, or null if unknown */
   etaSeconds: number | null;
   /** Which sub-wallets are synced */
   shieldedSynced: boolean;
   unshieldedSynced: boolean;
   dustSynced: boolean;
-  /** Which sub-wallet the percentage came from; null once synced. */
+  /** The slowest sub-wallet, which the estimate waits on; null once synced. */
   slowest: SubWallet | null;
 }
 
@@ -420,6 +424,28 @@ export interface WalletSyncOptions {
    * otherwise observable only on chain.
    */
   onDustFeePass?: (pass: DustFeePass) => void;
+  /**
+   * Which shielded coin to spend first when balancing a transaction. Default
+   * `smallest-first`, the SDK's own rule.
+   */
+  coinSelection?: CoinSelectionStrategy;
+}
+
+/** The shielded wallet class, with the SDK's defaults or another coin-selection rule. */
+function shieldedWalletClass(walletCfg: Parameters<typeof ShieldedWallet>[0], strategy: CoinSelectionStrategy | undefined) {
+  if (strategy === undefined || strategy === 'smallest-first') return ShieldedWallet(walletCfg);
+  // Mirrors ShieldedWallet(), which offers no way to change the rule.
+  return CustomForkingShieldedWallet(
+    {...walletCfg, chainVersionProbe: walletCfg.chainVersionProbe ?? makeIndexerChainVersionProbe(walletCfg)},
+    {builder: new V1Builder().withDefaults().withCoinSelection(() => coinSelectionFor(strategy)), configuration: walletCfg},
+    {
+      builder: new V2Builder()
+        .withDefaults()
+        .withCoinSelection(() => coinSelectionFor(strategy))
+        .withMigration(() => ShieldedMigration.makeCrossLedgerMigration()),
+      configuration: walletCfg,
+    }
+  );
 }
 
 /**
@@ -433,10 +459,10 @@ export interface WalletSyncOptions {
  * each ledger version derives its own key objects from the same seed.
  */
 /** A sub-wallet's own fraction, for the progress line. `done` wins over the
- *  counters: a sub-wallet with nothing to apply is complete, not stalled. */
+ *  counters, and 0/0 without it is a sub-wallet that has not reported yet. */
 function subPct(sub: {applied: number; total: number}, done: boolean): string {
   if (done) return '100%';
-  return sub.total > 0 ? `${Math.round(Math.min(1, sub.applied / sub.total) * 100)}%` : '100%';
+  return sub.total > 0 ? `${Math.round(Math.min(1, sub.applied / sub.total) * 100)}%` : '0%';
 }
 
 export async function startWalletSync(
@@ -583,7 +609,7 @@ export async function startWalletSync(
 
   // --- Shielded wallet: try restore from cache ---
   onProgress?.('Starting shielded wallet...');
-  const Shielded = ShieldedWallet(walletCfg);
+  const Shielded = shieldedWalletClass(walletCfg, options?.coinSelection);
   let shieldedWallet: ShieldedWallet | undefined;
   let restoredFromCache = false;
   const savedShielded = await loadCachedState(store, name, network.id, 'shielded');
@@ -717,7 +743,7 @@ export async function startWalletSync(
         const eta = balances.syncProgress.etaSeconds;
         const etaStr = eta !== null ? formatEta(eta) : '';
         const slowest = balances.syncProgress.slowest;
-        const slowestLabel = slowest ? ` (${slowest})` : '';
+        const slowestLabel = slowest ? ` (waiting on ${slowest})` : '';
 
         if (
           emissionCount % 50 === 0 ||
@@ -731,11 +757,9 @@ export async function startWalletSync(
           // which is worse. formatDustBalance has existed and been exported the
           // whole time; this line simply predates it.
           //
-          // The progress line names the sub-wallet the percentage belongs to.
-          // Reporting the slowest sub-wallet's fraction with no attribution, and
-          // suffixing it with a NIGHT balance, made "syncing 27% — NIGHT: 8378"
-          // read as "NIGHT is 27% synced" while the panel showed shielded and
-          // unshielded at 100%. Balances belong on the synced line, once.
+          // The progress line names the sub-wallet the estimate waits on, and
+          // keeps balances off it: "syncing 27% — NIGHT: 8378" read as "NIGHT is
+          // 27% synced". Balances belong on the synced line, once.
           onProgress?.(
             balances.synced
               ? `● synced — NIGHT: ${formatNight(nightTotal)}, DUST: ${formatDustBalance(balances.dust)}`
@@ -889,7 +913,8 @@ export interface ProgressBaseline {
   value: {fraction: number; elapsedMs: number} | null;
 }
 
-function extractBalancesPartial(
+/** Exported for tests. */
+export function extractBalancesPartial(
   state: FacadeState,
   syncStartTime = 0,
   prevPct = 0,
@@ -925,6 +950,10 @@ function extractBalancesPartial(
     dust: {available: [], pending: []},
   };
 
+  // Whether each coin list was actually read from this emission. An unread list
+  // is a gap to carry over; a read one that is empty may be real.
+  const coinsRead = {shielded: false, unshielded: false, dust: false};
+
   // Per-sub-wallet raw sync progress (applied/total)
   const subProgress: SubWalletProgress = {
     shielded: {applied: 0, total: 0},
@@ -950,6 +979,7 @@ function extractBalancesPartial(
     // by a pending transaction out of availableCoins.
     for (const c of state.shielded?.availableCoins ?? []) coins.shielded.available.push(shieldedCoinInfo(c));
     for (const c of state.shielded?.pendingCoins ?? []) coins.shielded.pending.push(shieldedCoinInfo(c));
+    coinsRead.shielded = Array.isArray(state.shielded?.availableCoins);
   } catch {
     /* shielded coins not ready */
   }
@@ -1001,6 +1031,7 @@ function extractBalancesPartial(
       // never incoming coins, so this can't over-count receipts.
       unshielded[type] = (unshielded[type] ?? 0n) + value;
     }
+    coinsRead.unshielded = Array.isArray(state.unshielded?.availableCoins);
     // v4 SDK unshielded SyncProgress: { appliedId, highestTransactionId, isConnected }
     const up = state.unshielded?.progress;
     const unApplied = up?.appliedId ?? 0n;
@@ -1041,6 +1072,7 @@ function extractBalancesPartial(
         dtime: c.dtime ? (c.dtime instanceof Date ? c.dtime : new Date(c.dtime)) : null,
       });
     }
+    coinsRead.dust = Array.isArray(state.dust?.availableCoins);
     // Booked fee inputs count toward the displayed balance for the same reason
     // booked NIGHT inputs do above; see spendableDust.
     dust = spendableDust(dust, coins.dust.pending);
@@ -1060,9 +1092,40 @@ function extractBalancesPartial(
     /* dust not ready */
   }
 
+  // Carry forward progress this emission did not report. Progress within a
+  // session only moves forward, so a part that reported 498,519/498,519 a second
+  // ago has not become 0/0 — the emission simply said nothing about it. Applied
+  // per part, because emissions are routinely partial in exactly this way, and
+  // before the overall figure is taken, so the percentage never sees the gap.
+  if (previous) {
+    const carried = new Set<SubWallet>();
+    for (const part of ['shielded', 'unshielded', 'dust'] as const) {
+      const now = subProgress[part];
+      const before = previous.subProgress[part];
+      if (now.total === 0 && before.total > 0) {
+        subProgress[part] = before;
+        carried.add(part);
+      } else if (now.applied === 0 && before.applied > now.applied && now.total === before.total) {
+        subProgress[part] = {applied: before.applied, total: now.total};
+        carried.add(part);
+      }
+    }
+    // An emission that said nothing about a part's progress has no verdict on
+    // it either: a connected 0/0 reads as strictly complete.
+    if (carried.has('shielded')) shieldedSynced = false;
+    if (carried.has('unshielded')) unshieldedSynced = false;
+    if (carried.has('dust')) dustSynced = false;
+    // A sub-wallet that was strictly complete does not stop being complete. Held
+    // before the overall figure, which no longer counts an unconfirmed 0/0 as done:
+    // a dropped connection would otherwise read an empty wallet's side as 0%.
+    shieldedSynced = shieldedSynced || previous.syncProgress.shieldedSynced;
+    unshieldedSynced = unshieldedSynced || previous.syncProgress.unshieldedSynced;
+    dustSynced = dustSynced || previous.syncProgress.dustSynced;
+  }
+
   // Overall progress: the slowest sub-wallet, clamped below 100% until actually
   // synced. Arithmetic lives in ./progress.ts so it is unit-testable without WASM.
-  const {percentage, etaSeconds, slowest} = overallSyncProgress({
+  const {percentage, etaSeconds, slowest, slowestFraction} = overallSyncProgress({
     shielded: subProgress.shielded,
     unshielded: subProgress.unshielded,
     dust: subProgress.dust,
@@ -1104,42 +1167,48 @@ function extractBalancesPartial(
     /* dust generation info not available */
   }
 
-  // Carry forward anything this emission did not report. Progress within a
-  // session only moves forward, so a part that reported 498,519/498,519 a second
-  // ago has not become 0/0 — the emission simply said nothing about it. Applied
-  // per part, because emissions are routinely partial in exactly this way.
+  // Carry forward the rest of what this emission did not report, for the same
+  // reason as the progress above.
   if (previous) {
-    for (const part of ['shielded', 'unshielded', 'dust'] as const) {
-      const now = subProgress[part];
-      const before = previous.subProgress[part];
-      if (now.total === 0 && before.total > 0) subProgress[part] = before;
-      else if (now.applied === 0 && before.applied > now.applied && now.total === before.total) {
-        subProgress[part] = {applied: before.applied, total: now.total};
-      }
-    }
     // Same reasoning for the balances themselves: an empty map here means this
     // emission carried none, not that the wallet was emptied.
     if (Object.keys(shielded).length === 0 && Object.keys(previous.shielded).length > 0) shielded = previous.shielded;
     if (Object.keys(unshielded).length === 0 && Object.keys(previous.unshielded).length > 0) unshielded = previous.unshielded;
     if (dust === 0n && previous.dust > 0n) dust = previous.dust;
-    if (coins.shielded.available.length === 0 && previous.coins.shielded.available.length > 0) coins.shielded = previous.coins.shielded;
-    if (coins.unshielded.available.length === 0 && previous.coins.unshielded.available.length > 0) coins.unshielded = previous.coins.unshielded;
-    if (coins.dust.available.length === 0 && previous.coins.dust.available.length > 0) coins.dust = previous.coins.dust;
-    // A sub-wallet that was strictly complete does not stop being complete.
-    shieldedSynced = shieldedSynced || previous.syncProgress.shieldedSynced;
-    unshieldedSynced = unshieldedSynced || previous.syncProgress.unshieldedSynced;
-    dustSynced = dustSynced || previous.syncProgress.dustSynced;
+    coins.shielded = carryCoins(coins.shielded, previous.coins.shielded, coinsRead.shielded);
+    coins.unshielded = carryCoins(coins.unshielded, previous.coins.unshielded, coinsRead.unshielded);
+    coins.dust = carryCoins(coins.dust, previous.coins.dust, coinsRead.dust);
   }
 
   // First usable sample is the session's starting point. Captured after the
   // fraction is known and only once, so the rate below is measured over work
-  // this session actually did.
-  if (baseline && baseline.value === null && !synced && percentage > 0 && percentage < 0.995) {
-    baseline.value = {fraction: percentage, elapsedMs: syncStartTime > 0 ? Date.now() - syncStartTime : 0};
+  // this session actually did. It is the slowest sub-wallet's, as the ETA is.
+  if (baseline && baseline.value === null && !synced && slowestFraction > 0 && slowestFraction < 0.995) {
+    baseline.value = {fraction: slowestFraction, elapsedMs: syncStartTime > 0 ? Date.now() - syncStartTime : 0};
   }
 
   const syncProgress: SyncProgress = {percentage, etaSeconds, slowest, shieldedSynced, unshieldedSynced, dustSynced};
   return {shielded, unshielded, dust, dustGeneration, syncProgress, synced, coins, subProgress};
+}
+
+/**
+ * One sub-wallet's coin list after an emission, given the last one.
+ *
+ * Not read at all (slice missing, or it threw first) is a gap, whatever the last
+ * list held, pending-only included. Read but empty right after a list with
+ * spendable coins is also treated as a gap, since emissions do that mid-read.
+ * After a pending-only list it is not: that is what a confirmed sweep of the last
+ * coin looks like, and carrying it would leave a landed transaction "in flight".
+ * All pending and none available is news, not a gap, so it is kept as read.
+ */
+function carryCoins<T>(
+  now: {available: T[]; pending: T[]},
+  before: {available: T[]; pending: T[]},
+  read: boolean,
+): {available: T[]; pending: T[]} {
+  if (!read) return before.available.length > 0 || before.pending.length > 0 ? before : now;
+  if (now.available.length === 0 && now.pending.length === 0 && before.available.length > 0) return before;
+  return now;
 }
 
 function extractBalances(state: FacadeState): WalletBalances {

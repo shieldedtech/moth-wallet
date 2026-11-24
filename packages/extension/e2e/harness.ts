@@ -1,0 +1,315 @@
+// Shared harness for extension E2E tests that drive the built extension and
+// the built mock-dapp, either with no chain at all or against a local chain
+// stack on loopback.
+//
+// Offline is enforced, not assumed: every request Chrome would send off this
+// machine goes to a proxy that refuses it and records where it was going.
+// `page.route` cannot do this job, because the offscreen document's sync
+// traffic never passes through Playwright's routing. Chrome sends loopback
+// traffic direct, which is what lets the page reach the local mock-dapp server
+// and a local chain stack — and why the offline tests must put the wallet on a
+// hosted network such as Preprod rather than Undeployed, whose localhost
+// endpoints would bypass the proxy.
+
+import fs from 'node:fs';
+import http from 'node:http';
+import net from 'node:net';
+import path from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { chromium, expect, test, type BrowserContext, type Page, type Worker } from '@playwright/test';
+
+export const extensionDir = path.resolve(import.meta.dirname, '..', '.output', 'chrome-mv3');
+const mockDappDir = path.resolve(import.meta.dirname, '..', '..', 'mock-dapp', 'dist');
+
+// The callbacks passed to `worker.evaluate` run in the extension's service
+// worker, where `chrome` is a global; this file itself runs in Node.
+declare const chrome: {
+  storage: {
+    session: { get(keys: string | string[]): Promise<Record<string, unknown>>; set(items: object): Promise<void> };
+    local: { get(key: string): Promise<Record<string, unknown>> };
+  };
+  alarms: {
+    create(name: string, info: { when: number; periodInMinutes: number }): Promise<void>;
+    get(name: string): Promise<object | undefined>;
+  };
+  runtime: { getContexts(filter: { contextTypes: string[] }): Promise<unknown[]> };
+};
+
+export const SEED = 'ab'.repeat(32);
+// The extension's unlock password for a throwaway profile. Generated per run so
+// no credential-shaped literal is committed for the secret scanner to report.
+export const PASSWORD = `e2e-${randomUUID()}`;
+
+export function assertBuilt(): void {
+  if (!fs.existsSync(path.join(extensionDir, 'manifest.json'))) {
+    throw new Error(`No extension build at ${extensionDir} — run \`yarn build\` first.`);
+  }
+  if (!fs.existsSync(path.join(mockDappDir, 'index.html'))) {
+    throw new Error(`No mock-dapp build at ${mockDappDir} — run \`yarn build\` first.`);
+  }
+}
+
+interface Server {
+  url: string;
+  close(): Promise<void>;
+}
+
+/**
+ * Closes per-test resources in reverse order of starting them. Register each one
+ * as soon as it has started: a setup step that throws then still leaves everything
+ * before it closed, and every closer runs even when an earlier one fails.
+ */
+export function teardownList(): { add(close: () => Promise<void>): void; closeAll(): Promise<void> } {
+  const closers: Array<() => Promise<void>> = [];
+  return {
+    add: (close) => {
+      closers.push(close);
+    },
+    closeAll: async () => {
+      const errors: unknown[] = [];
+      for (let close = closers.pop(); close; close = closers.pop()) {
+        try {
+          await close();
+        } catch (error) {
+          errors.push(error);
+        }
+      }
+      if (errors.length === 1) throw errors[0];
+      if (errors.length > 1) throw new AggregateError(errors, 'Several E2E resources failed to close');
+    },
+  };
+}
+
+function listen(server: http.Server): Promise<number> {
+  return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve((server.address() as net.AddressInfo).port)));
+}
+
+function closeServer(server: http.Server): Promise<void> {
+  server.closeAllConnections();
+  return new Promise((resolve) => server.close(() => resolve()));
+}
+
+/** A forward proxy that refuses every request and records the hosts it refused. */
+export async function startRefusingProxy(): Promise<Server & { refusedHosts: () => string[] }> {
+  const hosts = new Set<string>();
+  const server = http.createServer((req, res) => {
+    hosts.add(new URL(req.url ?? '', 'http://unknown').host);
+    res.writeHead(502).end();
+  });
+  server.on('connect', (req, socket: net.Socket) => {
+    // The browser drops the tunnel as soon as it is refused; that reset is expected.
+    socket.on('error', () => {});
+    hosts.add(String(req.url).replace(/:\d+$/, ''));
+    socket.end('HTTP/1.1 502 Bad Gateway\r\n\r\n');
+  });
+  const port = await listen(server);
+  return { url: `http://127.0.0.1:${port}`, close: () => closeServer(server), refusedHosts: () => [...hosts] };
+}
+
+const MIME: Record<string, string> = {
+  '.html': 'text/html',
+  '.js': 'text/javascript',
+  '.css': 'text/css',
+  '.wasm': 'application/wasm',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+};
+
+/** Serves the built mock-dapp. Port 0, so parallel runs never collide. */
+export async function startMockDapp(): Promise<Server> {
+  const server = http.createServer((req, res) => {
+    const pathname = new URL(req.url ?? '/', 'http://localhost').pathname;
+    const file = path.join(mockDappDir, pathname === '/' ? 'index.html' : path.normalize(pathname));
+    if (!file.startsWith(mockDappDir) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
+      res.writeHead(404).end();
+      return;
+    }
+    res.writeHead(200, { 'content-type': MIME[path.extname(file)] ?? 'application/octet-stream' });
+    fs.createReadStream(file).pipe(res);
+  });
+  const port = await listen(server);
+  return { url: `http://127.0.0.1:${port}`, close: () => closeServer(server) };
+}
+
+export interface Extension {
+  context: BrowserContext;
+  worker: Worker;
+  extensionId: string;
+  page(file: string): Promise<Page>;
+}
+
+export async function launchExtension(proxyUrl: string): Promise<Extension> {
+  const context = await chromium.launchPersistentContext('', {
+    channel: 'chromium',
+    // The context is launched here rather than by a fixture, so `--headed` has
+    // to be read through. E2E_SLOW_MO (ms per action) makes a headed run watchable.
+    headless: test.info().project.use.headless ?? true,
+    slowMo: Number(process.env.E2E_SLOW_MO ?? 0),
+    args: [
+      `--disable-extensions-except=${extensionDir}`,
+      `--load-extension=${extensionDir}`,
+      `--proxy-server=${proxyUrl}`,
+      // Chrome's own update and sync traffic would only add noise to the refused-host log.
+      '--disable-background-networking',
+      '--disable-component-update',
+    ],
+  });
+  context.setDefaultTimeout(15_000);
+  const worker = context.serviceWorkers()[0] ?? (await context.waitForEvent('serviceworker'));
+  const extensionId = new URL(worker.url()).host;
+  return {
+    context,
+    worker,
+    extensionId,
+    async page(file: string) {
+      const page = await context.newPage();
+      await page.goto(`chrome-extension://${extensionId}/${file}`);
+      return page;
+    },
+  };
+}
+
+/**
+ * Waits for the side panel's header badge to read "Synced". Waiting for the
+ * "Syncing, N%" badge to disappear is not enough: the panel renders no badge
+ * until it has its first balances, so that check passes before the badge has
+ * rendered at all.
+ */
+export async function waitForSynced(panel: Page, timeout = 120_000): Promise<void> {
+  await expect(panel.getByRole('button', { name: 'Synced', exact: true })).toBeVisible({ timeout });
+}
+
+/**
+ * Restores a hex seed through the setup tab and unlocks it. Defaults to the
+ * fixed test seed on Preprod, the setup default.
+ */
+export async function importWallet(
+  ext: Extension,
+  { seed = SEED, network = 'Preprod' }: { seed?: string; network?: 'Preprod' | 'Undeployed' } = {},
+): Promise<void> {
+  const setup = await ext.page('setup.html?mode=import');
+  await setup.getByRole('tab', { name: 'Hex seed' }).click();
+  await setup.getByRole('textbox', { name: 'Hex seed' }).fill(seed);
+  await setup.getByRole('button', { name: 'Continue' }).click();
+  const changesNetwork = (await savedNetwork(ext)) !== network.toLowerCase();
+  const radio = setup.getByRole('radiogroup', { name: 'Midnight network' }).getByRole('radio', { name: new RegExp(`^${network}`) });
+  const next = setup.getByRole('button', { name: 'Continue' });
+  // The network step renders its radios before its settings load lands, and the
+  // load then resets the pick to the saved network. Continue is enabled only once
+  // the load has landed, so wait for it before picking.
+  await expect(next).toBeEnabled();
+  await radio.click();
+  await expect(radio).toBeChecked();
+  await next.click();
+  // Saving a different network locks the wallet host and closes its offscreen
+  // document without waiting. An import sent inside that window loses its reply
+  // ("message channel closed"), so wait for the close to land first.
+  if (changesNetwork) await expect.poll(() => hasOffscreenDocument(ext)).toBe(false);
+  await setup.getByRole('textbox', { name: 'Password', exact: true }).fill(PASSWORD);
+  await setup.getByRole('textbox', { name: 'Confirm password' }).fill(PASSWORD);
+  await setup.getByRole('button', { name: 'Continue' }).click();
+  await expect(setup.getByRole('heading', { name: "You're all set" })).toBeVisible({ timeout: 60_000 });
+  await setup.close();
+}
+
+/**
+ * The network the background has saved. Read from storage rather than the
+ * setup screen, whose radios settle on the saved value only after a load.
+ * Absent means the default, Preprod (DEFAULT_SETTINGS in lib/background/settings.ts).
+ */
+function savedNetwork(ext: Extension): Promise<string> {
+  return ext.worker.evaluate(async () => {
+    const stored = (await chrome.storage.local.get('settings')) as { settings?: { network?: string } };
+    return stored.settings?.network ?? 'preprod';
+  });
+}
+
+function hasOffscreenDocument(ext: Extension): Promise<boolean> {
+  return ext.worker.evaluate(async () => {
+    const contexts = await chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] });
+    return contexts.length > 0;
+  });
+}
+
+/** What the auto-lock check reads, as stored in the service worker. */
+interface AutoLockState {
+  unlocked: boolean;
+  lastActivityAt: number | null;
+  lastUserActivityAt: number | null;
+  alarm: object | null;
+  autoLockMinutes: unknown;
+  now: number;
+}
+
+function autoLockState(ext: Extension): Promise<AutoLockState> {
+  return ext.worker.evaluate(async () => {
+    const stored = await chrome.storage.session.get(['session', 'session.lastActivityAt', 'session.lastUserActivityAt']);
+    const at = (value: unknown) => (typeof value === 'number' ? value : null);
+    return {
+      unlocked: Boolean(stored.session),
+      lastActivityAt: at(stored['session.lastActivityAt']),
+      lastUserActivityAt: at(stored['session.lastUserActivityAt']),
+      alarm: (await chrome.alarms.get('auto-lock-check')) ?? null,
+      autoLockMinutes: ((await chrome.storage.local.get('settings')).settings as { autoLockMinutes?: unknown } | undefined)
+        ?.autoLockMinutes,
+      now: Date.now(),
+    };
+  });
+}
+
+/** Records the last activity, by the user and by a dApp, `idleMinutes` ago. Returns when it did so. */
+function backdateActivity(ext: Extension, idleMinutes: number): Promise<number> {
+  return ext.worker.evaluate(async (minutes) => {
+    const now = Date.now();
+    const past = now - minutes * 60_000;
+    await chrome.storage.session.set({ 'session.lastActivityAt': past, 'session.lastUserActivityAt': past });
+    return now;
+  }, idleMinutes);
+}
+
+/**
+ * Locks the wallet through the production auto-lock check, against a clock
+ * that says it has been idle for `idleMinutes`, and waits for the lock.
+ *
+ * The real check runs on a periodic one-minute alarm. Rather than wait for it,
+ * this backdates the recorded activity and replaces that alarm with one that
+ * fires at once and then every second, so the production handler does the
+ * locking.
+ *
+ * The replacement must stay periodic. The handler defers the lock while a
+ * watched sync holds it (a panel port the worker has not yet seen close counts)
+ * and relies on the next tick to retry. Locking clears the alarm (lockNow calls
+ * clearAutoLock), so it stops once the wallet locks. Unpacked extensions are
+ * not held to the 30-second alarm minimum, so a one-second period is allowed.
+ *
+ * Activity recorded after the backdate resets the clock, and then no tick
+ * expires. Deciding an approval is one source: the background records it after
+ * the decision has already reached the dApp, so it can land after a test that
+ * waited for the dApp's result. Such a write is logged and the clock is
+ * backdated again. If the wallet is still unlocked at the timeout, the error
+ * carries what the check reads, so the cause shows in the CI log.
+ */
+export async function lockByAutoLock(ext: Extension, idleMinutes: number, timeout = 5_000): Promise<void> {
+  let backdatedAt = await backdateActivity(ext, idleMinutes);
+  await ext.worker.evaluate(() =>
+    chrome.alarms.create('auto-lock-check', { when: Date.now() + 100, periodInMinutes: 1 / 60 }),
+  );
+  const deadline = Date.now() + timeout;
+  for (let state = await autoLockState(ext); state.unlocked; state = await autoLockState(ext)) {
+    const backdatedTo = backdatedAt - idleMinutes * 60_000;
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `Auto-lock did not lock within ${timeout} ms. With recent activity the check ` +
+          'finds the window unexpired; with old activity, a live alarm and a set ' +
+          'autoLockMinutes it is deferring (an op in flight or a watched sync). ' +
+          `State: ${JSON.stringify({ backdatedAt, backdatedTo, ...state })}`,
+      );
+    }
+    const latest = Math.max(state.lastActivityAt ?? 0, state.lastUserActivityAt ?? 0);
+    if (latest > backdatedTo) {
+      console.log(`lockByAutoLock: activity recorded ${latest - backdatedAt} ms after the backdate; backdating again`);
+      backdatedAt = await backdateActivity(ext, idleMinutes);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+}

@@ -22,7 +22,14 @@ import { getAddressBook, saveAddressEntry, removeAddressEntry } from './address-
 import { offscreen } from './offscreen-client';
 import { record as recordTiming, getTimings, clearTimings, setTimingsEnabled, timingsEnabled } from './timings';
 import { applyNodeAuthHeader } from './node-auth-header';
-import { requireCardano } from './cardano-session';
+import { requireCardano, type CardanoContext } from './cardano-session';
+import {
+  cardanoStatusKey,
+  clearCardanoStatusCache,
+  getCachedCardanoStatus,
+  invalidateCardanoStatus,
+  readCardanoStatusOnce,
+} from './cardano-status-cache';
 import { t } from '../i18n';
 // Pure config resolution — no Lucid, so it is safe in the service worker.
 import { cardanoNetworkFor, explorerTxUrl, resolveCardanoNetwork } from '@shieldedtech/moth-wallet/cardano/network';
@@ -111,6 +118,7 @@ export async function lockNow(): Promise<void> {
   await clearSnapshot();
   await clearSession();
   void teardown({ force: true });
+  await clearCardanoStatusCache();
 }
 
 /**
@@ -347,6 +355,7 @@ async function withTxTiming<T>(
     throw error;
   }
 }
+
 
 export function registerHandlers(): void {
   onMessage('walletList', async () => {
@@ -805,63 +814,90 @@ export function registerHandlers(): void {
     return offscreen.cardanoAddresses({ mnemonic, config, accountIndex });
   });
 
+  onMessage('cardanoBalance', async () => {
+    const { config, mnemonic, accountIndex } = await requireCardano(true);
+    return offscreen.cardanoBalance({ mnemonic, config, accountIndex });
+  });
+
   onMessage('cardanoStatus', async () => {
-    const { config, mnemonic, session, accountIndex } = await requireCardano(true);
-    const network = await getNetworkConfig();
-    const status = await offscreen.cardanoStatus({
-      mnemonic,
-      config,
-      indexerUrl: network.indexerUrl,
-      accountIndex,
+    const context = await requireCardano(true);
+    const { config, mnemonic, session, accountIndex } = context;
+    return readCardanoStatusOnce(cardanoStatusKey(context), async () => {
+      const network = await getNetworkConfig();
+      const status = await offscreen.cardanoStatus({
+        mnemonic,
+        config,
+        indexerUrl: network.indexerUrl,
+        accountIndex,
+      });
+      const ownDustBytes = await ownDustAddressBytes(session);
+      return {
+        ...status,
+        // Resolved here rather than offscreen: the session is what knows which
+        // account is unlocked, and a registration pointing at some *other*
+        // wallet is still a valid registration — just not one that pays you.
+        registeredToThisWallet:
+          ownDustBytes !== '' && status.registeredDustAddress === ownDustBytes,
+      };
     });
-    const ownDustBytes = await ownDustAddressBytes(session);
-    return {
-      ...status,
-      // Resolved here rather than offscreen: the session is what knows which
-      // account is unlocked, and a registration pointing at some *other*
-      // wallet is still a valid registration — just not one that pays you.
-      registeredToThisWallet:
-        ownDustBytes !== '' && status.registeredDustAddress === ownDustBytes,
-    };
   });
 
-  onMessage('cardanoRegister', async ({ data }) => {
-    const { config, mnemonic, session, accountIndex } = await requireCardano(true);
-    // This wallet's own DUST address, serialized — the datum records a DUST
-    // address, not the shielded coin public key.
-    const ownBech32 = session.addresses?.dust?.bech32m?.[session.network] ?? '';
-    if (!data?.dustAddress && !ownBech32) {
-      throw new Error(t('cardano_errorNoDustAddress'));
+  onMessage('cardanoStatusCached', async () =>
+    getCachedCardanoStatus(cardanoStatusKey(await requireCardano(true))),
+  );
+
+  // Every write invalidates the cached status, even one that failed: a submit
+  // can reach the chain and still report an error.
+  const writeCardano = async <T>(write: (context: CardanoContext) => Promise<T>): Promise<T> => {
+    const context = await requireCardano(true);
+    try {
+      return await write(context);
+    } finally {
+      await invalidateCardanoStatus(cardanoStatusKey(context));
     }
-    const receiver =
-      data?.dustAddress
-      ?? (await offscreen.cardanoResolveReceiver({ input: ownBech32 })).dustAddressBytes;
-    const r = await offscreen.cardanoRegister({ mnemonic, config, receiver, accountIndex });
-    return { ...r, explorer: explorerTxUrl(config, r.txHash) };
-  });
+  };
 
-  onMessage('cardanoDeregister', async () => {
-    const { config, mnemonic, accountIndex } = await requireCardano(true);
-    const r = await offscreen.cardanoDeregister({ mnemonic, config, accountIndex });
-    return { ...r, explorer: explorerTxUrl(config, r.txHash) };
-  });
+  onMessage('cardanoRegister', ({ data }) =>
+    writeCardano(async ({ config, mnemonic, session, accountIndex }) => {
+      // This wallet's own DUST address, serialized — the datum records a DUST
+      // address, not the shielded coin public key.
+      const ownBech32 = session.addresses?.dust?.bech32m?.[session.network] ?? '';
+      if (!data?.dustAddress && !ownBech32) {
+        throw new Error(t('cardano_errorNoDustAddress'));
+      }
+      const receiver =
+        data?.dustAddress
+        ?? (await offscreen.cardanoResolveReceiver({ input: ownBech32 })).dustAddressBytes;
+      const r = await offscreen.cardanoRegister({ mnemonic, config, receiver, accountIndex });
+      return { ...r, explorer: explorerTxUrl(config, r.txHash) };
+    }),
+  );
 
-  onMessage('cardanoSend', async ({ data }) => {
-    const { config, mnemonic, accountIndex } = await requireCardano(true);
-    const r = await offscreen.cardanoSend({
-      mnemonic,
-      config,
-      request: { to: data.to, lovelace: data.lovelace, cnight: data.cnight },
-      accountIndex,
-    });
-    return { ...r, explorer: explorerTxUrl(config, r.txHash) };
-  });
+  onMessage('cardanoDeregister', () =>
+    writeCardano(async ({ config, mnemonic, accountIndex }) => {
+      const r = await offscreen.cardanoDeregister({ mnemonic, config, accountIndex });
+      return { ...r, explorer: explorerTxUrl(config, r.txHash) };
+    }),
+  );
 
-  onMessage('cardanoUpdate', async ({ data }) => {
-    const { config, mnemonic, accountIndex } = await requireCardano(true);
-    const r = await offscreen.cardanoUpdate({ mnemonic, config, receiver: data.dustAddress, accountIndex });
-    return { ...r, explorer: explorerTxUrl(config, r.txHash) };
-  });
+  onMessage('cardanoSend', ({ data }) =>
+    writeCardano(async ({ config, mnemonic, accountIndex }) => {
+      const r = await offscreen.cardanoSend({
+        mnemonic,
+        config,
+        request: { to: data.to, lovelace: data.lovelace, cnight: data.cnight },
+        accountIndex,
+      });
+      return { ...r, explorer: explorerTxUrl(config, r.txHash) };
+    }),
+  );
+
+  onMessage('cardanoUpdate', ({ data }) =>
+    writeCardano(async ({ config, mnemonic, accountIndex }) => {
+      const r = await offscreen.cardanoUpdate({ mnemonic, config, receiver: data.dustAddress, accountIndex });
+      return { ...r, explorer: explorerTxUrl(config, r.txHash) };
+    }),
+  );
 
   onMessage('settingsGet', () => getSettings());
 
