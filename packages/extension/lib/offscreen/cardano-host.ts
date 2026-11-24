@@ -68,6 +68,30 @@ export async function cardanoAddresses(
   return { cardanoNetwork: config.network, ...addresses };
 }
 
+export interface CardanoBalanceResult {
+  /** Decimal strings: both exceed Number's safe integer range. */
+  lovelace: string;
+  cnight: string;
+  cnightUtxos: number;
+}
+
+/** The wallet's own UTXOs only, so it answers long before the registration scan. */
+export async function cardanoBalance(
+  mnemonic: string,
+  config: CardanoNetworkConfig,
+  accountIndex?: number,
+): Promise<CardanoBalanceResult> {
+  const { readCardanoBalance } = await import('@shieldedtech/moth-wallet/cardano');
+  return openSession(mnemonic, config, async (session) => {
+    const balance = await readCardanoBalance(session);
+    return {
+      lovelace: balance.lovelace.toString(),
+      cnight: balance.cnight.toString(),
+      cnightUtxos: balance.cnightUtxoCount,
+    };
+  }, accountIndex);
+}
+
 export async function cardanoStatus(
   mnemonic: string,
   config: CardanoNetworkConfig,

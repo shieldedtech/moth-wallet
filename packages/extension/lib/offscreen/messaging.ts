@@ -18,7 +18,7 @@ import type { HistoryEntry } from '@midnightntwrk/dapp-connector-api';
 import type { RelayState } from './relay-socket';
 import type { DustNotYet, FeeEstimate } from '../messaging/protocol';
 import type { CardanoNetworkConfig } from '@shieldedtech/moth-wallet/cardano/network';
-import type { CardanoAddressesResult, CardanoStatusResult } from './cardano-host';
+import type { CardanoAddressesResult, CardanoBalanceResult, CardanoStatusResult } from './cardano-host';
 import type { CardanoAccountList } from '@shieldedtech/moth-wallet/cardano/accounts';
 
 /**
@@ -241,6 +241,11 @@ export interface OffscreenProtocol {
     config: CardanoNetworkConfig;
     accountIndex?: number;
   }): CardanoAddressesResult;
+  'os/cardanoBalance'(data: {
+    mnemonic: string;
+    config: CardanoNetworkConfig;
+    accountIndex?: number;
+  }): CardanoBalanceResult;
   'os/cardanoStatus'(data: {
     mnemonic: string;
     config: CardanoNetworkConfig;
