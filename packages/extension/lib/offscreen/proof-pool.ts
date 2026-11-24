@@ -70,6 +70,12 @@ interface Job {
   timer?: ReturnType<typeof setTimeout>;
   /** Lookups asked for and not yet answered, so a timeout can say what it was waiting on. */
   pendingKeys: Set<string>;
+  /**
+   * Whether the worker has sent anything for this job. zkir asks for a key within
+   * moments of starting, so a job that times out without ever hearing from its
+   * worker was never run (the worker dropped it or died), not slow to prove.
+   */
+  heard: boolean;
 }
 
 interface Slot {
@@ -110,6 +116,7 @@ export function createProofPool(options: ProofPoolOptions): ProofPool {
       // The worker may have been retired while the lookup was in flight.
       if (slot.job === job) slot.worker.postMessage(message);
     };
+    job.heard = true;
     const what = describeKey(request);
     const asked = Date.now();
     job.pendingKeys.add(what);
@@ -157,8 +164,13 @@ export function createProofPool(options: ProofPoolOptions): ProofPool {
   // A stalled job holds its worker forever, so terminate the worker rather than wait on it.
   function expire(slot: Slot, job: Job): void {
     if (slot.job !== job) return;
-    const waiting = job.pendingKeys.size > 0 ? `waiting on ${[...job.pendingKeys].join(', ')}` : 'proving';
-    const error = new Error(`Proof job ${job.id} (${job.op}) gave no result within ${jobTimeoutMs / 1000} s; it was ${waiting}`);
+    const state =
+      job.pendingKeys.size > 0
+        ? `it was waiting on ${[...job.pendingKeys].join(', ')}`
+        : job.heard
+          ? 'it was proving'
+          : 'the proof worker never responded to it';
+    const error = new Error(`Proof job ${job.id} (${job.op}) gave no result within ${jobTimeoutMs / 1000} s; ${state}`);
     log(error.message);
     fail(slot, error);
   }
@@ -227,7 +239,7 @@ export function createProofPool(options: ProofPoolOptions): ProofPool {
   ): Promise<unknown> {
     if (closed) return Promise.reject(new Error('Proof pool is closed'));
     return new Promise((resolve, reject) => {
-      queue.push({ id: nextId++, op, zkir, preimage, overwriteBindingInput, keyMaterial, resolve, reject, pendingKeys: new Set() });
+      queue.push({ id: nextId++, op, zkir, preimage, overwriteBindingInput, keyMaterial, resolve, reject, pendingKeys: new Set(), heard: false });
       pump();
     });
   }
