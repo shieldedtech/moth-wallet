@@ -67,12 +67,12 @@ final class ConnectorRejectTests: XCTestCase {
         app.tabBars.buttons["Settings"].tap()
         let site = reveal(app.staticTexts["http://127.0.0.1:5174"], in: app)
         XCTAssertTrue(site.waitForExistence(timeout: 10), "site listed as connected")
-        // On a busy runner a swipe made while the list is still settling can leave the row closed.
+        // The last row can sit under the floating tab bar, where a swipe switches tabs instead.
+        let tabBar = app.tabBars.firstMatch
+        for _ in 0..<8 where site.frame.maxY > tabBar.frame.minY - 8 { app.swipeUp() }
+        site.swipeLeft()
         let disconnect = app.buttons["Disconnect"]
-        for _ in 0..<3 where !disconnect.exists {
-            site.swipeLeft()
-            _ = disconnect.waitForExistence(timeout: 5)
-        }
+        XCTAssertTrue(disconnect.waitForExistence(timeout: 5), "the swipe shows Disconnect")
         disconnect.tap()
         XCTAssertTrue(app.staticTexts["No DApps are connected."].waitForExistence(timeout: 10), "site removed")
 

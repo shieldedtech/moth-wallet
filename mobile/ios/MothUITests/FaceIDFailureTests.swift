@@ -27,7 +27,7 @@ final class FaceIDFailureTests: XCTestCase {
         register.tap()
         let failed = FaceID.notRecognisedAlert
         XCTAssertTrue(failed.waitForExistence(timeout: 30), "Face ID failed")
-        failed.buttons["Cancel"].firstMatch.tap()
+        FaceID.cancelFailure()
         let ran = app.staticTexts["This account has no NIGHT to register."]
         XCTAssertFalse(ran.waitForExistence(timeout: 10), "registration ran without a match")
         XCTAssertFalse(app.alerts["Something went wrong"].exists, "cancelling is not an error")
@@ -54,7 +54,7 @@ final class FaceIDFailureTests: XCTestCase {
         app.buttons["I've written down every phrase — turn on"].tap()
         let failed = FaceID.notRecognisedAlert
         XCTAssertTrue(failed.waitForExistence(timeout: 30), "Face ID failed")
-        failed.buttons["Cancel"].firstMatch.tap()
+        FaceID.cancelFailure()
         XCTAssertTrue(faceOnly.waitForValue("0", timeout: 10), "still off")
     }
 }

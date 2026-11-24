@@ -40,4 +40,15 @@ extension FaceID {
     static var notRecognisedAlert: XCUIElement {
         springboard.alerts.matching(NSPredicate(format: "label BEGINSWITH 'Face Not Recogni'")).firstMatch
     }
+
+    /// Cancels the failure alert. The alert is found while it is still appearing, and a tap then is
+    /// lost and leaves the prompt open, so tap again until it has closed.
+    static func cancelFailure(attempts: Int = 3) {
+        let alert = notRecognisedAlert
+        for _ in 0..<attempts {
+            alert.buttons["Cancel"].firstMatch.tap()
+            if alert.waitForNonExistence(timeout: 5) { return }
+        }
+        XCTFail("the Face ID failure alert stayed open after \(attempts) taps on Cancel")
+    }
 }
