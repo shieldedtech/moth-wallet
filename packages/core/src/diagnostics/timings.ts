@@ -102,23 +102,30 @@ export function createTimingRecorder(
     await record('marker', on ? 'timings: enabled' : 'timings: disabled');
   };
 
-  async function record(
-    source: TimingSource,
-    label: string,
-    detail?: TimingEntry['detail'],
-  ): Promise<void> {
-    try {
-      if (!(await isEnabled())) return;
-      const entries = await store.read();
-      const at = now();
-      // First entry of a run has no predecessor, so its delta is 0 rather than
-      // the time since the epoch.
-      const previous = entries.length > 0 ? entries[entries.length - 1]!.at : at;
-      entries.push({at, deltaMs: at - previous, label, source, ...(detail ? {detail} : {})});
-      await store.write(entries.slice(-maxEntries));
-    } catch {
-      /* never let instrumentation break the path it measures */
-    }
+  // Each record reads the stored list, appends and writes it back. Two records
+  // in flight at once would both read the same list and the second write would
+  // drop the first entry, which bursts such as a transaction's proof jobs
+  // starting together did. So records run one at a time, in call order.
+  let pending: Promise<void> = Promise.resolve();
+
+  function record(source: TimingSource, label: string, detail?: TimingEntry['detail']): Promise<void> {
+    // Stamped when called, not when its turn comes, so queueing adds no time.
+    const at = now();
+    const run = pending.then(async () => {
+      try {
+        if (!(await isEnabled())) return;
+        const entries = await store.read();
+        // First entry of a run has no predecessor, so its delta is 0 rather than
+        // the time since the epoch.
+        const previous = entries.length > 0 ? entries[entries.length - 1]!.at : at;
+        entries.push({at, deltaMs: at - previous, label, source, ...(detail ? {detail} : {})});
+        await store.write(entries.slice(-maxEntries));
+      } catch {
+        /* never let instrumentation break the path it measures */
+      }
+    });
+    pending = run;
+    return run;
   }
 
   return {

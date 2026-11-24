@@ -31,6 +31,8 @@ export async function fetchTxBlockTime(
   try {
     const response = await fetch(`${config.blockfrostUrl}/txs/${txHash}`, {
       headers: { project_id: config.blockfrostProjectId },
+      // Unanswered, this would hold the whole status read open.
+      signal: AbortSignal.timeout(15_000),
     });
     if (!response.ok) return null;
     const body = (await response.json()) as { block_time?: unknown };

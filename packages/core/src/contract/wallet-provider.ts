@@ -13,7 +13,7 @@ import type {
   WalletProvider,
 } from '@midnight-ntwrk/midnight-js/types';
 import {WalletError} from '../types/errors.js';
-import {deriveWalletKeys, type WalletKeys} from '../sync/operations.js';
+import {deriveWalletKeys, proveRecipe, type WalletKeys} from '../sync/operations.js';
 
 /**
  * The midnight-js factories the providers are built with. midnight-js takes a
@@ -67,8 +67,7 @@ export function makeContractWalletProviders(options: ContractWalletProviderOptio
     const recipe = await facade.balanceUnboundTransaction(facade.adoptTransaction(tx.serialize(), 'Unbound'), {
       ttl: ttl ?? new Date(Date.now() + 30 * 60_000),
     });
-    const signed = await facade.signRecipe(recipe, keystore.signDataAsync);
-    return (await facade.finalizeRecipe(signed)).serialize();
+    return (await proveRecipe(facade, recipe, keystore.signDataAsync)).serialize();
   };
   const submit = (tx: {serialize(): Uint8Array}): Promise<string> =>
     facade.submitTransaction(facade.adoptTransaction(tx.serialize(), 'Finalized'));

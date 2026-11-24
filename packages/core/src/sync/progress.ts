@@ -45,8 +45,8 @@ export interface OverallProgressInput {
   /** Time since this sync started, for the ETA. 0 disables the estimate. */
   elapsedMs: number;
   /**
-   * Where this session actually began: the fraction already complete when it
-   * started, and the elapsed reading at that moment.
+   * Where this session actually began: the slowest sub-wallet's fraction when it
+   * started (`slowestFraction`), and the elapsed reading at that moment.
    *
    * Without it the ETA assumes the sync began at 0% when the process began,
    * which is false for every resumed sync — and dust resumes constantly. A run
@@ -59,77 +59,76 @@ export interface OverallProgressInput {
 }
 
 /**
- * Progress is the SLOWEST sub-wallet, never the shielded one alone.
+ * Progress is the average of the sub-wallets still syncing, so the figure moves
+ * as each of them does; the time estimate comes from the slowest, which is the
+ * one the wallet waits for.
  *
- * This used to read shielded indices only, on the stated assumption that shielded
- * was the slowest. It is not — dust is, by two orders of magnitude: a full dust
- * walk is ~1.4M events at a few hundred per second, where shielded covers the same
- * range in under a minute. Observed consequence on preprod: a wallet reporting
- * "100% (0s remaining)" with dust at 178,029/1,395,558 and roughly 69 minutes of
- * work left — worse than reporting nothing, because it stops the user waiting.
+ * Taking the slowest alone read 0% and then 100% on a pre-seeded wallet, whose
+ * DUST pass reports nothing until it ends while shielded catches up visibly.
  */
 export function overallSyncProgress(input: OverallProgressInput): {
   percentage: number;
   etaSeconds: number | null;
   /**
-   * The sub-wallet the percentage came from — the slowest one, and null once
-   * everything is synced.
-   *
-   * Returned because reporting the minimum without saying whose it is produces
-   * a genuinely confusing log: a timeline reading "syncing 27%" beside a UI
-   * showing shielded and unshielded at 100% looks like a contradiction rather
-   * than like dust being the constraint.
+   * The sub-wallet the estimate is waiting on — the slowest one, and null once
+   * everything is synced. Named in the progress log, so that "syncing 27%" beside
+   * shielded and unshielded at 100% reads as dust being the constraint.
    */
   slowest: SubWallet | null;
+  /** The slowest sub-wallet's own fraction: what the estimate and its baseline measure. */
+  slowestFraction: number;
 } {
-  if (input.synced) return { percentage: 1, etaSeconds: 0, slowest: null };
+  if (input.synced) return { percentage: 1, etaSeconds: 0, slowest: null, slowestFraction: 1 };
 
-  // A sub-wallet with nothing relevant to apply (total 0) is complete, not
-  // stalled — count it as 1 so it cannot drag the minimum to zero. A fresh
-  // wallet's unshielded progress is legitimately 0/0.
-  const fraction = (sub: SubProgressSnapshot, done: boolean): number => {
-    if (done) return 1;
-    return sub.total > 0 ? Math.min(1, sub.applied / sub.total) : 1;
-  };
-
-  const fractions: Array<{ sub: SubWallet; value: number }> = [
-    { sub: 'shielded', value: fraction(input.shielded, input.shieldedSynced) },
-    { sub: 'unshielded', value: fraction(input.unshielded, input.unshieldedSynced) },
-    { sub: 'dust', value: fraction(input.dust, input.dustSynced) },
+  // 0/0 is complete only once the sub-wallet says so: a fresh wallet's empty
+  // unshielded side is, but every part reads 0/0 before it has connected, and
+  // counting that as complete showed 99% before the sync had started.
+  const part = (sub: SubWallet, progress: SubProgressSnapshot, done: boolean) => ({
+    sub,
+    value: done ? 1 : progress.total > 0 ? Math.min(1, progress.applied / progress.total) : 0,
+    // Finished with nothing to sync: left out of the average rather than handed a share of it.
+    idle: done && progress.total === 0,
+  });
+  const parts = [
+    part('shielded', input.shielded, input.shieldedSynced),
+    part('unshielded', input.unshielded, input.unshieldedSynced),
+    part('dust', input.dust, input.dustSynced),
   ];
   // Ties resolve to the earlier entry, so a fresh wallet where everything sits
   // at 0 reports 'shielded' rather than an arbitrary one.
-  const binding = fractions.reduce((a, b) => (b.value < a.value ? b : a));
+  const binding = parts.reduce((a, b) => (b.value < a.value ? b : a));
   const slowest = binding.sub;
 
-  let percentage = binding.value;
+  const syncing = parts.filter((p) => !p.idle);
+  let percentage = syncing.length > 0 ? syncing.reduce((sum, p) => sum + p.value, 0) / syncing.length : 1;
 
   // Never round up to 100% while not synced: rendering a near-complete fraction
   // as "100% (0s remaining)" is the specific lie this function exists to remove.
   if (percentage >= 0.995) percentage = 0.99;
+  const pace = binding.value >= 0.995 ? 0.99 : binding.value;
 
-  // ETA against the same fraction, so it reflects whichever sub-wallet is behind
-  // rather than one that finished a minute in.
+  // ETA against the slowest sub-wallet, not the average, so it does not promise
+  // the pace of one that finished a minute in.
   //
-  // Rate comes from progress made THIS session, not from cumulative percentage
+  // Rate comes from progress made THIS session, not from cumulative progress
   // over session elapsed — see the note on `baseline`. Both forms are kept
   // because a sync that genuinely starts at zero has no baseline to measure
   // from until its second sample.
   let etaSeconds: number | null = null;
   const b = input.baseline;
-  if (b && input.elapsedMs > b.elapsedMs && percentage > b.fraction) {
+  if (b && input.elapsedMs > b.elapsedMs && pace > b.fraction) {
     // Enough movement to divide by. Below that the rate is noise and a number
     // derived from it is worse than admitting the estimate is not ready.
-    const advanced = percentage - b.fraction;
+    const advanced = pace - b.fraction;
     const overMs = input.elapsedMs - b.elapsedMs;
     if (advanced >= 0.002 && overMs >= 1_000) {
-      const remaining = Math.max(0, 1 - percentage);
+      const remaining = Math.max(0, 1 - pace);
       etaSeconds = Math.max(0, Math.round((remaining * overMs) / advanced / 1000));
     }
-  } else if (!b && input.elapsedMs > 0 && percentage > 0.01) {
-    const totalEstMs = input.elapsedMs / percentage;
+  } else if (!b && input.elapsedMs > 0 && pace > 0.01) {
+    const totalEstMs = input.elapsedMs / pace;
     etaSeconds = Math.max(0, Math.round((totalEstMs - input.elapsedMs) / 1000));
   }
 
-  return { percentage, etaSeconds, slowest };
+  return { percentage, etaSeconds, slowest, slowestFraction: pace };
 }

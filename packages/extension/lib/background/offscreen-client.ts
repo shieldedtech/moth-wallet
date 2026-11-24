@@ -200,6 +200,10 @@ export const offscreen = {
     await ensureOffscreen();
     return offscreenSend('os/cardanoAddresses', data);
   },
+  async cardanoBalance(data: { mnemonic: string; config: CardanoNetworkConfig; accountIndex?: number }) {
+    await ensureOffscreen();
+    return offscreenSend('os/cardanoBalance', data);
+  },
   async cardanoStatus(data: {
     mnemonic: string;
     config: CardanoNetworkConfig;
