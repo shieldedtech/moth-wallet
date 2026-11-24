@@ -27,21 +27,30 @@ export interface ProbeOptions {
 const DEFAULT_TIMEOUT_MS = 20_000;
 const SUBSCRIPTION_ID = '1';
 
-// The indexer's range is inclusive and its `dustGenerationEndIndex` exclusive, so the
-// last entry at the reference height is `endIndex - 1`.
-const QUERY = `subscription ($address: DustAddress!, $end: Int!) {
-  dustGenerations(dustAddress: $address, startIndex: 0, endIndex: $end) {
+const EVENTS = `
     __typename
     ... on DustGenerationsItem { generationMtIndex }
     ... on DustGenerationDtimeUpdateItem { generationMtIndex }
-    ... on DustGenerationsProgress { highestIndex }
+    ... on DustGenerationsProgress { highestIndex }`;
+
+// Indexer 4.4 and later: the address's owned entries as of one recent block (older ones
+// are refused as outside its freshness window), then `complete`. Its dtime updates cover
+// `(dtimeCutoffHeight, block]`, so a cutoff at the block's own height adds none.
+const SNAPSHOT_QUERY = `subscription ($address: DustAddress!, $blockHash: HexEncoded!, $cutoff: Int!) {
+  dustGenerations(dustAddress: $address, blockHash: $blockHash, dtimeCutoffHeight: $cutoff) {${EVENTS}
+  }
+}`;
+
+// Indexer 4.3: an inclusive index range, then `complete`.
+const RANGE_QUERY = `subscription ($address: DustAddress!, $end: Int!) {
+  dustGenerations(dustAddress: $address, startIndex: 0, endIndex: $end) {${EVENTS}
   }
 }`;
 
 export type DustGenerationsMessage =
   | {kind: 'ack'}
-  | {kind: 'item'}
-  | {kind: 'dtime'}
+  | {kind: 'item'; index?: number}
+  | {kind: 'dtime'; index?: number}
   | {kind: 'progress'; highestIndex: number}
   | {kind: 'complete'}
   | {kind: 'error'; detail: string}
@@ -66,14 +75,16 @@ export function classifyDustGenerationsMessage(raw: unknown): DustGenerationsMes
     case 'error':
       return {kind: 'error', detail: JSON.stringify(msg.payload)};
     case 'next': {
-      const payload = msg.payload as {data?: {dustGenerations?: {__typename?: string; highestIndex?: number}}; errors?: unknown[]} | undefined;
+      const payload = msg.payload as
+        | {data?: {dustGenerations?: {__typename?: string; highestIndex?: number; generationMtIndex?: number}}; errors?: unknown[]}
+        | undefined;
       if (payload?.errors && payload.errors.length > 0) return {kind: 'error', detail: JSON.stringify(payload.errors)};
       const event = payload?.data?.dustGenerations;
       switch (event?.__typename) {
         case 'DustGenerationsItem':
-          return {kind: 'item'};
+          return {kind: 'item', index: event.generationMtIndex};
         case 'DustGenerationDtimeUpdateItem':
-          return {kind: 'dtime'};
+          return {kind: 'dtime', index: event.generationMtIndex};
         case 'DustGenerationsProgress':
           return {kind: 'progress', highestIndex: event.highestIndex ?? -1};
         default:
@@ -85,32 +96,58 @@ export function classifyDustGenerationsMessage(raw: unknown): DustGenerationsMes
   }
 }
 
+/** A verdict, and whether it is `unknown` because the indexer refused the query. */
+interface ProbeResult {
+  verdict: DustHistoryVerdict;
+  rejected: boolean;
+}
+
 /**
  * Ask the indexer whether `dustAddress` owns any generation entry below
- * `endIndexExclusive`. A bounded range ends with `complete`, so "none" is a positive
- * answer rather than silence; anything short of that answer is `unknown`.
+ * `endIndexExclusive`, with the index-range form of the subscription (indexer 4.3).
+ * A bounded range ends with `complete`, so "none" is a positive answer rather than
+ * silence; anything short of that answer is `unknown`.
  */
-export function probeDustGenerations(
+export async function probeDustGenerations(
   indexerUrl: string,
   dustAddress: string,
   endIndexExclusive: number,
   opts: ProbeOptions = {},
 ): Promise<DustHistoryVerdict> {
-  if (endIndexExclusive <= 0) return Promise.resolve({kind: 'none'});
+  return (await probeRange(indexerUrl, dustAddress, endIndexExclusive, opts)).verdict;
+}
+
+function probeRange(indexerUrl: string, dustAddress: string, endIndexExclusive: number, opts: ProbeOptions): Promise<ProbeResult> {
+  if (endIndexExclusive <= 0) return Promise.resolve({verdict: {kind: 'none'}, rejected: false});
+  return probe(indexerUrl, RANGE_QUERY, {address: dustAddress, end: endIndexExclusive - 1}, endIndexExclusive, opts);
+}
+
+/**
+ * Run one subscription and count the owned entries it reports below `below`, the
+ * generation tree's size at the height in question. The tree only appends, so those
+ * are exactly the entries that existed then. An entry without an index counts, since
+ * claiming history is the safe error.
+ */
+function probe(
+  indexerUrl: string,
+  query: string,
+  variables: Record<string, unknown>,
+  below: number,
+  opts: ProbeOptions,
+): Promise<ProbeResult> {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const connect: SocketFactory = opts.socket ?? ((url, protocol) => new WebSocket(url, protocol) as unknown as SocketLike);
 
-  return new Promise<DustHistoryVerdict>((resolve) => {
+  return new Promise<ProbeResult>((resolve) => {
     let socket: SocketLike;
     try {
       socket = connect(wsUrl(indexerUrl), 'graphql-transport-ws');
     } catch (err) {
-      resolve({kind: 'unknown', reason: `could not open ${wsUrl(indexerUrl)}: ${String(err)}`});
+      resolve({verdict: {kind: 'unknown', reason: `could not open ${wsUrl(indexerUrl)}: ${String(err)}`}, rejected: false});
       return;
     }
     let settled = false;
-    let entries = 0;
-    const finish = (verdict: DustHistoryVerdict) => {
+    const finish = (verdict: DustHistoryVerdict, rejected = false) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
@@ -119,7 +156,7 @@ export function probeDustGenerations(
       } catch {
         /* already closing */
       }
-      resolve(verdict);
+      resolve({verdict, rejected});
     };
     const timer = setTimeout(() => finish({kind: 'unknown', reason: `no answer within ${timeoutMs}ms`}), timeoutMs);
 
@@ -129,13 +166,7 @@ export function probeDustGenerations(
       const message = classifyDustGenerationsMessage(event.data);
       switch (message.kind) {
         case 'ack':
-          socket.send(
-            JSON.stringify({
-              id: SUBSCRIPTION_ID,
-              type: 'subscribe',
-              payload: {query: QUERY, variables: {address: dustAddress, end: endIndexExclusive - 1}},
-            }),
-          );
+          socket.send(JSON.stringify({id: SUBSCRIPTION_ID, type: 'subscribe', payload: {query, variables}}));
           return;
         case 'ping':
           socket.send(JSON.stringify({type: 'pong'}));
@@ -143,14 +174,13 @@ export function probeDustGenerations(
         case 'item':
         case 'dtime':
           // One owned entry is enough to decide; a dtime update implies the entry exists.
-          entries += 1;
-          finish({kind: 'some', entries});
+          if (message.index === undefined || message.index < below) finish({kind: 'some', entries: 1});
           return;
         case 'complete':
-          finish(entries > 0 ? {kind: 'some', entries} : {kind: 'none'});
+          finish({kind: 'none'});
           return;
         case 'error':
-          finish({kind: 'unknown', reason: `indexer rejected the query: ${message.detail}`});
+          finish({kind: 'unknown', reason: `indexer rejected the query: ${message.detail}`}, true);
           return;
         default:
           return;
@@ -160,8 +190,10 @@ export function probeDustGenerations(
 }
 
 /**
- * Whether `dustAddress` had any DUST generation history at or below `height`. Fails
- * closed: an indexer that cannot report the tree size at that height yields `unknown`.
+ * Whether `dustAddress` had any DUST generation history at or below `height`. Asks with
+ * a snapshot at the tip and, if the indexer refuses that (before 4.4), with the index
+ * range. Fails closed: an indexer that cannot report the tree size at `height` yields
+ * `unknown`.
  */
 export async function dustHistoryBefore(
   indexer: IndexerClient,
@@ -174,5 +206,17 @@ export async function dustHistoryBefore(
   if (size === null) {
     return {kind: 'unknown', reason: `indexer does not report the generation tree size at height ${height}`};
   }
-  return probeDustGenerations(indexerUrl, dustAddress, size, opts);
+  if (size <= 0) return {kind: 'none'};
+  const tip = await indexer.getBlock().catch(() => null);
+  let refused = '';
+  if (tip?.hash) {
+    const snapshot = await probe(indexerUrl, SNAPSHOT_QUERY, {address: dustAddress, blockHash: tip.hash, cutoff: tip.height}, size, opts);
+    if (!snapshot.rejected) return snapshot.verdict;
+    refused = snapshot.verdict.kind === 'unknown' ? `${snapshot.verdict.reason}; ` : '';
+  }
+  const range = await probeRange(indexerUrl, dustAddress, size, opts);
+  if (range.rejected && range.verdict.kind === 'unknown') {
+    return {kind: 'unknown', reason: `${refused}range form: ${range.verdict.reason}`};
+  }
+  return range.verdict;
 }

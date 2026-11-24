@@ -287,6 +287,15 @@
   "approval_deriveNote": {
     "message": "Esto concede un secreto persistente y único para este sitio. No mueve fondos ni puede gastar o revelar tus claves; permítelo solo en sitios de confianza."
   },
+  "approval_shieldedCoinsTitle": {
+    "message": "¿Compartir tus monedas shielded?"
+  },
+  "approval_shieldedCoinsSubtitle": {
+    "message": "$1 quiere ver cada moneda shielded de esta cuenta, con los datos necesarios para gastarla."
+  },
+  "approval_shieldedCoinsNote": {
+    "message": "El sitio ve el valor y el token de cada moneda shielded, y puede reconocer las monedas que te envió. No puede gastarlas: cualquier transacción sigue necesitando tu aprobación. Permítelo solo en sitios de confianza."
+  },
   "approval_approveTitle": {
     "message": "¿Aprobar esta transacción?"
   },
@@ -1198,6 +1207,24 @@
   },
   "settings_resyncError": {
     "message": "No se pudo borrar la caché. Inténtalo de nuevo."
+  },
+  "settings_rebuildShielded": {
+    "message": "Reconstruir monedas shielded"
+  },
+  "settings_rebuildShieldedDescription": {
+    "message": "Vuelve a escanear la cadena en busca de las monedas shielded de esta cuenta, si un saldo shielded parece incorrecto o desactualizado. El DUST se conserva, así que es mucho más rápido que una resincronización completa."
+  },
+  "settings_rebuildShieldedButton": {
+    "message": "Reconstruir"
+  },
+  "settings_rebuildShieldedWorking": {
+    "message": "Reconstruyendo…"
+  },
+  "settings_rebuildShieldedDeferred": {
+    "message": "Hay una transacción en curso. Vuelve a intentarlo cuando se complete."
+  },
+  "settings_rebuildShieldedError": {
+    "message": "No se pudo reconstruir. Vuelve a intentarlo."
   },
   "settings_sectionSecurity": {
     "message": "Seguridad"

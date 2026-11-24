@@ -23,6 +23,11 @@ export const approval = {
   approval_deriveLabelLabel: 'Label',
   approval_deriveNote:
     'This grants a persistent secret unique to this site. It moves no funds and can’t spend or reveal your keys — only allow it for sites you trust.',
+  approval_shieldedCoinsTitle: 'Share your shielded coins?',
+  approval_shieldedCoinsSubtitle:
+    '$1 wants to see each shielded coin in this account, with the details needed to spend it.',
+  approval_shieldedCoinsNote:
+    'The site sees every shielded coin\u2019s value and token, and can recognise coins it sent you. It can\u2019t spend them: any transaction still needs your approval. Only allow it for sites you trust.',
   approval_approveTitle: 'Approve this transaction?',
   approval_balanceSubtitle: '$1 built a transaction and needs your wallet to cover fees and finalize it.',
   approval_fromLabel: 'From',

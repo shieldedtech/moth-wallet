@@ -113,6 +113,7 @@ const api = {
       timestamp: e.timestamp ? e.timestamp.getTime() / 1000 : null,
       deltas: e.deltas.map((d) => ({ tokenType: d.tokenType, kind: d.kind, amount: String(d.amount) })),
       dustDelta: String(e.dustDelta),
+      paidFee: e.paidFee === true,
       counterparty: e.counterparty,
       fees: e.fees === null ? null : String(e.fees),
       pending: e.pending,

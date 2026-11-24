@@ -2,12 +2,15 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 import * as Rx from 'rxjs';
 import { ProtocolVersion, WalletTransaction } from '@midnightntwrk/wallet-sdk';
 import type { UtxoWithMeta, WalletFacade } from '@midnightntwrk/wallet-sdk/facade';
+import { SubmissionError } from '@midnightntwrk/wallet-sdk/capabilities/submission';
+import { NodeClientError } from '@midnightntwrk/wallet-sdk/node-client/effect';
 import {
   designateForDust,
   dedesignateFromDust,
   deriveWalletKeys,
   estimateTransferFee,
   listNightUtxos,
+  submitFinalizedTransaction,
   type TxStage,
   type WalletKeys,
 } from '../../../src/sync/operations.js';
@@ -324,6 +327,64 @@ describe('DUST operations on a fresh wallet', () => {
     expect(deregisterFromDustGeneration).toHaveBeenCalledWith([coin], expect.anything(), expect.any(Function));
     expect(balanceUnprovenTransaction).toHaveBeenCalledWith(recipe.transaction, { ttl: expect.any(Date) });
     expect(finalizeRecipe).toHaveBeenCalledWith(balanced);
+  });
+});
+
+describe('resending after the facade released the coins', () => {
+  /** Built from the SDK's own classes, so a change to how it classifies this failure shows up here. */
+  function connectionFailure(): SubmissionError {
+    return new SubmissionError({
+      message: 'Transaction submission error',
+      cause: new NodeClientError.ConnectionError({
+        message: 'Node accepted the connection but repeatedly failed to answer RPC',
+      }),
+    });
+  }
+
+  /** A socket that dropped mid-send: the node may hold the transaction, so the facade keeps its coins booked. */
+  function droppedSocket(): SubmissionError {
+    return new SubmissionError({
+      message: 'Transaction submission error',
+      cause: new NodeClientError.SubmissionError({
+        message: 'Transaction submission failed',
+        cause: new Error('1006: Abnormal Closure'),
+      }),
+    });
+  }
+
+  async function submitWith(submitTransaction: ReturnType<typeof vi.fn>) {
+    vi.useFakeTimers();
+    try {
+      const facade = { submitTransaction } as unknown as WalletFacade;
+      const outcome = submitFinalizedTransaction(facade, finalizedHandle()).then(
+        (hash) => ({ hash }),
+        (error: Error) => ({ error }),
+      );
+      await vi.advanceTimersByTimeAsync(15_000);
+      return await outcome;
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
+  it('does not resend a first send that provably never reached a block', async () => {
+    const submitTransaction = vi.fn().mockRejectedValue(connectionFailure());
+
+    const outcome = await submitWith(submitTransaction);
+
+    expect(submitTransaction).toHaveBeenCalledTimes(1);
+    expect('error' in outcome && outcome.error.message).toContain('repeatedly failed to answer RPC');
+  });
+
+  it('keeps resending once an earlier send may have reached the node', async () => {
+    const submitTransaction = vi
+      .fn()
+      .mockRejectedValueOnce(droppedSocket())
+      .mockRejectedValueOnce(connectionFailure())
+      .mockResolvedValueOnce('tx-id');
+
+    await expect(submitWith(submitTransaction)).resolves.toEqual({ hash: 'tx-hash' });
+    expect(submitTransaction).toHaveBeenCalledTimes(3);
   });
 });
 

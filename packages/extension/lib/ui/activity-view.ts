@@ -5,7 +5,7 @@
 import type { ActivityEntry, ActivityDelta } from '@shieldedtech/moth-browser';
 import { NIGHT_TOKEN_ID } from '@shieldedtech/moth-wallet/types/tokens';
 import { t } from '../i18n';
-import { formatDust, formatNightAmount, formatTokenBalance } from './format';
+import { formatNightAmount, formatTokenBalance } from './format';
 import { shortTokenId, tokenDisplayName } from './token-labels';
 import type { NativeAssetLabels } from './token-labels';
 
@@ -203,22 +203,20 @@ export function activityRowView(
       break;
     }
     case 'dust': {
-      if (entry.dustDelta < 0n) title = t('activity_networkFeePaid');
-      else title = t('activity_dustRegistration', [labels.dust]);
+      // Nothing but DUST moved. If the wallet spent DUST, the transaction was a
+      // fee it paid (a contract call, typically); otherwise it registered NIGHT.
+      // No amount either way: dustDelta compares initial values, so it misses the
+      // DUST generated since and reads positive for most fees, and the indexer's
+      // reported fee is not a real figure.
+      title = entry.paidFee ? t('activity_networkFeePaid') : t('activity_dustRegistration', [labels.dust]);
       break;
     }
   }
 
   const named = Boolean(amountDelta && isUserNamed(amountDelta, tokenNames));
-  let amount: string | null = null;
-  if (amountDelta) amount = signedAmount(amountDelta, labels, tokenNames);
-  else if (entry.dustDelta !== 0n) {
-    amount = `${entry.dustDelta < 0n ? '-' : '+'}${formatDust(
-      entry.dustDelta < 0n ? -entry.dustDelta : entry.dustDelta,
-    )} ${labels.dust}`;
-  }
+  const amount = amountDelta ? signedAmount(amountDelta, labels, tokenNames) : null;
 
-  const gained = amountDelta ? amountDelta.amount > 0n : entry.dustDelta > 0n;
+  const gained = amountDelta ? amountDelta.amount > 0n : false;
   return {
     key: entry.hash,
     icon: failed ? 'failed' : entry.pending ? 'pending' : entry.kind,

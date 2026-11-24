@@ -105,7 +105,7 @@ export function Approval({
                 ? t('approval_connect')
                 : approval.kind === 'signData'
                   ? t('approval_sign')
-                  : approval.kind === 'deriveAppSecret'
+                  : approval.kind === 'deriveAppSecret' || approval.kind === 'shieldedCoins'
                     ? t('approval_allow')
                     : t('approval_approve')}
             </Button>
@@ -180,6 +180,19 @@ export function Approval({
           </Card>
           <NoteCard icon={Moon}>
             {t('approval_deriveNote')}
+          </NoteCard>
+        </>
+      ) : approval.kind === 'shieldedCoins' ? (
+        <>
+          <SiteChip origin={approval.origin} />
+          <div className="text-center">
+            <h1 className="m-0 font-display text-[26px] font-extrabold leading-tight">{t('approval_shieldedCoinsTitle')}</h1>
+            <p className="m-0 pt-1.5 text-[13.5px] text-muted-foreground">
+              {t('approval_shieldedCoinsSubtitle', [host])}
+            </p>
+          </div>
+          <NoteCard icon={Moon}>
+            {t('approval_shieldedCoinsNote')}
           </NoteCard>
         </>
       ) : approval.kind === 'cardanoSign' ? (
