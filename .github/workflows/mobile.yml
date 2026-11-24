@@ -4,12 +4,25 @@ name: Mobile
 # a change to core or the extension worker that breaks an app is caught on main instead,
 # where the packages the engine is built from also trigger it. A change runs only the
 # platform it touches; a change to code both apps share runs both.
+#
+# iOS UI tests take about 5 minutes per class, so a pull request runs only the smoke suite
+# (see mobile/ios/scripts/ui-test.sh). Pushes to main, the nightly run and a manual run with
+# suite=full run every class.
 on:
   pull_request:
     paths:
       - mobile/**
       - .github/workflows/mobile.yml
   workflow_dispatch:
+    inputs:
+      suite:
+        description: iOS UI tests to run
+        type: choice
+        options: [smoke, full]
+        default: smoke
+  # Nightly full iOS suite on main; Android is not run.
+  schedule:
+    - cron: '17 3 * * *'
   push:
     branches: [main]
     paths:
@@ -23,9 +36,12 @@ on:
 permissions:
   contents: read
 
+# A newer run replaces an older one on the same branch, except on main: a full run there takes over
+# an hour, longer than the gap between many pushes, and cancelling would leave main untested. The
+# nightly run has its own group, so it neither cancels nor waits for a push run.
 concurrency:
-  group: mobile-${{ github.ref }}
-  cancel-in-progress: true
+  group: mobile-${{ github.event_name == 'schedule' && 'nightly' || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   changes:
@@ -54,7 +70,9 @@ jobs:
           HEAD: ${{ github.sha }}
         run: |
           ios=false android=false
-          if [ "$EVENT" = workflow_dispatch ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+          if [ "$EVENT" = schedule ]; then
+            ios=true
+          elif [ "$EVENT" = workflow_dispatch ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
             ios=true android=true
           else
             while IFS= read -r f; do
@@ -78,11 +96,13 @@ jobs:
     if: needs.changes.outputs.ios == 'true'
     # Pinned image: the Xcode and simulator runtimes come from it.
     runs-on: macos-15
-    timeout-minutes: 60
+    # The full suite runs about an hour of UI tests on top of the builds.
+    timeout-minutes: ${{ (github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.suite != 'full')) && 60 || 120 }}
     # The image defaults to Xcode 16.4 but ui-test.sh picks its newest simulator, iOS 26.2;
     # Xcode 16.4's XCTest can't hit-test iOS 26 menus, so use the Xcode that matches it.
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+      SUITE: ${{ (github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.suite != 'full')) && 'smoke' || 'full' }}
     defaults:
       run:
         working-directory: mobile/ios
@@ -155,19 +175,45 @@ jobs:
           xcodebuild build -project Moth.xcodeproj -scheme Moth -configuration Release
           -sdk iphoneos -derivedDataPath build/DerivedData CODE_SIGNING_ALLOWED=NO
 
-      # Syncs a fresh wallet on preprod, so it needs the public indexer to be up.
-      - name: UI tests
+      # Syncs a fresh wallet on preprod, so it needs the public indexer to be up. $SUITE picks
+      # the smoke or full set of test classes.
+      - name: UI tests (${{ env.SUITE }})
         run: scripts/ui-test.sh
 
-      # One .xcresult bundle per class, with the failure screenshots and logs.
+      # One .xcresult bundle per class, with the failure screenshots and logs. The leak test's are
+      # left out: its screenshots show the throwaway wallet's recovery phrase, and artifacts of
+      # this repository are public.
       - name: Upload UI test results
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: ios-ui-test-results
-          path: mobile/ios/build/TestResults
+          path: |
+            mobile/ios/build/TestResults
+            !mobile/ios/build/TestResults/RecoveryPhraseLeakTests.*
           retention-days: 7
           if-no-files-found: ignore
+
+  # The native prover both apps run. Its tests include the check that it refuses a request from a
+  # page before running it, which the iOS isolation test can't see: a page can't read the answer
+  # either way.
+  prover:
+    name: Proof server tests
+    needs: changes
+    if: needs.changes.outputs.ios == 'true' || needs.changes.outputs.android == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: mobile/shared/native
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Test
+        run: cargo test --locked -p midnight-proof-server --lib
 
   android:
     name: Android build and UI test
