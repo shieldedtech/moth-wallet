@@ -17,7 +17,16 @@ final class OnboardingTests: XCTestCase {
         XCTAssertTrue(create.waitForExistence(timeout: firstScreenTimeout), "welcome screen")
         create.tap()
 
-        XCTAssertTrue(app.staticTexts["Your recovery phrase"].waitForExistence(timeout: 60), "backup screen")
+        // On CI a tap here has been lost: a minute later the welcome screen was still up, the app
+        // had logged nothing, and the button still read "Create a new wallet". It reads
+        // "Creating…" once creating starts, so while it still has its old label, nothing started
+        // and tapping again cannot make a second wallet.
+        let backup = app.staticTexts["Your recovery phrase"]
+        for _ in 0..<2 {
+            if backup.waitForExistence(timeout: 20) || !create.exists { break }
+            create.tap()
+        }
+        XCTAssertTrue(backup.waitForExistence(timeout: 60), "backup screen")
         let confirm = app.switches.firstMatch
         XCTAssertTrue(confirm.waitForExistence(timeout: 5))
         // A SwiftUI Toggle's tappable area is its inner switch.
