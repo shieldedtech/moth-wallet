@@ -14,8 +14,7 @@ final class AccountsTests: XCTestCase {
         app.tabBars.buttons["Settings"].tap()
         app.buttons["New account"].tap()
         XCTAssertTrue(app.staticTexts["Your recovery phrase"].waitForExistence(timeout: 60), "second account's phrase")
-        app.switches.firstMatch.switches.firstMatch.tap()
-        app.buttons["Continue"].tap()
+        confirmBackup(app)
         XCTAssertTrue(app.navigationBars["Moth"].waitForExistence(timeout: 120), "second account unlocked")
         XCTAssertTrue(header(app, "account-2").waitForExistence(timeout: 10), "second account is active")
 

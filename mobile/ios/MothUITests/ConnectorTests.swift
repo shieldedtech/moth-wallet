@@ -68,12 +68,42 @@ func unlockOrCreate(_ app: XCUIApplication) {
     let deadline = Date().addingTimeInterval(firstScreenTimeout)
     while Date() < deadline, !create.exists, !unlock.exists, !home.exists { _ = home.waitForExistence(timeout: 1) }
     if create.exists {
-        create.tap()
-        XCTAssertTrue(app.staticTexts["Your recovery phrase"].waitForExistence(timeout: 60))
-        app.switches.firstMatch.switches.firstMatch.tap()
-        app.buttons["Continue"].tap()
+        createWallet(app)
+        confirmBackup(app)
     }
     XCTAssertTrue(home.waitForExistence(timeout: 120), "unlocked")
+}
+
+/// Taps "Create a new wallet" on the welcome screen and waits for the recovery phrase.
+/// On CI a tap here has been lost: a minute later the welcome screen was still up, the app had
+/// logged nothing, and the button still read "Create a new wallet". It reads "Creating…" once
+/// creating starts, so while it still has its old label, nothing started and tapping again
+/// cannot make a second wallet.
+func createWallet(_ app: XCUIApplication) {
+    let create = app.buttons["Create a new wallet"]
+    let backup = app.staticTexts["Your recovery phrase"]
+    create.tap()
+    for _ in 0..<2 {
+        if backup.waitForExistence(timeout: 20) || !create.exists { break }
+        create.tap()
+    }
+    XCTAssertTrue(backup.waitForExistence(timeout: 60), "backup screen")
+}
+
+/// On the recovery phrase screen, ticks "I have written down all 24 words" and continues.
+/// On CI the tick has been lost when tapped as the screen appeared: the switch stayed off, so
+/// Continue stayed disabled and its tap did nothing. Tap until the switch is on.
+func confirmBackup(_ app: XCUIApplication) {
+    let confirm = app.switches.firstMatch
+    XCTAssertTrue(confirm.waitForExistence(timeout: 5), "backup confirmation")
+    for _ in 0..<3 where confirm.value as? String != "1" {
+        // A SwiftUI Toggle's tappable area is its inner switch.
+        confirm.switches.firstMatch.tap()
+        _ = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == '1'"), object: confirm)], timeout: 3)
+    }
+    let next = app.buttons["Continue"]
+    XCTAssertTrue(next.waitForEnabled(timeout: 5), "Continue enabled once the phrase is confirmed")
+    next.tap()
 }
 
 /// Scrolls until `element` exists; forms only create rows that are on screen.
