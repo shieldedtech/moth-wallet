@@ -564,7 +564,8 @@ final class WalletModel: ObservableObject {
         do {
             try await work()
         } catch VaultError.canceled {
-            // The user dismissed Face ID; stay where we are.
+            // Face ID was dismissed; stay where we are. Logged, because a cancel leaves no other trace.
+            DebugLog.write("canceled")
         } catch {
             DebugLog.write("error \(error.localizedDescription)")
             self.error = error.localizedDescription
