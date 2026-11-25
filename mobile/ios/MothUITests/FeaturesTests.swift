@@ -27,8 +27,8 @@ final class FeaturesTests: XCTestCase {
 
         // Send covers Cardano too.
         tap(app.buttons["Send"], until: app.buttons["Cardano"])
-        app.buttons["Cardano"].tap()
-        XCTAssertTrue(app.textFields["ADA"].waitForExistence(timeout: 10), "Cardano send form")
+        // On CI this tap has been lost as the sheet finished opening, leaving Midnight selected.
+        tap(app.buttons["Cardano"], until: app.textFields["ADA"])
         XCTAssertTrue(app.textFields["cNIGHT"].exists)
         app.buttons["Cancel"].tap()
 
