@@ -108,7 +108,11 @@ final class WalletModel: ObservableObject {
 
     func start() async {
         do {
-            try NativeProver.start()
+            // Off the main thread: on a fresh install this copies the bundled proving parameters
+            // (about 70 MB) and starts the prover, and the UI must keep responding meanwhile.
+            let started = Date()
+            try await Task.detached(priority: .userInitiated) { try NativeProver.start() }.value
+            DebugLog.write("launch: prover started in \(Int(Date().timeIntervalSince(started) * 1000))ms")
             let engine = Engine()
             engine.onEvent = { [weak self] in self?.handle($0) }
             self.engine = engine
