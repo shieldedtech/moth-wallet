@@ -38,29 +38,34 @@ final class SecurityTests: XCTestCase {
     }
 
     /// Flips "Face ID only" and waits for it to take. Re-protecting the keys asks for Face ID once,
-    /// which the script matches, but the simulator now and then rejects the match anyway (alert
-    /// "Authentication failure.", no Face ID sheet shown), so one rejection is retried.
+    /// which the script matches. An attempt can still end without the change, and is retried:
+    /// - the simulator rejects the match anyway (alert "Authentication failure.", no Face ID sheet);
+    /// - iOS cancels the prompt itself, which the app treats like the user dismissing it, so the
+    ///   toggle just stays where it was, with no alert;
+    /// - the tap is lost in a redraw, so the confirmation for turning it on never appears.
+    /// A change that never takes still fails, after three attempts.
     private func setFaceIDOnly(_ on: Bool, in app: XCUIApplication) -> Bool {
         let toggle = app.switches["Face ID only, no passcode"]
+        let want = on ? "1" : "0"
         let rejected = app.alerts.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Authentication failure'")).firstMatch
-        for _ in 0..<2 {
+        let accept = app.buttons["I've written down every phrase — turn on"]
+        for _ in 0..<3 {
             // The toggle is disabled while the wallet is busy, which includes starting sync after
-            // unlock; on CI that has taken over 10 s, and a tap on it then does nothing.
-            XCTAssertTrue(toggle.waitForEnabled(timeout: 60), "Face ID only can be changed")
+            // unlock; on CI that has taken over a minute, and a tap on it then does nothing.
+            XCTAssertTrue(toggle.waitForEnabled(timeout: firstScreenTimeout), "Face ID only can be changed")
+            if toggle.value as? String == want { return true }
             toggle.switches.firstMatch.tap()
             if on {
-                let accept = app.buttons["I've written down every phrase — turn on"]
-                XCTAssertTrue(accept.waitForExistence(timeout: 5), "implications shown before turning on")
+                guard accept.waitForExistence(timeout: 5) else { continue }
                 accept.tap()
             }
             let deadline = Date().addingTimeInterval(30)
-            while Date() < deadline, toggle.value as? String != (on ? "1" : "0"), !rejected.exists {
+            while Date() < deadline, toggle.value as? String != want, !rejected.exists {
                 _ = rejected.waitForExistence(timeout: 1)
             }
-            if toggle.value as? String == (on ? "1" : "0") { return true }
-            guard rejected.exists else { return false }
-            app.alerts.buttons["OK"].tap()
+            if toggle.value as? String == want { return true }
+            if rejected.exists { app.alerts.buttons["OK"].tap() }
         }
-        return false
+        return toggle.value as? String == want
     }
 }

@@ -84,6 +84,9 @@ enum Vault {
         do {
             _ = try await context.evaluatePolicy(policy.laPolicy, localizedReason: reason)
         } catch let error as LAError where [.userCancel, .appCancel, .systemCancel].contains(error.code) {
+            // iOS cancels a prompt itself (systemCancel) as well as the user, and nothing on
+            // screen says which, so record it.
+            DebugLog.write("vault: Face ID canceled, LAError \(error.code.rawValue)")
             throw VaultError.canceled
         }
     }
@@ -99,6 +102,9 @@ enum Vault {
         do {
             _ = try await context.evaluatePolicy(oldPolicy.laPolicy, localizedReason: reason)
         } catch let error as LAError where [.userCancel, .appCancel, .systemCancel].contains(error.code) {
+            // iOS cancels a prompt itself (systemCancel) as well as the user, and nothing on
+            // screen says which, so record it.
+            DebugLog.write("vault: Face ID canceled, LAError \(error.code.rawValue)")
             throw VaultError.canceled
         }
         var keys: [(String, String)] = []
