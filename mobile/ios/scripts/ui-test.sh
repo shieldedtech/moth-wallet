@@ -48,10 +48,16 @@ for class in ${TESTS:-OnboardingTests AccountsTests ConnectorTests FeaturesTests
     -derivedDataPath build/DerivedData -only-testing:"MothUITests/$class" \
     -resultBundlePath "$RESULTS/$class.xcresult" || {
       failed+=("$class")
-      # Whether WebKit's processes started, for an engine that never loaded.
+      # Whether WebKit's processes started, for an engine or DApp page that never loaded. WebKit
+      # only logs that it asked for a process; runningboardd and launchd_sim log whether the
+      # simulator then created and spawned it, or refused.
       xcrun simctl spawn "$SIM" log show --last 10m --style compact \
-        --predicate 'subsystem BEGINSWITH "com.apple.WebKit" OR process BEGINSWITH "com.apple.WebKit"' \
+        --predicate 'subsystem BEGINSWITH "com.apple.WebKit" OR process BEGINSWITH "com.apple.WebKit"
+          OR (process == "runningboardd" AND eventMessage CONTAINS "WebKit")
+          OR (process == "launchd_sim" AND subsystem CONTAINS "WebKit")' \
         > "$RESULTS/$class.webkit.log" 2>&1 || true
+      # The runner's memory at the time, in case processes are held back for lack of it.
+      { memory_pressure -Q; vm_stat; } > "$RESULTS/$class.host-memory.txt" 2>&1 || true
     }
   # The app's own log (engine load and failures), kept until the next class uninstalls it.
   DATA=$(xcrun simctl get_app_container "$SIM" bob.shielded.moth data 2>/dev/null) &&
