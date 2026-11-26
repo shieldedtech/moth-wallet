@@ -44,6 +44,8 @@ for class in ${TESTS:-OnboardingTests AccountsTests ConnectorTests FeaturesTests
   xcrun simctl uninstall "$SIM" bob.shielded.moth 2>/dev/null || true
   # Keychain items outlive an uninstall, and Moth never reuses a name that has one.
   xcrun simctl keychain "$SIM" reset
+  # Marks when this class started, so only its own crash reports are kept.
+  started="$RESULTS/.started"; touch "$started"
   xcodebuild test-without-building -project Moth.xcodeproj -scheme Moth -configuration Debug -destination "$DEST" \
     -derivedDataPath build/DerivedData -only-testing:"MothUITests/$class" \
     -resultBundlePath "$RESULTS/$class.xcresult" || {
@@ -58,6 +60,11 @@ for class in ${TESTS:-OnboardingTests AccountsTests ConnectorTests FeaturesTests
         > "$RESULTS/$class.webkit.log" 2>&1 || true
       # The runner's memory at the time, in case processes are held back for lack of it.
       { memory_pressure -Q; vm_stat; } > "$RESULTS/$class.host-memory.txt" 2>&1 || true
+      # Crash reports from this class, which name the crashing frame when a WebKit process dies.
+      # Simulator processes report to the host's folder; match on contents, not file names.
+      find "$HOME/Library/Logs/DiagnosticReports" -maxdepth 1 -name '*.ips' -newer "$started" \
+        -exec grep -lE 'com\.apple\.WebKit|bob\.shielded\.moth' {} + 2>/dev/null |
+        while read -r report; do cp "$report" "$RESULTS/$class.$(basename "$report")"; done || true
     }
   # The app's own log (engine load and failures), kept until the next class uninstalls it.
   DATA=$(xcrun simctl get_app_container "$SIM" bob.shielded.moth data 2>/dev/null) &&
