@@ -1,5 +1,73 @@
 # @shieldedtech/moth-wallet
 
+## 0.16.0
+
+### Minor Changes
+
+- bc2bf29: The dApp approval screen tells a contract deploy from a contract call.
+
+  It used to count every contract action under "Contract calls", so deploying a
+  contract looked the same as calling one. It now shows a row for each kind
+  present: contract deploys, contract calls and contract maintenance updates. The
+  new labels stay in English in de/fr/es until someone reviews the translations.
+
+  In core, `TransactionSummary` gains `contractCalls`, `contractDeploys` and
+  `maintenanceUpdates`; `contractActions` is still their total. Each action's
+  kind is read from the field only that kind has, so actions built with any copy
+  or version of the ledger package are counted. `summarizeTransaction` now throws
+  on an action of a kind it does not know, instead of counting it.
+- 8343510: Choose which shielded coin a wallet spends first: `startWalletSync(..., { coinSelection })` takes `smallest-first` (the SDK's default, unchanged), `largest-first` or `best-fit` (the smallest coin that covers the payment on its own; in a swap, where the SDK does not pass the amount owed, it spends largest first). Spending the smallest coin first splits it on every payment smaller than it, so a wallet making many small payments ends up holding coins too small to pay with on their own; the other two rules spend from coins that can.
+
+### Patch Changes
+
+- 254db48: Find a Cardano DUST registration in seconds instead of minutes on mainnet.
+
+  Every registration on the network sits at the same validator address with the
+  same auth NFT, so finding this wallet's one means reading all of them: over
+  4,000 on mainnet. Lucid's Blockfrost provider fetched them one page at a time
+  and then slept 500 ms for every ten while converting them, which added about
+  six and a half minutes to every `cardano status`, `register`, `deregister`,
+  `update` and cNIGHT `send`, and grew with every new registration.
+
+  The registrations are now read straight from Blockfrost, eight pages at a
+  time, with a short back-off if Blockfrost rate-limits the scan. A mainnet
+  lookup is about 50 requests and no deliberate waiting.
+- b07688c: Cardano screen: on a visit with no kept status, show the account address at once, then ADA and cNIGHT balances from a quick read of the wallet's own UTXOs, then the DUST registration. The account list, derivation and status reads each give up after 2 minutes with a retry instead of a spinner that never stops, and a finished read no longer replaces a screen the user has moved on to. Renaming a Cardano account no longer re-reads the chain.
+
+  Registering cNIGHT now confirms with the receiving account's label and DUST address, matching the picker, which also lists DUST addresses rather than shielded ones and does not offer an account that has no DUST address yet.
+- 9aa8ab9: A new wallet keeps its pre-seed when one check of the reference fails to reach
+  the indexer.
+
+  Before using the bundled reference, the wallet re-reads the event its cursor
+  was witnessed at, to be sure the indexer has not renumbered its events since.
+  That read was a single websocket attempt, and a dropped connection or a quiet
+  socket refused the reference, so the wallet scanned the chain from genesis. On
+  CI the iOS app's first socket to the preview indexer failed this way on most
+  fresh installs, while the same read from a desktop returned the witnessed event
+  every time; the genesis scan then outran the UI tests' sync timeouts.
+
+  The read is now retried twice, after 2 s and 5 s, when it errors or returns
+  nothing. An event that comes back is compared at once, so a renumbered stream is
+  still refused on the first read, and a reference whose check never completes is
+  still refused.
+- 2afe306: A send whose proof stalls or fails no longer leaves the wallet unable to send.
+
+  In the extension, a local (WASM) proof that stalled kept the send on
+  "Generating proof" indefinitely, and every later send and fee estimate queued
+  behind it. Each proof job now fails after 5 minutes without a result, and a key
+  or parameter lookup after 2 minutes, with an error naming what it was waiting
+  on; the stalled worker is terminated and the queue moves on. Each job logs its
+  lookups and duration under `[moth proof]`.
+
+  Building a transaction books the coins it spends, the fee's DUST included, and
+  a transaction that was never proved was never submitted, so nothing released
+  them: they were saved with the sync cache, survived a reload, and the next send
+  waited on "Waiting for previous transaction" for a transaction that would never
+  confirm. When signing or proving fails, the wallet now reverts the transaction
+  and releases its coins. This covers transfers, swaps, dApp and contract
+  transactions, and DUST registration and deregistration.
+- 3c0ef70: Keep every entry the timings log records in a burst. Each record read the stored list, appended and wrote it back, so records in flight at once overwrote each other: a transaction's proof jobs starting together showed only the last. Records now run one at a time in call order, each stamped with the time it was made.
+
 ## 0.15.0
 
 ### Minor Changes
